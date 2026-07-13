@@ -80,7 +80,7 @@ This skill exposes `read_youtube_transcript`, `resolve_public_media`, and `downl
     {
       "id": "nytimes_fetch",
       "name": "fetch_nytimes_article",
-      "description": "Fetch the current or provided New York Times article through the authenticated FreeSkillz service. Use this first when the active site adapter is nytimes and the user asks to read, summarize, extract, or answer questions about an NYTimes article. Omit url to use the active tab. If configuration is missing or the service cannot fetch the article, report that and fall back to the visible page without attempting paywall circumvention.",
+      "description": "Fallback fetch for the current or provided New York Times article through the public FreeSkillz service. Use only after inspecting the active page and confirming that the article body is unavailable because a subscription, login, or sign-in wall blocks it. If the signed-in browser can read the article, use the visible page and do not call this tool. Omit url to use the active tab. If the service cannot fetch the article, report that and use only the content visibly available without attempting paywall circumvention.",
       "kind": "http",
       "readOnly": true,
       "method": "POST",

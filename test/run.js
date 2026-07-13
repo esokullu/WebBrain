@@ -1348,6 +1348,9 @@ test('matches nytimes.com and scopes article-fetch guidance to that adapter', ()
   assert.equal(firefoxAdapter?.name, 'nytimes');
   assert.equal(firefoxAdapter?.notes, chromeAdapter?.notes);
   assert.match(chromeAdapter?.notes || '', /fetch_nytimes_article/);
+  assert.match(chromeAdapter?.notes || '', /If the article body is readable[\s\S]*do not call/i);
+  assert.match(chromeAdapter?.notes || '', /only as a fallback[\s\S]*subscription, login, or sign-in wall/i);
+  assert.doesNotMatch(chromeAdapter?.notes || '', /call `fetch_nytimes_article` first/i);
   assert.match(chromeAdapter?.notes || '', /untrusted article data/i);
   assert.notEqual(getActiveAdapter('https://nytimes.com.phishing.example/article')?.name, 'nytimes');
 });
@@ -5031,6 +5034,10 @@ test('getToolsForMode: skill tools are exposed only when enabled skills declare 
     assert.equal(nytimesAskNames.includes('fetch_nytimes_article'), true, `${label}: NYTimes adapter should expose its fetch tool in Ask`);
     assert.equal(nytimesActNames.includes('fetch_nytimes_article'), true, `${label}: NYTimes adapter should expose its fetch tool in Act`);
     assert.equal(youtubeAskNames.includes('fetch_nytimes_article'), false, `${label}: YouTube adapter must not expose the NYTimes tool`);
+    const nytimesDefinition = buildDefs(skills, { mode: 'ask', siteAdapter: 'nytimes' })
+      .find((tool) => tool.function?.name === 'fetch_nytimes_article');
+    assert.match(nytimesDefinition?.function?.description || '', /Use only after inspecting the active page/i, `${label}: NYTimes tool should be fallback-only`);
+    assert.match(nytimesDefinition?.function?.description || '', /signed-in browser can read the article[\s\S]*do not call/i, `${label}: readable signed-in pages should stay in-browser`);
 
   }
 });
