@@ -48,10 +48,10 @@ Claude 代码树部分经过打包/压缩。以下工具名称是根据 `toAnthr
 
 当前本地源代码中的静态核心工具：
 
-- Chrome：48 个核心工具。
-- Firefox：47 个核心工具。
-- Chrome 独有核心工具：`shadow_dom_query`、`upload_file`。
-- Firefox 独有核心工具：`execute_js`。
+- Chrome：57 个核心工具。
+- Firefox：48 个核心工具。
+- Chrome 独有核心工具：`shadow_dom_query`，以及可逆/诊断 Dev 工具 `inject_css`、`remove_injected_css`、`patch_element`、`revert_patch`、`read_console`、`inspect_network_requests`、`inspect_event_listeners` 和 `highlight_element`。
+- `execute_js` 为两者共有：Chrome Dev 使用 CDP 求值，Firefox Dev 使用 MV2 内容脚本求值器。
 - 动态技能工具可以在运行时添加更多模式，不计入上述数量。
 
 询问模式核心工具：
@@ -70,7 +70,9 @@ get_accessibility_tree, click_ax, type_ax, set_field, hover, drag_drop,
 read_page, read_pdf, read_page_source, get_window_info, resize_window,
 get_interactive_elements, click, type_text, press_keys, scroll, navigate,
 go_back, go_forward, extract_data, inspect_element_styles, wait_for_element,
-wait_for_stable, schedule_resume, schedule_task, get_selection, new_tab,
+inject_css, remove_injected_css, patch_element, revert_patch, execute_js,
+read_console, inspect_network_requests, inspect_event_listeners,
+highlight_element, wait_for_stable, schedule_resume, schedule_task, get_selection, new_tab,
 done, clarify, get_shadow_dom, shadow_dom_query, get_frames, iframe_read,
 iframe_click, iframe_type, fetch_url, research_url, list_downloads,
 read_downloaded_file, download_resource_from_page, download_files,
@@ -78,7 +80,7 @@ upload_file, scratchpad_write, progress_update, progress_read,
 verify_form, download_social_media, solve_captcha
 ```
 
-完整的 Firefox 工具列表与 Chrome 不同，用 `execute_js` 替换了 Chrome 独有的 `shadow_dom_query` 和 `upload_file`。
+Firefox 不包含 Chrome 独有的 Dev 工具和 `shadow_dom_query`；其余核心工具（包括仅限 Dev 的 `execute_js`）两者共有。
 
 ### WebBrain 工具族
 

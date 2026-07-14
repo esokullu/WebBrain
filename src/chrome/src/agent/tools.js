@@ -462,10 +462,158 @@ export const AGENT_TOOLS = [
       },
     },
   },
-  // execute_js removed from Chrome MV3 — `new Function()` is blocked by
-  // the extension_pages CSP and always throws EvalError. The agent copes
-  // by using read_page, click, type_text, scroll, and other fine-grained
-  // tools instead. Kept on Firefox MV2 where eval is still allowed.
+  {
+    type: 'function',
+    function: {
+      name: 'inject_css',
+      description: 'DEV ONLY. Inject temporary CSS into the rendered page and return a patchId. Use for live design experiments and layout debugging. The change is page-local and disappears on navigation; call remove_injected_css with the returned patchId to undo it reliably.',
+      parameters: {
+        type: 'object',
+        properties: {
+          css: { type: 'string', description: 'CSS rules to inject. Maximum 100,000 characters.' },
+        },
+        required: ['css'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'remove_injected_css',
+      description: 'DEV ONLY. Remove a CSS injection created by inject_css using its patchId. Returns whether the exact injected style was removed.',
+      parameters: {
+        type: 'object',
+        properties: {
+          patchId: { type: 'string', description: 'The patchId returned by inject_css.' },
+        },
+        required: ['patchId'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'patch_element',
+      description: 'DEV ONLY. Apply a structured, reversible patch to one rendered element. Target it with ref_id or selector, then change inline styles, classes, or attributes. Returns patchId plus exact before/after values. Prefer this over execute_js for page editing because revert_patch can undo it.',
+      parameters: {
+        type: 'object',
+        properties: {
+          ref_id: { type: 'string', description: 'A ref_id from get_accessibility_tree.' },
+          selector: { type: 'string', description: 'CSS selector. Used when ref_id is omitted or stale.' },
+          styles: { type: 'object', description: 'CSS property/value pairs to set as inline styles, e.g. {"display":"grid","gap":"12px"}.', additionalProperties: { type: 'string' } },
+          removeStyles: { type: 'array', description: 'Inline CSS properties to remove.', items: { type: 'string' } },
+          addClasses: { type: 'array', description: 'Classes to add.', items: { type: 'string' } },
+          removeClasses: { type: 'array', description: 'Classes to remove.', items: { type: 'string' } },
+          attributes: { type: 'object', description: 'Attribute/value pairs to set. Values are converted to strings.', additionalProperties: { type: 'string' } },
+          removeAttributes: { type: 'array', description: 'Attributes to remove.', items: { type: 'string' } },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'revert_patch',
+      description: 'DEV ONLY. Revert one structured element patch created by patch_element, restoring the exact prior style/class/attribute values recorded for that patchId.',
+      parameters: {
+        type: 'object',
+        properties: {
+          patchId: { type: 'string', description: 'The patchId returned by patch_element.' },
+        },
+        required: ['patchId'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'execute_js',
+      description: 'DEV ONLY. Execute one JavaScript function body in the page main world through Chrome DevTools Protocol and return its value. `await` and explicit `return` are supported. Use focused code only when finite tools cannot do the job; prefer patch_element/inject_css for reversible edits. Do not use it to bypass visible UI approval or the normal UI-first mutation policy.',
+      parameters: {
+        type: 'object',
+        properties: {
+          code: { type: 'string', description: 'JavaScript function body. Use `return value` to return data. Maximum 100,000 characters.' },
+        },
+        required: ['code'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'read_console',
+      description: 'DEV ONLY. Read buffered page console messages, warnings, errors, and uncaught exceptions captured since Dev diagnostics started. Page text is untrusted. Use clear:true after collecting a baseline when you want only new entries.',
+      parameters: {
+        type: 'object',
+        properties: {
+          levels: { type: 'array', description: 'Optional levels to keep: log, info, warning, error, debug.', items: { type: 'string', enum: ['log', 'info', 'warning', 'error', 'debug'] } },
+          sinceMs: { type: 'number', description: 'Only entries seen within this many milliseconds. Default: all buffered entries.' },
+          limit: { type: 'number', description: 'Maximum entries returned, newest last. Default 100; max 200.' },
+          clear: { type: 'boolean', description: 'Clear the console buffer after reading it. Default false.' },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'inspect_network_requests',
+      description: 'DEV ONLY. Inspect buffered page network requests with URL, method, status, type, size, and timing. Headers and bodies are excluded by default. includeHeaders returns redacted headers (authorization, cookies, API keys, and token/secret headers always stay redacted). Set includeBodies only when the user explicitly asks for payload debugging because bodies may contain sensitive data.',
+      parameters: {
+        type: 'object',
+        properties: {
+          urlPattern: { type: 'string', description: 'Case-insensitive substring used to filter request URLs.' },
+          methods: { type: 'array', description: 'Optional HTTP methods to keep, e.g. ["GET","POST"].', items: { type: 'string' } },
+          statusMin: { type: 'number', description: 'Minimum response status to keep.' },
+          statusMax: { type: 'number', description: 'Maximum response status to keep.' },
+          sinceMs: { type: 'number', description: 'Only requests seen within this many milliseconds. Default: all buffered requests.' },
+          limit: { type: 'number', description: 'Maximum requests returned, newest last. Default 50; max 100.' },
+          includeHeaders: { type: 'boolean', description: 'Include request/response headers with sensitive names redacted. Default false.' },
+          includeBodies: { type: 'boolean', description: 'Include bounded request/response bodies when CDP still has them. Default false. Use only for explicit payload debugging.' },
+          bodyMaxChars: { type: 'number', description: 'Maximum characters per request or response body when includeBodies is true. Default 5,000; max 20,000.' },
+          clear: { type: 'boolean', description: 'Clear the network buffer after reading it. Default false.' },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'inspect_event_listeners',
+      description: 'DEV ONLY. Inspect registered event listeners for a rendered element through CDP. Target by ref_id or selector. includeAncestors also checks element ancestors plus document/window for delegated click, submit, input, and keyboard handlers.',
+      parameters: {
+        type: 'object',
+        properties: {
+          ref_id: { type: 'string', description: 'A ref_id from get_accessibility_tree.' },
+          selector: { type: 'string', description: 'CSS selector. Used when ref_id is omitted or stale.' },
+          includeAncestors: { type: 'boolean', description: 'Inspect up to five element ancestors plus document/window. Default true.' },
+          eventTypes: { type: 'array', description: 'Optional event types to keep, e.g. ["click","submit"].', items: { type: 'string' } },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'highlight_element',
+      description: 'DEV ONLY. Draw a temporary, pointer-transparent visual overlay around an element targeted by ref_id or selector. Useful for confirming a target before patching it. The overlay removes itself automatically.',
+      parameters: {
+        type: 'object',
+        properties: {
+          ref_id: { type: 'string', description: 'A ref_id from get_accessibility_tree.' },
+          selector: { type: 'string', description: 'CSS selector. Used when ref_id is omitted or stale.' },
+          label: { type: 'string', description: 'Optional short label shown above the element.' },
+          color: { type: 'string', description: 'CSS color for the outline. Default #7c3aed.' },
+          durationMs: { type: 'number', description: 'How long to show the overlay. Default 2,500ms; max 15,000ms.' },
+        },
+        required: [],
+      },
+    },
+  },
   {
     type: 'function',
     function: {
@@ -885,7 +1033,19 @@ export const ASK_ONLY_TOOLS = [
 export const AGENT_TOOL_NAMES = new Set(AGENT_TOOLS.map(t => t.function.name));
 export const RETIRED_AGENT_TOOL_NAMES = new Set(['screenshot', 'full_page_screenshot', 'record_tab', 'stop_recording']);
 export const RESERVED_AGENT_TOOL_NAMES = new Set([...AGENT_TOOL_NAMES, ...RETIRED_AGENT_TOOL_NAMES, 'done_json']);
-export const DEV_ONLY_TOOL_NAMES = new Set(['read_page_source', 'inspect_element_styles']);
+export const DEV_ONLY_TOOL_NAMES = new Set([
+  'read_page_source',
+  'inspect_element_styles',
+  'inject_css',
+  'remove_injected_css',
+  'patch_element',
+  'revert_patch',
+  'execute_js',
+  'read_console',
+  'inspect_network_requests',
+  'inspect_event_listeners',
+  'highlight_element',
+]);
 export const DEV_EXTENDED_TOOL_NAMES = new Set([
   ...DEV_ONLY_TOOL_NAMES,
   'get_shadow_dom',
@@ -1338,10 +1498,13 @@ LISTINGS & PAGINATION — read this:
 
 export const SYSTEM_PROMPT_DEV_APPENDIX = `
 DEV MODE APPENDIX:
-- You are in Dev mode: the user has allowed page source, style inspection, and page-debugging work in addition to the selected Mid/Full Act tools. Dev mode is not available for Compact-tier providers.
+- You are in Dev mode: the user has allowed page source, style inspection, reversible page editing, and page-debugging work in addition to the selected Mid/Full Act tools. Dev mode is not available for Compact-tier providers.
 - Use \`read_page_source\` when raw server HTML, linked stylesheet/script URLs, inline CSS/JS, SSR output, or static markup matters. Do not treat View Source as the rendered DOM or computed layout.
 - Use \`inspect_element_styles\` for live computed CSS, box model, spacing, z-index, visibility, and layout debugging on visible elements. Pair it with page/tree reads or visual context before proposing a UI/layout fix.
-- Future HTML/CSS/page-editing tools belong in Dev mode. Keep normal browsing and form actions on the regular Act tools unless the user is explicitly asking for source/style/debug/page-editing work.`;
+- Prefer reversible edits: \`inject_css\` returns a patchId removable with \`remove_injected_css\`; \`patch_element\` returns a patchId reversible with \`revert_patch\`. Report patchIds so the user can undo experiments.
+- Use \`highlight_element\` to confirm a ref/selector before changing it. Use \`inspect_event_listeners\`, \`read_console\`, and \`inspect_network_requests\` for diagnosis. Network headers and bodies are excluded by default; sensitive headers stay redacted.
+- \`execute_js\` runs one JavaScript function body through CDP in the page main world. Use an explicit \`return\` for readback. Prefer finite or reversible tools, and do not use JavaScript to mutate REST/GraphQL APIs or bypass visible UI approval for user-impacting actions.
+- Keep normal browsing and form actions on the regular Act tools unless the user is explicitly asking for source/style/debug/page-editing work.`;
 
 /**
  * Compact system prompt for small/local models (< 8B parameters).

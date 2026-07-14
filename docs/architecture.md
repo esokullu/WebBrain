@@ -184,6 +184,11 @@ while (steps < maxSteps) {
 | `read_pdf` | pdf-tools.js | Service worker |
 | `scratchpad_write` | agent.js — in-memory pinned note | Service worker |
 | `read_page_source`, `inspect_element_styles` | agent/content helpers | Dev-only source/style inspection |
+| `inject_css`, `remove_injected_css` | `chrome.scripting.insertCSS/removeCSS` + session patch metadata | Chrome Dev-only reversible CSS |
+| `patch_element`, `revert_patch`, `highlight_element` | content-script Dev helpers | Chrome Dev-only structured DOM edits / overlay |
+| `execute_js` | CDP `Runtime.evaluate` (Chrome) / content script (Firefox) | Dev-only page JavaScript |
+| `read_console`, `inspect_network_requests` | bounded CDP Runtime/Log/Network buffers | Chrome Dev-only diagnostics |
+| `inspect_event_listeners` | content target marker + CDP `DOMDebugger.getEventListeners` | Chrome Dev-only listener diagnosis |
 | `get_shadow_dom`, `shadow_dom_query`, `get_frames` | content/CDP helpers | Full Act advanced fallbacks; also added to Mid in Dev mode |
 
 ### Step 6a: Skills and Dynamic Tool Exposure
@@ -435,7 +440,9 @@ MV3 service workers can die between turns. Conversations are persisted to `chrom
 | Offscreen document | Yes (fetch proxy + recorder) | Not available |
 | Trace recorder | IndexedDB (opt-in) | IndexedDB (opt-in) — same `trace/recorder.js` |
 | Duplicate-submit guard | Yes | Not available |
-| `execute_js` | Not model-callable in Chrome | Firefox Dev mode only |
+| `execute_js` | Dev mode through CDP `Runtime.evaluate` | Dev mode through the MV2 content-script evaluator |
+| Reversible Dev patches | CSS + structured element patches with patch IDs | Not yet available |
+| Console/network/listener diagnostics | Bounded CDP-backed Dev tools | Not yet available |
 | Shadow DOM piercing | CDP for closed roots; `shadow_dom_query` is Chrome-only | Open roots only |
 | Localhost CORS | Offscreen proxy fallback | Server must set CORS headers |
 | API shortcut observer | `chrome.webRequest` URL/method buffer | `browser.webRequest` URL/method buffer |

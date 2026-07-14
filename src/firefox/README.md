@@ -145,7 +145,7 @@ Key difference: Chrome uses Manifest V3 (service worker, `chrome.scripting`, `si
 | `type_text` | No | Yes | Type into input fields |
 | `navigate` | No | Yes | Go to a URL |
 | `wait_for_element` | No | Yes | Wait for a selector to appear |
-| `execute_js` | No | Yes | Run custom JavaScript |
+| `execute_js` | No | Dev only | Run custom JavaScript |
 | `new_tab` | No | Yes | Open a new tab |
 | `done` | Yes | Yes | Signal task completion |
 

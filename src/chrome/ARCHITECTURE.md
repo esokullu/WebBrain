@@ -412,7 +412,9 @@ tier:
   `clarify`, `read_page_source`, `inspect_element_styles`, and action tools.
 - **Act**: the selected provider tier's normal browser-agent tools.
 - **Dev**: Mid/Full only. Uses the selected Act tier, then adds source/style
-  tools and Dev-extended shadow/frame inspection. Compact Dev is blocked.
+  inspection, reversible CSS/DOM patches, CDP JavaScript/console/network/event
+  diagnostics, temporary element highlighting, and Dev-extended shadow/frame
+  inspection. Compact Dev is blocked.
 
 ### Core page reading
 `get_accessibility_tree`, `read_page`, `read_pdf`, `get_window_info`, `get_interactive_elements`, `get_selection`, `extract_data`, `wait_for_stable`
@@ -422,7 +424,7 @@ tier:
 
 Full Act also adds advanced UI/DOM fallbacks: `resize_window`, `hover` (CDP-trusted, for reveal-on-hover menus), `drag_drop` (CDP-trusted pointer sequence, for Trello/Linear-style reordering), `get_shadow_dom`, `shadow_dom_query`, and `get_frames`. Mid Dev gets the shadow/frame inspection tools as Dev-extended debugging tools, but not hover/drag-drop.
 
-> **Note:** `execute_js` was removed from the Chrome/Edge MV3 tool schema — `new Function()` is blocked by the extension_pages CSP and always throws EvalError. The agent uses `read_page`, `click`, `type_text`, `scroll`, and other fine-grained tools instead. `execute_js` is available only as a Firefox Dev add-on.
+> **Note:** Chrome/Edge Dev mode implements `execute_js` with CDP `Runtime.evaluate`, not content-script `eval`/`new Function()`. That keeps the MV3 extension-page CSP intact while allowing one-shot page-main-world evaluation. The tool remains absent from Ask and normal Act, is host-permission gated, and receives a fresh submit confirmation because arbitrary page JavaScript can submit forms.
 
 ### Network / files
 `fetch_url`, `research_url`, `list_downloads`, `read_downloaded_file`, `download_resource_from_page`, `download_files`, `download_social_media`
@@ -431,7 +433,7 @@ Full Act also adds advanced UI/DOM fallbacks: `resize_window`, `hover` (CDP-trus
 `verify_form`, `clarify`, `done`, `schedule_resume`, `schedule_task`, `scratchpad_write`, `progress_update`, `progress_read`, `solve_captcha`
 
 ### Dev add-ons
-`read_page_source` and `inspect_element_styles` are Dev-only: they do not appear in Ask or normal Act. Future HTML/CSS editing/debugging tools should attach to Dev mode unless they are normal browser-operation tools.
+`read_page_source`, `inspect_element_styles`, `inject_css`, `remove_injected_css`, `patch_element`, `revert_patch`, `execute_js`, `read_console`, `inspect_network_requests`, `inspect_event_listeners`, and `highlight_element` are Dev-only: they do not appear in Ask or normal Act. CSS injection uses `chrome.scripting.insertCSS/removeCSS` and persists its patch metadata in `chrome.storage.session`; structured element patches keep exact before/after values in the page's content-script world. Console and network capture start when a Dev run attaches, use bounded buffers, omit headers/bodies by default, and redact sensitive headers before storage.
 
 ---
 
@@ -443,6 +445,10 @@ Full Act also adds advanced UI/DOM fallbacks: `resize_window`, `hover` (CDP-trus
 |---|---|---|
 | Screenshot | `Page.captureScreenshot` | Viewport + full-page |
 | Click | `Input.dispatchMouseEvent` | Trusted mouse events |
+| JavaScript evaluation | `Runtime.evaluate` | Dev-only one-shot async function bodies |
+| Console diagnostics | `Runtime.consoleAPICalled`, `Runtime.exceptionThrown`, `Log.entryAdded` | Bounded Dev console/error buffer |
+| Network diagnostics | `Network.*` events and bounded body reads | Dev request/status/timing inspection |
+| Event listeners | `DOMDebugger.getEventListeners` | Listener inspection for ref/selector targets |
 | Keyboard | `Input.dispatchKeyEvent` | Trusted keystrokes |
 | Evaluate | `Runtime.evaluate` | Run code in page context |
 | DOM query | `DOM.*` | Shadow DOM piercing |

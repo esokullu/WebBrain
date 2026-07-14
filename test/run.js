@@ -5015,6 +5015,12 @@ test('getToolsForMode: mode/tier redesign exposes the intended normal and Dev to
     assert.equal(devMid.includes('inspect_element_styles'), true, `[${label}] dev mid should expose inspect_element_styles`);
     assert.equal(devFull.includes('read_page_source'), true, `[${label}] dev full should expose read_page_source`);
     assert.equal(devFull.includes('inspect_element_styles'), true, `[${label}] dev full should expose inspect_element_styles`);
+    assert.equal(ask.includes('execute_js'), false, `[${label}] ask must not expose execute_js`);
+    assert.equal(compact.includes('execute_js'), false, `[${label}] compact act must not expose execute_js`);
+    assert.equal(mid.includes('execute_js'), false, `[${label}] mid act must not expose execute_js`);
+    assert.equal(full.includes('execute_js'), false, `[${label}] full act must not expose execute_js`);
+    assert.equal(devMid.includes('execute_js'), true, `[${label}] dev mid should expose execute_js`);
+    assert.equal(devFull.includes('execute_js'), true, `[${label}] dev full should expose execute_js`);
 
     assert.equal(mid.includes('upload_file'), true, `[${label}] mid act should expose upload_file`);
     assert.equal(full.includes('upload_file'), true, `[${label}] full act should expose upload_file`);
@@ -5023,15 +5029,11 @@ test('getToolsForMode: mode/tier redesign exposes the intended normal and Dev to
       assert.equal(mid.includes('shadow_dom_query'), false, '[chrome] mid act should not expose shadow_dom_query');
       assert.equal(devMid.includes('shadow_dom_query'), true, '[chrome] dev mid should add shadow_dom_query');
       assert.equal(devFull.includes('shadow_dom_query'), true, '[chrome] dev full should keep shadow_dom_query');
-      assert.equal(devFull.includes('execute_js'), false, '[chrome] Dev must not expose execute_js');
     } else {
       assert.equal(full.includes('shadow_dom_query'), false, '[firefox] shadow_dom_query is Chrome-only');
       assert.equal(mid.includes('shadow_dom_query'), false, '[firefox] shadow_dom_query is Chrome-only');
       assert.equal(devMid.includes('shadow_dom_query'), false, '[firefox] Dev must not invent Chrome-only shadow_dom_query');
       assert.equal(devFull.includes('shadow_dom_query'), false, '[firefox] Dev must not invent Chrome-only shadow_dom_query');
-      assert.equal(full.includes('execute_js'), false, '[firefox] full act must not expose execute_js');
-      assert.equal(devMid.includes('execute_js'), true, '[firefox] dev mid should expose execute_js');
-      assert.equal(devFull.includes('execute_js'), true, '[firefox] dev full should expose execute_js');
     }
   }
 });
@@ -5082,7 +5084,7 @@ test('test/llm payload builders support Dev mode and preserve Ask cleanup', () =
   const chromeDevMidNames = new Set(chromeDevMid.tools.map(t => t.function.name));
   assert.match(chromeDevMid.messages[0].content, /DEV MODE APPENDIX/);
   assert.match(chromeDevMid.messages[0].content, /\bread_page_source\b/);
-  for (const name of ['read_page_source', 'inspect_element_styles', 'get_shadow_dom', 'get_frames', 'shadow_dom_query']) {
+  for (const name of ['read_page_source', 'inspect_element_styles', 'get_shadow_dom', 'get_frames', 'shadow_dom_query', 'inject_css', 'remove_injected_css', 'patch_element', 'revert_patch', 'execute_js', 'read_console', 'inspect_network_requests', 'inspect_event_listeners', 'highlight_element']) {
     assert.equal(chromeDevMidNames.has(name), true, `chrome dev mid should include ${name}`);
   }
   assert.equal(chromeDevMidNames.has('hover'), false, 'chrome dev mid should not inherit full-only hover');
@@ -5093,7 +5095,7 @@ test('test/llm payload builders support Dev mode and preserve Ask cleanup', () =
     useSiteAdapters: false,
   });
   const chromeDevFullNames = new Set(chromeDevFull.tools.map(t => t.function.name));
-  for (const name of ['read_page_source', 'inspect_element_styles', 'get_shadow_dom', 'get_frames', 'shadow_dom_query', 'hover', 'drag_drop']) {
+  for (const name of ['read_page_source', 'inspect_element_styles', 'get_shadow_dom', 'get_frames', 'shadow_dom_query', 'hover', 'drag_drop', 'inject_css', 'remove_injected_css', 'patch_element', 'revert_patch', 'execute_js', 'read_console', 'inspect_network_requests', 'inspect_event_listeners', 'highlight_element']) {
     assert.equal(chromeDevFullNames.has(name), true, `chrome dev full should include ${name}`);
   }
 
@@ -7069,7 +7071,7 @@ test('agent rebuilds stale hydrated system prompts before the next turn', () => 
   }
 });
 
-test('Chrome model-facing tools and prompts do not advertise execute_js', () => {
+test('Chrome execute_js and page-debugging tools are exposed only in Dev mode', () => {
   const chromePromptTexts = [
     ['ask', SYSTEM_PROMPT_ASK_CH],
     ['act:full', SYSTEM_PROMPT_ACT_CH],
@@ -7080,25 +7082,32 @@ test('Chrome model-facing tools and prompts do not advertise execute_js', () => 
     assert.doesNotMatch(prompt, /\bexecute_js\b/, `chrome ${label} prompt must not mention execute_js`);
   }
 
-  const chromeToolSets = [
+  const normalChromeToolSets = [
     ['ask', getToolsForModeCh('ask')],
     ['act:full', getToolsForModeCh('act')],
     ['act:mid', getToolsForModeCh('act', { tier: 'mid' })],
     ['act:compact', getToolsForModeCh('act', { tier: 'compact' })],
-    ['dev:full', getToolsForModeCh('dev')],
-    ['dev:mid', getToolsForModeCh('dev', { tier: 'mid' })],
   ];
-  for (const [label, tools] of chromeToolSets) {
+  const chromeDevTools = ['inject_css', 'remove_injected_css', 'patch_element', 'revert_patch', 'execute_js', 'read_console', 'inspect_network_requests', 'inspect_event_listeners', 'highlight_element'];
+  for (const [label, tools] of normalChromeToolSets) {
     const names = tools.map(t => t.function?.name).filter(Boolean);
-    assert.equal(names.includes('execute_js'), false, `chrome ${label} tools must not expose execute_js`);
-    for (const tool of tools) {
-      assert.doesNotMatch(
-        JSON.stringify(tool.function),
-        /\bexecute_js\b/,
-        `chrome ${label} tool ${tool.function?.name} must not mention execute_js`
-      );
+    for (const name of chromeDevTools) {
+      assert.equal(names.includes(name), false, `chrome ${label} tools must not expose ${name}`);
     }
   }
+  for (const [label, tools] of [
+    ['dev:full', getToolsForModeCh('dev')],
+    ['dev:mid', getToolsForModeCh('dev', { tier: 'mid' })],
+  ]) {
+    const names = tools.map(t => t.function?.name).filter(Boolean);
+    for (const name of chromeDevTools) {
+      assert.equal(names.includes(name), true, `chrome ${label} tools should expose ${name}`);
+    }
+  }
+  assert.match(SYSTEM_PROMPT_DEV_APPENDIX_CH, /\bexecute_js\b/);
+  assert.match(SYSTEM_PROMPT_DEV_APPENDIX_CH, /\binject_css\b/);
+  assert.match(SYSTEM_PROMPT_DEV_APPENDIX_CH, /\bpatch_element\b/);
+  assert.match(SYSTEM_PROMPT_DEV_APPENDIX_CH, /\binspect_network_requests\b/);
 });
 
 test('Firefox execute_js is exposed only as a Dev add-on', () => {
@@ -12098,6 +12107,268 @@ test('probeLocalFile uses a detached isolated input for validation', async () =>
   );
   assert.ok(commands.some(c => c.method === 'Runtime.releaseObject'), 'probe object should be released');
   assert.equal(commands.some(c => c.method === 'DOM.resolveNode'), false);
+});
+
+test('Chrome execute_js runs through CDP as an async function body and reports exceptions', async () => {
+  const originalEnable = cdpClientCh.enableDevDiagnostics;
+  const originalEvaluate = cdpClientCh.evaluate;
+  const calls = [];
+  try {
+    cdpClientCh.enableDevDiagnostics = async (tabId) => {
+      calls.push({ kind: 'enable', tabId });
+      return {};
+    };
+    cdpClientCh.evaluate = async (tabId, expression, returnByValue) => {
+      calls.push({ kind: 'evaluate', tabId, expression, returnByValue });
+      return { result: { type: 'object', value: { ok: true, count: 2 }, description: 'Object' } };
+    };
+
+    const agent = new AgentCh({});
+    const success = await agent.executeTool(77, 'execute_js', { code: 'await Promise.resolve(); return { ok: true, count: 2 };' });
+    assert.equal(success.success, true);
+    assert.deepEqual(success.result, { ok: true, count: 2 });
+    assert.equal(success.resultType, 'object');
+    assert.equal(calls[0].kind, 'enable');
+    assert.equal(calls[1].returnByValue, true);
+    assert.match(calls[1].expression, /^\(async \(\) => \{/);
+    assert.match(calls[1].expression, /await Promise\.resolve\(\); return \{ ok: true, count: 2 \};/);
+    assert.match(calls[1].expression, /sourceURL=webbrain-dev-execute\.js/);
+
+    cdpClientCh.evaluate = async () => ({
+      result: { type: 'object', subtype: 'error', description: 'Error: boom' },
+      exceptionDetails: {
+        text: 'Uncaught (in promise)',
+        lineNumber: 4,
+        columnNumber: 2,
+        exception: { description: 'Error: boom' },
+        stackTrace: { callFrames: [{ functionName: 'test', url: 'https://example.com/app.js', lineNumber: 3, columnNumber: 1 }] },
+      },
+    });
+    const failed = await agent.executeTool(77, 'execute_js', { code: 'throw new Error("boom")' });
+    assert.equal(failed.success, false);
+    assert.match(failed.error, /Error: boom/);
+    assert.equal(failed.exception.line, 5);
+    assert.equal(failed.exception.stack[0].line, 4);
+
+    const blank = await agent.executeTool(77, 'execute_js', { code: '   ' });
+    assert.equal(blank.success, false);
+    assert.match(blank.error, /code.*required/i);
+  } finally {
+    cdpClientCh.enableDevDiagnostics = originalEnable;
+    cdpClientCh.evaluate = originalEvaluate;
+  }
+});
+
+test('inspect_event_listeners resolves marked ref targets through CDP and always removes markers', async () => {
+  const originals = {
+    enable: cdpClientCh.enableDevDiagnostics,
+    find: cdpClientCh.findNodeByAttribute,
+    node: cdpClientCh.getEventListenersForNode,
+    expression: cdpClientCh.getEventListenersForExpression,
+  };
+  const contentCalls = [];
+  try {
+    cdpClientCh.enableDevDiagnostics = async () => ({});
+    cdpClientCh.findNodeByAttribute = async (tabId, name, value) => {
+      assert.equal(tabId, 78);
+      assert.equal(name, 'data-webbrain-dev-target');
+      return { nodeId: value.endsWith('_0') ? 101 : 102 };
+    };
+    cdpClientCh.getEventListenersForNode = async (tabId, nodeId, relation, eventTypes) => [{
+      relation,
+      type: eventTypes.has('click') ? 'click' : 'unknown',
+      nodeId,
+    }];
+    cdpClientCh.getEventListenersForExpression = async (tabId, expression, relation) => [{ relation, type: expression === 'document' ? 'click' : 'resize' }];
+
+    const agent = new AgentCh({});
+    agent._sendDevContentAction = async (tabId, action, params) => {
+      contentCalls.push({ tabId, action, params });
+      if (action === 'dev_mark_targets') {
+        return {
+          success: true,
+          groupId: 'wb_target_test',
+          targetMethod: 'ref_id',
+          targets: [
+            { marker: 'wb_target_test_0', relation: 'target', tag: 'button', id: 'save', path: 'button#save' },
+            { marker: 'wb_target_test_1', relation: 'ancestor_1', tag: 'form', id: '', path: 'form' },
+          ],
+          warnings: [],
+        };
+      }
+      return { success: true };
+    };
+
+    const result = await agent.executeTool(78, 'inspect_event_listeners', {
+      ref_id: 'ref_9',
+      includeAncestors: true,
+      eventTypes: ['click'],
+    });
+    assert.equal(result.success, true);
+    assert.equal(result.count, 4);
+    assert.equal(result.listeners[0].relation, 'target');
+    assert.equal(result.listeners[1].relation, 'ancestor_1');
+    assert.equal(contentCalls[0].action, 'dev_mark_targets');
+    assert.deepEqual(contentCalls.at(-1), {
+      tabId: 78,
+      action: 'dev_unmark_targets',
+      params: { groupId: 'wb_target_test' },
+    });
+  } finally {
+    cdpClientCh.enableDevDiagnostics = originals.enable;
+    cdpClientCh.findNodeByAttribute = originals.find;
+    cdpClientCh.getEventListenersForNode = originals.node;
+    cdpClientCh.getEventListenersForExpression = originals.expression;
+  }
+});
+
+test('CDP Dev diagnostics buffer console/network data and redact sensitive headers', async () => {
+  const cdp = new CDPClient();
+  const commands = [];
+  cdp.attach = async (tabId) => {
+    cdp.sessions.set(tabId, { tabId, attached: true });
+    return cdp.sessions.get(tabId);
+  };
+  cdp.sendCommand = async (tabId, method, params = {}) => {
+    commands.push({ tabId, method, params });
+    return {};
+  };
+
+  await cdp.enableDevDiagnostics(88);
+  const handlers = cdp.eventHandlers.get(88);
+  for (const handler of handlers['Runtime.consoleAPICalled']) {
+    handler({
+      type: 'warning',
+      timestamp: 123,
+      args: [{ type: 'string', value: 'layout warning' }],
+      stackTrace: { callFrames: [{ url: 'https://example.com/app.js', lineNumber: 9, columnNumber: 2, functionName: 'render' }] },
+    });
+  }
+  for (const handler of handlers['Network.requestWillBeSent']) {
+    handler({
+      requestId: 'req-1',
+      loaderId: 'loader-1',
+      timestamp: 10,
+      type: 'Fetch',
+      documentURL: 'https://example.com/',
+      initiator: { type: 'script' },
+      request: {
+        url: 'https://example.com/api/items',
+        method: 'POST',
+        headers: { Authorization: 'Bearer secret', Cookie: 'sid=secret', Accept: 'application/json', 'X-Trace': 'abc' },
+      },
+    });
+  }
+  for (const handler of handlers['Network.responseReceived']) {
+    handler({
+      requestId: 'req-1',
+      response: {
+        status: 201,
+        statusText: 'Created',
+        mimeType: 'application/json',
+        protocol: 'h2',
+        headers: { 'Set-Cookie': 'sid=next', 'Content-Type': 'application/json' },
+      },
+    });
+  }
+  for (const handler of handlers['Network.loadingFinished']) {
+    handler({ requestId: 'req-1', encodedDataLength: 321 });
+  }
+
+  const consoleResult = await cdp.readConsole(88, {});
+  assert.equal(consoleResult.count, 1);
+  assert.equal(consoleResult.entries[0].level, 'warning');
+  assert.equal(consoleResult.entries[0].text, 'layout warning');
+  assert.equal(consoleResult.entries[0].location.line, 10);
+
+  const defaultNetwork = await cdp.inspectNetworkRequests(88, {});
+  assert.equal(defaultNetwork.count, 1);
+  assert.equal(defaultNetwork.includesHeaders, false);
+  assert.equal(defaultNetwork.includesBodies, false);
+  assert.equal(Object.hasOwn(defaultNetwork.requests[0], 'requestHeaders'), false);
+  assert.equal(Object.hasOwn(defaultNetwork.requests[0], 'requestBody'), false);
+
+  const withHeaders = await cdp.inspectNetworkRequests(88, { includeHeaders: true });
+  assert.equal(withHeaders.requests[0].requestHeaders.Authorization, '[REDACTED]');
+  assert.equal(withHeaders.requests[0].requestHeaders.Cookie, '[REDACTED]');
+  assert.equal(withHeaders.requests[0].requestHeaders.Accept, 'application/json');
+  assert.equal(withHeaders.requests[0].responseHeaders['Set-Cookie'], '[REDACTED]');
+  assert.equal(withHeaders.sensitiveHeadersRedacted, true);
+  assert.ok(commands.some(command => command.method === 'Runtime.enable'));
+  assert.ok(commands.some(command => command.method === 'Network.enable'));
+});
+
+test('Chrome Dev patch handlers keep page-local undo state and avoid MV3 eval', () => {
+  const source = fs.readFileSync(path.join(ROOT, 'src/chrome/src/content/content.js'), 'utf8');
+  const agentSource = fs.readFileSync(path.join(ROOT, 'src/chrome/src/agent/agent.js'), 'utf8');
+  assert.match(source, /const devPatchRegistry = new Map\(\)/);
+  assert.match(source, /name: change\.name, expected: change\.after, current/);
+  assert.match(source, /'patch_element': \(\) => patchDevElement/);
+  assert.match(source, /'revert_patch': \(\) => revertDevElementPatch/);
+  assert.match(source, /'highlight_element': \(\) => highlightDevElement/);
+  assert.doesNotMatch(source, /new Function\(msg\.params\.code\)/);
+  assert.match(agentSource, /chrome\.scripting\.insertCSS\(\{ target: \{ tabId \}, css, origin: 'AUTHOR' \}\)/);
+  assert.match(agentSource, /chrome\.scripting\.removeCSS\(\{ target: \{ tabId \}, css: patch\.css, origin: 'AUTHOR' \}\)/);
+  assert.match(agentSource, /chrome\.storage\.session\.set\(\{ \[this\._devCssPatchStorageKey\(patchId\)\]: patch \}\)/);
+});
+
+test('inject_css returns a persisted patchId that remove_injected_css can undo after agent restart', async () => {
+  const originalChrome = globalThis.chrome;
+  const session = {};
+  const inserted = [];
+  const removed = [];
+  try {
+    globalThis.chrome = {
+      scripting: {
+        insertCSS: async (details) => { inserted.push(details); },
+        removeCSS: async (details) => { removed.push(details); },
+      },
+      tabs: {
+        get: async (tabId) => ({ id: tabId, url: 'https://example.com/editor' }),
+      },
+      storage: {
+        session: {
+          set: async (values) => { Object.assign(session, values); },
+          get: async (key) => ({ [key]: session[key] }),
+          remove: async (key) => { delete session[key]; },
+        },
+      },
+    };
+
+    const css = '.card { outline: 2px solid rebeccapurple; }';
+    const firstAgent = new AgentCh({});
+    const injected = await firstAgent.executeTool(91, 'inject_css', { css });
+    assert.equal(injected.success, true);
+    assert.match(injected.patchId, /^wb_css_/);
+    assert.deepEqual(inserted, [{ target: { tabId: 91 }, css, origin: 'AUTHOR' }]);
+    assert.equal(injected.persistedForWorkerRestart, true);
+
+    const restartedAgent = new AgentCh({});
+    const reverted = await restartedAgent.executeTool(91, 'remove_injected_css', { patchId: injected.patchId });
+    assert.equal(reverted.success, true);
+    assert.deepEqual(removed, [{ target: { tabId: 91 }, css, origin: 'AUTHOR' }]);
+    assert.equal(Object.keys(session).length, 0);
+  } finally {
+    if (originalChrome === undefined) delete globalThis.chrome;
+    else globalThis.chrome = originalChrome;
+  }
+});
+
+test('Chrome Dev mutation and state-change classifications cover the new toolkit', () => {
+  for (const name of ['inject_css', 'remove_injected_css', 'patch_element', 'revert_patch']) {
+    assert.equal(capabilityForCh(name, {}), CapabilityCh.DEV_PATCH, `${name} should require the Dev patch capability`);
+    assert.equal(AgentCh.STATE_CHANGE_TOOLS.has(name), true, `${name} should trigger state-change screenshots`);
+  }
+  for (const name of ['patch_element', 'revert_patch']) {
+    assert.equal(UNTRUSTED_CONTENT_TOOLS_CH.has(name), true, `${name} should wrap page-derived target/change data`);
+  }
+  assert.equal(AgentCh.STATE_CHANGE_TOOLS.has('execute_js'), true);
+  assert.equal(AgentCh.NAV_PRONE_TOOLS.has('execute_js'), true);
+  assert.equal(AgentFx.STATE_CHANGE_TOOLS.has('execute_js'), true);
+  for (const name of ['read_console', 'inspect_network_requests', 'inspect_event_listeners', 'highlight_element']) {
+    assert.equal(capabilityForCh(name, {}), null, `${name} should remain read-only/temporary and ungated`);
+    assert.equal(UNTRUSTED_CONTENT_TOOLS_CH.has(name), true, `${name} should be wrapped as page-derived content`);
+  }
 });
 
 test('HLS implicit-IV derivation does not 32-bit-truncate the media sequence', () => {

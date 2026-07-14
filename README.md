@@ -257,7 +257,15 @@ WebBrain separates model tier from conversation mode:
 | `get_shadow_dom` | No | No | No | Yes | Yes |
 | `shadow_dom_query` | No | No | No | Chrome | Chrome |
 | `get_frames` | No | No | No | Yes | Yes |
-| `execute_js` | No | No | No | No | Firefox |
+| `inject_css` | No | No | No | No | Chrome |
+| `remove_injected_css` | No | No | No | No | Chrome |
+| `patch_element` | No | No | No | No | Chrome |
+| `revert_patch` | No | No | No | No | Chrome |
+| `execute_js` | No | No | No | No | Chrome / Firefox |
+| `read_console` | No | No | No | No | Chrome |
+| `inspect_network_requests` | No | No | No | No | Chrome |
+| `inspect_event_listeners` | No | No | No | No | Chrome |
+| `highlight_element` | No | No | No | No | Chrome |
 
 Enabled skills can append additional tool schemas at runtime. For example,
 the bundled FreeSkillz.xyz skill exposes `read_youtube_transcript` for YouTube
@@ -266,7 +274,7 @@ media URLs. These skill tools are not hard-coded in the static table above:
 if the skill is removed or renamed, the tool disappears or appears under the
 manifest's declared name.
 
-Dev Add-on tools are only exposed in Dev mode, and Dev mode is blocked for Compact-tier providers.
+Dev Add-on tools are only exposed in Dev mode, and Dev mode is blocked for Compact-tier providers. Chrome's reversible editing tools return patch IDs: `inject_css` pairs with `remove_injected_css`, and `patch_element` pairs with `revert_patch`.
 
 **Compact tier** is a reduced normal-tool set + shorter system prompt designed for smaller local models. **Mid tier** keeps common task tools, iframe support, downloads, scheduling, and form verification while avoiding advanced DOM/UI fallbacks. **Full tier** adds advanced browser-operation tools such as hover, drag-drop, frames, and shadow DOM. Enable the tier per provider in Settings.
 

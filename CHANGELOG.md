@@ -8,9 +8,11 @@ This changelog was generated from the repository Git history and release tags. V
 
 ### Added
 - Added an opt-in packaged Mail.tm disposable email skill for Chrome and Firefox, available from Settings with explicit confirmation, honest session-retention guidance, automatic account cleanup, and visible provider attribution.
+- Added nine Chrome Dev-mode tools for reversible CSS/DOM experiments and page diagnosis: `inject_css`, `remove_injected_css`, `patch_element`, `revert_patch`, CDP-backed `execute_js`, `read_console`, `inspect_network_requests`, `inspect_event_listeners`, and `highlight_element`.
 
 ### Tests
 - Added packaged-skill catalog, opt-in Settings, and Mail.tm safety/API cleanup coverage.
+- Added Dev-only exposure, CDP execution/diagnostic buffering, sensitive-header redaction, reversible CSS patch persistence, permission classification, and state-change coverage for the new Chrome Dev toolkit.
 
 ## [23.0.2] - 2026-07-13
 

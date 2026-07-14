@@ -54,10 +54,10 @@ latéral.
 
 Outils statiques de base actuels de la source locale :
 
-- Chrome : 48 outils de base.
-- Firefox : 47 outils de base.
-- Outils de base Chrome uniquement : `shadow_dom_query`, `upload_file`.
-- Outil de base Firefox uniquement : `execute_js`.
+- Chrome : 57 outils de base.
+- Firefox : 48 outils de base.
+- Outils de base Chrome uniquement : `shadow_dom_query` ainsi que les outils Dev réversibles/de diagnostic `inject_css`, `remove_injected_css`, `patch_element`, `revert_patch`, `read_console`, `inspect_network_requests`, `inspect_event_listeners` et `highlight_element`.
+- `execute_js` est partagé : Chrome Dev utilise l'évaluation CDP et Firefox Dev son évaluateur de script de contenu MV2.
 - Les outils de compétences dynamiques peuvent ajouter d'autres schémas à l'exécution et ne sont pas inclus dans ces décomptes.
 
 Outils de base du mode Demander :
@@ -76,7 +76,9 @@ get_accessibility_tree, click_ax, type_ax, set_field, hover, drag_drop,
 read_page, read_pdf, read_page_source, get_window_info, resize_window,
 get_interactive_elements, click, type_text, press_keys, scroll, navigate,
 go_back, go_forward, extract_data, inspect_element_styles, wait_for_element,
-wait_for_stable, schedule_resume, schedule_task, get_selection, new_tab,
+inject_css, remove_injected_css, patch_element, revert_patch, execute_js,
+read_console, inspect_network_requests, inspect_event_listeners,
+highlight_element, wait_for_stable, schedule_resume, schedule_task, get_selection, new_tab,
 done, clarify, get_shadow_dom, shadow_dom_query, get_frames, iframe_read,
 iframe_click, iframe_type, fetch_url, research_url, list_downloads,
 read_downloaded_file, download_resource_from_page, download_files,
@@ -84,8 +86,8 @@ upload_file, scratchpad_write, progress_update, progress_read,
 verify_form, download_social_media, solve_captcha
 ```
 
-Firefox diffère en remplaçant `shadow_dom_query` et `upload_file` (Chrome
-uniquement) par `execute_js`.
+Firefox omet les outils Dev exclusifs à Chrome et `shadow_dom_query` ; le reste
+de la surface de base, y compris `execute_js` réservé au mode Dev, est partagé.
 
 ### Familles d'outils WebBrain
 
