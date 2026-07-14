@@ -529,7 +529,7 @@ export const AGENT_TOOLS = [
     type: 'function',
     function: {
       name: 'execute_js',
-      description: 'DEV ONLY. Execute one JavaScript function body in the page main world through Chrome DevTools Protocol and return its value. `await` and explicit `return` are supported. Use focused code only when finite tools cannot do the job; prefer patch_element/inject_css for reversible edits. Do not use it to bypass visible UI approval or the normal UI-first mutation policy.',
+      description: 'DEV ONLY. Execute one JavaScript function body in the page main world through Chrome DevTools Protocol and return its value. `await` and explicit `return` are supported, with a 15-second execution limit. Use focused code only when finite tools cannot do the job; prefer patch_element/inject_css for reversible edits. Do not use it to bypass visible UI approval or the normal UI-first mutation policy.',
       parameters: {
         type: 'object',
         properties: {

@@ -1913,22 +1913,79 @@
     return { success: true, target, targetMethod, warnings };
   }
 
-  function patchDevElement(params) {
-    const resolved = resolveDevTarget(params);
-    if (!resolved.success) return resolved;
-    const el = resolved.target;
+  function normalizeDevPatchOperations(el, params) {
     const styles = params?.styles && typeof params.styles === 'object' && !Array.isArray(params.styles) ? params.styles : {};
     const removeStyles = Array.isArray(params?.removeStyles) ? params.removeStyles : [];
     const addClasses = Array.isArray(params?.addClasses) ? params.addClasses : [];
     const removeClasses = Array.isArray(params?.removeClasses) ? params.removeClasses : [];
     const attributes = params?.attributes && typeof params.attributes === 'object' && !Array.isArray(params.attributes) ? params.attributes : {};
     const removeAttributes = Array.isArray(params?.removeAttributes) ? params.removeAttributes : [];
+    const normalizeStyleName = value => {
+      const name = String(value || '').trim();
+      return name.startsWith('--') ? name : name.toLowerCase();
+    };
+    const isHtmlElement = el?.namespaceURI === 'http://www.w3.org/1999/xhtml';
+    const normalizeAttributeName = value => {
+      const name = String(value || '').trim();
+      return isHtmlElement ? name.toLowerCase() : name;
+    };
 
-    const styleValues = new Map(Object.entries(styles).map(([name, value]) => [String(name || '').trim(), value]).filter(([name]) => name));
-    const attributeValues = new Map(Object.entries(attributes).map(([name, value]) => [String(name || '').trim(), value]).filter(([name]) => name));
-    const styleNames = [...new Set([...styleValues.keys(), ...removeStyles].map(v => String(v || '').trim()).filter(Boolean))];
-    const classNames = [...new Set([...addClasses, ...removeClasses].map(v => String(v || '').trim()).filter(Boolean))];
-    const attributeNames = [...new Set([...attributeValues.keys(), ...removeAttributes].map(v => String(v || '').trim()).filter(Boolean))];
+    const styleValues = new Map();
+    for (const [name, value] of Object.entries(styles)) {
+      const normalized = normalizeStyleName(name);
+      if (normalized) styleValues.set(normalized, value);
+    }
+    const stylesToRemove = new Set(removeStyles.map(normalizeStyleName).filter(Boolean));
+    const classesToAdd = new Set(addClasses.map(v => String(v || '').trim()).filter(Boolean));
+    const classesToRemove = new Set(removeClasses.map(v => String(v || '').trim()).filter(Boolean));
+    const attributeValues = new Map();
+    for (const [name, value] of Object.entries(attributes)) {
+      const normalized = normalizeAttributeName(name);
+      if (normalized) attributeValues.set(normalized, value);
+    }
+    const attributesToRemove = new Set(removeAttributes.map(normalizeAttributeName).filter(Boolean));
+
+    const styleConflict = [...styleValues.keys()].find(name => stylesToRemove.has(name));
+    if (styleConflict) {
+      return { success: false, error: `patch_element: style "${styleConflict}" cannot be set and removed in the same patch.` };
+    }
+    const classConflict = [...classesToAdd].find(name => classesToRemove.has(name));
+    if (classConflict) {
+      return { success: false, error: `patch_element: class "${classConflict}" cannot be added and removed in the same patch.` };
+    }
+    const attributeConflict = [...attributeValues.keys()].find(name => attributesToRemove.has(name));
+    if (attributeConflict) {
+      return { success: false, error: `patch_element: attribute "${attributeConflict}" cannot be set and removed in the same patch.` };
+    }
+    return {
+      success: true,
+      styleValues,
+      stylesToRemove,
+      styleNames: [...styleValues.keys(), ...stylesToRemove],
+      classesToAdd,
+      classesToRemove,
+      classNames: [...classesToAdd, ...classesToRemove],
+      attributeValues,
+      attributesToRemove,
+      attributeNames: [...attributeValues.keys(), ...attributesToRemove],
+    };
+  }
+
+  function patchDevElement(params) {
+    const resolved = resolveDevTarget(params);
+    if (!resolved.success) return resolved;
+    const el = resolved.target;
+    const normalized = normalizeDevPatchOperations(el, params);
+    if (!normalized.success) return normalized;
+    const {
+      styleValues,
+      styleNames,
+      classesToAdd,
+      classesToRemove,
+      classNames,
+      attributeValues,
+      attributeNames,
+    } = normalized;
     if (!styleNames.length && !classNames.length && !attributeNames.length) {
       return { success: false, error: 'patch_element: provide at least one style, class, or attribute change.' };
     }
@@ -1962,26 +2019,23 @@
     }
 
     const patchId = nextDevPatchId('dom');
-    const classesToAdd = new Set(addClasses.map(v => String(v || '').trim()).filter(Boolean));
-    const classesToRemove = new Set(removeClasses.map(v => String(v || '').trim()).filter(Boolean));
     const styleChanges = [];
     for (const name of styleNames) {
-      const normalized = name.startsWith('--') ? name : name.toLowerCase();
-      const beforePresent = Array.from(el.style).includes(normalized);
-      const before = el.style.getPropertyValue(normalized);
-      const beforePriority = el.style.getPropertyPriority(normalized);
+      const beforePresent = Array.from(el.style).includes(name);
+      const before = el.style.getPropertyValue(name);
+      const beforePriority = el.style.getPropertyPriority(name);
       if (styleValues.has(name)) {
         const value = String(styleValues.get(name));
-        el.style.setProperty(normalized, value);
+        el.style.setProperty(name, value);
       } else {
-        el.style.removeProperty(normalized);
+        el.style.removeProperty(name);
       }
       styleChanges.push({
-        name: normalized,
+        name,
         before: beforePresent ? before : null,
         beforePriority,
-        after: Array.from(el.style).includes(normalized) ? el.style.getPropertyValue(normalized) : null,
-        afterPriority: el.style.getPropertyPriority(normalized),
+        after: Array.from(el.style).includes(name) ? el.style.getPropertyValue(name) : null,
+        afterPriority: el.style.getPropertyPriority(name),
       });
     }
 

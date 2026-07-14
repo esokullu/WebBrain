@@ -97,6 +97,19 @@ export class CDPClient {
       handlers[event] = [];
     }
     handlers[event].push(handler);
+    return handler;
+  }
+
+  off(tabId, event, handler) {
+    const handlers = this.eventHandlers.get(tabId);
+    const list = handlers?.[event];
+    if (!list) return false;
+    const index = list.indexOf(handler);
+    if (index === -1) return false;
+    list.splice(index, 1);
+    if (list.length === 0) delete handlers[event];
+    if (Object.keys(handlers).length === 0) this.eventHandlers.delete(tabId);
+    return true;
   }
 
   _pushBounded(list, value, max) {
@@ -155,10 +168,15 @@ export class CDPClient {
       console: [],
       network: [],
       networkByRequestId: new Map(),
+      handlers: [],
     };
     this.devDiagnostics.set(tabId, state);
+    const register = (event, handler) => {
+      this.on(tabId, event, handler);
+      state.handlers.push({ event, handler });
+    };
 
-    this.on(tabId, 'Runtime.consoleAPICalled', (params = {}) => {
+    register('Runtime.consoleAPICalled', (params = {}) => {
       const frame = params.stackTrace?.callFrames?.[0] || null;
       this._pushBounded(state.console, {
         level: this._consoleLevel(params.type),
@@ -175,7 +193,7 @@ export class CDPClient {
       }, 200);
     });
 
-    this.on(tabId, 'Runtime.exceptionThrown', (params = {}) => {
+    register('Runtime.exceptionThrown', (params = {}) => {
       const details = params.exceptionDetails || {};
       const exception = details.exception || {};
       const frame = details.stackTrace?.callFrames?.[0] || null;
@@ -198,7 +216,7 @@ export class CDPClient {
       }, 200);
     });
 
-    this.on(tabId, 'Log.entryAdded', (params = {}) => {
+    register('Log.entryAdded', (params = {}) => {
       const entry = params.entry || {};
       this._pushBounded(state.console, {
         level: this._consoleLevel(entry.level),
@@ -214,7 +232,7 @@ export class CDPClient {
       }, 200);
     });
 
-    this.on(tabId, 'Network.requestWillBeSent', (params = {}) => {
+    register('Network.requestWillBeSent', (params = {}) => {
       const request = params.request || {};
       const prior = state.networkByRequestId.get(params.requestId);
       if (prior && params.redirectResponse) {
@@ -257,7 +275,7 @@ export class CDPClient {
       }
     });
 
-    this.on(tabId, 'Network.responseReceived', (params = {}) => {
+    register('Network.responseReceived', (params = {}) => {
       const entry = state.networkByRequestId.get(params.requestId);
       if (!entry) return;
       const response = params.response || {};
@@ -270,14 +288,14 @@ export class CDPClient {
       entry.fromServiceWorker = !!response.fromServiceWorker;
     });
 
-    this.on(tabId, 'Network.loadingFinished', (params = {}) => {
+    register('Network.loadingFinished', (params = {}) => {
       const entry = state.networkByRequestId.get(params.requestId);
       if (!entry) return;
       entry.encodedDataLength = Number.isFinite(Number(params.encodedDataLength)) ? Number(params.encodedDataLength) : null;
       entry.finishedAt = Date.now();
     });
 
-    this.on(tabId, 'Network.loadingFailed', (params = {}) => {
+    register('Network.loadingFailed', (params = {}) => {
       const entry = state.networkByRequestId.get(params.requestId);
       if (!entry) return;
       entry.errorText = String(params.errorText || '').slice(0, 1000);
@@ -299,6 +317,20 @@ export class CDPClient {
       }),
     ]);
     return state;
+  }
+
+  disableDevDiagnostics(tabId) {
+    const state = this.devDiagnostics.get(tabId);
+    if (!state) return false;
+    for (const { event, handler } of state.handlers || []) {
+      this.off(tabId, event, handler);
+    }
+    state.handlers = [];
+    state.console.length = 0;
+    state.network.length = 0;
+    state.networkByRequestId.clear();
+    this.devDiagnostics.delete(tabId);
+    return true;
   }
 
   async readConsole(tabId, options = {}) {
@@ -525,15 +557,20 @@ export class CDPClient {
   /**
    * Call a JS function on the page.
    */
-  async evaluate(tabId, expression, returnByValue = true) {
+  async evaluate(tabId, expression, returnByValue = true, options = {}) {
     await this.sendCommand(tabId, 'Runtime.enable');
-    const result = await this.sendCommand(tabId, 'Runtime.evaluate', {
+    const params = {
       expression,
       returnByValue,
       awaitPromise: true,
       userGesture: true,
       allowUnsafeEvalBlockedByCSP: true,
-    });
+    };
+    const requestedTimeout = Number(options?.timeoutMs);
+    if (Number.isFinite(requestedTimeout) && requestedTimeout > 0) {
+      params.timeout = Math.max(1, Math.min(30000, Math.round(requestedTimeout)));
+    }
+    const result = await this.sendCommand(tabId, 'Runtime.evaluate', params);
     return result;
   }
 

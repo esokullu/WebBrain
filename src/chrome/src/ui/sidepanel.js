@@ -5866,7 +5866,11 @@ async function handleGlobalKeydown(e) {
 
 function setMode(mode) {
   if (mode !== 'ask' && mode !== 'act' && mode !== 'dev') mode = 'ask';
+  const previousMode = agentMode;
   agentMode = mode;
+  if (previousMode === 'dev' && mode !== 'dev' && currentTabId != null) {
+    sendToBackground('disable_dev_diagnostics', { tabId: currentTabId }).catch(() => {});
+  }
 
   modeAskBtn.classList.toggle('active', mode === 'ask');
   modeAskBtn.classList.remove('act');

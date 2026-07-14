@@ -12118,8 +12118,8 @@ test('Chrome execute_js runs through CDP as an async function body and reports e
       calls.push({ kind: 'enable', tabId });
       return {};
     };
-    cdpClientCh.evaluate = async (tabId, expression, returnByValue) => {
-      calls.push({ kind: 'evaluate', tabId, expression, returnByValue });
+    cdpClientCh.evaluate = async (tabId, expression, returnByValue, options) => {
+      calls.push({ kind: 'evaluate', tabId, expression, returnByValue, options });
       return { result: { type: 'object', value: { ok: true, count: 2 }, description: 'Object' } };
     };
 
@@ -12130,6 +12130,7 @@ test('Chrome execute_js runs through CDP as an async function body and reports e
     assert.equal(success.resultType, 'object');
     assert.equal(calls[0].kind, 'enable');
     assert.equal(calls[1].returnByValue, true);
+    assert.equal(calls[1].options.timeoutMs, 15000);
     assert.match(calls[1].expression, /^\(async \(\) => \{/);
     assert.match(calls[1].expression, /await Promise\.resolve\(\); return \{ ok: true, count: 2 \};/);
     assert.match(calls[1].expression, /sourceURL=webbrain-dev-execute\.js/);
@@ -12150,6 +12151,12 @@ test('Chrome execute_js runs through CDP as an async function body and reports e
     assert.equal(failed.exception.line, 5);
     assert.equal(failed.exception.stack[0].line, 4);
 
+    cdpClientCh.evaluate = async () => { throw new Error('Execution was terminated due to timeout'); };
+    const timedOut = await agent.executeTool(77, 'execute_js', { code: 'await new Promise(() => {});' });
+    assert.equal(timedOut.success, false);
+    assert.equal(timedOut.timedOut, true);
+    assert.match(timedOut.error, /timed out after 15,000 ms/);
+
     const blank = await agent.executeTool(77, 'execute_js', { code: '   ' });
     assert.equal(blank.success, false);
     assert.match(blank.error, /code.*required/i);
@@ -12157,6 +12164,20 @@ test('Chrome execute_js runs through CDP as an async function body and reports e
     cdpClientCh.enableDevDiagnostics = originalEnable;
     cdpClientCh.evaluate = originalEvaluate;
   }
+});
+
+test('CDP evaluate forwards a bounded Runtime timeout', async () => {
+  const cdp = new CDPClient();
+  const commands = [];
+  cdp.sendCommand = async (tabId, method, params = {}) => {
+    commands.push({ tabId, method, params });
+    return { result: { type: 'undefined' } };
+  };
+
+  await cdp.evaluate(42, 'while (true) {}', true, { timeoutMs: 60000 });
+  const evaluation = commands.find(command => command.method === 'Runtime.evaluate');
+  assert.equal(evaluation.params.timeout, 30000);
+  assert.equal(evaluation.params.awaitPromise, true);
 });
 
 test('inspect_event_listeners resolves marked ref targets through CDP and always removes markers', async () => {
@@ -12296,6 +12317,25 @@ test('CDP Dev diagnostics buffer console/network data and redact sensitive heade
   assert.equal(withHeaders.sensitiveHeadersRedacted, true);
   assert.ok(commands.some(command => command.method === 'Runtime.enable'));
   assert.ok(commands.some(command => command.method === 'Network.enable'));
+  assert.equal(cdp.disableDevDiagnostics(88), true);
+  assert.equal(cdp.devDiagnostics.has(88), false);
+  assert.equal(cdp.eventHandlers.has(88), false);
+  assert.equal(cdp.disableDevDiagnostics(88), false);
+});
+
+test('Chrome Dev diagnostics start on both run paths and stop when Dev mode ends', () => {
+  const agentSource = fs.readFileSync(path.join(ROOT, 'src/chrome/src/agent/agent.js'), 'utf8');
+  const backgroundSource = fs.readFileSync(path.join(ROOT, 'src/chrome/src/background.js'), 'utf8');
+  const sidepanelSource = fs.readFileSync(path.join(ROOT, 'src/chrome/src/ui/sidepanel.js'), 'utf8');
+  const standardStart = agentSource.indexOf('async _processMessageInner(');
+  const streamingStart = agentSource.indexOf('async _processMessageStreamInner(');
+  const standardPath = agentSource.slice(standardStart, streamingStart);
+  const streamingPath = agentSource.slice(streamingStart);
+  assert.match(standardPath, /if \(mode === 'dev'\) \{\s*try \{ await cdpClient\.enableDevDiagnostics\(tabId\); \} catch \{\}\s*\}/);
+  assert.match(streamingPath, /if \(mode === 'dev'\) \{\s*try \{ await cdpClient\.enableDevDiagnostics\(tabId\); \} catch \{\}\s*\}/);
+  assert.match(agentSource, /if \(lastMode === 'dev'\) cdpClient\.disableDevDiagnostics\(tabId\)/);
+  assert.match(backgroundSource, /case 'disable_dev_diagnostics':/);
+  assert.match(sidepanelSource, /previousMode === 'dev' && mode !== 'dev'[\s\S]*disable_dev_diagnostics/);
 });
 
 test('Chrome Dev patch handlers keep page-local undo state and avoid MV3 eval', () => {
@@ -12307,9 +12347,43 @@ test('Chrome Dev patch handlers keep page-local undo state and avoid MV3 eval', 
   assert.match(source, /'revert_patch': \(\) => revertDevElementPatch/);
   assert.match(source, /'highlight_element': \(\) => highlightDevElement/);
   assert.doesNotMatch(source, /new Function\(msg\.params\.code\)/);
-  assert.match(agentSource, /chrome\.scripting\.insertCSS\(\{ target: \{ tabId \}, css, origin: 'AUTHOR' \}\)/);
-  assert.match(agentSource, /chrome\.scripting\.removeCSS\(\{ target: \{ tabId \}, css: patch\.css, origin: 'AUTHOR' \}\)/);
+  assert.match(agentSource, /chrome\.scripting\.insertCSS\(\{ target: \{ tabId \}, css: injectedCss, origin: 'AUTHOR' \}\)/);
+  assert.match(agentSource, /chrome\.scripting\.removeCSS\(\{ target: \{ tabId \}, css: patch\.injectedCss \|\| patch\.css, origin: 'AUTHOR' \}\)/);
   assert.match(agentSource, /chrome\.storage\.session\.set\(\{ \[this\._devCssPatchStorageKey\(patchId\)\]: patch \}\)/);
+  assert.match(agentSource, /current\.documentId !== patch\.documentId/);
+});
+
+test('patch_element canonicalizes browser-equivalent names before recording undo state', () => {
+  const source = fs.readFileSync(path.join(ROOT, 'src/chrome/src/content/content.js'), 'utf8');
+  const start = source.indexOf('function normalizeDevPatchOperations(');
+  const end = source.indexOf('\n\n  function patchDevElement', start);
+  assert.ok(start >= 0 && end > start, 'normalization helper should remain independently testable');
+  const normalize = vm.runInNewContext(`(${source.slice(start, end)})`);
+  const html = { namespaceURI: 'http://www.w3.org/1999/xhtml' };
+
+  const normalized = normalize(html, {
+    styles: { Color: 'red', '--Brand': 'blue' },
+    removeStyles: ['BACKGROUND'],
+    attributes: { 'DATA-ID': '7' },
+    removeAttributes: ['TITLE'],
+  });
+  assert.equal(normalized.success, true);
+  assert.deepEqual([...normalized.styleNames], ['color', '--Brand', 'background']);
+  assert.deepEqual([...normalized.attributeNames], ['data-id', 'title']);
+
+  const styleConflict = normalize(html, { styles: { Color: 'red' }, removeStyles: ['color'] });
+  assert.equal(styleConflict.success, false);
+  assert.match(styleConflict.error, /style "color" cannot be set and removed/);
+  const attributeConflict = normalize(html, { attributes: { 'DATA-ID': '7' }, removeAttributes: ['data-id'] });
+  assert.equal(attributeConflict.success, false);
+  assert.match(attributeConflict.error, /attribute "data-id" cannot be set and removed/);
+
+  const svg = normalize({ namespaceURI: 'http://www.w3.org/2000/svg' }, {
+    attributes: { viewBox: '0 0 10 10' },
+    removeAttributes: ['viewbox'],
+  });
+  assert.equal(svg.success, true);
+  assert.deepEqual([...svg.attributeNames], ['viewBox', 'viewbox']);
 });
 
 test('inject_css returns a persisted patchId that remove_injected_css can undo after agent restart', async () => {
@@ -12323,8 +12397,8 @@ test('inject_css returns a persisted patchId that remove_injected_css can undo a
         insertCSS: async (details) => { inserted.push(details); },
         removeCSS: async (details) => { removed.push(details); },
       },
-      tabs: {
-        get: async (tabId) => ({ id: tabId, url: 'https://example.com/editor' }),
+      webNavigation: {
+        getFrame: async ({ tabId }) => ({ tabId, documentId: 'doc-editor', url: 'https://example.com/editor' }),
       },
       storage: {
         session: {
@@ -12340,14 +12414,63 @@ test('inject_css returns a persisted patchId that remove_injected_css can undo a
     const injected = await firstAgent.executeTool(91, 'inject_css', { css });
     assert.equal(injected.success, true);
     assert.match(injected.patchId, /^wb_css_/);
-    assert.deepEqual(inserted, [{ target: { tabId: 91 }, css, origin: 'AUTHOR' }]);
+    assert.equal(inserted.length, 1);
+    assert.match(inserted[0].css, new RegExp(`^/\\* webbrain-dev-patch:${injected.patchId} \\*/`));
+    assert.match(inserted[0].css, new RegExp(`${css.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`));
     assert.equal(injected.persistedForWorkerRestart, true);
 
     const restartedAgent = new AgentCh({});
     const reverted = await restartedAgent.executeTool(91, 'remove_injected_css', { patchId: injected.patchId });
     assert.equal(reverted.success, true);
-    assert.deepEqual(removed, [{ target: { tabId: 91 }, css, origin: 'AUTHOR' }]);
+    assert.deepEqual(removed, [{ target: { tabId: 91 }, css: inserted[0].css, origin: 'AUTHOR' }]);
     assert.equal(Object.keys(session).length, 0);
+  } finally {
+    if (originalChrome === undefined) delete globalThis.chrome;
+    else globalThis.chrome = originalChrome;
+  }
+});
+
+test('inject_css patch IDs are unique and cannot remove CSS from a replacement document', async () => {
+  const originalChrome = globalThis.chrome;
+  const session = {};
+  const inserted = [];
+  const removed = [];
+  let documentId = 'doc-1';
+  try {
+    globalThis.chrome = {
+      scripting: {
+        insertCSS: async details => { inserted.push(details); },
+        removeCSS: async details => { removed.push(details); },
+      },
+      webNavigation: {
+        getFrame: async () => ({ documentId, url: `https://example.com/${documentId}` }),
+      },
+      storage: {
+        session: {
+          set: async values => { Object.assign(session, values); },
+          get: async key => key == null ? { ...session } : { [key]: session[key] },
+          remove: async keys => { for (const key of Array.isArray(keys) ? keys : [keys]) delete session[key]; },
+        },
+      },
+    };
+
+    const agent = new AgentCh({});
+    const css = '.same { color: red; }';
+    const first = await agent.executeTool(92, 'inject_css', { css });
+    documentId = 'doc-2';
+    const second = await agent.executeTool(92, 'inject_css', { css });
+    assert.equal(first.success, true);
+    assert.equal(second.success, true);
+    assert.notEqual(inserted[0].css, inserted[1].css);
+
+    const stale = await agent.executeTool(92, 'remove_injected_css', { patchId: first.patchId });
+    assert.equal(stale.success, false);
+    assert.equal(stale.stale, true);
+    assert.equal(removed.length, 0, 'a stale patch must never remove CSS from the new document');
+
+    const current = await agent.executeTool(92, 'remove_injected_css', { patchId: second.patchId });
+    assert.equal(current.success, true);
+    assert.deepEqual(removed, [{ target: { tabId: 92 }, css: inserted[1].css, origin: 'AUTHOR' }]);
   } finally {
     if (originalChrome === undefined) delete globalThis.chrome;
     else globalThis.chrome = originalChrome;

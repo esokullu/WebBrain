@@ -1271,6 +1271,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   savePanelTabs();
   chrome.storage.session?.remove(`tabChat:${tabId}`).catch(() => {});
   scheduler.cancelForTab(tabId).catch(() => {});
+  agent.clearDevCssPatchesForTab(tabId).catch(() => {});
   try { agent._cleanupTab(tabId); } catch { /* ignore */ }
 });
 
@@ -1316,6 +1317,7 @@ chrome.webNavigation?.onCommitted?.addListener((details) => {
   if (details.frameId !== 0) return;
   recordNav(details.tabId, 'committed', details.url);
   invalidateContextMenuForTab(details.tabId);
+  agent.clearDevCssPatchesForTab(details.tabId).catch(() => {});
 });
 chrome.webNavigation?.onCompleted?.addListener((details) => {
   if (details.frameId === 0) recordNav(details.tabId, 'completed', details.url);
@@ -1835,6 +1837,12 @@ async function handleMessage(msg, sender) {
         clearRunUiSnapshot(tabId);
       }
       return { ok: true };
+    }
+
+    case 'disable_dev_diagnostics': {
+      const tabId = msg.tabId || sender.tab?.id;
+      if (!tabId) return { ok: false, error: 'No tab ID' };
+      return { ok: true, disabled: agent.disableDevDiagnostics(tabId) };
     }
 
     case 'compact_conversation': {

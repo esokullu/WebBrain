@@ -5472,6 +5472,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     const messages = this.conversations.get(tabId);
     const lastMode = this.conversationModes.get(tabId);
     if (lastMode !== mode) {
+      if (lastMode === 'dev') cdpClient.disableDevDiagnostics(tabId);
       this.conversationModes.set(tabId, mode);
       this._conversationMode = mode;
     }
@@ -5486,6 +5487,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
    * Clear conversation for a tab.
    */
   _cleanupTab(tabId, { preserveRunGuard = false } = {}) {
+    cdpClient.disableDevDiagnostics(tabId);
     this._cancelPendingPlans(tabId, 'tab closed');
     this._isPdfTabCache.delete(tabId);
     this._lastCdpClickIdent?.delete(tabId);
@@ -8183,16 +8185,72 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     return `devCssPatch:${patchId}`;
   }
 
+  disableDevDiagnostics(tabId) {
+    return cdpClient.disableDevDiagnostics(tabId);
+  }
+
+  async _getDevDocumentIdentity(tabId) {
+    try {
+      const frame = await chrome.webNavigation?.getFrame?.({ tabId, frameId: 0 });
+      if (frame?.documentId) {
+        return { documentId: String(frame.documentId), pageUrl: String(frame.url || '') };
+      }
+    } catch {}
+    try {
+      const [result] = await chrome.scripting.executeScript({
+        target: { tabId },
+        world: 'ISOLATED',
+        func: () => location.href,
+      });
+      if (result?.documentId) {
+        return { documentId: String(result.documentId), pageUrl: String(result.result || '') };
+      }
+    } catch {}
+    return null;
+  }
+
+  async clearDevCssPatchesForTab(tabId) {
+    const keys = new Set();
+    for (const [patchId, patch] of this._devCssPatches || []) {
+      if (Number(patch?.tabId) !== Number(tabId)) continue;
+      keys.add(this._devCssPatchStorageKey(patchId));
+      this._devCssPatches.delete(patchId);
+    }
+    try {
+      const stored = await chrome.storage.session.get(null);
+      for (const [key, patch] of Object.entries(stored || {})) {
+        if (key.startsWith('devCssPatch:') && Number(patch?.tabId) === Number(tabId)) keys.add(key);
+      }
+      if (keys.size) await chrome.storage.session.remove([...keys]);
+    } catch {}
+    return keys.size;
+  }
+
   async _injectDevCss(tabId, args = {}) {
     const css = typeof args.css === 'string' ? args.css : '';
     if (!css.trim()) return { success: false, error: 'inject_css: `css` is required.' };
     if (css.length > 100000) return { success: false, error: 'inject_css: CSS exceeds the 100,000-character limit.' };
     const patchId = `wb_css_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
+    const injectedCss = `/* webbrain-dev-patch:${patchId} */\n${css}`;
     try {
-      await chrome.scripting.insertCSS({ target: { tabId }, css, origin: 'AUTHOR' });
-      let pageUrl = '';
-      try { pageUrl = (await chrome.tabs.get(tabId))?.url || ''; } catch {}
-      const patch = { patchId, tabId, css, pageUrl, createdAt: Date.now() };
+      const before = await this._getDevDocumentIdentity(tabId);
+      if (!before?.documentId) {
+        return { success: false, error: 'inject_css: could not identify the current document.' };
+      }
+      await chrome.scripting.insertCSS({ target: { tabId }, css: injectedCss, origin: 'AUTHOR' });
+      const after = await this._getDevDocumentIdentity(tabId);
+      if (after?.documentId !== before.documentId) {
+        return { success: false, stale: true, error: 'inject_css: the page navigated while CSS was being injected; no removable patch was recorded.' };
+      }
+      const patch = {
+        patchId,
+        tabId,
+        css,
+        injectedCss,
+        documentId: before.documentId,
+        pageUrl: after.pageUrl || before.pageUrl,
+        createdAt: Date.now(),
+      };
       if (!this._devCssPatches) this._devCssPatches = new Map();
       this._devCssPatches.set(patchId, patch);
       let persisted = true;
@@ -8200,6 +8258,12 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         await chrome.storage.session.set({ [this._devCssPatchStorageKey(patchId)]: patch });
       } catch {
         persisted = false;
+      }
+      const current = await this._getDevDocumentIdentity(tabId);
+      if (current?.documentId !== patch.documentId) {
+        this._devCssPatches.delete(patchId);
+        try { await chrome.storage.session.remove(this._devCssPatchStorageKey(patchId)); } catch {}
+        return { success: false, stale: true, error: 'inject_css: the page navigated while the patch was being recorded.' };
       }
       return {
         success: true,
@@ -8228,7 +8292,17 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       return { success: false, error: `remove_injected_css: patchId "${patchId}" belongs to a different tab.` };
     }
     try {
-      await chrome.scripting.removeCSS({ target: { tabId }, css: patch.css, origin: 'AUTHOR' });
+      const current = await this._getDevDocumentIdentity(tabId);
+      if (!current?.documentId || current.documentId !== patch.documentId) {
+        this._devCssPatches?.delete(patchId);
+        try { await chrome.storage.session.remove(storageKey); } catch {}
+        return {
+          success: false,
+          stale: true,
+          error: `remove_injected_css: patchId "${patchId}" belongs to a document that is no longer loaded.`,
+        };
+      }
+      await chrome.scripting.removeCSS({ target: { tabId }, css: patch.injectedCss || patch.css, origin: 'AUTHOR' });
       this._devCssPatches?.delete(patchId);
       try { await chrome.storage.session.remove(storageKey); } catch {}
       return { success: true, patchId, removed: true };
@@ -8266,7 +8340,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       // callers use an explicit `return` for readback instead of having to
       // squeeze a multi-statement edit into one JavaScript expression.
       const expression = `(async () => {\n${code}\n})()\n//# sourceURL=webbrain-dev-execute.js`;
-      const response = await cdpClient.evaluate(tabId, expression, true);
+      const response = await cdpClient.evaluate(tabId, expression, true, { timeoutMs: 15000 });
       if (response?.exceptionDetails) {
         const details = response.exceptionDetails;
         const exception = details.exception || {};
@@ -8314,6 +8388,9 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         description: remote.description ? String(remote.description).slice(0, 1000) : undefined,
       };
     } catch (e) {
+      if (/timed?\s*out|timeout/i.test(String(e?.message || e))) {
+        return { success: false, timedOut: true, error: 'execute_js timed out after 15,000 ms.' };
+      }
       return { success: false, error: `execute_js failed: ${e.message || e}` };
     }
   }
@@ -12480,6 +12557,12 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       this._persist(tabId);
       onUpdate('warning', { message: msg });
       return finish(msg);
+    }
+
+    // Match the non-streaming path: diagnostics must be live before the first
+    // Dev action so console and network tools include activity from this run.
+    if (mode === 'dev') {
+      try { await cdpClient.enableDevDiagnostics(tabId); } catch {}
     }
 
     // All throwing work — trace start, planner gate, run setup, and the agent
