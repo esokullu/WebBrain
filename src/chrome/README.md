@@ -171,6 +171,12 @@ Key difference: Chrome and Edge use Manifest V3 (service worker, `chrome.scripti
 | `new_tab` | No | Yes | Open a new tab |
 | `done` | Yes | Yes | Signal task completion |
 
+### Dev-mode page tools
+
+The nine tools above are added only in Mid/Full Dev mode; they are absent from Ask and normal Act. `inject_css` and `patch_element` return patch IDs for their matching undo tools. Chrome runs `execute_js` in the page main world through CDP, so MV3 extension-page CSP remains intact; JavaScript execution is host-permission gated and always receives a fresh submit confirmation.
+
+Console and network capture start before a Dev run, use bounded in-memory buffers, and report that earlier activity may be unavailable. Network headers and bodies are omitted unless explicitly requested, and sensitive header names are redacted before storage. Diagnostic and page-derived tool results are wrapped as untrusted content before they return to the model.
+
 ## Known Issues
 
 - **No file download/upload support** — The agent cannot download files from pages or upload files to file inputs. This is a limitation of the content script architecture. Planned for a future release via the Chromium `chrome.downloads` API and CDP integration.

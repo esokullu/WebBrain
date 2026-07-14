@@ -61,13 +61,13 @@ Current static core tools from the local source:
 Ask-mode core tools:
 
 ```text
-get_accessibility_tree, read_page, read_pdf, read_page_source,
+get_accessibility_tree, read_page, read_pdf,
 get_window_info, get_interactive_elements, scroll, extract_data,
-inspect_element_styles, get_selection, clarify, done, wait_for_stable,
+get_selection, done, wait_for_stable,
 fetch_url, research_url, list_downloads
 ```
 
-Full Chrome core tool list:
+Chrome static core tool list (the union across modes and tiers):
 
 ```text
 get_accessibility_tree, click_ax, type_ax, set_field, hover, drag_drop,
@@ -95,6 +95,7 @@ core surface, including Dev-only `execute_js`, is shared.
 | Legacy DOM fallback | `get_interactive_elements`, `click`, `type_text`, `press_keys`, `scroll`, `wait_for_element`, `wait_for_stable` |
 | Navigation and tabs | `navigate`, `go_back`, `go_forward`, `new_tab` |
 | Reading/extraction | `read_page`, `read_pdf`, `read_page_source`, `extract_data`, `inspect_element_styles`, `get_selection` |
+| Dev editing and diagnostics | `inject_css`, `remove_injected_css`, `patch_element`, `revert_patch`, `execute_js`, `read_console`, `inspect_network_requests`, `inspect_event_listeners`, `highlight_element` |
 | Shadow DOM and frames | `get_shadow_dom`, `shadow_dom_query` on Chrome, `get_frames`, `iframe_read`, `iframe_click`, `iframe_type` |
 | Network and files | `fetch_url`, `research_url`, `list_downloads`, `read_downloaded_file`, `download_resource_from_page`, `download_files`, `upload_file` on Chrome |
 | Long-running work | `schedule_resume`, `schedule_task`, `scratchpad_write`, `progress_update`, `progress_read` |

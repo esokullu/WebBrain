@@ -276,6 +276,13 @@ manifest's declared name.
 
 Dev Add-on tools are only exposed in Dev mode, and Dev mode is blocked for Compact-tier providers. Chrome's reversible editing tools return patch IDs: `inject_css` pairs with `remove_injected_css`, and `patch_element` pairs with `revert_patch`.
 
+### Dev-mode page editing and diagnostics
+
+- `inject_css` / `remove_injected_css` apply and undo temporary CSS by `patchId`; CSS patch metadata is kept in session storage so a service-worker restart does not lose the undo handle.
+- `patch_element` / `revert_patch` make structured inline-style, class, and attribute changes with exact before/after values. `highlight_element` provides a temporary pointer-transparent target overlay.
+- `execute_js` runs an async JavaScript function body in the page main world. Chrome uses CDP `Runtime.evaluate`; Firefox uses its MV2 content-script evaluator. The tool is host-permission gated and receives a fresh submit confirmation.
+- `read_console`, `inspect_network_requests`, and `inspect_event_listeners` provide bounded diagnostics on Chrome. Network headers and bodies are omitted by default, sensitive header names are redacted before buffering, and page-derived diagnostic output is treated as untrusted content.
+
 **Compact tier** is a reduced normal-tool set + shorter system prompt designed for smaller local models. **Mid tier** keeps common task tools, iframe support, downloads, scheduling, and form verification while avoiding advanced DOM/UI fallbacks. **Full tier** adds advanced browser-operation tools such as hover, drag-drop, frames, and shadow DOM. Enable the tier per provider in Settings.
 
 > **Shadow DOM note:** The accessibility tree only traverses light DOM. On Web Component-heavy pages (Stripe, Salesforce, Shopify), use `get_interactive_elements` first; in Full Act or Dev mode, use `get_shadow_dom` / `shadow_dom_query` for targeted reads.
