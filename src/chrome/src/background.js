@@ -1842,7 +1842,7 @@ async function handleMessage(msg, sender) {
     case 'disable_dev_diagnostics': {
       const tabId = msg.tabId || sender.tab?.id;
       if (!tabId) return { ok: false, error: 'No tab ID' };
-      return { ok: true, disabled: agent.disableDevDiagnostics(tabId) };
+      return { ok: true, disabled: await agent.disableDevDiagnostics(tabId) };
     }
 
     case 'compact_conversation': {

@@ -5472,7 +5472,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     const messages = this.conversations.get(tabId);
     const lastMode = this.conversationModes.get(tabId);
     if (lastMode !== mode) {
-      if (lastMode === 'dev') cdpClient.disableDevDiagnostics(tabId);
+      if (lastMode === 'dev') void cdpClient.disableDevDiagnostics(tabId);
       this.conversationModes.set(tabId, mode);
       this._conversationMode = mode;
     }
@@ -5487,7 +5487,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
    * Clear conversation for a tab.
    */
   _cleanupTab(tabId, { preserveRunGuard = false } = {}) {
-    cdpClient.disableDevDiagnostics(tabId);
+    void cdpClient.disableDevDiagnostics(tabId);
     this._cancelPendingPlans(tabId, 'tab closed');
     this._isPdfTabCache.delete(tabId);
     this._lastCdpClickIdent?.delete(tabId);

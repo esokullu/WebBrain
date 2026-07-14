@@ -319,7 +319,7 @@ export class CDPClient {
     return state;
   }
 
-  disableDevDiagnostics(tabId) {
+  async disableDevDiagnostics(tabId) {
     const state = this.devDiagnostics.get(tabId);
     if (!state) return false;
     for (const { event, handler } of state.handlers || []) {
@@ -330,6 +330,18 @@ export class CDPClient {
     state.network.length = 0;
     state.networkByRequestId.clear();
     this.devDiagnostics.delete(tabId);
+    // Removing WebBrain's handlers stops local buffering, but the browser
+    // continues producing domain events until the matching CDP domains are
+    // disabled. Issue the commands after local teardown so late events cannot
+    // repopulate the cleared buffers while shutdown is in flight. Other CDP
+    // helpers explicitly re-enable Runtime before using it.
+    if (this.sessions.has(tabId)) {
+      await Promise.allSettled([
+        this.sendCommand(tabId, 'Runtime.disable'),
+        this.sendCommand(tabId, 'Log.disable'),
+        this.sendCommand(tabId, 'Network.disable'),
+      ]);
+    }
     return true;
   }
 

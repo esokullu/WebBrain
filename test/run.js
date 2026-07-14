@@ -12317,10 +12317,13 @@ test('CDP Dev diagnostics buffer console/network data and redact sensitive heade
   assert.equal(withHeaders.sensitiveHeadersRedacted, true);
   assert.ok(commands.some(command => command.method === 'Runtime.enable'));
   assert.ok(commands.some(command => command.method === 'Network.enable'));
-  assert.equal(cdp.disableDevDiagnostics(88), true);
+  assert.equal(await cdp.disableDevDiagnostics(88), true);
   assert.equal(cdp.devDiagnostics.has(88), false);
   assert.equal(cdp.eventHandlers.has(88), false);
-  assert.equal(cdp.disableDevDiagnostics(88), false);
+  assert.ok(commands.some(command => command.method === 'Runtime.disable'));
+  assert.ok(commands.some(command => command.method === 'Log.disable'));
+  assert.ok(commands.some(command => command.method === 'Network.disable'));
+  assert.equal(await cdp.disableDevDiagnostics(88), false);
 });
 
 test('Chrome Dev diagnostics start on both run paths and stop when Dev mode ends', () => {
@@ -12333,8 +12336,9 @@ test('Chrome Dev diagnostics start on both run paths and stop when Dev mode ends
   const streamingPath = agentSource.slice(streamingStart);
   assert.match(standardPath, /if \(mode === 'dev'\) \{\s*try \{ await cdpClient\.enableDevDiagnostics\(tabId\); \} catch \{\}\s*\}/);
   assert.match(streamingPath, /if \(mode === 'dev'\) \{\s*try \{ await cdpClient\.enableDevDiagnostics\(tabId\); \} catch \{\}\s*\}/);
-  assert.match(agentSource, /if \(lastMode === 'dev'\) cdpClient\.disableDevDiagnostics\(tabId\)/);
+  assert.match(agentSource, /if \(lastMode === 'dev'\) void cdpClient\.disableDevDiagnostics\(tabId\)/);
   assert.match(backgroundSource, /case 'disable_dev_diagnostics':/);
+  assert.match(backgroundSource, /disabled: await agent\.disableDevDiagnostics\(tabId\)/);
   assert.match(sidepanelSource, /previousMode === 'dev' && mode !== 'dev'[\s\S]*disable_dev_diagnostics/);
 });
 
