@@ -19,7 +19,7 @@ train = [
   "kernels>=0.16.0,<0.17.0",
   "pillow>=11",
   "safetensors>=0.5",
-  "torch>=2.11,<2.12",
+  "torch>=2.13.0,<2.14",
   "transformers @ git+https://github.com/huggingface/transformers.git@b3a36037d3feb22e3f0174b3dd4248fcc0f0f722",
 ]
 dev = ["pytest>=8.4", "ruff>=0.12"]
