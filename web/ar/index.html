@@ -2375,6 +2375,220 @@
       max-width: 380px;
     }
 
+    /* A deliberate handoff from installing WebBrain.one to discovering the
+       hosted browser. It sits in normal document flow so it can be generous
+       without competing with page content or covering the comparison below. */
+    .cloud-section {
+      max-width: var(--max-w);
+      margin: 0 auto;
+      padding: 8px 24px 24px;
+    }
+    .cloud-section-card {
+      min-height: 220px;
+      position: relative;
+      isolation: isolate;
+      overflow: hidden;
+      display: grid;
+      grid-template-columns: 190px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 36px;
+      padding: 34px 38px;
+      background:
+        radial-gradient(circle at 12% 30%, rgba(108,99,255,0.24), transparent 34%),
+        radial-gradient(circle at 88% 70%, rgba(168,85,247,0.16), transparent 38%),
+        var(--bg-card);
+      border: 1px solid rgba(108,99,255,0.32);
+      border-radius: 24px;
+      box-shadow: 0 28px 80px var(--shadow-card);
+    }
+    .cloud-section-card::after {
+      content: '';
+      position: absolute;
+      z-index: -1;
+      width: 320px;
+      height: 320px;
+      inset-inline-end: -150px;
+      inset-block-start: -210px;
+      border: 1px solid rgba(168,85,247,0.22);
+      border-radius: 50%;
+      box-shadow:
+        0 0 0 34px rgba(108,99,255,0.04),
+        0 0 0 68px rgba(168,85,247,0.025);
+      pointer-events: none;
+    }
+    .cloud-section-browser {
+      width: 190px;
+      height: 132px;
+      direction: ltr;
+      overflow: hidden;
+      background: var(--surface);
+      border: 1px solid rgba(108,99,255,0.38);
+      border-radius: 14px;
+      box-shadow: 0 18px 42px var(--shadow-strong);
+      transform: rotate(-2deg);
+      transition: transform 0.25s ease;
+    }
+    .cloud-section-card:hover .cloud-section-browser { transform: rotate(0) translateY(-3px); }
+    .cloud-section-browser-bar {
+      height: 32px;
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      align-items: center;
+      gap: 9px;
+      padding: 0 10px;
+      background: var(--bg-card-hover);
+      border-bottom: 1px solid var(--border);
+    }
+    .cloud-section-browser-dots { display: flex; gap: 4px; }
+    .cloud-section-browser-dots i {
+      width: 6px;
+      height: 6px;
+      display: block;
+      border-radius: 50%;
+      background: var(--text-dim);
+      opacity: 0.55;
+    }
+    .cloud-section-browser-dots i:first-child { background: #ff5f57; opacity: 1; }
+    .cloud-section-browser-dots i:nth-child(2) { background: #ffbd2e; opacity: 1; }
+    .cloud-section-browser-dots i:last-child { background: #28c840; opacity: 1; }
+    .cloud-section-browser-url {
+      overflow: hidden;
+      color: var(--text-dim);
+      font: 600 9px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .cloud-section-browser-body {
+      height: 100px;
+      position: relative;
+      display: grid;
+      place-items: center;
+      background:
+        linear-gradient(135deg, transparent 45%, rgba(108,99,255,0.10)),
+        var(--surface);
+    }
+    .cloud-section-browser-logo {
+      width: 42px;
+      height: 42px;
+      border-radius: 12px;
+      box-shadow: 0 10px 24px rgba(0,0,0,0.24);
+    }
+    .cloud-section-agent-chip {
+      position: absolute;
+      inset-inline-end: 15px;
+      inset-block-end: 12px;
+      padding: 4px 7px;
+      color: #fff;
+      background: var(--accent);
+      border-radius: 999px;
+      font: 800 9px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      box-shadow: 0 5px 16px var(--accent-glow);
+    }
+    .cloud-section-copy { min-width: 0; text-align: start; }
+    .cloud-section-kicker {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      margin-bottom: 12px;
+      color: var(--text-dim);
+      font: 800 11px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    [dir="rtl"] .cloud-section-kicker {
+      font-family: inherit;
+      letter-spacing: 0;
+      text-transform: none;
+    }
+    .cloud-section-badge {
+      padding: 5px 8px;
+      color: var(--success);
+      background: rgba(52,211,153,0.09);
+      border: 1px solid rgba(52,211,153,0.28);
+      border-radius: 999px;
+    }
+    .cloud-section-title {
+      display: block;
+      margin-bottom: 10px;
+      font: 800 clamp(28px, 4vw, 40px)/1.05 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      letter-spacing: -0.06em;
+      direction: ltr;
+      unicode-bidi: isolate;
+      text-align: start;
+    }
+    .cloud-section-title span { color: var(--accent2); }
+    .cloud-section-description {
+      max-width: 560px;
+      color: var(--text-dim);
+      font-size: 15px;
+      line-height: 1.65;
+    }
+    .cloud-section-cta {
+      min-width: 164px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+      padding: 14px 18px;
+      color: #fff;
+      background: var(--accent);
+      border-radius: 12px;
+      box-shadow: 0 10px 28px var(--accent-glow);
+      font-size: 14px;
+      font-weight: 750;
+      text-decoration: none;
+      transition: transform 0.2s ease, background 0.2s ease;
+    }
+    .cloud-section-cta:hover {
+      color: #fff;
+      background: #5a52d5;
+      text-decoration: none;
+      transform: translateY(-2px);
+    }
+    .cloud-section-cta:focus-visible { outline: 3px solid var(--accent2); outline-offset: 3px; }
+    .cloud-section-cta svg { width: 16px; height: 16px; }
+    [dir="rtl"] .cloud-section-cta svg { transform: scaleX(-1); }
+
+    @media (max-width: 820px) {
+      .cloud-section-card {
+        grid-template-columns: 150px minmax(0, 1fr);
+        gap: 22px 28px;
+        padding: 30px;
+      }
+      .cloud-section-browser {
+        width: 150px;
+        grid-row: 1 / span 2;
+      }
+      .cloud-section-cta {
+        width: max-content;
+        min-width: 180px;
+      }
+    }
+    @media (max-width: 560px) {
+      .cloud-section { padding-inline: 16px; }
+      .cloud-section-card {
+        grid-template-columns: 1fr;
+        gap: 20px;
+        padding: 24px;
+        border-radius: 20px;
+      }
+      .cloud-section-browser {
+        width: 100%;
+        height: 104px;
+        grid-row: auto;
+        transform: none;
+      }
+      .cloud-section-browser-body { height: 72px; }
+      .cloud-section-title { font-size: 29px; }
+      .cloud-section-cta { width: 100%; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .cloud-section-browser,
+      .cloud-section-cta { transition: none; }
+      .cloud-section-card:hover .cloud-section-browser,
+      .cloud-section-cta:hover { transform: none; }
+    }
+
     /* ================================================================
        OPEN SOURCE
        ================================================================ */
@@ -3500,6 +3714,34 @@
   </div>
 </section>
 
+<!-- WEBBRAIN CLOUD -->
+<section class="cloud-section" aria-labelledby="cloud-section-title">
+  <div class="cloud-section-card">
+    <div class="cloud-section-browser" aria-hidden="true">
+      <div class="cloud-section-browser-bar">
+        <span class="cloud-section-browser-dots"><i></i><i></i><i></i></span>
+        <span class="cloud-section-browser-url">https://webbrain.cloud</span>
+      </div>
+      <div class="cloud-section-browser-body">
+        <img class="cloud-section-browser-logo" src="/logo-github.png" alt="">
+        <span class="cloud-section-agent-chip">AI</span>
+      </div>
+    </div>
+    <div class="cloud-section-copy">
+      <div class="cloud-section-kicker">
+        <span class="cloud-section-badge">جديد</span>
+        <span>لوكلاء الذكاء الاصطناعي</span>
+      </div>
+      <strong class="cloud-section-title" id="cloud-section-title">WebBrain<span>.cloud</span></strong>
+      <p class="cloud-section-description">متصفح خاص ومرئي لـ Codex وغيره من وكلاء الذكاء الاصطناعي.</p>
+    </div>
+    <a class="cloud-section-cta" href="https://webbrain.cloud/">
+      استكشف Cloud
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+    </a>
+  </div>
+</section>
+
 <!-- COMPARISON TABLE -->
 <section class="section" id="compare">
   <div class="section-label">لماذا WebBrain؟</div>
@@ -3790,6 +4032,7 @@
       </a>
       <a href="/blog">المدونة</a>
       <a href="/docs/">المستندات</a>
+      <a href="https://webbrain.cloud/">WebBrain.cloud</a>
       <a href="/privacy">سياسة الخصوصية</a>
       <a href="https://github.com/webbrain-one/webbrain/issues" target="_blank" rel="noopener">أبلغ عن خلل</a>
       <a href="https://github.com/webbrain-one/webbrain/blob/main/LICENSE" target="_blank" rel="noopener">رخصة MIT</a>
