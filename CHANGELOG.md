@@ -4,6 +4,1142 @@ All notable changes to WebBrain are documented in this file.
 
 This changelog was generated from the repository Git history and release tags. Versions without a Git tag are inferred from version-bump commits and the current `package.json` / browser manifest versions.
 
+## [28.1.4] - 2026-08-11
+
+### Changed
+- version up
+- fix: harden runtime mode recovery and trace diagnostics
+- Apply suggestions from code review
+- fix: localize Cloud Sync settings
+- dist: rebuild submission zips for v28.1.2
+- chore: release v28.1.2
+- fix: preserve rich-text editor appends
+- dist: rebuild submission zips for v28.1.1
+- chore: release v28.1.1
+- version up
+- fix: enforce complete thread read coverage
+- Fix restored compact tool details
+- fix: honor complete thread read intent
+- fix: require complete thread reads
+- 28
+- ci: make cloud smoke manual-only
+- fix: toggle vision for custom local providers
+- fix: detect vision for custom local providers
+- fix: preserve local model capability identity
+- feat: detect vision support for local providers
+- Fix Ollama vision slash toggle
+- Detect Ollama vision capabilities
+- fix: address post-merge review findings
+- feat: harden coupon domain refresh
+- fix: call window.focus() before inputEl.focus() for focus-input command
+- fix: use storage.onChanged for command dispatch instead of runtime.sendMessage
+- docs: correct tab grouping visibility model
+- fix(firefox): change focus-input shortcut from Ctrl+Slash to Ctrl+Period
+- fix(firefox): add browser-level keyboard shortcuts via commands API
+- test: preserve runner line endings
+- test: cover automatic tab grouping opt-out
+- feat(settings): add Firefox tab grouping preference
+- feat(i18n): add zh Firefox tab grouping labels
+- feat(i18n): add vi Firefox tab grouping labels
+- feat(i18n): add uk Firefox tab grouping labels
+- feat(i18n): add tr Firefox tab grouping labels
+- feat(i18n): add tl Firefox tab grouping labels
+- feat(i18n): add th Firefox tab grouping labels
+- feat(i18n): add ru Firefox tab grouping labels
+- feat(i18n): add pt Firefox tab grouping labels
+- feat(i18n): add pl Firefox tab grouping labels
+- feat(i18n): add nl Firefox tab grouping labels
+- feat(i18n): add ms Firefox tab grouping labels
+- feat(i18n): add ko Firefox tab grouping labels
+- feat(i18n): add ja Firefox tab grouping labels
+- feat(i18n): add id Firefox tab grouping labels
+- feat(i18n): add hi Firefox tab grouping labels
+- feat(i18n): add he Firefox tab grouping labels
+- feat(i18n): add fr Firefox tab grouping labels
+- feat(i18n): add fa Firefox tab grouping labels
+- feat(i18n): add es Firefox tab grouping labels
+- feat(i18n): add en Firefox tab grouping labels
+- feat(i18n): add de Firefox tab grouping labels
+- feat(i18n): add bn Firefox tab grouping labels
+- feat(i18n): add ar Firefox tab grouping labels
+- feat(settings): add Firefox tab grouping preference
+- feat(settings): add Firefox tab grouping preference
+- feat(settings): honor Firefox tab grouping preference
+- feat(settings): honor Firefox tab grouping preference
+- feat(settings): honor Firefox tab grouping preference
+- feat(i18n): add zh tab grouping labels
+- feat(i18n): add vi tab grouping labels
+- feat(i18n): add uk tab grouping labels
+- feat(i18n): add tr tab grouping labels
+- feat(i18n): add tl tab grouping labels
+- feat(i18n): add th tab grouping labels
+- feat(i18n): add ru tab grouping labels
+- feat(i18n): add pt tab grouping labels
+- feat(i18n): add pl tab grouping labels
+- feat(i18n): add nl tab grouping labels
+- feat(i18n): add ms tab grouping labels
+- feat(i18n): add ko tab grouping labels
+- feat(i18n): add ja tab grouping labels
+- feat(i18n): add id tab grouping labels
+- feat(i18n): add hi tab grouping labels
+- feat(i18n): add he tab grouping labels
+- feat(i18n): add French tab grouping labels
+- feat(i18n): add Persian tab grouping labels
+- feat(i18n): localize Chrome tab grouping preference
+- feat(settings): add Chrome tab grouping preference
+- feat(settings): update Chrome agent tab grouping
+- feat(settings): add tab grouping opt-out
+- test: cover pinduoduo adapter
+- agent: mirror pinduoduo adapter in firefox
+- agent: add adapter for pinduoduo
+- test: preserve run.js line endings
+- ci: keep patch release changelog in sync
+- test: cover patch release changelog ordering
+- docs: backfill patch release changelog
+- fix(captcha): serialize Cloudflare gate hydration
+- fix(captcha): ignore unrelated response tokens
+- fix(captcha): make English matcher additive
+- fix(captcha): revalidate cleared token state
+- fix(captcha): retire post-solve read inference
+- fix(captcha): detect Cloudflare challenge pages
+- ux improvements
+- feat: generate coupon merchant coverage
+- feat: add verified coupon code action
+- documentation enhanced
+- chore: rebuild dist zips
+- chore: bump version
+- updates to lm studio plugin
+- fix: hide empty assistant placeholders
+- chore: rebuild dist zips
+- chore: bump version
+- fix: mark timed-out plan history even when no terminal text rendered
+- chore: rebuild dist zips
+- chore: bump version
+- Fix assistant response bubble width
+- chore: rebuild dist zips
+- chore: bump version
+- Normalize empty tool arguments
+- fix: keep timed-out plan reviews recoverable across restores
+- Report every API-mutation grant in the transcript
+- documented mcp
+- chore: rebuild dist zips
+- chore: bump version
+- version up
+- Remove sidepanel UI from Chrome and Firefox extensions
+- Fix blog post: replace missing mcp-diagram.png with ASCII diagram, remove headless MCP comparison section
+- Add blog post: WebBrain MCP server introduction for Claude Code, OpenCode, Codex, Cursor
+- Keep staged screenshots until delivery is confirmed included
+- Charge the screenshot budget only for delivered viewport inspections
+- Fail closed when a child frame URL cannot identify one descriptor
+- Do not stage a full-page screenshot the privacy scan could not prepare
+- Fix screenshot redaction fail-open paths and staged attachment recovery
+- Meter dedicated vision provider costs
+- Exclude WebBrain Cloud from cost limits
+- Retain workflow claims through cleanup
+- Restore staged redacted screenshot copies
+- Fix teacher submit capture and workflow cleanup
+- Bind viewport redaction to captured pixels
+- Apply suggestions from code review
+- Scope redaction coverage to rendered frames
+- Fix full-page redaction capture ordering
+- Restore attachments cancelled before validation
+- Preserve screenshots through terminal delivery
+- Fail closed on redaction collector overflow
+- Persist staged screenshot pixels durably
+- Fail closed on incomplete screenshot privacy data
+- Pass trace run options in both browsers
+- Fail closed on redaction region overflow
+- Persist staged screenshot state safely
+- Bind screenshot redaction to capture time
+- Prevent teacher capture during automated runs
+- Add value-free teacher mode
+- Preserve attachments during workflow replay
+- Preserve unknown attachment delivery
+- Improve screenshot and attachment handling
+- Add user-approved workflow locator healing
+- Allow automatic i18n for AMO links
+- Add saved workflow manager
+- mcp server
+- updated changelog
+- 27.0.0 mcp
+- fix(bridge): poll runs before deadline sleeps
+- fix(lmstudio): bound extension waits by deadline
+- fix(cloud): enforce ask mutation and timeout bounds
+- Include done summaries in planner context
+- fix(bridge): reject web-page WebSocket origins
+- fix(bridge): keep ask runs read-only
+- Address planner and completion review feedback
+- fix(bridge): preserve runs across disconnects
+- fix(cloud): retract temporary API authorization
+- Localize tool completion status labels
+- fix(mcp): include initial commands in deadlines
+- Fix Act follow-up intent routing
+- fix(mcp): close run lifecycle gaps
+- fix(mcp): bound run polling and expose abort
+- fix(mcp): harden bridge startup and polling
+- fix(mcp): complete browser run recovery paths
+- fix(mcp): address Codex review — packaging, duration parsing, Firefox claim
+- feat(mcp): MCP server + LM Studio browser delegation over the existing bridge
+- Reject duplicate cloud run identifiers
+- Use secure cloud run identifiers
+- Preserve false schemas and public URL values
+- Close OTP and schema detection gaps
+- Close navigation URL and schema gaps
+- Preserve cloud output schema semantics
+- Harden cloud schema and URL evidence
+- Close strict cloud secret registry gaps
+- chore: rebuild dist zips
+- chore: bump version
+- Address latest WebBrain Cloud review findings
+- Harden WebBrain Cloud security boundaries
+- fix persistent API permission review findings
+- feat: add persistent API mutation setting
+- Add a $schema discriminator; state what strict mode actually guarantees
+- Register request-body credentials; stop blanking valid strict results
+- Redact strict terminal fields and non-string secret leaves
+- Redact strict runs by value, not by update type
+- Fail closed on unapplied session settings; tighten schema detection
+- Enforce advertised schema keywords and nullable optionals
+- Close strict-secret leaks and fix done_json schema handling
+- Watch cloud background in smoke workflow
+- Preserve strict structured public results
+- Scope cloud scheduled job reads
+- Enforce strict structured cloud output
+- Extend manual cloud smoke timeout
+- Retry CodeQL after service outage
+- Redact strict cloud form verification
+- Tighten scheduled smoke verification
+- Finish cloud smoke review fixes
+- Add scheduled Google Forms cloud scenario
+- Finish cloud CI review fixes
+- Add NYTimes and YouTube cloud scenarios
+- Fix cloud CI request evidence
+- docs: document promote_iframe
+- 26.2.1
+- Add WebBrain Cloud CI integration
+- fix iframe promotion and verification safety
+- fix: make iframe form control fail closed
+- dist: rebuild submission zips for v26.2.0
+- chore: release v26.2.0
+- fix: repair minor release workflow ordering
+- chore: rebuild dist zips
+- chore: bump version
+- test(compact): enforce upload helper parity
+- fix(compact): make upload_file self-targeting
+- Parse whole-response tool call arrays
+- docs(blog): compare Qwen and Laguna Vision
+- chore: rebuild dist zips
+- chore: bump version
+- Make Mail.tm UI-first and validate fetch headers
+- Fix form submission and rich-text targeting
+- chore: rebuild dist zips
+- chore: bump version
+- Preserve clarification step result pairing
+- Fix clarification timeline ordering
+- updated changelog
+- version update
+- fix: bound toolbar safety captures per turn
+- fix: preserve live sibling toolbar obligations
+- fix: stop toolbar ancestry alone blocking prose, bound classifier spend
+- fix: correct six defects found reviewing the toolbar guard
+- fix: only accept a bare tool call that stands alone on its line
+- test: cover the upload retry that recovery enables
+- fix(compact): make upload_file recoverable and attachment-only
+- dist: rebuild submission zips for v26.0.11
+- fix: harden agent reliability and recovery persistence
+- fix(agent): recover past an unbalanced opener too
+- fix: recover tool calls after an unbalanced brace
+- fix(media): require LinkedIn permalink IDs
+- fix(agent): skip invalid JSON candidates
+- fix: parse nested bare JSON tool calls
+- docs(blog): announce DeepSeek V4 Flash vision support
+- docs updated
+- fix: address rich-text guard review findings
+- refactor: consolidate rich-text toolbar guard
+- documented vision models
+- feat(compact): expose upload_file
+- Fail navigation on terminal browser errors
+- Gate attachment guidance on available tools
+- Wait for terminal navigation state
+- Reconcile attachment upload hardening
+- Keep attachment handles unique across runs
+- Expose every accepted attachment handle
+- Verify navigation with top-frame commits
+- Accept committed round-trip redirects
+- Reuse user attachments and verify navigation commits
+- Keep upload recovery gated after inspection
+- Fix ambiguous file uploads
+- fix: keep toolbar debt and its state in agreement across navigation
+- fix: close toolbar fixture and session ID gaps
+- fix: stabilize the rich-text toolbar guard and contain its blast radius
+- test: make promotion assertions locale-aware
+- agent: add adapter for Lazada
+- fix: harden toolbar frame coordination
+- fix: bind toolbar recovery dispatch targets
+- test: align toolbar vision benchmark
+- fix: persist toolbar recovery state
+- fix: guard toolbar keyboard retries
+- fix: scope toolbar recovery guards
+- fix: guard toolbar recovery identity
+- fix: align selector toolbar context
+- fix: identify composed toolbar regions
+- fix: deduplicate toolbar recovery obligations
+- fix: fail closed on toolbar audit fallbacks
+- fix: preserve trusted focused typing
+- fix: exempt compact native composers
+- fix: bind focused iframe traversal
+- fix: bind focused editor mutations
+- fix: scope toolbar recovery deduplication
+- fix: retain toolbar recovery obligations
+- fix: bind toolbar preflight targets
+- fix: exclude compact editor bodies
+- fix: correlate toolbar recovery text
+- fix: prioritize toolbar search semantics
+- fix: recover ref-less editor targets
+- fix: honor toolbar screenshot limits
+- fix: scope trace captures to tool attempts
+- fix: cover conventional toolbar variants
+- fix: settle toolbar probe geometry
+- fix: retain ambiguous editor recovery debt
+- fix: audit native toolbar selects
+- fix: reject ambiguous iframe toolbar targets
+- fix: audit contenteditable toolbar controls
+- fix: scope nested iframe toolbar recovery
+- fix: audit remaining toolbar inputs
+- fix: exempt ordinary toolbar searches
+- fix: audit labeled shadow toolbar controls
+- fix: verify corrected toolbar edits
+- fix: bind toolbar recovery to exact iframe
+- fix: exclude top frame from iframe typing
+- fix: resolve deeply focused toolbar targets
+- fix: follow assigned slots in toolbar probes
+- fix: keep selection popup within viewport
+- fix: preserve Humanizer selection routing on retry
+- fix: scope toolbar recovery to original route
+- fix: mirror toolbar fallback in vision benchmark
+- fix: keep toolbar guard active without screenshots
+- fix: align shadow toolbar probe and benchmark
+- x
+- fix: preserve toolbar recovery safety state
+- fix: audit every toolbar target during recovery
+- fix: traverse shadow toolbar ancestry
+- fix: preserve toolbar recovery across navigation
+- fix: classify offscreen iframe toolbar targets
+- Preserve fenced code languages in history
+- fix: resolve toolbar labels inside shadow roots
+- fix: retain toolbar recovery proof across rerenders
+- Avoid duplicate newline after code blocks
+- fix: preserve toolbar debt through completion
+- fix: constrain iframe toolbar typing to audited frame
+- Fix chat history formatting
+- fix: audit toolbar edits inside frames
+- fix: preserve toolbar recovery across continuation
+- fix: tighten toolbar formatting value checks
+- fix: align toolbar resets and trace probes
+- fix: close toolbar audit shadow and navigation gaps
+- Avoid duplicate planner failure cards
+- fix: validate style and link toolbar values
+- fix: validate rich-text font family presets
+- fix: address rich-text toolbar retry feedback
+- fix: harden rich-text toolbar preflight recovery
+- Use Gecko semicolon metadata
+- chore: rebuild dist zips
+- chore: bump version
+- Support semicolon page shortcuts
+- Honor file path when download ID is invalid
+- chore: rebuild dist zips
+- chore: bump version
+- Potential fix for pull request finding 'CodeQL / Insecure randomness'
+- Apply suggestions from code review
+- Potential fix for pull request finding 'CodeQL / Insecure randomness'
+- Apply suggestions from code review
+- fix: make Turkish deasciification opt-in
+- feat(skills): bundle Humanizer as a default skill with webmail preactivation
+- Add target-only toolbar vision mode
+- Add rich-text toolbar vision probe
+- Guard rich-text editor toolbar targeting
+- Add target-only toolbar vision mode
+- Add rich-text toolbar vision probe
+- Guard rich-text editor toolbar targeting
+- fix(web): simplify blog and clarify active navigation
+- chore: rebuild dist zips
+- chore: bump version
+- fix(adapters): harden workflow profile enumeration
+- Delete WHATS_NEW_IN_V24.md
+- chore: rebuild dist zips
+- chore: bump version
+- Improve email thread and GitHub adapter guidance
+- chore: rebuild dist zips
+- chore: bump version
+- Preserve terminal replay recovery
+- chore: rebuild dist zips
+- chore: bump version
+- Sync independent scope changes
+- Block trailing captures in selection scope
+- Block capture commands in selection scope
+- Refresh scope for scheduled runs
+- Preserve scope during reconnect uncertainty
+- Reconcile inherited scope failures
+- Enforce scope before active modes
+- Fix selection scope review issues
+- Localize the run-progress replay-gap notice
+- Fix selected-text conversation scope
+- Fix false run replay compaction notices
+- feat(adapters): add structured workflow profiles
+- agent: add adapter for Leboncoin
+- agent: add adapter for Traveloka
+- agent: add adapter for Zomato
+- fix: make Flipkart seller checks conditional
+- fix: recognize Shopee Cambodia recommendations
+- feat(blog): add archive search and pagination
+- agent: add adapter for Ozon
+- test: compare Inkling Small and GLM vision
+- agent: add adapter for Shopee
+- agent: add adapter for Flipkart
+- Address 58.com verification review
+- agent: add adapter for Xianyu
+- agent: add adapter for Kuaishou
+- agent: add adapter for Douyin
+- agent: add adapter for Dianping
+- agent: add adapter for Qunar
+- agent: add adapter for 58.com
+- agent: add adapter for BOSS Zhipin
+- agent: add adapter for Amap
+- chore: rebuild dist zips
+- chore: bump version
+- agent: cover the 12306 payment host and tighten the adapter assertions
+- fix(agent): address Ctrip adapter review
+- agent: correct Zhihu profile routing and trim guidance
+- agent: add Taobao shop hosts and name the in-shop search toggle
+- agent: add adapter for Zhihu
+- fix(adapters): scope Baidu search handoffs
+- agent: add adapter for Weibo
+- agent: add adapter for Ctrip
+- docs: require adapter host coverage to match what the notes describe
+- agent: add adapter for Baidu Search
+- agent: cover Taobao shop/mobile/Tmall hosts and add verification-wall guidance
+- agent: add adapter for 12306
+- Apply suggestions from code review
+- agent: add adapter for Taobao
+- agent: broaden JD adapter host coverage and soften login-redirect claim
+- agent: add adapter for JD
+- fix(captcha): consume response token state
+- chore: rebuild dist zips
+- chore: bump version
+- Correct Inkling Small parameter count
+- Address delivery checkpoint review feedback
+- Enforce terminal delivery checkpoints
+- 26.0.2
+- Expand frontier benchmark to thirteen models
+- Add consensus benchmark of ten frontier models
+- chore: rebuild dist zips
+- chore: bump version
+- fix(marktplaats): allow trusted bank handoff
+- agent: add adapter for Takealot
+- docs: add community and discord setup guides and improve docs formatting
+- agent: add adapter for Marktplaats
+- web: document scrolling and tab switching
+- removed artifacts
+- agent: add adapter for Allegro
+- Refresh brand and website social assets
+- Bind claimed prompts to source tabs
+- Invalidate pre-clear handoff generations
+- Retry stale tab chat clears
+- Release claims on preflight exits
+- Invalidate cleared chat handoff snapshots
+- Retry initial handoff ownership
+- Retry tab chat ownership reconciliation
+- Preserve handoff ownership across clears
+- Release context claims on preflight abort
+- Release claims on initial visibility exit
+- Handle handoff and claim retry races
+- Fix sidepanel refresh and claim races
+- Reject expired context-menu reservations
+- Release claim after final visibility loss
+- Fix transcript handoff barrier race
+- Close side panel handoff race gaps
+- Refine Product Hunt browser and model slides
+- Fix side panel handoff review issues
+- Refresh Product Hunt gallery assets
+- Fix context-menu run ownership races
+- assets: add thumbnail-safe explainer gallery (2026 v5)
+- Preserve read_page continuation options
+- Paginate read_page article text
+- assets: add typographic explainer gallery (2026 v4)
+- assets: say "Chromium browsers and Firefox" on v3 hero
+- assets: add logo-free explainer gallery (2026 v3)
+- assets: add light-background hero and plan slides
+- Preserve retained search query state
+- Harden completion search form classification
+- Fix localized completion form classification
+- assets: add social proof slide to webstore explainer
+- fix(skills): reject structural plain scalars
+- fix: keep runtime trace config attributable for unlimited and tabless runs
+- fix(captcha): preserve active frame visibility
+- Apply suggestions from code review
+- agent: add adapter for Rakuten Ichiba
+- agent: add adapter for Coupang
+- agent: add adapter for WeChat Official Accounts
+- docs: fix site adapter matcher API name
+- Announce the planner failure card and stop duplicating its Retry
+- Classify planner failures on the shapes providers actually emit
+- Fix planner intent recovery and cancellation context
+- feat: add runtime config to traces
+- Add recovery actions for planner provider failures
+- fix(captcha): detect active challenge frames
+- fix(skills): enforce Agent Skills trust boundary
+- Docs: truth-up packaged skills catalog and 23 UI locales.
+- Add Frankfurter FX as an opt-in packaged skill.
+- Add GPT4All as a built-in local OpenAI-compatible provider.
+- fix(chrome): repair Wikipedia skill tools JSON so tools parse
+- fix(firefox): harden global shortcuts against AltGr, IME, and pickers
+- agent: cut generic e-commerce bullets from Mercado Libre adapter
+- docs: sync Firefox upload parity artifacts
+- Add exchars parameter to Wikipedia API request
+- agent: tighten Mercado Libre adapter notes
+- Potential fix for pull request finding
+- feat(skills): add opt-in Wikipedia packaged skill
+- docs: correct Firefox upload_file parity in tool matrix and TODOs
+- fix(firefox): implement documented global keyboard shortcuts
+- agent: add adapter for Mercado Libre
+- fix(skills): preserve unsupported YAML frontmatter
+- chore: rebuild dist zips
+- chore: bump version
+- 26
+- Honor descendant CAPTCHA visibility overrides
+- Keep ambiguous CAPTCHA observations gated
+- Match hidden CAPTCHA evidence precisely
+- fix(agent): re-arm duplicate-submit window on acknowledged resubmit
+- refactor(agent): freeze shared image budget defaults
+- refactor(agent): extract image budget helpers
+- Refine background screenshot compatibility
+- Reject blank full-page background captures
+- fix(captcha): fail closed when the DOM rescan cannot disprove a tree-observed challenge
+- Verify inactive Firefox tabs before completion
+- Make local browser runs background-safe
+- some changes
+- feat(traces): add offline OTLP converter
+- feat(skills): support Agent Skills frontmatter
+- feat: add ATIF trace converter
+- fix(firefox): block rapid duplicate submits
+- refactor(agent): extract text tool-call parser
+- fix(captcha): report response token state
+- docs: put every chapter back in the readme demo gif, and fix an orphaned card
+- docs: lead the READMEs with a product demo gif
+- change dropdown language order
+- chore: rebuild dist zips
+- chore: bump version
+- Fix CapSolver key enablement migration
+- chore: rebuild dist zips
+- chore: bump version
+- Fix New conversation confirmation in Vivaldi
+- chore: rebuild dist zips
+- chore: bump version
+- recognize branded CAPTCHA dialogs
+- web: update the WebBrain vs Claude comparison videos
+- allow CAPTCHA gate abandonment
+- refine CAPTCHA challenge labels
+- verify CAPTCHA gates across frames
+- clear CAPTCHA gate after manual completion
+- fix CAPTCHA preflight frame visibility
+- fix CAPTCHA gate recovery edge cases
+- web: hard-cut the demo's preroll cards instead of cross-dissolving
+- harden CAPTCHA challenge correlation
+- chore: rebuild dist zips
+- chore: bump version
+- fix CAPTCHA gate review findings
+- ui: fade the chat nav pill when idle, link the settings title
+- web: reframe the vertical demo's GitHub and YouTube chapters
+- fix CAPTCHA dialog label detection
+- recaptcha enterprise fixes
+- web: let the demo's music fade out, and close a gap in the blur
+- web: blur the prompt text in the demo's Bumble chapter
+- web: replace the hero demo with the re-cut 79s version
+- chore: rebuild dist zips
+- chore: bump version
+- fix: explain the selection-only boundary to the model
+- harden captcha response field injection
+- fail closed on ambiguous captcha frames
+- fix opaque captcha targeting
+- preserve explicit captcha token fallback
+- web: label the feature toggle "Show more features"
+- fix captcha field and mode conflicts
+- fix: isolate saved workflows from selection scope
+- target selected captcha response fields
+- fix: isolate independent runs from selection scope
+- harden captcha injection targets
+- fix: handle scoped compact and attachments
+- reconcile ancestor captcha loaders
+- fix: clear unanchored selection scopes
+- fix captcha marker and redirect visibility
+- fix: close grounded selection escape paths
+- keep hidden captcha candidates below visible widgets
+- fix: preserve grounded selection follow-ups
+- web: rework landing page around trust, and shorten the feature wall
+- fix explicit Turnstile token injection
+- fix captcha fragment and blank-frame injection
+- fix: isolate selection-only model history
+- docs: simplify the three READMEs and split reference material into docs
+- allow explicit keys for Turnstile challenges
+- reject conflicting captcha candidate parameters
+- fix: let grounded shortcuts bypass attachment reads
+- reject conflicting captcha actions
+- fix opaque captcha frame handling
+- fix captcha ancestor frame visibility
+- fix: isolate selected-text model context
+- fix frame-aware captcha solving
+- chore: rebuild dist zips
+- chore: bump version
+- refactor(agent): finish the loop-detector extraction
+- refactor(agent): test production loop detector
+- fix(ui): match the full-screen start message to banner visibility
+- docs: document --hide-recording-indicator in translated READMEs
+- chore: rebuild dist zips
+- chore: bump version
+- chore: release v25.9.0
+- fix(ui): hide invalid slash enter actions
+- fix(ui): show full-screen recording indicator
+- fix(agent): correct captcha version/edition detection and error triage
+- fix(agent): parse action parameters with URL.searchParams to preserve decoded characters
+- fix: disable mode-pill animation for prefers-reduced-motion
+- fix(agent): scope Enterprise script detection and cross-reference v3 script render tags for anchor iframes
+- fix(watch): close helper tabs, tolerate transient failures, harden beep dedupe
+- fix: address review — guard test, de.js revert, firefox utils dedup
+- fix(agent): prioritize rendered iframe anchors over script loader tags in URL candidate detection
+- fix(agent): recognize declarative v3 markup with data-action on non-invisible DOM elements
+- fix(agent): pre-flight check pageAction for v3 and do not infer v3 from data-action on DOM elements
+- Apply suggestions from code review
+- fix(agent): support Enterprise solution mapping in Chrome and restrict action lookup to widget
+- fix(agent): handle Enterprise script detection before iframe render and v3 pageAction extraction
+- fix(agent): scope Enterprise widget detection and expose isEnterprise in solve_captcha schema
+- chore: add WebBrain Cloud interface strings and microphone permission messages to all locales
+- fix(agent): support reCAPTCHA Enterprise and invisible URL parameter detection in CapSolver
+- feat: centralize text sanitization and UI utilities while standardizing provider message logic
+- docs: explain export and workflow formats
+- fix(workflows): recover from start scope mismatch
+- fix(watch): address polling review feedback
+- rtl
+- version update
+- fix resize
+- firefox parity
+- new style for sidepanel tabs
+- chore: rebuild dist zips
+- chore: bump version
+- Fix detached side panel window routing
+- Update docs sidebars: rename Discord link and add Chinese community section
+- chore: rebuild dist zips
+- chore: bump version
+- Fix store submission automation
+- chore: rebuild dist zips
+- chore: bump version
+- Fix duplicate normalized streamed answers
+- docs: add Discord support link to sidebar
+- Keep composer locked while clearing
+- Bound unavailable stop-state probes
+- Wait for stopped run follower before clearing
+- Suppress updates from cleared runs
+- chore: rebuild dist zips
+- chore: bump version
+- Cancel schedules after active runs settle
+- Scope New Chat aborts to their tab
+- Discard queued prompts before clearing chats
+- Redact JSON-shaped streaming secrets
+- Guard Stop fallback with active run state
+- Preserve Ask streaming trace order
+- Keep stopped runs guarded until terminal state
+- chore: rebuild dist zips
+- chore: bump version
+- Trace interactive Ask streaming lifecycle
+- Fix evroc icon and add provider counts
+- Settle local run follower before clearing chat
+- Wait for direct runs before clearing chats
+- verify find_text selection advancement
+- Stop active runs before starting new chats
+- preserve pending upload evidence
+- fix find_text selection verification
+- Add 76 LLM providers and Ask streaming
+- dist: rebuild submission zips for v25.8.0
+- chore: release v25.8.0
+- polish sidepanel pickers and language menu
+- add Inkling planner benchmark
+- fix locale dropdown initialization and ordering
+- Document Mistral stream usage requirement
+- Avoid retrying terminal Ask stream errors
+- missing piece from nl de add
+- new languages de and nl
+- Meter Mistral Ask streaming usage
+- Keep Alibaba Ask non-streaming
+- Enable Ask streaming across providers
+- docs: sync documentation with recent changes
+- docs: add z.ai GLM to provider lists
+- chore: rebuild dist zips
+- chore: bump version
+- chore: rebuild dist zips
+- chore: bump version
+- Fix provider search result ranking
+- Preserve streamed Markdown across panel restores
+- chore: rebuild dist zips
+- chore: bump version
+- chore: rebuild dist zips
+- chore: bump version
+- Finalize restored streamed responses
+- Reveal store review prompts over reading mode
+- Preserve explicit chat reading positions
+- Fix streamed Markdown rendering
+- Keep Continue prompt clear of chat navigation
+- Keep chat navigation visually floating
+- Polish long-reply navigation controls
+- Restore chats to the newest message
+- chore: rebuild dist zips
+- chore: bump version
+- Reveal new questions before streaming
+- Document release 25.7.8
+- Purge retired release skill records
+- Resume follow after forced chat jumps
+- Show navigation for clipped replies
+- Keep slash command output visible
+- Remove orphaned release setup and routing
+- Keep blocking prompts visible in reading mode
+- Remove Chrome Web Store release from skills
+- 25.7.8
+- Add reading-first navigation for long replies
+- chore: rebuild dist zips
+- chore: bump version
+- Reject historical refs in workflow text
+- Harden portable workflow imports
+- chore: rebuild dist zips
+- chore: bump version
+- wording fix
+- chore: rebuild dist zips
+- chore: bump version
+- Require durable proof before continuing
+- Restore cost-limit retry cards
+- Render streamed allowance terminal cards
+- Enrich restored allowance terminal events
+- Add portable workflow transfer
+- Preserve restored chat durability proof
+- Route allowance cards from terminal state
+- Keep allowance continuations resumable
+- Preserve trusted field dispatch failures
+- Use retry for pre-turn allowance stops
+- Fix trusted contenteditable submissions
+- chore: rebuild dist zips
+- chore: bump version
+- Update OpenAI model picker
+- chore: rebuild dist zips
+- chore: bump version
+- Add sidepanel cost allowance bump
+- fix(linkedin): reach shadow-DOM composer — pierce interop shell, hoist shadow dialogs, match Quill placeholders
+- chore: rebuild dist zips
+- chore: bump version
+- Force tracing for cloud source runs
+- chore: rebuild dist zips
+- chore: bump version
+- translate Hindi Portuguese Vietnamese Bengali and Persian locales
+- Redact workflow updates before truncation
+- Redact encoded workflow parameters
+- Add cloud saved workflow bridge
+- fix locale loading and language routing
+- fix(screenshots): mechanical image→CSS click conversion + hi-DPI tabs-fallback alignment
+- Add hi, pt, vi, bn, fa translations to Firefox, Chrome, and web locales
+- Add missing st.skills.cws.* translations to all 15 Chrome locale files
+- docs: add Ai2 response to Molmo2 benchmark
+- dist: rebuild submission zips for v25.7.0
+- chore: release v25.7.0
+- chore: rebuild dist zips
+- chore: bump version
+- ui refinement
+- ui refinement
+- 25.6.1
+- minor changes
+- Fix planner fallback and answer delivery
+- dist: rebuild submission zips for v25.6.0
+- chore: release v25.6.0
+- 25.5.2
+- Add Ask-only OpenAI Responses streaming
+- Add Nanbeige 4.2 planner benchmark
+- dist: rebuild submission zips for v25.5.0
+- chore: release v25.5.0
+- drag'n drop reordering of steps in planner
+- Capture plan editor scroll before input
+- Keep plan step editing scroll stable
+- 25.4.5
+- Fix plan review scroll and run label
+- chore: rebuild dist zips
+- chore: bump version
+- Harden mixed plan editor modes
+- fix: distinguish find_text scan progress
+- Preserve multiline plan step edits
+- fix: search embedded frames with find_text
+- Strip canonical plan tool suffixes
+- fix: ground selection actions and page text search
+- Preserve collapsed raw plan approvals
+- Preserve raw plan edits after review
+- chore: rebuild dist zips
+- chore: bump version
+- Improve plan review with structured in-place editing
+- docs(watch): surface poll state and guarantees
+- feat(watch): alert on distinct successful events
+- fix(workflows): close review gaps for save, replay, and telemetry
+- feat(watch): run conditional scheduler polls
+- fix(webmcp): harden root-nav discovery and child enable lifecycle
+- feat(watch): define slash command syntax
+- fix: add missing z_ai.svg icon to firefox providers directory
+- provider: add z.ai GLM-5.2 as a cloud provider
+- fix(workflows): reject brittle selector replay
+- fix(workflows): guard replay by page scope
+- feat(workflows): replay saved actions safely
+- feat(workflows): save and manage traced runs
+- feat(workflows): add safe saved workflow schema
+- Complete protected store recovery
+- Scope Chrome indexes to blocking dialogs
+- Preserve shadow keys and modal scope
+- Track Chrome Web Store request dispatch
+- fix(webmcp): close remaining lifecycle and discovery races
+- Handle no-body offscreen responses
+- Require inspection before store publish
+- fix: scope modal select suppression
+- fix(webmcp): harden frame permission and discovery races
+- Fix Chrome Web Store release safeguards
+- Scope interactive indexes to active modals
+- fix: address PR review findings
+- Harden native select text matching
+- fix(cost): price OpenAI included cache writes
+- fix: close agent runtime and persistence edge cases
+- bugfix
+- kimi3 rundown
+- Add Chrome Web Store release workflow
+- docs(cost): explain prompt cache estimation
+- fix(cost): count streaming usage once
+- feat(settings): configure prompt cache pricing
+- fix(providers): preserve prompt cache usage
+- fix(cost): account for prompt cache usage
+- fix(webmcp): close discovery races cleanly
+- fix(webmcp): bound frame discovery fanout
+- bugfix
+- fix(webmcp): scope removals to owning sessions
+- fix(webmcp): retain reported execution contexts
+- fix(webmcp): complete child-session discovery lifecycle
+- fix(webmcp): aggregate out-of-process frame sessions
+- kimi3 rundown
+- fix(webmcp): discover pre-registered frame tools
+- ci(webmcp): run real Chrome smoke coverage
+- test(webmcp): bound real browser smoke phases
+- test(webmcp): exercise cross-frame tool lifecycle
+- test(webmcp): cover extension agent gates
+- test(webmcp): exercise unpacked extension client
+- test(webmcp): harden real Chrome smoke test
+- chore: rebuild dist zips
+- chore: bump version
+- chore: drop unused runOptions arg from _prepareClarificationAuthorizationForRun call sites
+- chore: rebuild dist zips
+- chore: bump version
+- Add Laguna M.1 planner benchmark
+- Randomize WebBrain social promotion actions
+- fix: preserve clarification guards across retries
+- Add Laguna S 2.1 planner benchmark
+- fix: isolate terminal scheduled actions
+- fix: persist timeout guard before continuing
+- fix(cloud): fail authorization-stopped runs
+- fix(agent): block guarded plain completions
+- fix(agent): preserve clarification-required run status
+- fix: settle scheduled authorization stops
+- fix: preserve stopped authorization boundaries
+- fix: allow explicit scheduled retries
+- fix: keep authorization stops durable
+- fix: preserve scheduled clarification stops
+- Block captcha solves after clarification timeouts
+- Fix WebMCP invocation permission bypass
+- webbrain citation for papers
+- Keep clarification authorization unresolved across turns
+- feat: gate WebMCP behind experimental setting
+- Guard actions after clarification timeouts
+- clear page loop state on route revisits
+- reset document loop state on revisits
+- scope navigation loop history to runs
+- dist: rebuild submission zips for v25.4.0
+- chore: release v25.4.0
+- fix same-route document loop resets
+- fix: catch navigation ping-pong loops and keep post-batch screenshots on early interrupts
+- Round-trip automatic progress policy
+- dist: rebuild submission zips for v25.3.0
+- chore: release v25.3.0
+- feat: use gpt-5.4-nano-2026-03-17 with max_completion_tokens
+- Preserve reviewed submit requirements
+- feat: switch from GitHub Models to OpenAI API directly (curl + OPENAI_SECRET)
+- Add initial release note for WebBrain
+- dist: rebuild submission zips for v25.2.0
+- chore: release v25.2.0
+- fix: revert to gpt-4o, remove max-completion-tokens
+- Carry submit verification across continuations
+- fix: add max-completion-tokens to avoid deprecated max_tokens error with gpt-5-mini
+- fix: correct GitHub Models model ID to gpt-5-mini
+- Identify WebBrain E2E control requests
+- fix: switch changelog prompt from .prompt.yml to plain text files to avoid YAML parse error with release context substitution
+- Diagnose Gnippets E2E HTTP failures
+- Keep validation failures blocking completion
+- Tighten submit completion evidence
+- Scope short completion signals to trusted UI
+- fix: add missing YAML separator to changelog prompt; default model to gpt-5.4-mini
+- Require final form completion evidence
+- Harden completion success evidence
+- Track planner submission requirements
+- Gate pending forms on submit attempts
+- Ignore persisted verification placeholders
+- Limit form completion guards to mutation tasks
+- Preserve uncertain submit dispatch state
+- Reconcile submit state from screenshot URLs
+- Stop stale calls after completion page blocks
+- Prevent completion guard loops
+- chore: rebuild dist zips
+- chore: bump version
+- Preserve screenshots across batch interruptions
+- Scope failed action loops to page state
+- Disable action prompts in unattended CI runs
+- chore: rebuild dist zips
+- chore: bump version
+- Accept camelCase final URLs in CI grading
+- chore: rebuild dist zips
+- chore: bump version
+- Clear recovered action failure scopes
+- Handle cloud run IDs and required skips
+- Apply suggestions from code review
+- Apply suggestions from code review
+- Raise fetch_url default window to 7000
+- Recover drafts after browser loop failures
+- Harden small-model browser actions
+- Validate mountain heights in CI rubric
+- Harden set_checked marker identity
+- Add recorded cloud E2E suite
+- Teach compact agents idempotent checkbox use
+- Require verified checkbox navigation loss
+- Preserve checkbox navigation outcomes
+- Make extension run recovery action-safe
+- Preserve invalid checkbox identities
+- Settle checkable click state
+- Keep detached starts cancellation-safe
+- Verify checkbox after route changes
+- Harden source fetching and trace completion
+- Refresh scope for form field refs
+- Fail closed across incomplete run recovery
+- Target invalid checkbox recovery
+- Scope reconnect snapshots to their request
+- Keep detached run starts active in the UI
+- Make form recovery refs actionable
+- Reconnect after runtime channel closures
+- Track checkbox-triggered navigation
+- Honor cancellation before retrying starts
+- Settle checkbox and radio state reads
+- Keep reconnect recovery safe on stop and quota errors
+- Harden checkbox recovery verification
+- Preserve fresh chat payload on recovery
+- Address checkbox review edge cases
+- Preserve run journal sequence on resume
+- Use secure entropy for checkbox markers
+- Fix idempotent checkbox state handling
+- Prevent duplicate uncertain run starts
+- Preserve detached run preflight errors
+- Reconnect interrupted extension runs
+- Fix sidepanel auto-scroll during streaming
+- chore: rebuild dist zips
+- chore: bump version
+- test: assert full firefox parity for foodpanda adapter
+- Enforce planned scheduling completion
+- Fix AMO uploads and unsafe navigation
+- Apply suggestions from code review
+- 25.1.0
+- Treat default shadow buttons as native submits
+- agent: add adapter for foodpanda
+- Scope validation evidence to submit context
+- Gate Enter validation on form context
+- Preflight unattended custom submits
+- Preserve CDP submit evidence strength
+- Allow heuristic custom submit validation
+- Keep polling redirected validation pages
+- Inspect iframe validation for selector submits
+- feat: add experimental WebMCP CDP integration
+- Detect persistent errors after corrections
+- Narrow heuristic submit label fallback
+- Keep heuristic submit probes weak
+- Distinguish strong custom submit preflights
+- Track ARIA corrections and script submits
+- Skip validation for explicit non-submit buttons
+- Release protocol picker guards after consume
+- Reset residual picker guards before CDP
+- Respect corrective button submit metadata
+- Distinguish strong native submit evidence
+- Intercept trusted file chooser dialogs
+- Cover unattended iframe validation
+- Suppress closed and delayed file pickers
+- agent: add adapters for Bilibili and Xiaohongshu
+- Detect validation errors after redirects
+- Avoid validation probe code scanning alerts
+- Cover delayed file picker activations
+- Handle corrected validation retry state
+- Recover page-world picker guards safely
+- Tighten form validation resubmit detection
+- Guard file pickers in the page world
+- Surface ARIA validation error messages
+- Block direct file picker activations
+- Add handler-level test for import_config_patch storage merge
+- Cover additional validation submit paths
+- Resolve Chrome uploads inside shadow roots
+- Handle validation retries across redirects
+- Clarify provisioning config routing
+- Guard trusted upload control fallback
+- Allow corrected set_field validation retries
+- Avoid picker guard waits during navigation
+- Preserve managed cloud provider during sparse import
+- Handle deferred upload picker activations
+- Handle form validation failures reliably
+- Add sparse provisioning config import
+- Prevent stale file upload dialogs
+- Fix slash command Enter actions after flags
+- chore: rebuild dist zips
+- chore: bump version
+- Fix stale Stop WebBrain indicator
+- chore: rebuild dist zips
+- chore: bump version
+- preserve indented title examples
+- replace repaired streamed done summaries
+- repair accepted done display summaries
+- require valid closing fences in display repair
+- reject unsafe page-title layout escapes
+- preserve list-prefixed fenced title examples
+- handle plain JSON-quoted page titles
+- Release 25.0.0 with localized WebBrain post action
+- repair JSON-quoted page titles
+- address CodeQL URL assertion suggestions
+- add suggested action: tweet webbrain
+- Scope accessibility refs to page routes
+- Normalize rich editor field verification
+- Redact failed sensitive field readbacks
+- Use canonical AX names for broad click guard
+- Fix false agent stops and stale AX clicks
+- Harden accessibility action verification
+- Preserve permission hint source tab
+- fix: self-verify scheduled task results
+- Teach users how to skip permission prompts
+- fix: keep Compact Dev blocked
+- fix double-escaped assistant text
+- fix: track iframe target dispatch
+- fix: tighten completion action evidence
+- fix: distinguish captcha preflight failures
+- fix: resume trusted acted obligations
+- fix: preserve restored obligation session keys
+- fix: protect runtime obligation metadata
+- fix: preserve terminal obligation state
+- fix: normalize protected progress row keys
+- fix: distinguish input preflight failures
+- fix: reject stale batch obligation evidence
+- fix: require model-visible screenshot evidence
+- fix: mark click_ax preflight failures
+- fix: allow observed non-success obligations
+- fix: allow trusted preexisting target skips
+- fix: ignore pre-dispatch click failures
+- fix: align compact Dev and streamed completion UX
+- fix: narrow completion observations to state reads
+- fix: close remaining completion evidence gaps
+- fix: stop stale calls after blocked completion
+- fix: require prior-turn evidence for obligations
+- test: align completion invariants with merged guards
+- fix: close completion invariant review gaps
+- feat: enforce runtime completion invariants
+- Clear rejected plan-only stream text before recovery
+- Drop allows_future_tense_result planner flag
+- dist: rebuild submission zips for v24.4.0
+- chore: release v24.4.0
+- Skip stale calls after invalid done
+- Make plain terminal recovery language neutral
+- Align planner copy and replace streamed failures
+- Preserve requested future-tense results
+- Use complete escaping in dynamic test regexes
+- Count explicitly requested app-state tools
+- Keep promise guard for structured results
+- Preserve structured blocker outcomes
+- Harden mixed plans and streamed continuations
+- Carry execution evidence across trusted continuations
+- Preserve requested planner-shaped markdown
+- Harden locale and poll safety gates
+- Disable execution guard for managed cloud runs
+- Use captured bounds for screenshot redaction
+- Expose structured blockers in compact mode
+- Keep native disclosures synthetic-only
+- Preserve requested planner-shaped results
+- Reject empty-step planner terminals
+- Apply adapter policy to agent screenshots
+- Exclude meta evidence and preserve plain blockers
+- Address final trusted click review gaps
+- Use page URLs in screenshot filenames
+- Tighten mutation evidence and recovery status
+- Add Save As to screenshot results
+- Make plain final rejection explicit
+- Avoid applying screenshot DPR twice
+- Replace rejected streamed plans with failure status
+- Harden trusted click fallback for merge
+- Use structured planner intent for Act routing
+- Keep execution guard on for negated approval waits
+- Address remaining trusted-click review comments
+- Treat question-form plan requests as plan-only
+- Use adapter policies for infinite screenshots
+- Bound infinite screenshot capture in MV3
+- Close residual trusted click gaps
+- Handle lazy full-page growth and fallback warnings
+- Use actual viewport for full-page screenshots
+- Fix full-page screenshot CDP metrics
+- Harden trusted click fallback verification
+- Trim compact plan execution guidance
+- Enforce plan-to-execution handoff
+- Address trusted click review feedback
+- Add guarded CDP click fallback
+- Reject plan-only terminal responses and continue into execution
+- chore: rebuild dist zips
+- chore: bump version
+- Align Chrome pin coachmark
+- bugfix
+- fix: reserve recording session while saving to disk
+- Fix provider picker CSS, a11y, and CodeQL URL sniffing
+- fix: harden recording save path resolution
+- Add provider brand icons and improve provider picker UX
+- fix: report resolved download paths
+- feat: improve first-install pin guidance
+- chore: rebuild dist zips
+- chore: bump version
+- 24.2.1
+- Preserve one-time Firefox downloads
+- Honor GET-selected Firefox filenames
+- Skip unnecessary Firefox filename probes
+- Add first-install extension pinning guide
+- Preserve Firefox download filenames
+- Make download directory configurable
+- dist: rebuild submission zips for v24.2.0
+- chore: release v24.2.0
+- Scope Kimi reasoning to active tool loops
+- Gate Kimi reasoning replay by model
+- Scope reasoning replay to compatible providers
+- Persist provider key warnings across renders
+- Scope Ollama guidance to WebBrain origin
+- Preserve Kimi reasoning across tool loops
+- Remove unsafe wildcard Ollama origin
+- Fix provider activation key warning
+- Fix Kimi temperature compatibility
+- Fix Ollama origin guidance
+- Fix Kimi transcription provider selection
+- Improve provider setup guidance
+- Add Kimi provider support
+- Apply suggestions from code review
+- chore: update URLs and references across doc and source files
+- fix: exclude API mutations from delivery checkpoints
+- fix: improve session delivery reliability
+- chore: rebuild dist zips
+- chore: bump version
+- i18n: translate image-budget settings strings in all non-en locales
+- fix(agent): validate image-budget storage and save full-res screenshots
+- fix(chrome): image-budget review nits (indent, default select, compress budget)
+- fix(agent): coord-aligned side-only budget + maxScreenshotsPerTurn skip signal
+- feat(firefox): port image budget controls and close review items 1/4/5
+- feat(chrome): image budget controls for screenshot quality + per-turn capture (issue #311)
+
 ## [28.1.2] - 2026-08-11
 
 ### Changed
