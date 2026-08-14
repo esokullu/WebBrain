@@ -779,6 +779,8 @@ const { ProviderManager: ProviderManagerFx } = await import(
 const {
   WebGPUProvider,
   WebGPUVisionProvider,
+  WEBGPU_BONSAI_DTYPE,
+  WEBGPU_BONSAI_MODEL_ID,
   WEBGPU_DTYPE,
   WEBGPU_MODEL_ID,
   WEBGPU_MODEL_PRESETS,
@@ -40839,12 +40841,15 @@ test('Chrome exposes separate endpoint-free WebGPU text and vision providers', a
     const generalProvider = manager._createProvider('webgpu', webgpuConfig);
     assert.ok(generalProvider instanceof WebGPUProvider);
     assert.equal(new WebGPUProvider({ model: WEBGPU_QWEN_MODEL_ID }).model, WEBGPU_QWEN_MODEL_ID);
+    const bonsaiProvider = new WebGPUProvider({ model: WEBGPU_BONSAI_MODEL_ID, dtype: WEBGPU_DTYPE });
+    assert.equal(bonsaiProvider.model, WEBGPU_BONSAI_MODEL_ID);
+    assert.equal(bonsaiProvider.dtype, WEBGPU_BONSAI_DTYPE, 'the Ternary Bonsai preset must select its WebGPU q2f16 graph');
     assert.equal(new WebGPUProvider({ model: 'custom-owner/custom-model' }).model, 'custom-owner/custom-model');
     assert.equal(
       new WebGPUProvider({ model: 'https://huggingface.co/onnx-community/Qwen3-0.6B-ONNX/' }).model,
       WEBGPU_QWEN_MODEL_ID,
     );
-    assert.deepEqual(WEBGPU_MODEL_PRESETS.map(option => option.id), [WEBGPU_MODEL_ID, WEBGPU_QWEN_MODEL_ID]);
+    assert.deepEqual(WEBGPU_MODEL_PRESETS.map(option => option.id), [WEBGPU_MODEL_ID, WEBGPU_QWEN_MODEL_ID, WEBGPU_BONSAI_MODEL_ID]);
     assert.equal(normalizeWebgpuModelId(' onnx-community/Qwen3-0.6B-ONNX '), WEBGPU_QWEN_MODEL_ID);
     assert.throws(() => new WebGPUProvider({ model: 'not-a-repository' }), /owner\/repository/);
     assert.throws(() => new WebGPUProvider({ model: 'https://example.com/owner/model' }), /huggingface\.co/);
@@ -41013,6 +41018,8 @@ test('WebGPU worker follows local text-generation and LiquidAI vision contracts'
   assert.ok(multimodal >= 0 && visionCard > multimodal && localToggle > visionCard && transcription > localToggle);
 
   const vendorDir = path.join(ROOT, 'src/chrome/vendor/transformers');
+  const transformersBundle = fs.readFileSync(path.join(vendorDir, 'transformers.web.js'), 'utf8');
+  assert.match(transformersBundle, /q2f16/);
   assert.match(fs.readFileSync(path.join(vendorDir, 'ort.webgpu.mjs'), 'utf8'), /ONNX Runtime Web v1\.27\.0/);
   assert.match(fs.readFileSync(path.join(vendorDir, 'README.md'), 'utf8'), /Qwen3\/QMoE correctness fixes/);
   assert.match(fs.readFileSync(path.join(vendorDir, 'LICENSE.transformers.txt'), 'utf8'), /Apache License[\s\S]*Version 2\.0/);

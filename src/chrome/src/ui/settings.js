@@ -372,6 +372,7 @@ function webgpuModelPresentation(modelId) {
     id: normalized,
     label: preset?.label || normalized,
     size: preset?.size || 'Size varies',
+    dtypeLabel: preset?.dtypeLabel || WEBGPU_DTYPE,
     url: `https://huggingface.co/${normalized.split('/').map(encodeURIComponent).join('/')}/`,
   };
 }
@@ -384,7 +385,7 @@ function updateWebgpuModelPresentation(modelId) {
     link.href = presentation.url;
     link.textContent = presentation.label;
   }
-  if (size) size.textContent = `${presentation.size} · ${WEBGPU_DTYPE}`;
+  if (size) size.textContent = `${presentation.size} · ${presentation.dtypeLabel}`;
 }
 
 function formatWebgpuBytes(bytes) {
@@ -3147,7 +3148,7 @@ function renderProviders() {
          <section class="webgpu-transfer" data-webgpu-download-panel data-state="${escapeHtml(webgpuDownloadState.status)}" data-indeterminate="${webgpuDownloadState.total <= 0}" aria-labelledby="webgpu-transfer-title">
            <div class="webgpu-transfer-heading">
              <span class="webgpu-transfer-title" id="webgpu-transfer-title">${escapeHtml(t('st.providers.webgpu_download.title'))}</span>
-             <span class="webgpu-transfer-size" data-webgpu-model-size>${escapeHtml(selectedModel.size)} · ${escapeHtml(WEBGPU_DTYPE)}</span>
+             <span class="webgpu-transfer-size" data-webgpu-model-size>${escapeHtml(selectedModel.size)} · ${escapeHtml(selectedModel.dtypeLabel)}</span>
            </div>
            <div class="webgpu-transfer-status-row" role="status" aria-live="polite">
              <span class="webgpu-transfer-dot" aria-hidden="true"></span>

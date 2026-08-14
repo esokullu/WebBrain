@@ -46,7 +46,7 @@ class BaseLLMProvider {
 | `localai` | `openai` | local | (modèle chargé) | Métadonnées auto / surcharge |
 | `gpt4all` | `openai` | local | (modèle chargé) | Oui (activé par défaut) |
 | `local_openai_proxy` | `openai` | local | (requis) | Désactivée / bascule manuelle |
-| `webgpu` (Chromium) | `webgpu` | local | Ling 3.0 Tiny (défaut), Qwen3 0.6B ou dépôt HF personnalisé | Non |
+| `webgpu` (Chromium) | `webgpu` | local | Ling 3.0 Tiny (défaut), Qwen3 0.6B, Ternary Bonsai 1.7B ou dépôt HF personnalisé | Non |
 | `azure_openai` | `azure_openai` | cloud | (déploiement) | Bascule manuelle |
 | `aws_bedrock` | `aws_bedrock` | cloud | (ID de modèle) | Non |
 | `openai` | `openai` | cloud | `gpt-5.6-terra` | Regex nom de modèle |

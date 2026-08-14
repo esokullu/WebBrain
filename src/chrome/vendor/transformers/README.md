@@ -10,9 +10,9 @@ WebGPU paths in Chrome:
   `LiquidAI/LFM2.5-VL-450M-ONNX` as the dedicated screenshot sidecar.
 
 Model weights are not bundled. Transformers.js downloads the selected WebGPU
-variant on first use and stores it in the browser cache. Text models use the
-repository's standard `q4f16` graph (about 4.85 GB for Ling or 570 MB for the
-Qwen3 0.6B preset); LFM2.5-VL uses:
+variant on first use and stores it in the browser cache. Ling and Qwen use the
+repository's standard `q4f16` graph (about 4.85 GB and 570 MB respectively).
+Ternary Bonsai 1.7B uses its `q2f16` graph (about 480 MB). LFM2.5-VL uses:
 
 - `embed_tokens`: FP16
 - `vision_encoder`: FP16

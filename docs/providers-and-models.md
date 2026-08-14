@@ -46,7 +46,7 @@ class BaseLLMProvider {
 | `localai` | `openai` | local | (loaded model) | Auto metadata / override |
 | `gpt4all` | `openai` | local | (loaded model) | Yes (default on) |
 | `local_openai_proxy` | `openai` | local | (required) | Off / manual toggle |
-| `webgpu` (Chromium) | `webgpu` | local | Ling 3.0 Tiny (default), Qwen3 0.6B, or custom HF repo | No |
+| `webgpu` (Chromium) | `webgpu` | local | Ling 3.0 Tiny (default), Qwen3 0.6B, Ternary Bonsai 1.7B, or custom HF repo | No |
 | `azure_openai` | `azure_openai` | cloud | (deployment) | Manual toggle |
 | `aws_bedrock` | `aws_bedrock` | cloud | (model id) | No |
 | `openai` | `openai` | cloud | `gpt-5.6-terra` | Model-name regex |
@@ -152,13 +152,15 @@ model selector offers
 [`webbrain-one/Ling-3.0-tiny-ONNX`](https://huggingface.co/webbrain-one/Ling-3.0-tiny-ONNX/)
 (the default),
 [`onnx-community/Qwen3-0.6B-ONNX`](https://huggingface.co/onnx-community/Qwen3-0.6B-ONNX/),
+[`onnx-community/Ternary-Bonsai-1.7B-ONNX`](https://huggingface.co/onnx-community/Ternary-Bonsai-1.7B-ONNX/),
 or a custom Hugging Face repository. Custom repositories must be compatible
 with Transformers.js text generation and provide a `q4f16` ONNX variant. The
 selected model runs through the packaged Transformers.js 4.2 runtime in a
 dedicated extension Worker. The provider is text-only and defaults to the
 Compact prompt tier with a conservative 16k practical context setting. Ling
 downloads approximately 4.85 GB of model data; Qwen3 0.6B downloads about
-570 MB. Each repository is cached separately in Chrome. **Test Connection**
+570 MB. Ternary Bonsai uses its `q2f16` graph and downloads about 480 MB. Each
+repository is cached separately in Chrome. **Test Connection**
 checks only the packaged runtime and hardware WebGPU adapter, so it does not
 trigger a model download. There is no API key, base URL, localhost server, or
 OpenAI-compatible endpoint. Firefox does not expose the card because its build
