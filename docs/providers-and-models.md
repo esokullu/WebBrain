@@ -149,7 +149,7 @@ duplicate request.
 ### Local Providers
 
 On Chromium, **WebGPU (In-browser)** is an endpoint-free local provider. Its
-Apocalypse text picker offers two shipped presets:
+Apocalypse text picker offers three shipped presets:
 
 - [`LiquidAI/LFM2.5-2.6B-ONNX`](https://huggingface.co/LiquidAI/LFM2.5-2.6B-ONNX/)
   (`q4f16`, about 1.55 GB) through the packaged Transformers.js 4.2 / ONNX
@@ -160,6 +160,15 @@ Apocalypse text picker offers two shipped presets:
   worker. Bonsai is opt-in: WebBrain never auto-downloads the 27B weights.
   It needs a high-end GPU (16 GB+ RAM/VRAM recommended). GPU-resident LFM and
   Bonsai sessions are never live at the same time; disk caches may coexist.
+- [`Mike0021/MiniCPM5-1B-ONNX-Web`](https://huggingface.co/Mike0021/MiniCPM5-1B-ONNX-Web)
+  (`q4`, about 0.91 GB) through the packaged Transformers.js / ONNX Runtime Web
+  GPU worker. The Apocalypse picker calls this preset **Pro**. It is opt-in.
+  This browser-ready export replaces the original `alexHSM` export, whose
+  single 2.16 GB external weights file could not be allocated as one browser
+  `ArrayBuffer`; existing selections migrate automatically, and starting the
+  replacement download clears cached artifacts left by the failed export. The
+  packaged worker also supplies MiniCPM5's official standalone chat template,
+  which Transformers.js 4.2 does not attach to plain tokenizers automatically.
 
 Custom Hugging Face repositories have not been tested and are likely not to
 work. They must be compatible with Transformers.js text generation, provide a
@@ -168,11 +177,11 @@ validates the template after loading and rejects incompatible repositories.
 Do not point Transformers.js at the Bonsai GGUF — 27B is not an ONNX pipeline.
 
 The provider is text-only and defaults to the Compact prompt tier with a
-conservative 16k practical context setting. LFM2.5 2.6B uses its official pure
-reasoning template; WebBrain keeps text before `</think>` out of the visible
-answer and reports an error if reasoning exhausts the output budget. Bonsai
-uses bitgpu `think: true` with a 128-token think budget and the same
-post-think visible-answer UX. Each repository is cached separately in Chrome.
+conservative 16k practical context setting (4k for Bonsai). LFM2.5 2.6B uses
+its official pure reasoning template; WebBrain keeps text before `</think>`
+out of the visible answer and reports an error if reasoning exhausts the output
+budget. Bonsai uses bitgpu `think: true` with a 128-token think budget and the
+same post-think visible-answer UX. Each repository is cached separately in Chrome.
 **Test Connection** checks only the packaged runtime and hardware WebGPU
 adapter, so it does not trigger a model download. There is no API key, base
 URL, localhost server, or OpenAI-compatible endpoint. Firefox does not expose

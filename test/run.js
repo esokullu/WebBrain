@@ -908,6 +908,9 @@ const {
   WEBGPU_DTYPE,
   WEBGPU_LFM25_MODEL_ID,
   WEBGPU_BONSAI27_MODEL_ID,
+  WEBGPU_MINICPM5_DTYPE,
+  WEBGPU_MINICPM5_LEGACY_MODEL_ID,
+  WEBGPU_MINICPM5_MODEL_ID,
   WEBGPU_MODEL_ID,
   WEBGPU_MODEL_PRESETS,
   WEBGPU_VISION_DTYPE,
@@ -52885,9 +52888,24 @@ test('Chrome exposes separate endpoint-free WebGPU text and vision providers', a
     assert.deepEqual(WEBGPU_MODEL_PRESETS.map(option => ({ id: option.id, label: option.label, runtime: option.runtime, contextWindow: option.contextWindow })), [
       { id: WEBGPU_LFM25_MODEL_ID, label: 'Minimal text model', runtime: 'onnx', contextWindow: 16384 },
       { id: WEBGPU_BONSAI27_MODEL_ID, label: 'Basic text model', runtime: 'bitgpu', contextWindow: 4096 },
+      { id: WEBGPU_MINICPM5_MODEL_ID, label: 'Pro text model', runtime: 'onnx', contextWindow: 16384 },
     ]);
     assert.equal(new WebGPUProvider({ model: WEBGPU_BONSAI27_MODEL_ID }).dtype, 'q1');
     assert.equal(new WebGPUProvider({ model: WEBGPU_BONSAI27_MODEL_ID }).requiresToolTemplate, false);
+    const proProvider = new WebGPUProvider({ model: WEBGPU_MINICPM5_MODEL_ID });
+    assert.equal(proProvider.dtype, WEBGPU_MINICPM5_DTYPE);
+    assert.equal(proProvider.requiresToolTemplate, false);
+    assert.deepEqual(proProvider._textDownloadTarget(), {
+      model: WEBGPU_MINICPM5_MODEL_ID,
+      runtime: 'onnx',
+      dtype: WEBGPU_MINICPM5_DTYPE,
+      requireTools: false,
+    });
+    assert.equal(
+      normalizeWebgpuModelId(WEBGPU_MINICPM5_LEGACY_MODEL_ID),
+      WEBGPU_MINICPM5_MODEL_ID,
+      'the unallocatable >2 GiB Pro export must migrate to the browser-ready q4 export',
+    );
     assert.equal(normalizeWebgpuModelId(' custom-owner/custom-model '), 'custom-owner/custom-model');
     assert.throws(() => new WebGPUProvider({ model: 'not-a-repository' }), /owner\/repository/);
     assert.throws(() => new WebGPUProvider({ model: 'https://example.com/owner/model' }), /huggingface\.co/);
@@ -53562,9 +53580,11 @@ test('Apocalypse text download fixes the LFM preset and avoids duplicate starts'
   }
 });
 
-test('Apocalypse enable keeps a selected Bonsai preset and does not auto-download it', async () => {
+test('Apocalypse enable keeps selected non-default text presets opt-in', async () => {
   const previousChrome = globalThis.chrome;
   const sentMessages = [];
+  let selectedModel = WEBGPU_BONSAI27_MODEL_ID;
+  let selectedDtype = 'q1';
   try {
     globalThis.chrome = {
       offscreen: { hasDocument: async () => true },
@@ -53581,8 +53601,8 @@ test('Apocalypse enable keeps a selected Bonsai preset and does not auto-downloa
               ok: true,
               status: 'not-downloaded',
               ready: false,
-              modelId: WEBGPU_BONSAI27_MODEL_ID,
-              dtype: 'q1',
+              modelId: selectedModel,
+              dtype: selectedDtype,
             });
             return;
           }
@@ -53597,23 +53617,31 @@ test('Apocalypse enable keeps a selected Bonsai preset and does not auto-downloa
       },
     };
 
-    const manager = new ProviderManagerCh();
-    manager.providers.set('webgpu', manager._createProvider('webgpu', {
-      ...manager._defaultConfigs().webgpu,
-      model: WEBGPU_BONSAI27_MODEL_ID,
-      dtype: 'q1',
-      configured: false,
-    }));
-    const result = await manager.enableAndStartWebgpuTextDownload();
-    assert.equal(result.ok, true);
-    assert.equal(result.started, false);
-    assert.equal(result.status, 'not-downloaded');
-    assert.equal(manager.getAll().webgpu.model, WEBGPU_BONSAI27_MODEL_ID);
-    assert.equal(manager.getAll().webgpu.contextWindow, 4096);
-    assert.deepEqual(sentMessages.map(message => message.type), [
-      'webgpu-probe',
-      'webgpu-download-status',
-    ], 'enabling Apocalypse Mode must not auto-start the 3.8 GB Bonsai download');
+    for (const preset of [
+      { model: WEBGPU_BONSAI27_MODEL_ID, dtype: 'q1', contextWindow: 4096, label: 'Bonsai' },
+      { model: WEBGPU_MINICPM5_MODEL_ID, dtype: WEBGPU_MINICPM5_DTYPE, contextWindow: 16384, label: 'MiniCPM5' },
+    ]) {
+      selectedModel = preset.model;
+      selectedDtype = preset.dtype;
+      sentMessages.length = 0;
+      const manager = new ProviderManagerCh();
+      manager.providers.set('webgpu', manager._createProvider('webgpu', {
+        ...manager._defaultConfigs().webgpu,
+        model: preset.model,
+        dtype: preset.dtype,
+        configured: false,
+      }));
+      const result = await manager.enableAndStartWebgpuTextDownload();
+      assert.equal(result.ok, true);
+      assert.equal(result.started, false);
+      assert.equal(result.status, 'not-downloaded');
+      assert.equal(manager.getAll().webgpu.model, preset.model);
+      assert.equal(manager.getAll().webgpu.contextWindow, preset.contextWindow);
+      assert.deepEqual(sentMessages.map(message => message.type), [
+        'webgpu-probe',
+        'webgpu-download-status',
+      ], `enabling Apocalypse Mode must not auto-start the ${preset.label} download`);
+    }
   } finally {
     if (previousChrome === undefined) delete globalThis.chrome;
     else globalThis.chrome = previousChrome;
@@ -53771,6 +53799,10 @@ test('WebGPU worker follows local text-generation and LiquidAI vision contracts'
   assert.match(worker, /Object\.entries\(dtype\)\.sort/);
   assert.match(worker, /const WEBGPU_TEXT_MAX_NEW_TOKENS = 256/);
   assert.match(worker, /const WEBGPU_LFM25_MAX_NEW_TOKENS = 2048/);
+  assert.match(worker, /const WEBGPU_MINICPM5_MAX_NEW_TOKENS = 2048/);
+  assert.match(worker, /usesMiniCpm5ChatTemplate \? \{ chat_template: MINICPM5_CHAT_TEMPLATE \} : \{\}/);
+  assert.match(worker, /modelId === WEBGPU_MINICPM5_MODEL_ID\) await clearLegacyMiniCpmCache\(\)/);
+  assert.match(worker, /WEBGPU_MINICPM5_LEGACY_MODEL_ID[\s\S]*?cache\.delete\(request\)/);
   assert.match(worker, /'ep\.webgpuexecutionprovider\.storageBufferCacheMode': 'simple'/);
   assert.match(worker, /session_options: createWebGpuTextSessionOptions\(\)/);
   assert.match(worker, /addEventListener\?\.\('uncapturederror'/);
@@ -53799,6 +53831,7 @@ test('WebGPU worker follows local text-generation and LiquidAI vision contracts'
   assert.match(host, /'webgpu-download-stop'/);
   assert.match(host, /'webgpu-download-status'/);
   assert.match(host, /function findActiveTextTransfer/);
+  assert.match(host, /SHIPPED_WEBGPU_TEXT_MODEL_IDS[\s\S]*?WEBGPU_MINICPM5_MODEL_ID/);
   assert.match(host, /activeTransfer/);
   assert.match(host, /probeExistingTextWorkerStatus/);
   assert.match(host, /sendTextWorkerMessage\(message\.model, 'text-download-status'/);
@@ -53861,7 +53894,7 @@ test('WebGPU worker follows local text-generation and LiquidAI vision contracts'
   assert.match(apocalypseScript, /updateEmergencyBoxGate\(emergencyKind\)/,
     'Emergency Box must stay available when any shipped text model is still on disk');
   assert.match(apocalypseScript, /function anyShippedWebgpuTextReady\(\)/,
-    'Emergency Box must treat Minimal and Basic as interchangeable text-model readiness');
+    'Emergency Box must treat Minimal, Basic, and Pro as interchangeable text-model readiness');
   assert.match(apocalypseScript, /function refreshSiblingWebgpuTextStatus/,
     'Apocalypse Mode must probe the unselected shipped text model without switching to it');
   assert.match(apocalypseScript, /async function refreshWebgpuDownloadStatus\(\{ probeSibling = false \} = \{\}\)/,
@@ -53879,7 +53912,7 @@ test('WebGPU worker follows local text-generation and LiquidAI vision contracts'
   assert.match(apocalypseScript, /refreshWebgpuDownloadStatus\(\{ probeSibling: true \}\)/,
     'first load and preset switches still need a one-shot sibling readiness probe');
   assert.match(apocalypseScript, /recordWebgpuTextState\(webgpuDownloadState\)/,
-    'switching Minimal/Basic must remember the previous text model before clearing the selected panel');
+    'switching Minimal/Basic/Pro must remember the previous text model before clearing the selected panel');
   for (const state of ['ready', 'downloading', 'paused', 'incomplete', 'disabled', 'error']) {
     assert.match(apocalypseScript, new RegExp(`ap\\.models\\.status\\.${state}`),
       `aggregate model readiness is missing its ${state} state`);
@@ -53902,15 +53935,19 @@ test('WebGPU worker follows local text-generation and LiquidAI vision contracts'
   assert.match(apocalypseHtml, /1\.55 GB · WebGPU/);
   assert.match(apocalypseHtml, /data-webgpu-text-preset/);
   assert.match(apocalypseHtml, /value="prism-ml\/Bonsai-27B-gguf"/);
+  assert.match(apocalypseHtml, /value="Mike0021\/MiniCPM5-1B-ONNX-Web"/);
   assert.match(apocalypseHtml, /data-i18n="ap\.models\.text\.bonsai_warning"/);
   assert.match(apocalypseCopy, /'ap\.models\.text\.lfm': 'Minimal text model'/);
   assert.match(apocalypseCopy, /'ap\.models\.text\.bonsai': 'Basic text model'/);
+  assert.match(apocalypseCopy, /'ap\.models\.text\.minicpm': 'Pro text model'/);
   assert.match(apocalypseHtml, />Minimal text model<\/span>/);
   assert.match(apocalypseHtml, />Basic text model<\/span>/);
+  assert.match(apocalypseHtml, />Pro text model<\/span>/);
   assert.doesNotMatch(apocalypseHtml, /· LFM2\.5 2\.6B/);
   assert.doesNotMatch(apocalypseHtml, /· Bonsai 27B/);
   assert.match(emergencyCopy, /Runs LFM2\.5 2\.6B on your GPU/);
-  assert.match(emergencyCopy, /'ap\.webgpu\.rag\.pro': 'Runs Bonsai 27B on your GPU/);
+  assert.match(emergencyCopy, /'ap\.webgpu\.rag\.basic': 'Runs Bonsai 27B on your GPU/);
+  assert.match(emergencyCopy, /'ap\.webgpu\.rag\.pro': 'Runs MiniCPM5 1B on your GPU/);
   assert.match(apocalypseScript, /function onWebgpuTextPresetChange/);
   assert.match(apocalypseScript, /webgpuModelPreset/);
   assert.match(apocalypseScript, /webgpuPresetHydrated/);
@@ -53918,7 +53955,7 @@ test('WebGPU worker follows local text-generation and LiquidAI vision contracts'
   assert.match(apocalypseScript, /function anyOtherWebgpuTextBusy/);
   assert.match(background, /getWebgpuDownloadStatus\(msg\)/,
     'download-status probes must be able to inspect an unselected shipped text model');
-  assert.match(apocalypseScript, /ap\.webgpu\.rag\.pro/);
+  assert.match(apocalypseScript, /preset\?\.copyKey \|\| 'ap\.webgpu\.rag'/);
   assert.match(apocalypseHtml, /data-webgpu-text-copy/);
   assert.doesNotMatch(apocalypseHtml, /id="webgpu-(?:model|context-window|prompt-tier|save|activate)/);
   assert.doesNotMatch(apocalypseHtml, /id="webgpu-test"/);
@@ -54801,6 +54838,29 @@ test('WebGPU worker replays text tool history and applies model-specific generat
       tools: undefined,
       tokenizer_encode_kwargs: { preserve_thinking: false },
     }, 'LFM2.5 must use LiquidAI generation settings and its reasoning-template argument');
+
+    const proPayload = {
+      ...textPayload,
+      modelId: WEBGPU_MINICPM5_MODEL_ID,
+      dtype: WEBGPU_MINICPM5_DTYPE,
+    };
+    await dispatch('download-text', proPayload);
+    assert.equal(globalThis.__webgpuPipelineOptions.options.dtype, WEBGPU_MINICPM5_DTYPE);
+    assert.equal(globalThis.__webgpuPipelineOptions.options.subfolder, undefined);
+    assert.equal(globalThis.__webgpuPipelineOptions.options.session_options.externalData, undefined,
+      'MiniCPM5 must use the browser-ready onnx/model_q4.onnx artifact without a giant external buffer');
+    const proResponse = await dispatch('text-chat', proPayload);
+    assert.equal(proResponse.content, 'text answer');
+    assert.match(globalThis.__webgpuGenerationOptions.chat_template, /\{\{- bos_token \}\}[\s\S]*?<tools>[\s\S]*?<\|im_start\|>assistant/,
+      'MiniCPM5 must receive its official standalone chat template through the Transformers.js generation call');
+    const { chat_template: proChatTemplate, ...proGenerationOptions } = globalThis.__webgpuGenerationOptions;
+    assert.ok(proChatTemplate.length > 8_000, 'the bundled MiniCPM5 template is unexpectedly incomplete');
+    assert.deepEqual(proGenerationOptions, {
+      do_sample: false,
+      max_new_tokens: 2048,
+      tools: undefined,
+      tokenizer_encode_kwargs: { enable_thinking: false },
+    }, 'MiniCPM5 must keep the shipped Pro output budget and disable thinking by default');
 
     const incompatiblePayload = {
       ...textPayload,

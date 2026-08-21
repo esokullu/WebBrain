@@ -17,6 +17,7 @@ const englishApocalypseModeCopy = {
   'ap.models.text.title': 'Text Model',
   'ap.models.text.lfm': 'Minimal text model',
   'ap.models.text.bonsai': 'Basic text model',
+  'ap.models.text.minicpm': 'Pro text model',
   'ap.models.text.bonsai_warning': 'The Basic text model needs a high-end GPU (16 GB+ RAM/VRAM recommended). The Minimal text model stays available if this machine cannot hold Basic.',
   'ap.models.vision.title': 'Vision Model',
   'ap.models.wikipedia.title': 'Wikipedia in Simple English',

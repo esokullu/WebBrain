@@ -426,10 +426,17 @@ function updateWebgpuTextPresetUi() {
   const size = document.querySelector('[data-webgpu-text-size]');
   if (size) size.textContent = `${preset?.size || '1.55 GB'} · WebGPU`;
   const warning = document.querySelector('[data-webgpu-text-warning]');
-  if (warning) warning.hidden = preset?.id === WEBGPU_MODEL_ID;
+  if (warning) {
+    const warningKey = preset?.warningKey || '';
+    warning.hidden = !warningKey;
+    if (warningKey) {
+      warning.dataset.i18n = warningKey;
+      warning.textContent = t(warningKey);
+    }
+  }
   const copy = document.querySelector('[data-webgpu-text-copy]');
   if (copy) {
-    const key = preset?.id === WEBGPU_MODEL_ID ? 'ap.webgpu.rag' : 'ap.webgpu.rag.pro';
+    const key = preset?.copyKey || 'ap.webgpu.rag';
     copy.dataset.i18n = key;
     copy.textContent = t(key);
   }

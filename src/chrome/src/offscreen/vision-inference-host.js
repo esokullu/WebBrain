@@ -11,6 +11,12 @@ const pendingBonsaiRequests = new Map();
 let textDownloadStartChain = Promise.resolve();
 const WEBGPU_BONSAI27_MODEL_ID = 'prism-ml/Bonsai-27B-gguf';
 const WEBGPU_LFM25_MODEL_ID = 'LiquidAI/LFM2.5-2.6B-ONNX';
+const WEBGPU_MINICPM5_MODEL_ID = 'Mike0021/MiniCPM5-1B-ONNX-Web';
+const SHIPPED_WEBGPU_TEXT_MODEL_IDS = Object.freeze([
+  WEBGPU_LFM25_MODEL_ID,
+  WEBGPU_BONSAI27_MODEL_ID,
+  WEBGPU_MINICPM5_MODEL_ID,
+]);
 const WEBGPU_RUNTIME_BITGPU = 'bitgpu';
 const TEXT_TRANSFER_STATUSES = new Set(['starting', 'queued', 'downloading', 'paused', 'stopping']);
 const VISION_DOWNLOAD_STATE_MESSAGE = 'webgpu-vision-download-state';
@@ -342,11 +348,12 @@ async function probeExistingTextWorkerStatus(modelId) {
 }
 
 async function findActiveTextTransfer(requestedModel) {
-  const otherModel = isBitgpuTextModel(requestedModel)
-    ? WEBGPU_LFM25_MODEL_ID
-    : WEBGPU_BONSAI27_MODEL_ID;
-  const other = await probeExistingTextWorkerStatus(otherModel);
-  return isActiveTextTransfer(other) ? other : null;
+  for (const modelId of SHIPPED_WEBGPU_TEXT_MODEL_IDS) {
+    if (modelId === String(requestedModel || '').trim()) continue;
+    const other = await probeExistingTextWorkerStatus(modelId);
+    if (isActiveTextTransfer(other)) return other;
+  }
+  return null;
 }
 
 function startExclusiveTextDownload(message) {

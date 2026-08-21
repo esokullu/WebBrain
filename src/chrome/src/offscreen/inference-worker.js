@@ -7,6 +7,8 @@
  * request/response messages to it.
  */
 
+import { MINICPM5_CHAT_TEMPLATE } from './minicpm5-chat-template.mjs';
+
 let libraryPromise = null;
 let libraryVersion = null;
 let workerConfig = null;
@@ -25,7 +27,11 @@ const TEXT_DOWNLOAD_EVENT = 'text-download-state';
 const WEBGPU_TEXT_MAX_NEW_TOKENS = 256;
 const WEBGPU_LFM25_MODEL_ID = 'LiquidAI/LFM2.5-2.6B-ONNX';
 const WEBGPU_BONSAI27_MODEL_ID = 'prism-ml/Bonsai-27B-gguf';
+const WEBGPU_MINICPM5_LEGACY_MODEL_ID = 'alexHSM/MiniCPM5-1B-ONNX-Web';
+const WEBGPU_MINICPM5_MODEL_ID = 'Mike0021/MiniCPM5-1B-ONNX-Web';
 const WEBGPU_LFM25_MAX_NEW_TOKENS = 2048;
+const WEBGPU_MINICPM5_MAX_NEW_TOKENS = 2048;
+let legacyMiniCpmCacheCleanupPromise = null;
 function createWebGpuTextSessionOptions() {
   return {
     extra: {
@@ -204,6 +210,29 @@ async function markTextModelReady(modelId, dtype) {
     headers: { 'content-type': 'application/json' },
   }));
   readyTextModelKeys.add(key);
+}
+
+async function clearLegacyMiniCpmCache() {
+  if (legacyMiniCpmCacheCleanupPromise) return legacyMiniCpmCacheCleanupPromise;
+  legacyMiniCpmCacheCleanupPromise = (async () => {
+    if (typeof caches === 'undefined') return;
+    try {
+      const modelPath = `/${WEBGPU_MINICPM5_LEGACY_MODEL_ID}/`;
+      for (const name of await caches.keys()) {
+        if (!/transformers/i.test(name)) continue;
+        const cache = await caches.open(name);
+        for (const request of await cache.keys()) {
+          const url = safeDecodedUrl(request.url);
+          const legacyMarker = url.includes('/.well-known/webgpu-model-ready/')
+            && url.includes(WEBGPU_MINICPM5_LEGACY_MODEL_ID);
+          if (url.includes(modelPath) || legacyMarker) await cache.delete(request);
+        }
+      }
+    } catch {
+      // Cache cleanup is best-effort and must not block the replacement model.
+    }
+  })();
+  return legacyMiniCpmCacheCleanupPromise;
 }
 
 async function loadLibrary() {
@@ -651,6 +680,7 @@ async function downloadTextModel(payload, { onStarted } = {}) {
   const modelId = assertOnnxTextModel(payload?.modelId);
   const device = payload?.device || 'webgpu';
   const dtype = payload?.dtype || 'q4f16';
+  if (modelId === WEBGPU_MINICPM5_MODEL_ID) await clearLegacyMiniCpmCache();
   const tracksDifferentTransfer = textDownloadState.modelId
     && !sameTextModel(textDownloadState.modelId, textDownloadState.dtype, modelId, dtype)
     && ['downloading', 'paused', 'stopping'].includes(textDownloadState.status);
@@ -1008,6 +1038,7 @@ async function runText(payload) {
   const device = payload?.device || 'webgpu';
   const dtype = payload?.dtype || 'q4f16';
   const usesLfm25ReasoningTemplate = modelId === WEBGPU_LFM25_MODEL_ID;
+  const usesMiniCpm5ChatTemplate = modelId === WEBGPU_MINICPM5_MODEL_ID;
   if (!await isTextModelReady(modelId, dtype)) {
     throw new Error(`${modelId} is not downloaded. Open Apocalypse Mode > WebGPU to download it before chatting.`);
   }
@@ -1016,7 +1047,9 @@ async function runText(payload) {
   const requestedTokens = Number(payload?.options?.maxTokens);
   const maxTokenLimit = usesLfm25ReasoningTemplate
     ? WEBGPU_LFM25_MAX_NEW_TOKENS
-    : WEBGPU_TEXT_MAX_NEW_TOKENS;
+    : modelId === WEBGPU_MINICPM5_MODEL_ID
+      ? WEBGPU_MINICPM5_MAX_NEW_TOKENS
+      : WEBGPU_TEXT_MAX_NEW_TOKENS;
   const maxNewTokens = Number.isFinite(requestedTokens)
     ? Math.max(1, Math.min(maxTokenLimit, Math.round(requestedTokens)))
     : maxTokenLimit;
@@ -1030,6 +1063,7 @@ async function runText(payload) {
       ...(usesLfm25ReasoningTemplate
         ? { temperature: 0.1, top_k: 50, repetition_penalty: 1.1 }
         : {}),
+      ...(usesMiniCpm5ChatTemplate ? { chat_template: MINICPM5_CHAT_TEMPLATE } : {}),
       max_new_tokens: maxNewTokens,
       tools: tools.length ? tools : undefined,
       tokenizer_encode_kwargs: usesLfm25ReasoningTemplate

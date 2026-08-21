@@ -7,8 +7,11 @@ export const WEBGPU_VISION_MODEL_ID = 'LiquidAI/LFM2.5-VL-450M-ONNX';
 export const WEBGPU_MODEL_ID = 'LiquidAI/LFM2.5-2.6B-ONNX';
 export const WEBGPU_LFM25_MODEL_ID = WEBGPU_MODEL_ID;
 export const WEBGPU_BONSAI27_MODEL_ID = 'prism-ml/Bonsai-27B-gguf';
+export const WEBGPU_MINICPM5_LEGACY_MODEL_ID = 'alexHSM/MiniCPM5-1B-ONNX-Web';
+export const WEBGPU_MINICPM5_MODEL_ID = 'Mike0021/MiniCPM5-1B-ONNX-Web';
 export const WEBGPU_DTYPE = 'q4f16';
 export const WEBGPU_BONSAI27_DTYPE = 'q1';
+export const WEBGPU_MINICPM5_DTYPE = 'q4';
 export const WEBGPU_RUNTIME_ONNX = 'onnx';
 export const WEBGPU_RUNTIME_BITGPU = 'bitgpu';
 export const WEBGPU_MODEL_PRESETS = Object.freeze([
@@ -20,6 +23,7 @@ export const WEBGPU_MODEL_PRESETS = Object.freeze([
     dtype: WEBGPU_DTYPE,
     dtypeLabel: WEBGPU_DTYPE,
     contextWindow: 16384,
+    copyKey: 'ap.webgpu.rag',
   }),
   Object.freeze({
     id: WEBGPU_BONSAI27_MODEL_ID,
@@ -29,6 +33,18 @@ export const WEBGPU_MODEL_PRESETS = Object.freeze([
     dtype: WEBGPU_BONSAI27_DTYPE,
     dtypeLabel: WEBGPU_BONSAI27_DTYPE,
     contextWindow: 4096,
+    copyKey: 'ap.webgpu.rag.basic',
+    warningKey: 'ap.models.text.bonsai_warning',
+  }),
+  Object.freeze({
+    id: WEBGPU_MINICPM5_MODEL_ID,
+    runtime: WEBGPU_RUNTIME_ONNX,
+    label: 'Pro text model',
+    size: '0.91 GB',
+    dtype: WEBGPU_MINICPM5_DTYPE,
+    dtypeLabel: WEBGPU_MINICPM5_DTYPE,
+    contextWindow: 16384,
+    copyKey: 'ap.webgpu.rag.pro',
   }),
 ]);
 export const WEBGPU_MODEL_NOT_READY_ERROR = `${WEBGPU_MODEL_ID} is not downloaded. Open Apocalypse Mode > WebGPU to download it before chatting.`;
@@ -102,6 +118,9 @@ export function normalizeWebgpuModelId(value) {
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/.test(model)) {
     throw new Error('Enter a Hugging Face repository as owner/repository.');
   }
+  // The original Pro export stored all weights in one >2 GiB external file,
+  // which browsers cannot reliably materialize as a single ArrayBuffer.
+  if (model === WEBGPU_MINICPM5_LEGACY_MODEL_ID) return WEBGPU_MINICPM5_MODEL_ID;
   return model;
 }
 
@@ -245,13 +264,13 @@ export class WebGPUProvider extends WebGPUOffscreenProvider {
     if (!download.ready) {
       throw new Error(`${webgpuModelDisplayName(this.model)} is not downloaded. Open Apocalypse Mode > WebGPU to download it before chatting.`);
     }
+    const target = this._textDownloadTarget();
+    const { requireTools, ...chatTarget } = target;
     const response = await this._dispatch({
       type: 'webgpu-chat',
-      model: this.model,
-      runtime: webgpuModelRuntime(this.model),
+      ...chatTarget,
       device: this.device,
-      dtype: this.dtype,
-      requireTools: this.requiresToolTemplate,
+      requireTools,
       messages: this._chatMessages(messages, options),
       options: {
         maxTokens: options.maxTokens,
@@ -298,7 +317,7 @@ export class WebGPUProvider extends WebGPUOffscreenProvider {
   }
 
   _textDownloadTarget(options = {}) {
-    const model = String(options.model || this.model).trim() || this.model;
+    const model = normalizeWebgpuModelId(options.model || this.model);
     return {
       model,
       runtime: webgpuModelRuntime(model),
@@ -309,13 +328,12 @@ export class WebGPUProvider extends WebGPUOffscreenProvider {
 
   async startDownload(options = {}) {
     const target = this._textDownloadTarget(options);
+    const { requireTools, ...downloadTarget } = target;
     const response = await this._dispatch({
       type: 'webgpu-download-start',
-      model: target.model,
-      runtime: target.runtime,
+      ...downloadTarget,
       device: this.device,
-      dtype: target.dtype,
-      requireTools: target.requireTools,
+      requireTools,
     });
     if (!response || response.error) {
       throw new Error(response?.error || `Unable to download ${webgpuModelDisplayName(target.model)}.`);

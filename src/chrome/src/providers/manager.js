@@ -10,7 +10,6 @@ import {
   WebGPUVisionProvider,
   WEBGPU_DTYPE,
   WEBGPU_MODEL_ID,
-  WEBGPU_RUNTIME_BITGPU,
   WEBGPU_VISION_AUTO_SELECTED_KEY,
   WEBGPU_VISION_CONSENT_VERSION,
   WEBGPU_VISION_CONSENT_VERSION_KEY,
@@ -21,7 +20,6 @@ import {
   webgpuModelDisplayName,
   webgpuModelDtype,
   webgpuModelPreset,
-  webgpuModelRuntime,
 } from './webgpu.js';
 import { ADDITIONAL_PROVIDER_DEFAULTS } from './provider-catalog.js';
 // Static, NOT dynamic: this module runs in the MV3 service worker, where
@@ -1432,8 +1430,9 @@ export class ProviderManager {
       if (status.ready === true || ['downloading', 'stopping'].includes(status.status)) {
         return { ...status, ok: true, started: false };
       }
-      // Bonsai is opt-in and too large to start from Apocalypse enable.
-      if (webgpuModelRuntime(model) === WEBGPU_RUNTIME_BITGPU) {
+      // Non-default presets are opt-in and must start only from their explicit
+      // Apocalypse Mode download control.
+      if (model !== WEBGPU_MODEL_ID) {
         return { ...status, ok: true, started: false };
       }
 
