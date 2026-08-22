@@ -1196,50 +1196,19 @@ const {
   sendToBackground,
   getIsDocumentVisible: () => document.visibilityState !== 'hidden',
 });
-// Completion notification + success celebration. Default on; togglable via Settings.
-let notifySoundEnabled = true;
+// Completion celebration. Default on; togglable via Settings. The chime
+// itself is played by the background (watch-alert audio host) so it is
+// audible even when this panel is closed or the user is elsewhere.
 let completionConfettiEnabled = true;
-let notifyAudioContext = null;
 let completionConfettiTimer = null;
-browser.storage.local.get(['notifySound', 'completionConfetti']).then((stored) => {
-  if (stored && stored.notifySound === false) notifySoundEnabled = false;
+browser.storage.local.get(['completionConfetti']).then((stored) => {
   if (stored && stored.completionConfetti === false) completionConfettiEnabled = false;
 }).catch(() => {});
 browser.storage.onChanged.addListener((changes) => {
-  if (changes.notifySound) {
-    notifySoundEnabled = changes.notifySound.newValue !== false;
-  }
   if (changes.completionConfetti) {
     completionConfettiEnabled = changes.completionConfetti.newValue !== false;
   }
 });
-
-/**
- * Play a short chime when the agent finishes a task. Firefox builds do not
- * bundle the Chrome mp3 asset, so this uses a tiny generated tone.
- */
-function playCompletionSound() {
-  if (!notifySoundEnabled) return;
-  try {
-    const AudioContextCtor = globalThis.AudioContext || globalThis.webkitAudioContext;
-    if (!AudioContextCtor) return;
-    if (!notifyAudioContext) notifyAudioContext = new AudioContextCtor();
-    const ctx = notifyAudioContext;
-    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
-    const oscillator = ctx.createOscillator();
-    const gain = ctx.createGain();
-    const now = ctx.currentTime;
-    oscillator.type = 'sine';
-    oscillator.frequency.setValueAtTime(880, now);
-    oscillator.frequency.exponentialRampToValueAtTime(1175, now + 0.08);
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.12, now + 0.015);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
-    oscillator.connect(gain).connect(ctx.destination);
-    oscillator.start(now);
-    oscillator.stop(now + 0.2);
-  } catch { /* ignore */ }
-}
 
 function triggerCompletionConfetti() {
   if (!completionConfettiEnabled) return;
@@ -1278,13 +1247,8 @@ function triggerCompletionConfetti() {
 }
 
 function notifyCompletion({ success = false, storeReviewSuccess = success } = {}) {
-  playCompletionSound();
   if (success) triggerCompletionConfetti();
   if (storeReviewSuccess) void maybePromptStoreReviewAfterSuccess();
-  // The tab attention flash itself is owned by the background: live runs,
-  // continuations, and scheduled jobs all settle there — even when this
-  // panel is closed or reloaded mid-run — so it can cover every path
-  // without duplicating signals while a panel is mounted.
 }
 
 function getExtensionStoreKey() {

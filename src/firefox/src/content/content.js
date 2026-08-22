@@ -5285,23 +5285,27 @@
   const ATTENTION_FLASH_INTERVAL_MS = 700;
   const ATTENTION_FLASH_TIMEOUT_MS = 30000;
   const ATTENTION_FLASH_MARKER = '\u{1F514} ';
+  // WebBrain brand colors (pembe/lacivert) alternate while flashing so the
+  // icon is clearly animated even on pages without their own favicon.
+  const ATTENTION_FLASH_DOT_COLORS = ['#ec4899', '#2d1b69'];
   let attentionFlashTimer = null;
   let attentionFlashTimeout = null;
   let attentionFlashFaviconEl = null;
+  let attentionFlashFaviconColorIndex = 0;
   let attentionFlashOnVisible = null;
   // Exact title string this flash last wrote — ownership marker. Stripping
   // by prefix alone would eat a page's own title that legitimately starts
   // with the same bell character.
   let attentionFlashOwnTitle = null;
 
-  function attentionFlashDotDataUrl() {
+  function attentionFlashDotDataUrl(color) {
     try {
       const canvas = document.createElement('canvas');
       canvas.width = 64;
       canvas.height = 64;
       const ctx = canvas.getContext('2d');
       if (ctx) {
-        ctx.fillStyle = '#f59e0b';
+        ctx.fillStyle = color;
         ctx.beginPath();
         ctx.arc(32, 32, 26, 0, Math.PI * 2);
         ctx.fill();
@@ -5328,13 +5332,29 @@
         attentionFlashFaviconEl = document.createElement('link');
         attentionFlashFaviconEl.setAttribute('rel', 'icon');
         attentionFlashFaviconEl.setAttribute('data-webbrain-attention', '1');
-        attentionFlashFaviconEl.setAttribute('href', attentionFlashDotDataUrl());
+        attentionFlashFaviconEl.setAttribute(
+          'href',
+          attentionFlashDotDataUrl(ATTENTION_FLASH_DOT_COLORS[attentionFlashFaviconColorIndex]),
+        );
         (document.head || document.documentElement).appendChild(attentionFlashFaviconEl);
       } else if (!show && attentionFlashFaviconEl) {
         attentionFlashFaviconEl.remove();
         attentionFlashFaviconEl = null;
       }
     } catch { /* favicon swap is best-effort */ }
+  }
+
+  function attentionFlashAnimateFavicon() {
+    attentionFlashToggleFavicon(true);
+    if (!attentionFlashFaviconEl) return;
+    // Alternate between the WebBrain pink and navy dots every tick so the
+    // icon visibly pulses for the whole flash duration.
+    attentionFlashFaviconColorIndex =
+      (attentionFlashFaviconColorIndex + 1) % ATTENTION_FLASH_DOT_COLORS.length;
+    attentionFlashFaviconEl.setAttribute(
+      'href',
+      attentionFlashDotDataUrl(ATTENTION_FLASH_DOT_COLORS[attentionFlashFaviconColorIndex]),
+    );
   }
 
   function stopAttentionFlash() {
@@ -5359,6 +5379,7 @@
     if (attentionFlashFaviconEl) {
       attentionFlashFaviconEl.remove();
       attentionFlashFaviconEl = null;
+      attentionFlashFaviconColorIndex = 0;
     }
   }
 
@@ -5385,9 +5406,8 @@
       // must never be stripped on stop.
       attentionFlashOwnTitle = flashing ? `${ATTENTION_FLASH_MARKER}${base}` : null;
       document.title = flashing ? attentionFlashOwnTitle : base;
-      // The favicon alternates with the title: our icon shows during the
-      // marked phase and the site's own icons return during the quiet one.
-      attentionFlashToggleFavicon(flashing);
+      // The favicon pulses pink↔navy for the whole flash duration.
+      attentionFlashAnimateFavicon();
     };
     applyAttentionTick();
     attentionFlashTimer = setInterval(applyAttentionTick, ATTENTION_FLASH_INTERVAL_MS);

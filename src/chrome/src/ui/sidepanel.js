@@ -1341,19 +1341,15 @@ const {
   sendToBackground,
   getIsDocumentVisible: () => document.visibilityState !== 'hidden',
 });
-// Completion notification + success celebration. Default on; togglable via Settings.
-let notifySoundEnabled = true;
+// Completion celebration. Default on; togglable via Settings. The chime
+// itself is played by the background (offscreen audio) so it is audible even
+// when this panel is closed or the user is elsewhere.
 let completionConfettiEnabled = true;
-let notifyAudio = null;
 let completionConfettiTimer = null;
-chrome.storage.local.get(['notifySound', 'completionConfetti']).then((stored) => {
-  if (stored && stored.notifySound === false) notifySoundEnabled = false;
+chrome.storage.local.get(['completionConfetti']).then((stored) => {
   if (stored && stored.completionConfetti === false) completionConfettiEnabled = false;
 }).catch(() => {});
 chrome.storage.onChanged.addListener((changes) => {
-  if (changes.notifySound) {
-    notifySoundEnabled = changes.notifySound.newValue !== false;
-  }
   if (changes.completionConfetti) {
     completionConfettiEnabled = changes.completionConfetti.newValue !== false;
   }
@@ -1521,23 +1517,13 @@ actWarningDismiss?.addEventListener('click', () => {
 });
 
 /**
- * Play a short chime when the agent finishes a task. Lazy-creates the Audio
- * element the first time and reuses it after that — sidepanel.html is an
- * extension page so loading /assets/notification.mp3 works without any
- * web_accessible_resources entry. Best-effort: if autoplay is blocked (very
- * occasional first-load case in Chrome) we just swallow the error.
+ * Completion celebration (confetti + store-review prompt). The chime itself
+ * is played by the background offscreen host so it stays audible even when
+ * this panel is closed or the user is elsewhere.
  */
-function playCompletionSound() {
-  if (!notifySoundEnabled) return;
-  try {
-    if (!notifyAudio) {
-      notifyAudio = new Audio(chrome.runtime.getURL('assets/notification.mp3'));
-      notifyAudio.volume = 0.6;
-    }
-    notifyAudio.currentTime = 0;
-    const p = notifyAudio.play();
-    if (p && typeof p.catch === 'function') p.catch(() => {});
-  } catch { /* ignore */ }
+function notifyCompletion({ success = false, storeReviewSuccess = success } = {}) {
+  if (success) triggerCompletionConfetti();
+  if (storeReviewSuccess) void maybePromptStoreReviewAfterSuccess();
 }
 
 function triggerCompletionConfetti() {
@@ -1574,16 +1560,6 @@ function triggerCompletionConfetti() {
       completionConfettiTimer = null;
     }, 3000);
   } catch { /* ignore */ }
-}
-
-function notifyCompletion({ success = false, storeReviewSuccess = success } = {}) {
-  playCompletionSound();
-  if (success) triggerCompletionConfetti();
-  if (storeReviewSuccess) void maybePromptStoreReviewAfterSuccess();
-  // The tab attention flash itself is owned by the background: live runs,
-  // continuations, and scheduled jobs all settle there — even when this
-  // panel is closed or reloaded mid-run — so it can cover every path
-  // without duplicating signals while a panel is mounted.
 }
 
 function getExtensionStoreKey() {

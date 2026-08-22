@@ -228,6 +228,21 @@ async function playWatchAlert({ style = 'default' } = {}) {
   return result || { ok: true };
 }
 
+// The completion chime lives here (not the side panel) so it plays even when
+// the panel is closed, reloaded, or the user is on another tab/window.
+async function playCompletionChime({ success = true } = {}) {
+  const stored = await chrome.storage.local.get('notifySound');
+  if (stored?.notifySound === false) return { ok: true, muted: true };
+  await ensureOffscreen();
+  const result = await chrome.runtime.sendMessage({
+    target: 'offscreen-watch-audio',
+    action: 'play_completion_chime',
+    success,
+  });
+  if (result?.ok === false) throw new Error(result.error || 'Completion chime playback failed.');
+  return result || { ok: true };
+}
+
 const scheduler = new ScheduledJobManager({
   api: chrome,
   agent,
@@ -1973,10 +1988,9 @@ async function sendAgentRunComplete(tabId, snapshot = null) {
     // Badge styling uses the run's recorded outcome (successful done update
     // or successful Ask reply), not just the terminal status — a completed
     // status alone can still mean max-steps were reached without success.
-    flashTabAttention({
-      tabId,
-      success: liveStatus === 'completed' && snapshot.runSucceeded === true,
-    }).catch(() => {});
+    const runSucceeded = liveStatus === 'completed' && snapshot.runSucceeded === true;
+    playCompletionChime({ success: runSucceeded }).catch(() => {});
+    flashTabAttention({ tabId, success: runSucceeded }).catch(() => {});
   }
   const submittedTurnDurable = snapshot.kind === 'continue'
     || await agent.hasDurableSubmittedTurn(
@@ -2456,10 +2470,9 @@ async function maybeFlashScheduledTerminalEvent(_tabId, type, data) {
     const jobTabId = Number(job.tabId ?? job.target?.tabId ?? _tabId);
     // lastOutcome is an explicit verdict: the scheduler classifies Ask runs
     // at the source, so no null-outcome guessing happens here.
-    await flashTabAttention({
-      tabId: jobTabId,
-      success: event === 'completed' && job?.lastOutcome === 'success',
-    });
+    const success = event === 'completed' && job?.lastOutcome === 'success';
+    playCompletionChime({ success }).catch(() => {});
+    await flashTabAttention({ tabId: jobTabId, success });
   } catch { /* best-effort */ }
 }
 

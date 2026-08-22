@@ -85,7 +85,7 @@ import {
   parseConfigPatchImport,
 } from './config-transfer.js';
 import { RUN_CAPTURE_START_ERROR_PREFIX, createRunCaptureController } from './run-capture.js';
-import { playWatchAlert } from './watch-alert.js';
+import { playWatchAlert, playCompletionChime } from './watch-alert.js';
 import {
   getChromeWebStoreOAuthStatus,
   signOutChromeWebStoreOAuth,
@@ -1747,10 +1747,9 @@ async function maybeFlashScheduledTerminalEvent(_tabId, type, data) {
     const jobTabId = Number(job.tabId ?? job.target?.tabId ?? _tabId);
     // lastOutcome is an explicit verdict: the scheduler classifies Ask runs
     // at the source, so no null-outcome guessing happens here.
-    await flashTabAttention({
-      tabId: jobTabId,
-      success: event === 'completed' && job?.lastOutcome === 'success',
-    });
+    const success = event === 'completed' && job?.lastOutcome === 'success';
+    playCompletionChime({ success }).catch(() => {});
+    await flashTabAttention({ tabId: jobTabId, success });
   } catch { /* best-effort */ }
 }
 
@@ -2147,10 +2146,9 @@ async function sendAgentRunComplete(tabId, snapshot = null) {
     // Badge styling uses the run's recorded outcome (successful done update
     // or successful Ask reply), not just the terminal status — a completed
     // status alone can still mean max-steps were reached without success.
-    flashTabAttention({
-      tabId,
-      success: liveStatus === 'completed' && snapshot.runSucceeded === true,
-    }).catch(() => {});
+    const runSucceeded = liveStatus === 'completed' && snapshot.runSucceeded === true;
+    playCompletionChime({ success: runSucceeded }).catch(() => {});
+    flashTabAttention({ tabId, success: runSucceeded }).catch(() => {});
   }
   const submittedTurnDurable = snapshot.kind === 'continue'
     || await agent.hasDurableSubmittedTurn(

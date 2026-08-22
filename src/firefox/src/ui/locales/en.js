@@ -606,7 +606,7 @@ export default {
   'st.display.scheduled_confirm.label': 'Confirm scheduled consequential actions',
   'st.display.scheduled_confirm.desc': 'When on, unattended scheduled runs still stop for permission before consequential actions. Turn off only if you trust scheduled tasks to act without those prompts.',
   'st.display.notify_sound.label': 'Completion sound',
-  'st.display.notify_sound.desc': 'Play a short chime in the side panel when the agent finishes a task. Won\'t play if you cancel the run.',
+  'st.display.notify_sound.desc': 'Play a short chime when the agent finishes a task — even if the side panel is closed or you are on another tab. Won\'t play if you cancel the run.',
   'st.display.completion_confetti.label': 'Completion confetti',
   'st.display.completion_confetti.desc': 'Drop a short confetti animation from the top when a task completes successfully. On by default; turn it off if you prefer a calmer finish.',
   'st.display.completion_flash_tab.label': 'Flash finished tab',

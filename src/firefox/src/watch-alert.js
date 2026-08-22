@@ -24,13 +24,26 @@ export function watchAlertPattern(style = 'default') {
   ];
 }
 
-async function play(style) {
+// Completion chime mirrors the old side-panel notification.mp3 shape: an
+// upbeat two-tone for success, a lower descending pair for failures.
+export function completionChimePattern(success = true) {
+  return success
+    ? [
+        { at: 0, duration: 0.12, frequency: 784 },
+        { at: 0.14, duration: 0.22, frequency: 1174.7 },
+      ]
+    : [
+        { at: 0, duration: 0.16, frequency: 493.9 },
+        { at: 0.18, duration: 0.26, frequency: 392 },
+      ];
+}
+
+async function playPattern(pattern) {
   const AudioContextCtor = globalThis.AudioContext || globalThis.webkitAudioContext;
   if (!AudioContextCtor) throw new Error('Web Audio is unavailable in the background page.');
   if (!audioContext || audioContext.state === 'closed') audioContext = new AudioContextCtor();
   if (audioContext.state === 'suspended') await audioContext.resume();
 
-  const pattern = watchAlertPattern(style);
   const start = audioContext.currentTime + 0.02;
   for (const tone of pattern) {
     const oscillator = audioContext.createOscillator();
@@ -53,7 +66,15 @@ async function play(style) {
 export async function playWatchAlert(api, { style = 'default' } = {}) {
   const stored = await api.storage.local.get('notifySound');
   if (stored?.notifySound === false) return { ok: true, muted: true };
-  playback = playback.catch(() => {}).then(() => play(style));
+  playback = playback.catch(() => {}).then(() => playPattern(watchAlertPattern(style)));
+  await playback;
+  return { ok: true };
+}
+
+export async function playCompletionChime(api, { success = true } = {}) {
+  const stored = await api.storage.local.get('notifySound');
+  if (stored?.notifySound === false) return { ok: true, muted: true };
+  playback = playback.catch(() => {}).then(() => playPattern(completionChimePattern(success)));
   await playback;
   return { ok: true };
 }
