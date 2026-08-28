@@ -44158,10 +44158,10 @@ test('standalone WebGPU control uses a per-run provider without changing global 
     'the nuclear control should be clickable whenever Apocalypse Mode is enabled');
   assert.match(panel, /function standaloneWebgpuRunPayload\(\) \{[\s\S]*?return isStandaloneWindow && standaloneWebgpuActive[\s\S]*?\? \{ providerId: 'webgpu', \.\.\.offlineRagRunPayload\(\) \}[\s\S]*?: \{\};/,
     'standalone WebGPU state is not carried as a run-scoped override');
-  assert.match(background, /case 'get_providers': \{[\s\S]*?delete providers\.webgpu/,
-    'WebGPU must never appear in the ordinary provider picker');
-  assert.match(background, /case 'set_active_provider': \{[\s\S]*?msg\.providerId === 'webgpu'[\s\S]*?nuclear WebGPU control/,
-    'WebGPU must not become the globally active provider');
+  assert.doesNotMatch(background, /case 'get_providers': \{[\s\S]*?delete providers\.webgpu/,
+    'WebGPU should remain available in the ordinary provider picker');
+  assert.match(background, /case 'set_active_provider': \{\s*await providerManager\.setActive\(msg\.providerId\);/,
+    'WebGPU should use the ordinary global provider activation path');
   assert.match(background, /case 'get_standalone_webgpu_status': \{[\s\S]*?enabled: apocalypse\?\.enabled === true[\s\S]*?ready:/,
     'the standalone control should distinguish Apocalypse enablement from model readiness');
   assert.match(background, /type: 'apocalypse-mode-state'[\s\S]*?enabled: snapshot\.enabled === true/,
@@ -58267,8 +58267,15 @@ test('WebGPU worker follows local text-generation and WebBrain VL vision contrac
   assert.doesNotMatch(settingsScript, /data-webgpu-download-action=/,
     'the WebGPU provider download block must live on Apocalypse Mode, not Settings');
   assert.doesNotMatch(settingsScript, /saveVisionConfig\(\{\s*type:\s*'webgpu'/);
-  assert.match(settingsScript, /Object\.entries\(providersData\)\.filter\(\(\[id\]\) => id !== 'webgpu'\)/,
-    'Settings still renders the WebGPU provider card');
+  assert.match(settingsScript, /let entries = Object\.entries\(providersData\);/,
+    'Settings should render the WebGPU provider card');
+  const webgpuSettingsBlock = settingsScript.slice(
+    settingsScript.indexOf('    webgpu: {'),
+    settingsScript.indexOf('    azure_openai: {'),
+  );
+  assert.match(webgpuSettingsBlock, /WEBGPU_MODEL_PRESETS/);
+  assert.match(webgpuSettingsBlock, /CONTEXT_WINDOW_FIELD/);
+  assert.match(webgpuSettingsBlock, /PROMPT_TIER_FIELD/);
   assert.match(apocalypseHtml, /data-i18n="ap\.models\.text\.title"/);
   assert.match(apocalypseHtml, /data-i18n="ap\.models\.vision\.title"/);
   assert.match(apocalypseHtml, /data-i18n="ap\.models\.wikipedia\.title"/);

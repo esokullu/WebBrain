@@ -11,6 +11,7 @@ This changelog was generated from the repository Git history and release tags. V
 
 ### Changed
 - Restored the **default compact activity history** behavior
+- Restored the Chromium WebGPU text provider in Settings and the normal chat provider picker while keeping model downloads in Apocalypse Mode
 - Preserved OpenRouter model variants when routing, and synced routing after loaded model selection (Chrome + Firefox)
 - Updated provider compatibility handling for DeepSeek support
 

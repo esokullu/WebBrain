@@ -174,6 +174,10 @@ reasoning template; WebBrain keeps text before `</think>` out of the visible
 answer and reports an error if reasoning exhausts the output budget. Bonsai
 uses bitgpu `think: true` with a 128-token think budget and the same
 post-think visible-answer UX. Each repository is cached separately in Chrome.
+After downloading a preset in Apocalypse Mode, the WebGPU card in
+**Settings -> Providers** can be configured, tested, and selected as the normal
+chat provider. The nuclear standalone-chat control remains available as a
+per-run override that does not change the global selection.
 **Test Connection** checks only the packaged runtime and hardware WebGPU
 adapter, so it does not trigger a model download. There is no API key, base
 URL, localhost server, or OpenAI-compatible endpoint. Firefox does not expose
