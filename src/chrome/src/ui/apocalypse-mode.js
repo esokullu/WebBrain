@@ -21,6 +21,7 @@ import {
 } from './emergency-download-client.js';
 import { createOfflineRagReadinessController } from './offline-rag-readiness.js';
 import {
+  WEBGPU_BONSAI27_MODEL_ID,
   WEBGPU_DTYPE,
   WEBGPU_MODEL_ID,
   WEBGPU_MODEL_PRESETS,
@@ -426,10 +427,10 @@ function updateWebgpuTextPresetUi() {
   const size = document.querySelector('[data-webgpu-text-size]');
   if (size) size.textContent = `${preset?.size || '1.55 GB'} · WebGPU`;
   const warning = document.querySelector('[data-webgpu-text-warning]');
-  if (warning) warning.hidden = preset?.id === WEBGPU_MODEL_ID;
+  if (warning) warning.hidden = preset?.id !== WEBGPU_BONSAI27_MODEL_ID;
   const copy = document.querySelector('[data-webgpu-text-copy]');
   if (copy) {
-    const key = preset?.id === WEBGPU_MODEL_ID ? 'ap.webgpu.rag' : 'ap.webgpu.rag.pro';
+    const key = preset?.id === WEBGPU_BONSAI27_MODEL_ID ? 'ap.webgpu.rag.pro' : 'ap.webgpu.rag';
     copy.dataset.i18n = key;
     copy.textContent = t(key);
   }

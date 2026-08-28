@@ -571,6 +571,17 @@ a.kit-brand:hover { color:var(--accent); }
   margin:0;
 }
 
+.ap-page .webgpu-capability {
+  padding:2px 5px;
+  border:1px solid var(--good-border);
+  background:var(--good-bg);
+  color:var(--good);
+  font-size:10px;
+  font-weight:700;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+}
+
 .ap-page [data-webgpu-text-warning] {
   margin:4px 0 0;
 }

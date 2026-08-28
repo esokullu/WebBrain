@@ -20029,8 +20029,13 @@ var MODEL_SESSION_CONFIG = {
   [MODEL_TYPES.ImageTextToText]: {
     text_only_sessions: { embed_tokens: "embed_tokens", decoder_model_merged: "decoder_model_merged" },
     sessions: (config, options, textOnly) => {
-      const s = { ...MODEL_SESSION_CONFIG[MODEL_TYPES.ImageTextToText].text_only_sessions };
-      if (!textOnly) s["vision_encoder"] = "vision_encoder";
+      const aliases = config?.["transformers.js_config"]?.session_file_names ?? {};
+      const s = Object.fromEntries(
+        Object.entries(MODEL_SESSION_CONFIG[MODEL_TYPES.ImageTextToText].text_only_sessions).map(
+          ([sessionName, fileName]) => [sessionName, aliases[sessionName] ?? fileName]
+        )
+      );
+      if (!textOnly) s["vision_encoder"] = aliases.vision_encoder ?? "vision_encoder";
       if (config.is_encoder_decoder) s["model"] = "encoder_model";
       return s;
     },

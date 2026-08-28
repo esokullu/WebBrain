@@ -19,8 +19,10 @@ cache for fully offline use.
 | `ThirdPartyNotices.onnxruntime.txt` | ONNX Runtime | Incorporated third-party notices |
 
 The readable browser build is the same patched file used by Chrome: its bare
-ONNX Runtime imports point at packaged relative files. The WebGPU JSEP binaries
-are intentionally omitted from Firefox because this worker always selects
+ONNX Runtime imports point at packaged relative files, and its ImageTextToText
+session map accepts filename aliases for Chrome's legacy LFM2.5-VL 1.6B export.
+That alias hook is dormant in Firefox. The WebGPU JSEP binaries are
+intentionally omitted from Firefox because this worker always selects
 `device: 'wasm'` and `dtype: 'q8'`.
 
 The model is pinned to revision

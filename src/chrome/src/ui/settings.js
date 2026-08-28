@@ -2730,7 +2730,7 @@ function renderProviders() {
           suggestions: WEBGPU_MODEL_PRESETS.map(option => option.id),
           suggestionLabels: Object.fromEntries(WEBGPU_MODEL_PRESETS.map(option => [
             option.id,
-            `${option.label} — ${option.id}`,
+            `${option.label} — ${option.id}${option.supportsVision ? ` — ${t('st.provider.field.supports_vision')}` : ''}`,
           ])),
         },
         CONTEXT_WINDOW_FIELD,

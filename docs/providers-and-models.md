@@ -47,7 +47,7 @@ class BaseLLMProvider {
 | `gpt4all` | `openai` | local | (loaded model) | Yes (default on) |
 | `local_openai_proxy` | `openai` | local | (required) | Off / manual toggle |
 | `unsloth` | `openai` | local | (required) | Off / manual toggle |
-| `webgpu` (Chromium) | `webgpu` | local | LFM2.5 2.6B (default) or opt-in Bonsai 27B; experimental custom HF ONNX repos | No |
+| `webgpu` (Chromium) | `webgpu` | local | Six shipped LFM2.5/Bonsai presets; experimental custom HF ONNX repos | LFM2.5-VL presets |
 | `azure_openai` | `azure_openai` | cloud | (deployment) | Manual toggle |
 | `aws_bedrock` | `aws_bedrock` | cloud | (model id) | No |
 | `openai` | `openai` | cloud | `gpt-5.6-terra` | Model-name regex |
@@ -150,17 +150,30 @@ duplicate request.
 ### Local Providers
 
 On Chromium, **WebGPU (In-browser)** is an endpoint-free local provider. Its
-Apocalypse text picker offers two shipped presets:
+Apocalypse text picker offers six shipped presets:
 
 - [`LiquidAI/LFM2.5-2.6B-ONNX`](https://huggingface.co/LiquidAI/LFM2.5-2.6B-ONNX/)
   (`q4f16`, about 1.55 GB) through the packaged Transformers.js 4.2 / ONNX
   Runtime Web GPU worker. This remains the default. Enabling Apocalypse Mode
   starts this download automatically.
+- [`LiquidAI/LFM2.5-1.2B-Instruct-ONNX`](https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct-ONNX)
+  and [`LiquidAI/LFM2.5-1.2B-Thinking-ONNX`](https://huggingface.co/LiquidAI/LFM2.5-1.2B-Thinking-ONNX)
+  (`q4f16`, about 760 MB each). The Thinking preset preserves reasoning as
+  hidden reasoning content while Instruct uses the normal visible-answer path.
+- [`LiquidAI/LFM2.5-VL-1.6B-ONNX`](https://huggingface.co/LiquidAI/LFM2.5-VL-1.6B-ONNX)
+  (FP16 vision/text embeddings plus Q4 decoder, about 2.3 GB) and
+  [`LiquidAI/LFM2.5-VL-3B-ONNX`](https://huggingface.co/LiquidAI/LFM2.5-VL-3B-ONNX)
+  (the corresponding Transformers.js layout, about 4.0 GB). These two presets
+  advertise `supportsVision`, accept image blocks in normal provider chat, and
+  are marked **Multimodal** in the picker. The 1.6B export uses older ONNX
+  component filenames; WebBrain maps those filenames into the packaged
+  Transformers.js image-text runtime before loading it.
 - [`prism-ml/Bonsai-27B-gguf`](https://huggingface.co/prism-ml/Bonsai-27B-gguf)
   (`Q1_0`, about 3.8 GB) through a dedicated vendored [bitgpu](https://github.com/stfurkan/bitgpu)
   worker. Bonsai is opt-in: WebBrain never auto-downloads the 27B weights.
-  It needs a high-end GPU (16 GB+ RAM/VRAM recommended). GPU-resident LFM and
-  Bonsai sessions are never live at the same time; disk caches may coexist.
+  It needs a high-end GPU (16 GB+ RAM/VRAM recommended). Mutually exclusive
+  WebGPU text runtimes are released when the selected preset changes; disk
+  caches may coexist.
 
 Custom Hugging Face repositories have not been tested and are likely not to
 work. They must be compatible with Transformers.js text generation, provide a
@@ -168,12 +181,14 @@ work. They must be compatible with Transformers.js text generation, provide a
 validates the template after loading and rejects incompatible repositories.
 Do not point Transformers.js at the Bonsai GGUF — 27B is not an ONNX pipeline.
 
-The provider is text-only and defaults to the Compact prompt tier with a
-conservative 16k practical context setting. LFM2.5 2.6B uses its official pure
-reasoning template; WebBrain keeps text before `</think>` out of the visible
-answer and reports an error if reasoning exhausts the output budget. Bonsai
-uses bitgpu `think: true` with a 128-token think budget and the same
-post-think visible-answer UX. Each repository is cached separately in Chrome.
+The provider defaults to the Compact prompt tier with a conservative 16k
+practical context setting (4k for Bonsai). Text-only presets reject image
+blocks; the two LFM2.5-VL presets route image and text blocks through the local
+image-text runtime. LFM2.5 2.6B and 1.2B Thinking use reasoning paths; WebBrain
+keeps completed thinking out of the visible answer and reports an error when
+the 2.6B reasoning template exhausts its output budget. Bonsai uses bitgpu
+`think: true` with a 128-token think budget and the same post-think visible-
+answer UX. Each repository is cached separately in Chrome.
 After downloading a preset in Apocalypse Mode, the WebGPU card in
 **Settings -> Providers** can be configured, tested, and selected as the normal
 chat provider. The nuclear standalone-chat control remains available as a
