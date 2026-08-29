@@ -41305,11 +41305,13 @@ test('sidepanel drops stale provider selection and connection checks', () => {
     const testBody = panel.slice(testStart, panel.indexOf('\n}\n\nfunction getSlashAutocompleteContext', testStart) + 2);
     const captureIdx = testBody.indexOf('const providerId = options.providerId || providerSelect.value;');
     const requestIdx = testBody.indexOf('const requestId = ++providerTestRequestId;');
+    const managedCloudSkipIdx = testBody.indexOf("['webbrain_cloud', 'webbrain_cloud_max'].includes(providerId)");
     const sendIdx = testBody.indexOf("sendToBackground('test_provider'");
     const staleGuardIdx = testBody.indexOf('if (requestId !== providerTestRequestId || providerSelect.value !== providerId) return;');
     const statusIdx = testBody.indexOf("statusDot.className = `status-dot ${res.ok ? 'online' : 'offline'}`;");
     assert.notEqual(captureIdx, -1, `${label}: provider test should capture the intended provider`);
     assert.notEqual(requestIdx, -1, `${label}: provider test should increment a request sequence`);
+    assert.notEqual(managedCloudSkipIdx, -1, `${label}: startup connection tests should skip both managed cloud profiles`);
     assert.notEqual(sendIdx, -1, `${label}: provider test background request missing`);
     assert.notEqual(staleGuardIdx, -1, `${label}: stale provider test results should be dropped`);
     assert.notEqual(statusIdx, -1, `${label}: provider status update missing`);
@@ -41409,7 +41411,7 @@ test('settings page drops stale provider activation completions', () => {
   }
 });
 
-test('provider picker exposes only WebBrain Cloud, configured providers, and More', () => {
+test('provider picker exposes both managed WebBrain Cloud tiers, configured providers, and More', () => {
   for (const [label, panelRel, settingsRel, settingsHtmlRel] of [
     ['chrome', 'src/chrome/src/ui/sidepanel.js', 'src/chrome/src/ui/settings.js', 'src/chrome/src/ui/settings.html'],
     ['firefox', 'src/firefox/src/ui/sidepanel.js', 'src/firefox/src/ui/settings.js', 'src/firefox/src/ui/settings.html'],
@@ -41418,8 +41420,11 @@ test('provider picker exposes only WebBrain Cloud, configured providers, and Mor
     const settings = fs.readFileSync(path.join(ROOT, settingsRel), 'utf8');
     const settingsHtml = fs.readFileSync(path.join(ROOT, settingsHtmlRel), 'utf8');
 
-    assert.match(panel, /id !== 'webbrain_cloud' && config\?\.configured === true/, `${label}: picker should filter to configured non-cloud providers`);
+    assert.match(panel, /!\['webbrain_cloud', 'webbrain_cloud_max'\]\.includes\(id\) && config\?\.configured === true/, `${label}: picker should filter to configured non-cloud providers`);
     assert.match(panel, /cloudOption\.value = 'webbrain_cloud'/, `${label}: WebBrain Cloud should always be offered`);
+    assert.match(panel, /cloudMaxOption\.value = 'webbrain_cloud_max'/, `${label}: WebBrain Cloud Max should always be offered`);
+    assert.match(panel, /WebBrain Cloud Max \(5x\)/, `${label}: Max should disclose its 5x usage rate beside its name`);
+    assert.match(panel, /get_providers', \{ includeSidepanelOnly: true \}/, `${label}: sidepanel should request its hidden managed provider`);
     assert.match(panel, /MORE_PROVIDERS_OPTION_VALUE = '__more_providers__'/, `${label}: More sentinel missing`);
     assert.match(panel, /providerSelect\.value = selectedProviderId;[\s\S]*?await openProvidersSettingsPage\(\);[\s\S]*?return;/, `${label}: More should restore the selection and stop before activation`);
     assert.match(panel, /settings\.html#providers/, `${label}: More should deep-link to Providers settings`);
@@ -43246,7 +43251,7 @@ test('sidepanel scopes async tab commands to the original tab', () => {
 
     const visionIdx = panel.indexOf("if (command.value === '/vision')");
     const visionBody = panel.slice(visionIdx, panel.indexOf('return text;', visionIdx));
-    assert.match(visionBody, /sendToBackground\('get_providers'\);[\s\S]*?sendToBackground\('update_provider'[\s\S]*?if \(currentTabId !== tabId\) return '';[\s\S]*?(?:addMessage\('system'|showComposerToast\()/, `${label}: /vision should not render a result into a different tab`);
+    assert.match(visionBody, /sendToBackground\('get_providers'(?:, \{ includeSidepanelOnly: true \})?\);[\s\S]*?sendToBackground\('update_provider'[\s\S]*?if \(currentTabId !== tabId\) return '';[\s\S]*?(?:addMessage\('system'|showComposerToast\()/, `${label}: /vision should not render a result into a different tab`);
 
     const toggleStart = panel.indexOf('function toggledVisionProviderConfig(');
     const toggleEnd = panel.indexOf('\n\n', toggleStart);
@@ -61839,7 +61844,9 @@ test('extended provider catalog is complete, mirrored, safe, and excluded-provid
     ['firefox', ProviderManagerFx, 'src/firefox'],
   ]) {
     const defaults = new PM()._defaultConfigs();
-    const expectedDefaultCount = label === 'chrome' ? 108 : 107;
+    // Includes the sidepanel-only WebBrain Cloud Max runtime profile, which is
+    // deliberately omitted from the 108/107 Settings provider cards.
+    const expectedDefaultCount = label === 'chrome' ? 109 : 108;
     assert.equal(
       Object.keys(defaults).length,
       expectedDefaultCount,
@@ -62781,6 +62788,26 @@ test('_defaultConfigs: WebBrain Cloud has a 1M context window by default', () =>
     const defaults = new PM()._defaultConfigs();
     assert.equal(defaults.webbrain_cloud.contextWindow, 1000000, `${PM.name}: WebBrain Cloud context window should be 1M`);
     assert.equal(defaults.webbrain_cloud.enabled, true, `${PM.name}: WebBrain Cloud should stay enabled by default`);
+    assert.equal(defaults.webbrain_cloud_max.contextWindow, 1000000, `${PM.name}: WebBrain Cloud Max context window should be 1M`);
+    assert.equal(defaults.webbrain_cloud_max.model, 'max', `${PM.name}: Max should request the backend max alias`);
+    assert.equal(defaults.webbrain_cloud_max.inputCostPerMillionUsd, defaults.webbrain_cloud.inputCostPerMillionUsd * 5, `${PM.name}: Max input pricing should be 5x`);
+    assert.equal(defaults.webbrain_cloud_max.outputCostPerMillionUsd, defaults.webbrain_cloud.outputCostPerMillionUsd * 5, `${PM.name}: Max output pricing should be 5x`);
+    assert.equal(defaults.webbrain_cloud_max.sidepanelOnly, true, `${PM.name}: Max should stay out of Settings > Providers`);
+  }
+});
+
+test('ProviderManager exposes WebBrain Cloud Max only to the sidepanel provider query', () => {
+  for (const PM of [ProviderManagerCh, ProviderManagerFx]) {
+    const manager = new PM();
+    const defaults = manager._defaultConfigs();
+    manager.providers.set('webbrain_cloud', manager._createProvider('webbrain_cloud', defaults.webbrain_cloud));
+    manager.providers.set('webbrain_cloud_max', manager._createProvider('webbrain_cloud_max', defaults.webbrain_cloud_max));
+    assert.equal(manager.getAll().webbrain_cloud_max, undefined, `${PM.name}: Settings-facing provider data should hide Max`);
+    assert.equal(
+      manager.getAll({ includeSidepanelOnly: true }).webbrain_cloud_max?.model,
+      'max',
+      `${PM.name}: sidepanel provider data should include Max`,
+    );
   }
 });
 
