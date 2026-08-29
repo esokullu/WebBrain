@@ -58062,6 +58062,8 @@ test('WebGPU worker follows local text-generation and WebBrain VL vision contrac
     'the browser runtime must normalize nested Transformers v5 image processor metadata');
   assert.match(chromeTransformers, /options\.chat_template_file[\s\S]*?getModelText/,
     'the browser runtime must support standalone model chat-template files');
+  assert.match(chromeTransformers, /const sessionKey = session_name \?\? fileName;[\s\S]*?selectDevice\([^;]*sessionKey[\s\S]*?selectDtype\([^;]*sessionKey/,
+    'aliased ONNX files must resolve device and precision by logical session name');
   assert.equal(chromeTransformers, firefoxTransformers,
     'the patched Transformers.js browser bundle must stay byte-identical across builds');
   for (const modelId of [

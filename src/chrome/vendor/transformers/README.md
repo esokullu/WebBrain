@@ -83,8 +83,10 @@ The LFM2.5-VL ONNX repositories need two compatibility hooks. The 1.6B export
 predates the standard ImageTextToText component filenames, so keep the small
 `session_file_names` alias hook in
 `MODEL_SESSION_CONFIG[MODEL_TYPES.ImageTextToText]`; the worker supplies aliases
-through `config["transformers.js_config"]`. Both current VL exports also use the
-Transformers v5 processor layout: image metadata is nested in
+through `config["transformers.js_config"]`. Keep the corresponding `getSession`
+logic resolving device and dtype by logical `session_name`, while using the
+aliased filename only to fetch the physical ONNX graph. Both current VL exports
+also use the Transformers v5 processor layout: image metadata is nested in
 `processor_config.json`, and the chat template lives in `chat_template.jinja`.
 Keep `loadImageProcessorConfig`, `image_processor_config_file`, and
 `chat_template_file` support so the worker can opt into that layout without

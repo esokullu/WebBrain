@@ -18487,9 +18487,10 @@ async function getModelDataFiles(pretrained_model_name_or_path, fileName, suffix
 // src/models/session.js
 async function getSession(pretrained_model_name_or_path, fileName, options, cache_config = false, session_name = void 0) {
   let custom_config = options.config?.["transformers.js_config"] ?? {};
+  const sessionKey = session_name ?? fileName;
   const selectedDevice = (
     /** @type {import("../utils/devices.js").DeviceType} */
-    selectDevice(options.device ?? custom_config.device, fileName, {
+    selectDevice(options.device ?? custom_config.device, sessionKey, {
       warn: (msg) => logger.info(msg)
     })
   );
@@ -18503,7 +18504,7 @@ async function getSession(pretrained_model_name_or_path, fileName, options, cach
   }
   const selectedDtype = (
     /** @type {import("../utils/dtypes.js").DataType} */
-    selectDtype(options.dtype ?? custom_config.dtype, fileName, selectedDevice, {
+    selectDtype(options.dtype ?? custom_config.dtype, sessionKey, selectedDevice, {
       configDtype: custom_config.dtype,
       warn: (msg) => logger.info(msg)
     })
