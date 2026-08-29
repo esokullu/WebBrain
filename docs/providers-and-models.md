@@ -167,7 +167,10 @@ Apocalypse text picker offers six shipped presets:
   advertise `supportsVision`, accept image blocks in normal provider chat, and
   are marked **Multimodal** in the picker. The 1.6B export uses older ONNX
   component filenames; WebBrain maps those filenames into the packaged
-  Transformers.js image-text runtime before loading it.
+  Transformers.js image-text runtime before loading it. LiquidAI's current VL
+  exports also nest their image metadata in `processor_config.json` and ship
+  `chat_template.jinja` separately; the local runtime loads that layout
+  explicitly instead of probing for the older `preprocessor_config.json`.
 - [`prism-ml/Bonsai-27B-gguf`](https://huggingface.co/prism-ml/Bonsai-27B-gguf)
   (`Q1_0`, about 3.8 GB) through a dedicated vendored [bitgpu](https://github.com/stfurkan/bitgpu)
   worker. Bonsai is opt-in: WebBrain never auto-downloads the 27B weights.

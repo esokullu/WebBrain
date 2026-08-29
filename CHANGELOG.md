@@ -17,6 +17,9 @@ This changelog was generated from the repository Git history and release tags. V
 - Updated provider compatibility handling for DeepSeek support
 
 ### Fixed
+- Fixed LFM2.5-VL downloads selecting FP32 artifacts and failing on LiquidAI's
+  nested processor metadata; retries now discard the obsolete wrong-precision
+  cache entries before fetching the intended FP16-encoder/Q4-decoder files
 - Improved completion recovery behavior around verification availability:
   - Allowed honest exit after failed verification
   - Preserved honest completion when verification is unavailable

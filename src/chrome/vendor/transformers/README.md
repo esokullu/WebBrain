@@ -79,10 +79,16 @@ grep -E '(import|export)[^"]*from\s+"[a-zA-Z@]' \
   | grep -v '^\s*//' | grep -v '^\s*\*'
 ```
 
-The LFM2.5-VL 1.6B ONNX export predates the standard ImageTextToText component
-filenames. Keep the small `session_file_names` alias hook in
+The LFM2.5-VL ONNX repositories need two compatibility hooks. The 1.6B export
+predates the standard ImageTextToText component filenames, so keep the small
+`session_file_names` alias hook in
 `MODEL_SESSION_CONFIG[MODEL_TYPES.ImageTextToText]`; the worker supplies aliases
-through `config["transformers.js_config"]`. Reapply this patch after replacing
+through `config["transformers.js_config"]`. Both current VL exports also use the
+Transformers v5 processor layout: image metadata is nested in
+`processor_config.json`, and the chat template lives in `chat_template.jinja`.
+Keep `loadImageProcessorConfig`, `image_processor_config_file`, and
+`chat_template_file` support so the worker can opt into that layout without
+changing older models. Reapply these patches after replacing
 `transformers.web.js`, and mirror the resulting browser bundle into Firefox so
 the packaged vendor files remain byte-identical.
 

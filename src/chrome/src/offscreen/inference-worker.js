@@ -111,6 +111,18 @@ function isLfm25VlModel(modelId) {
   return WEBGPU_LFM25_VL_MODEL_IDS.has(String(modelId || '').trim());
 }
 
+function lfm25VlProcessorOptions(modelId) {
+  if (!isLfm25VlModel(modelId)) return {};
+  return {
+    // LiquidAI's current VL ONNX repos use the Transformers v5 layout: image
+    // settings are nested in processor_config.json and the chat template is a
+    // separate Jinja file. The packaged Transformers.js 4.2 runtime supports
+    // both through WebBrain's documented browser-bundle compatibility hooks.
+    image_processor_config_file: 'processor_config.json',
+    chat_template_file: 'chat_template.jinja',
+  };
+}
+
 function assertTextDownloadCanStart(payload) {
   const modelId = assertOnnxTextModel(payload?.modelId);
   const dtype = payload?.dtype || 'q4f16';
@@ -479,6 +491,7 @@ async function getVisionRuntime(modelId, dtype, device, {
     await disposeVisionRuntime();
     const progress_callback = event => postProgress(modelId, event);
     const config = await legacyLfm25VlConfig(library, modelId, progress_callback, localFilesOnly);
+    const processorOptions = lfm25VlProcessorOptions(modelId);
     const previousAllowLocalModels = library.env?.allowLocalModels;
     if (localFilesOnly && library.env) library.env.allowLocalModels = true;
     let processorResult;
@@ -486,6 +499,7 @@ async function getVisionRuntime(modelId, dtype, device, {
     try {
       [processorResult, modelResult] = await Promise.allSettled([
         AutoProcessor.from_pretrained(modelId, {
+          ...processorOptions,
           progress_callback,
           local_files_only: localFilesOnly,
         }),
@@ -753,6 +767,7 @@ async function downloadTextModel(payload, { onStarted } = {}) {
   if (tracksDifferentTransfer) {
     throw new Error(`Finish or stop the ${textDownloadState.modelId} download before downloading ${modelId}.`);
   }
+  await clearLegacyLfm25VlWrongPrecisionCache(modelId);
   if (await isTextModelReady(modelId, dtype)) {
     if (payload?.requireTools === true) {
       const runtime = await getDownloadedTextRuntime(modelId, dtype, device, { localFilesOnly: true });
@@ -832,6 +847,24 @@ async function downloadTextModel(payload, { onStarted } = {}) {
     if (textDownloadAbortController === controller) textDownloadAbortController = null;
     activeTextDownloadModelId = '';
   }
+}
+
+async function clearLegacyLfm25VlWrongPrecisionCache(modelId) {
+  if (modelId !== WEBGPU_LFM25_VL_16B_MODEL_ID || typeof caches === 'undefined') return 0;
+  const modelPath = `/${modelId}/`;
+  const wrongPrecisionFile = /\/onnx\/(?:decoder|embed_images)\.onnx(?:_data(?:_\d+)?)?(?:[?#]|$)/;
+  let deletedEntries = 0;
+  for (const name of await caches.keys()) {
+    if (!/transformers/i.test(name)) continue;
+    const cache = await caches.open(name);
+    for (const request of await cache.keys()) {
+      const url = safeDecodedUrl(request.url);
+      if (url.includes(modelPath) && wrongPrecisionFile.test(url) && await cache.delete(request)) {
+        deletedEntries++;
+      }
+    }
+  }
+  return deletedEntries;
 }
 
 function pauseTextDownload() {

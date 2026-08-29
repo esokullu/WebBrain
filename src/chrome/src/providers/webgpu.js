@@ -18,8 +18,8 @@ export const WEBGPU_RUNTIME_ONNX_VL = 'onnx-vl';
 export const WEBGPU_RUNTIME_BITGPU = 'bitgpu';
 export const WEBGPU_LFM25_VL_16B_DTYPE = Object.freeze({
   embed_tokens: 'fp16',
-  embed_images: 'fp16',
-  decoder: 'q4',
+  vision_encoder: 'fp16',
+  decoder_model_merged: 'q4',
 });
 export const WEBGPU_LFM25_VL_3B_DTYPE = Object.freeze({
   embed_tokens: 'fp16',

@@ -57257,6 +57257,11 @@ test('Chrome exposes separate endpoint-free WebGPU text and vision providers', a
     assert.equal(generalProvider.supportsVision, false);
     assert.equal(new WebGPUProvider({ model: WEBGPU_LFM25_VL_16B_MODEL_ID }).supportsVision, true);
     assert.equal(new WebGPUProvider({ model: WEBGPU_LFM25_VL_3B_MODEL_ID }).supportsVision, true);
+    assert.deepEqual(new WebGPUProvider({ model: WEBGPU_LFM25_VL_16B_MODEL_ID }).dtype, {
+      embed_tokens: 'fp16',
+      vision_encoder: 'fp16',
+      decoder_model_merged: 'q4',
+    }, 'VL 1.6B precision must be keyed by runtime session names so it cannot fall back to FP32');
     const probe = await generalProvider.testConnection();
     assert.equal(probe.ok, true);
     assert.equal(probe.libraryVersion, '4.2.0');
@@ -58039,6 +58044,8 @@ test('WebGPU worker follows local text-generation and WebBrain VL vision contrac
   const firefoxAgent = fs.readFileSync(path.join(ROOT, 'src/firefox/src/agent/agent.js'), 'utf8');
   const chromePanel = fs.readFileSync(path.join(ROOT, 'src/chrome/src/ui/sidepanel.js'), 'utf8');
   const firefoxPanel = fs.readFileSync(path.join(ROOT, 'src/firefox/src/ui/sidepanel.js'), 'utf8');
+  const chromeTransformers = fs.readFileSync(path.join(ROOT, 'src/chrome/vendor/transformers/transformers.web.js'), 'utf8');
+  const firefoxTransformers = fs.readFileSync(path.join(ROOT, 'src/firefox/vendor/transformers/transformers.web.js'), 'utf8');
   assert.match(worker, /AutoModelForImageTextToText\.from_pretrained/);
   assert.match(worker, /AutoProcessor\.from_pretrained/);
   assert.match(worker, /apply_chat_template/);
@@ -58047,6 +58054,16 @@ test('WebGPU worker follows local text-generation and WebBrain VL vision contrac
   assert.match(host, /message\.runtime === 'onnx-vl'[\s\S]*?'multimodal-text-chat'/);
   assert.match(worker, /session_file_names:[\s\S]*?vision_encoder: 'embed_images'[\s\S]*?decoder_model_merged: 'decoder'/,
     'the legacy LFM2.5-VL-1.6B ONNX filenames must be mapped into the Transformers.js runtime');
+  assert.match(worker, /image_processor_config_file: 'processor_config\.json'[\s\S]*?chat_template_file: 'chat_template\.jinja'/,
+    'LiquidAI VL repos must use their shipped nested processor config and standalone chat template');
+  assert.match(worker, /clearLegacyLfm25VlWrongPrecisionCache[\s\S]*?wrongPrecisionFile/,
+    'a retry must remove FP32 files cached by the old VL 1.6B dtype mapping');
+  assert.match(chromeTransformers, /async function loadImageProcessorConfig[\s\S]*?source\?\.image_processor/,
+    'the browser runtime must normalize nested Transformers v5 image processor metadata');
+  assert.match(chromeTransformers, /options\.chat_template_file[\s\S]*?getModelText/,
+    'the browser runtime must support standalone model chat-template files');
+  assert.equal(chromeTransformers, firefoxTransformers,
+    'the patched Transformers.js browser bundle must stay byte-identical across builds');
   for (const modelId of [
     WEBGPU_LFM25_12B_INSTRUCT_MODEL_ID,
     WEBGPU_LFM25_12B_THINKING_MODEL_ID,
