@@ -35,7 +35,7 @@ de suivi, de télémétrie ou d'analytique.
 
 L'utilisateur choisit son fournisseur dans les Paramètres. Les options incluent :
 
-- **WebBrain Cloud** : les requêtes passent par `api.webbrain.one` ; Aider à
+- **WebBrain Compass** : les requêtes passent par `api.webbrain.one` ; Aider à
   améliorer WebBrain est activé par défaut et, tant qu'il reste activé,
   certaines interactions peuvent être conservées et utilisées pour
   l'évaluation, l'amélioration, l'affinage et l'entraînement
@@ -52,9 +52,9 @@ L'utilisateur choisit son fournisseur dans les Paramètres. Les options incluent
   trajet des données.
 
 Les requêtes vers un modèle local ou une API configurée par l'utilisateur ne
-sont jamais collectées par WebBrain. Les requêtes WebBrain Cloud sont traitées
+sont jamais collectées par WebBrain. Les requêtes WebBrain Compass sont traitées
 et peuvent être conservées conformément à la section détaillée de la
-[documentation anglaise](../privacy-and-data-flow.md#webbrain-cloud-improvement-data).
+[documentation anglaise](../privacy-and-data-flow.md#webbrain-compass-improvement-data).
 
 ---
 

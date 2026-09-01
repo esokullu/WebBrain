@@ -1,35 +1,35 @@
 ---
 title: >
-  MiniMax M3 and WebBrain Cloud 1.0 enter the frozen WebBrain planner benchmark
+  MiniMax M3 and WebBrain Compass 1.0 enter the frozen WebBrain planner benchmark
 slug: minimax-m3-webbrain-cloud-tool-calling
 sortOrder: -10
 date: 2026-06-21
 readTime: 6 min read
 description: >
-  We ran MiniMax M3 through OpenRouter and WebBrain Cloud 1.0 through api.webbrain.one against WebBrain's frozen 100-case browser-agent first-tool benchmark, then updated the Sonnet 4.6 comparison table.
+  We ran MiniMax M3 through OpenRouter and WebBrain Compass 1.0 through api.webbrain.one against WebBrain's frozen 100-case browser-agent first-tool benchmark, then updated the Sonnet 4.6 comparison table.
 excerpt: >
-  MiniMax M3 landed at 75% Sonnet first-tool alignment, below the older MiniMax M2.7 run. WebBrain Cloud 1.0 reached 73% alignment with a much lower run cost, but higher latency in this test path.
+  MiniMax M3 landed at 75% Sonnet first-tool alignment, below the older MiniMax M2.7 run. WebBrain Compass 1.0 reached 73% alignment with a much lower run cost, but higher latency in this test path.
 titleTag: >
-  MiniMax M3 and WebBrain Cloud 1.0 WebBrain planner benchmark - WebBrain Blog
+  MiniMax M3 and WebBrain Compass 1.0 WebBrain planner benchmark - WebBrain Blog
 ogTitle: >
-  MiniMax M3 and WebBrain Cloud 1.0 in WebBrain's frozen planner bench
+  MiniMax M3 and WebBrain Compass 1.0 in WebBrain's frozen planner bench
 ogDescription: >
-  Two new hosted OpenAI-compatible runs join the WebBrain first-tool benchmark: MiniMax M3 via OpenRouter and WebBrain Cloud 1.0 via api.webbrain.one.
+  Two new hosted OpenAI-compatible runs join the WebBrain first-tool benchmark: MiniMax M3 via OpenRouter and WebBrain Compass 1.0 via api.webbrain.one.
 twitterTitle: >
-  MiniMax M3 and WebBrain Cloud 1.0 planner benchmark
+  MiniMax M3 and WebBrain Compass 1.0 planner benchmark
 twitterDescription: >
-  MiniMax M3: 75% Sonnet alignment. WebBrain Cloud 1.0: 73%. Same frozen 41-tool WebBrain harness.
+  MiniMax M3: 75% Sonnet alignment. WebBrain Compass 1.0: 73%. Same frozen 41-tool WebBrain harness.
 keywords:
   - WebBrain
   - MiniMax M3
-  - WebBrain Cloud
+  - WebBrain Compass
   - OpenRouter
   - browser agent
   - tool calling
   - Claude Sonnet
   - LLM benchmark
 lede: >
-  We added two hosted OpenAI-compatible planner runs to WebBrain's frozen first-tool benchmark: **minimax/minimax-m3** through OpenRouter and **webbrain-cloud 1.0** through `https://api.webbrain.one/v1`. The surprise is that MiniMax M3 does not beat the older MiniMax M2.7 result in this harness. WebBrain Cloud lands close behind M3 on Sonnet alignment, costs much less for the replay, but was much slower on this endpoint path.
+  We added two hosted OpenAI-compatible planner runs to WebBrain's frozen first-tool benchmark: **minimax/minimax-m3** through OpenRouter and **webbrain-cloud 1.0** through `https://api.webbrain.one/v1`. The surprise is that MiniMax M3 does not beat the older MiniMax M2.7 result in this harness. WebBrain Compass lands close behind M3 on Sonnet alignment, costs much less for the replay, but was much slower on this endpoint path.
 ---
 
 ## What we ran
@@ -67,7 +67,7 @@ test/llm/results/2026-06-21-webbrain-cloud-final_chrome_webbrain-cloud_1.0_froze
 
 ## Headline results
 
-| Metric | MiniMax M3 via OpenRouter | WebBrain Cloud 1.0 |
+| Metric | MiniMax M3 via OpenRouter | WebBrain Compass 1.0 |
 | --- | ---: | ---: |
 | Completed cases | 100/100 | 100/100 |
 | Transport errors | 0 | 0 |
@@ -81,9 +81,9 @@ test/llm/results/2026-06-21-webbrain-cloud-final_chrome_webbrain-cloud_1.0_froze
 | Total wall time | 214s at concurrency 2 | 1,388s at concurrency 1 |
 | Reported run cost | $1.06 | $0.12 |
 
-The clean read: MiniMax M3 is a solid hosted planner, but it is not an upgrade over our saved MiniMax M2.7 result for this specific first-tool benchmark. WebBrain Cloud 1.0 is slightly weaker on Sonnet alignment, but it is cheaper in the reported usage fields and produced more parsed tool calls.
+The clean read: MiniMax M3 is a solid hosted planner, but it is not an upgrade over our saved MiniMax M2.7 result for this specific first-tool benchmark. WebBrain Compass 1.0 is slightly weaker on Sonnet alignment, but it is cheaper in the reported usage fields and produced more parsed tool calls.
 
-Latency needs one caveat. MiniMax M3 ran with concurrency 2, matching the older OpenRouter-style run. WebBrain Cloud had to run with concurrency 1; a concurrency-2 attempt produced transport failures from this environment. So compare the median per-case latency directly, but treat wall time as endpoint-path-specific.
+Latency needs one caveat. MiniMax M3 ran with concurrency 2, matching the older OpenRouter-style run. WebBrain Compass had to run with concurrency 1; a concurrency-2 attempt produced transport failures from this environment. So compare the median per-case latency directly, but treat wall time as endpoint-path-specific.
 
 ## MiniMax M3 vs MiniMax M2.7
 
@@ -98,16 +98,16 @@ M3 did not regress catastrophically. It still tracks Sonnet better than most loc
 
 That does not mean M3 is the weaker model in general. This is a narrow first-tool browser-agent routing harness, frozen to an older WebBrain schema. It does mean we should not silently replace M2.7 with M3 in the planner table just because the model name is newer.
 
-## WebBrain Cloud 1.0
+## WebBrain Compass 1.0
 
-WebBrain Cloud 1.0 came in just below MiniMax M3 on Sonnet alignment:
+WebBrain Compass 1.0 came in just below MiniMax M3 on Sonnet alignment:
 
 | Model | Parsed calls | Exact | Name | Sonnet all | Sonnet tooled | Median | Cost |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | MiniMax M3 | 85/100 | 17% | 32% | 75.0% | 73.9% | 3.1s | $1.06 |
-| WebBrain Cloud 1.0 | 90/100 | 16% | 35% | 73.0% | 72.8% | 8.8s | $0.12 |
+| WebBrain Compass 1.0 | 90/100 | 16% | 35% | 73.0% | 72.8% | 8.8s | $0.12 |
 
-The profile is different. WebBrain Cloud produced more tool calls and a slightly better ideal tool-name score than M3, but it aligned less often with Sonnet's first-tool choices and had much higher latency in this run. It also reported a much lower cost for the 100-case replay.
+The profile is different. WebBrain Compass produced more tool calls and a slightly better ideal tool-name score than M3, but it aligned less often with Sonnet's first-tool choices and had much higher latency in this run. It also reported a much lower cost for the 100-case replay.
 
 For product use, this is a reasonable default-cloud profile: cheap, OpenAI-compatible, native tool-capable, and close enough to the top hosted planner tier to be useful. For the benchmark leaderboard, it sits below MiniMax M3 and above the Qwen 3.5 4B row on the all-case Sonnet score.
 
@@ -123,7 +123,7 @@ This table uses the saved Claude Sonnet 4.6 run as the first-tool reference. "Ma
 | 3 | MiniMax M2.7 | 77.0% | 76.1% | 88% | 88% | 23% | 36% | 3.1s |
 | 4 | MiniMax M3 | 75.0% | 73.9% | 85% | 85% | 17% | 32% | 3.1s |
 | 5 | Intel Gemma 4 31B int4 AutoRound | 74.0% | 72.8% | 88% | 88% | 14% | 34% | 0.63s |
-| 6 | WebBrain Cloud 1.0 | 73.0% | 72.8% | 90% | 90% | 16% | 35% | 8.8s |
+| 6 | WebBrain Compass 1.0 | 73.0% | 72.8% | 90% | 90% | 16% | 35% | 8.8s |
 | 7 | Qwen 3.5 4B | 73.0% | 71.7% | 82% | 82% | 12% | 33% | 5.5s |
 | 8 | Gemma 4 26B-A4B | 71.0% | 70.7% | 87% | 87% | 13% | 30% | 1.4s |
 | 9 | Qwen 3.6 35B-A3B | 70.0% | 70.7% | 90% | 90% | 18% | 38% | 10.3s |
@@ -144,13 +144,13 @@ This table uses the saved Claude Sonnet 4.6 run as the first-tool reference. "Ma
 
 The top of the table is getting crowded, but the conclusion did not change. The best saved Sonnet-alignment result is still the Gemma 4 31B QAT / Qwen 3.6 27B / MiniMax M2.7 cluster. MiniMax M3 joins just below that cluster. Because M3 is roughly double the size of M2.7, that result is hard to justify for this job: larger, more expensive, and weaker on the frozen planner run is not a worthwhile trade.
 
-WebBrain Cloud 1.0 sits one row lower, but it is the more useful product story here. It is a good entrant with a free tier, and it gives people a working WebBrain path when they do not have a local LLM ready. It should also keep improving as we tune the browser-side optimizations around the hosted route.
+WebBrain Compass 1.0 sits one row lower, but it is the more useful product story here. It is a good entrant with a free tier, and it gives people a working WebBrain path when they do not have a local LLM ready. It should also keep improving as we tune the browser-side optimizations around the hosted route.
 
 ## What changes
 
 For hosted planner routing, I would keep MiniMax M2.7 in the table ahead of MiniMax M3 until M3 wins a rerun with a newer prompt or a different tool format. M3 is good, but the frozen WebBrain result does not justify a default-model change, especially when the newer model is about twice the size.
 
-For WebBrain Cloud, the result is more product-facing than leaderboard-facing. It passed the old structured tool interface cleanly, completed all 100 cases without transport errors in the final run, and stayed close to the hosted MiniMax tier on Sonnet alignment. The latency needs endpoint work, but the quality/cost shape is usable, and the free tier makes it a practical default for anyone who wants to try WebBrain before setting up a local model.
+For WebBrain Compass, the result is more product-facing than leaderboard-facing. It passed the old structured tool interface cleanly, completed all 100 cases without transport errors in the final run, and stayed close to the hosted MiniMax tier on Sonnet alignment. The latency needs endpoint work, but the quality/cost shape is usable, and the free tier makes it a practical default for anyone who wants to try WebBrain before setting up a local model.
 
 The next fair test is the current production prompt and tool schema, not the May 23 frozen one. The frozen run answers "how does it compare with our historical rows?" The live-schema run answers "what should WebBrain route to today?"
 

@@ -77,7 +77,7 @@ Trois modes contrôlent ce que l'agent a le droit de faire :
 
 ## Choisir un modèle
 
-**WebBrain Cloud 1.0** est l'option par défaut : ni clé API, ni configuration
+**WebBrain Compass 1.0** est l'option par défaut : ni clé API, ni configuration
 locale.
 
 **Les modèles locaux** ne demandent pas non plus de clé API. Pointez WebBrain

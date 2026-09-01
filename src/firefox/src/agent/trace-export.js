@@ -376,6 +376,17 @@ export function tracesToMarkdown(runsWithEvents, {
         const attempts = Number(d.extra?.attempts) || 2;
         const reason = oneLine(d.extra?.reason || 'invalid_output');
         md += `- ⚠️ Planning failed after ${attempts} attempts · continued in Act mode · reason=${reason}\n`;
+      } else if (ev.kind === 'note' && d.note === 'adapter_match') {
+        const adapter = oneLine(d.extra?.adapter || 'unknown');
+        const revision = Number(d.extra?.revision);
+        const notes = d.extra?.notesInjected === true ? 'notes injected' : 'notes already active';
+        md += `- 🧭 Adapter match: ${adapter}${Number.isInteger(revision) ? `@r${revision}` : ''} · ${notes}\n`;
+      } else if (ev.kind === 'note' && d.note === 'adapter_context') {
+        const adapter = oneLine(d.extra?.adapter || 'unknown');
+        const revision = Number(d.extra?.revision);
+        const job = oneLine(d.extra?.job || 'unknown');
+        const template = oneLine(d.extra?.template || 'unknown');
+        md += `- 🧭 Adapter workflow: ${adapter}${Number.isInteger(revision) ? `@r${revision}` : ''} · job=${job} · template=${template}\n`;
       } else if (ev.kind === 'note' && d.note === 'standalone_wikipedia_search_requested') {
         const queries = Math.max(1, Number(d.extra?.queryCount) || 1);
         md += `- 📚 On-device model requested local Wikipedia retrieval · ${queries} quer${queries === 1 ? 'y' : 'ies'}\n`;

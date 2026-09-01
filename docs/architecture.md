@@ -190,6 +190,20 @@ Raw page-source access through `read_page_source` is available only in Dev mode.
 
 Manual action-mode runs (Act or Dev) call the active provider once before the tool loop with `planner.js`'s structured JSON prompt. Off uses the compact intent schema; Try and Strict use the full plan schema. Unset storage defaults to Try, while explicit Off remains Off. The planner sees the user task, sanitized URL/title, and a short recent-history digest; page context is wrapped as untrusted data and image blocks are dropped.
 
+When the active site adapter has a validated `webbrain-adapter-workflow/2`
+profile, both planner variants also receive its bounded app-owned job IDs and
+descriptions. The planner returns a nullable `site_job`; the runtime resolves
+that ID again against the exact active adapter instead of trusting page text or
+matching user-language keywords. A selected job can tighten state-change and
+require job-bound terminal evidence after submission (for example paid/ticket-
+issued transaction state or recipient-bound sent-message state). Jobs that
+require a ledger must exactly reconcile terminal ledger IDs against a complete
+app-owned accessibility-tree or seeded inventory; model-created rows cannot prove
+coverage. Every matched adapter records adapter/revision/notes-injected as
+content-free trace metadata, while a selected workflow additionally records its
+adapter/revision/job/template. Any user edit to reviewed plan text discards the
+hidden job binding.
+
 If the planner returns valid JSON, the side panel receives `agent_update: plan_review` and renders an editable review card. Approval pins the approved plan into the scratchpad so it survives context compaction. Rejection, timeout, or user abort stops the run before any browser tools execute. In Try mode, invalid JSON after one repair degrades only that turn to the Ask prompt and read-only tool catalog; Strict mode still stops before tools. Scheduled runs can set `autoApprovePlanReview` and pin the plan without showing the card.
 
 ### Step 5: Main Agent Loop
@@ -245,7 +259,7 @@ Official OpenAI GPT-5.6 and streaming-capable Responses-only GPT-5 Pro variants
 use Responses streaming. Other supported official OpenAI models use Chat
 Completions streaming. Anthropic uses its native Messages event parser, Azure
 OpenAI uses its deployment-based parser, and Gemini, DeepSeek, xAI, Mistral,
-Nvidia NIM, Groq, Together AI, Fireworks, z.ai, OpenRouter, WebBrain Cloud,
+Nvidia NIM, Groq, Together AI, Fireworks, z.ai, OpenRouter, WebBrain Compass,
 Ollama, LM Studio, Jan, vLLM, SGLang, LocalAI, and Unsloth Studio use the OpenAI-compatible
 Chat Completions parser. z.ai streaming tool calls add its documented
 `tool_stream` request flag. llama.cpp uses its dedicated OpenAI-compatible
@@ -281,9 +295,11 @@ invariants therefore keep one production lifecycle.
 ### Selected-text source scopes
 
 Selected-text runs always carry an explicit, durable `source_grounding` policy.
-Fixed actions keep `selection_only`, which limits the answer to the selected
-text. A free-form question may use `selection_context`, which permits intrinsic
-model knowledge and a bounded projection of earlier user/assistant dialogue so
+Fixed actions keep `selection_only`, which uses the selected text as the only
+page source while still allowing intrinsic model knowledge to explain terms
+named in that selection. A free-form question may use `selection_context`, which
+permits intrinsic model knowledge and a bounded projection of earlier
+user/assistant dialogue so
 references such as “the above” can be resolved. That projection is explicitly
 non-authoritative: wrapped page text, tool results, screenshots, attachments,
 and app-owned state are excluded. The current selection remains untrusted page
@@ -584,10 +600,10 @@ copied nor fingerprinted in request events. Policy revisions are bumped when
 controlled prompt templates or tool-exposure rules change; private request
 content does not affect them.
 
-WebBrain Cloud runs also have a separate consent-gated terminal-runtime path.
+WebBrain Compass runs also have a separate consent-gated terminal-runtime path.
 After an executed tool result is made durable in `chrome.storage.local`, a
-bounded `terminal_runtime` envelope is sent to the Cloud improvement endpoint.
-Transient failures remain in the outbox for the next Cloud run; acknowledged or
+bounded `terminal_runtime` envelope is sent to the Compass improvement endpoint.
+Transient failures remain in the outbox for the next Compass run; acknowledged or
 non-retryable records are removed. This path does not depend on optional local
 IndexedDB tracing, is disabled for local/bring-your-own providers, and never
 blocks the visible answer on the network request. Chrome and Firefox use the
@@ -764,7 +780,7 @@ Jobs are stored in `chrome.storage.local` under the key `wb_scheduled_jobs` as a
 
 ### Site Adapters (`adapters.js`)
 
-58+ adapters inject site-specific guidance into the first user message (and re-inject on navigation to a different matched site). Only ONE adapter fires at a time (`getActiveAdapter(url)` returns the first match). See `docs/site-adapters.md` for how to write one.
+110+ adapters inject site-specific guidance into the first user message (and re-inject on navigation to a different matched site). Only ONE adapter fires at a time (`getActiveAdapter(url)` returns the first match). See `docs/site-adapters.md` for how to write one. Each matched adapter emits a content-free `adapter_match` trace note with its identity, revision, and whether notes were injected. High-evidence repeated tasks may additionally expose validated V2 workflow jobs; the planner selects an app-owned ID semantically, the binding is revalidated on the live pre-execution URL, and the executor receives its trusted stages/evidence contract. Required submissions need dispatch plus post-submit observation, while jobs with a trusted complete inventory may require an explicit job-bound complete-coverage marker whose count matches terminal current-task ledger rows.
 
 Adapters may also expose narrowly scoped runtime policy. Douyin `/chat` is the first `messaging.verifyActiveRecipient` route. The structured planner resolves an anaphoric recipient to `named` only when authentic prior-user context identifies exactly one target; unresolved pronouns clarify, while `active_conversation` is reserved for an explicit reference to the currently open thread itself. An `active_conversation` planner target must first be pinned to exactly one strong visible header identity before any page tool runs; ambiguous or missing evidence stops for clarification. Immediately before a send-like click, submitted field, or Enter press, the content script resolves the exact target and a lower-page layout composer, then collects only unique header evidence from the narrow, non-scrollable region above it. Enter or submitted field input in a different editable is conclusively non-message only when structural semantics positively identify a search or navigation field; an alternate reply/forward/split-pane composer remains inconclusive and therefore cannot bypass recipient verification. A distant general control likewise remains inconclusive rather than being declared safe. A semantic conversation row in a separate left rail is conclusively navigation-only, allowing recovery to the requested thread whether or not the short rail currently overflows; nested row buttons, links, and their leaf descendants plus controls outside that structure remain inconclusive. The agent requires exact normalized identity equality and returns a no-dispatch blocker on missing, inconclusive, ambiguous, or mismatched evidence, and protected Enter dispatch permits exactly one keypress per verification. Every authorized `click`, `click_ax`, `set_field({submit:true})`, and composer Enter receives a one-use binding to the exact action target, composer, URL, and identity set. Direct content dispatches and Chrome's trusted CDP mouse/key paths consume and revalidate it immediately before `el.click()`, `mousePressed`, or Enter, after any field reconciliation and combobox delays; protected `click_ax` never issues a second no-progress fallback click. Search-result text, message content, input values, generic page text, failed probes, and edited plans with stale hidden metadata cannot authorize a send. Dispatch-capable tools whose effects cannot be bound to the probed recipient (`iframe_click`, `execute_js`, WebMCP execution, and `upload_file`, whose change event may auto-send) are unavailable on this protected route. Deterministic saved-workflow replay has no planner-owned recipient target, so a workflow with any potentially dispatching step scoped to a protected messaging route stops before page actions and directs the user to run a normal Act task with a named recipient; a per-step check also covers legacy workflows whose scope metadata is incomplete.
 

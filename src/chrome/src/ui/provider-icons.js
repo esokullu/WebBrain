@@ -79,7 +79,7 @@ export function providerIconHtml(id, label, className = 'provider-icon', opts = 
 
 /** Short display name for a known provider id (sniff hints, menus). */
 export const PROVIDER_SHORT_LABELS = {
-  webbrain_cloud: 'WebBrain Cloud',
+  webbrain_cloud: 'WebBrain Compass',
   llamacpp: 'llama.cpp',
   ollama: 'Ollama',
   lmstudio: 'LM Studio',

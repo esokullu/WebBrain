@@ -880,6 +880,37 @@
       border-color: var(--accent);
       box-shadow: 0 0 0 2px rgba(108,99,255,0.22);
     }
+    .ui-scale-controls {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .ui-scale-controls button {
+      min-width: 32px;
+      min-height: 32px;
+      padding: 5px 9px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg3);
+      color: var(--text);
+      font: inherit;
+      cursor: pointer;
+    }
+    .ui-scale-controls button:hover { border-color: var(--accent); }
+    .ui-scale-controls button:disabled { opacity: 0.45; cursor: default; }
+    .ui-scale-controls output { min-width: 44px; text-align: center; font-variant-numeric: tabular-nums; }
+    .ui-scale-shortcut-summary { margin-top: 6px; font-size: 11px; color: var(--text2); }
+    .ui-scale-manage-shortcuts {
+      margin-top: 7px;
+      padding: 0;
+      border: 0;
+      background: none;
+      color: var(--accent);
+      font: inherit;
+      font-size: 11px;
+      cursor: pointer;
+    }
     .skill-source {
       max-width: 340px;
       overflow: hidden;
@@ -1241,6 +1272,20 @@
           <option value="light" data-i18n="st.display.theme.light"></option>
           <option value="dark" data-i18n="st.display.theme.dark"></option>
         </select>
+      </div>
+      <div class="setting-row">
+        <div class="setting-info">
+          <div class="setting-label" data-i18n="st.display.ui_scale.label"></div>
+          <div class="setting-desc" data-i18n="st.display.ui_scale.desc"></div>
+          <div class="ui-scale-shortcut-summary" id="settings-ui-scale-shortcuts"></div>
+          <button type="button" class="ui-scale-manage-shortcuts" id="settings-ui-scale-manage-shortcuts" data-i18n="st.display.ui_scale.manage_shortcuts"></button>
+        </div>
+        <div class="ui-scale-controls" role="group" data-i18n-aria-label="st.display.ui_scale.label">
+          <button type="button" id="settings-ui-scale-decrease" data-i18n-title="st.display.ui_scale.decrease" data-i18n-aria-label="st.display.ui_scale.decrease">−</button>
+          <output id="settings-ui-scale-value" aria-live="polite">100%</output>
+          <button type="button" id="settings-ui-scale-increase" data-i18n-title="st.display.ui_scale.increase" data-i18n-aria-label="st.display.ui_scale.increase">+</button>
+          <button type="button" id="settings-ui-scale-reset" data-i18n="st.display.ui_scale.reset"></button>
+        </div>
       </div>
       <div class="setting-row">
         <div class="setting-info">

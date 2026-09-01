@@ -413,7 +413,7 @@ function buildSubscribeHtml() {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WebBrain Cloud Subscribe</title>
+  <title>WebBrain Compass Subscribe</title>
   <meta name="robots" content="noindex, follow">
   <link rel="canonical" href="${SITE_ORIGIN}/subscribe/">
   <style>
@@ -466,7 +466,7 @@ function buildSubscribeHtml() {
 </head>
 <body>
   <main>
-    <div class="brand">WebBrain Cloud</div>
+    <div class="brand">WebBrain Compass</div>
     <h1 id="subscribe-title">Redirecting to Stripe</h1>
     <p id="subscribe-copy">The payment page will open in a few seconds.</p>
     <p id="checkout-row">If redirect does not work, <a id="checkout-link" href="${STRIPE_SUBSCRIBE_URL}">open Stripe checkout</a>.</p>

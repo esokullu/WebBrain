@@ -897,13 +897,14 @@ export const AGENT_TOOLS = [
     type: 'function',
     function: {
       name: 'iframe_read',
-      description: 'Enumerate matching elements inside iframes — INCLUDING cross-origin frames. Returns every matched element (bounded by limit) with its matchIndex, semantic label, attributes, text, and current value, plus frame URLs. Reuse the returned selector + matchIndex for iframe_click/iframe_type; broad mutating selectors are rejected when ambiguous.',
+      description: 'Enumerate matching elements inside iframes — INCLUDING cross-origin frames. Returns every matched element (bounded by limit) with its absolute matchIndex, semantic label, attributes, text, and current value, plus frame URLs. For a selected form workflow, inventory controls with one broad selector covering input, textarea, select, contenteditable, and ARIA form-control roles, using limit 50; a truncated result is not complete — repeat the identical selector with offset set to the returned nextOffset until truncated is false. Reuse the returned selector + matchIndex for iframe_click/iframe_type; broad mutating selectors are rejected when ambiguous.',
       parameters: {
         type: 'object',
         properties: {
           urlFilter: { type: 'string', description: 'Optional substring to filter frames by URL (e.g. "stripe.com" to only read Stripe iframes). Omit to read all frames.' },
           selector: { type: 'string', description: 'Optional CSS selector to extract specific elements within each frame. Omit to get the full body text.' },
           limit: { type: 'number', description: 'Maximum matching elements returned per frame. Default 25; maximum 50.' },
+          offset: { type: 'number', description: 'Zero-based index of the first match returned per frame. Continue a truncated inventory by passing the returned nextOffset with the identical selector.' },
         },
         required: [],
       },
@@ -1096,6 +1097,17 @@ export const AGENT_TOOLS = [
           },
           sessionId: { type: 'string', description: 'Optional advanced override. Usually omit this; the app assigns rows to the active progress session.' },
           reopen: { type: 'boolean', description: 'Rows already processed/skipped/failed are locked; status changes back to pending/acted are ignored with a warning. Pass true only when the user explicitly asked to redo those rows.' },
+          workflowReconciliation: {
+            type: 'object',
+            description: 'For an app-selected site workflow that requires full reconciliation, declare complete inventory coverage only after every app-owned workflowInventory item id (or app-seeded expected/classifier item) has an exact stable terminal ledger row. Model-created rows alone cannot prove complete coverage.',
+            properties: {
+              job: { type: 'string', description: 'Exact app-selected workflow job id shown in the execution contract.' },
+              coverageComplete: { type: 'boolean', description: 'Must be true only after inventory/pagination is complete and every item has a row.' },
+              itemCount: { type: 'number', description: 'Exact total shared by the app-owned inventory and current-task ledger after this update.' },
+              basis: { type: 'string', description: 'Short evidence basis for complete coverage, such as terminal pagination, all visible form questions inventoried, or verified no-results.' },
+            },
+            required: ['job', 'coverageComplete', 'itemCount', 'basis'],
+          },
         },
         required: ['items'],
       },
@@ -1516,6 +1528,34 @@ const WATCH_BEEP_TOOL = {
 // small model never has to choose another inspection tool or construct CSS.
 const COMPACT_UPLOAD_HIDDEN_PARAMS = ['selector', 'downloadId', 'filePath'];
 
+function compactProgressUpdateTool(tool) {
+  const properties = { ...tool.function.parameters.properties };
+  const workflow = properties.workflowReconciliation || {};
+  return {
+    ...tool,
+    function: {
+      ...tool.function,
+      parameters: {
+        ...tool.function.parameters,
+        properties: {
+          ...properties,
+          workflowReconciliation: {
+            ...workflow,
+            description: 'For a selected ledger workflow, declare complete coverage only after every app-owned inventory id has a terminal row.',
+            properties: {
+              job: { type: 'string', description: 'Exact selected workflow job id.' },
+              coverageComplete: { type: 'boolean', description: 'True only after inventory is complete and every item has a row.' },
+              itemCount: { type: 'number', description: 'Exact inventory and ledger total after this update.' },
+              basis: { type: 'string', description: 'Short evidence for complete coverage.' },
+            },
+            required: ['job', 'coverageComplete', 'itemCount', 'basis'],
+          },
+        },
+      },
+    },
+  };
+}
+
 function compactUploadFileTool(tool) {
   const properties = { ...tool.function.parameters.properties };
   for (const key of COMPACT_UPLOAD_HIDDEN_PARAMS) delete properties[key];
@@ -1621,7 +1661,11 @@ export function getToolsForMode(mode, opts = {}) {
   } else if (tier === 'compact') {
     base = AGENT_TOOLS
       .filter(t => COMPACT_TOOL_NAMES.has(t.function.name))
-      .map(t => (t.function.name === 'upload_file' ? compactUploadFileTool(t) : t));
+      .map(t => {
+        if (t.function.name === 'upload_file') return compactUploadFileTool(t);
+        if (t.function.name === 'progress_update') return compactProgressUpdateTool(t);
+        return t;
+      });
   } else if (tier === 'mid') {
     base = AGENT_TOOLS.filter(t => MID_TOOL_NAMES.has(t.function.name));
   } else {

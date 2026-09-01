@@ -344,7 +344,7 @@ export function buildRecommendedActions(pageInfo = {}, options = {}) {
   const webbrainPostText = t('sp.recommended.tweet.text');
   const webbrainPromotionVariant = options.webbrainPromotionVariant === 'linkedin' ? 'linkedin' : 'x';
 
-  addUnique(actions, webbrainPromotionVariant === 'linkedin'
+  const webbrainPromotion = webbrainPromotionVariant === 'linkedin'
     ? {
       id: 'post-webbrain-linkedin',
       label: t('sp.recommended.linkedin.label'),
@@ -358,7 +358,7 @@ export function buildRecommendedActions(pageInfo = {}, options = {}) {
       prompt: t('sp.recommended.tweet.prompt', { post: webbrainPostText }),
       mode: 'act',
       runOptions: webbrainTweetRunOptions(webbrainPostText),
-    });
+    };
 
   if (MEETING_HOST_RE.test(host)) {
     addUnique(actions, {
@@ -611,7 +611,7 @@ return { found, loop: state.video?.loop === true, intervalSet: Boolean(state.tim
     });
   }
 
-  if (!actions.some((action) => !['tweet-webbrain', 'post-webbrain-linkedin'].includes(action.id)) && pageInfo.title) {
+  if (actions.length === 0 && pageInfo.title) {
     const explainUsesArticleRead = isLongArticle(pageInfo);
     addUnique(actions, {
       id: 'explain-page',
@@ -636,6 +636,10 @@ return { found, loop: state.video?.loop === true, intervalSet: Boolean(state.tim
         ),
     });
   }
+
+  // Promotion is a fallback, not page context: fill only a remaining slot and
+  // keep it after every action derived from the active page.
+  addUnique(actions, webbrainPromotion);
 
   return actions.slice(0, Math.max(0, max));
 }

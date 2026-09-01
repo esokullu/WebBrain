@@ -11,6 +11,7 @@ import {
   USER_MEMORY_STORAGE_KEY,
 } from './agent/user-memory.js';
 import { AUTO_GROUP_TABS_KEY } from './tab-group-preference.js';
+import { normalizeUiScale, UI_SCALE_STORAGE_KEY } from './ui/ui-scale.js';
 
 export const CONFIG_SCHEMA = 'webbrain-config/1';
 export const MAX_CONFIG_IMPORT_CHARS = 10_000_000;
@@ -21,6 +22,7 @@ export const MAX_CONFIG_IMPORT_CHARS = 10_000_000;
 export const DEFAULT_CONFIG_SETTINGS = Object.freeze({
   wbLocale: 'en',
   themeMode: 'system',
+  [UI_SCALE_STORAGE_KEY]: 100,
   verboseMode: false,
   selectionShortcutEnabled: true,
   [AUTO_GROUP_TABS_KEY]: true,
@@ -184,6 +186,10 @@ function normalizeSettings(source, { strict = false } = {}) {
   for (const key of CONFIG_STORAGE_KEYS) {
     if (!Object.hasOwn(source, key)) continue;
     const value = source[key];
+    if (key === UI_SCALE_STORAGE_KEY) {
+      settings[key] = normalizeUiScale(value);
+      continue;
+    }
     if (!validSettingValue(key, value)) {
       if (strict) throw new Error(`Invalid value for configuration setting "${key}".`);
       continue;
@@ -261,7 +267,9 @@ export function parseConfigPatchImport(json) {
     if (!validSettingValue(key, value)) {
       throw new Error(`Invalid value for configuration setting "${key}".`);
     }
-    settings[key] = key === 'providers'
+    settings[key] = key === UI_SCALE_STORAGE_KEY
+      ? normalizeUiScale(value)
+      : key === 'providers'
       ? sanitizeProviders(value, { strict: true })
       : clone(value);
   }
@@ -279,7 +287,7 @@ export function mergeConfigPatchSettings(current = {}, patch = {}) {
   const patchProviders = isPlainObject(merged.providers) ? merged.providers : {};
   // Cloud provisioning owns this provider's credentials, endpoint and device
   // identity. A portable export may contain a stale copy, so never let it
-  // replace the runtime's current WebBrain Cloud configuration.
+  // replace the runtime's current WebBrain Compass configuration.
   delete patchProviders.webbrain_cloud;
   delete patchProviders.webbrain_cloud_max;
   merged.providers = { ...currentProviders, ...patchProviders };

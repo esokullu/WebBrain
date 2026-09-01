@@ -1,4 +1,4 @@
-import { inferContextWindow } from './context-windows.js';
+import { inferContextWindow, resolveMaxOutputTokens } from './context-windows.js';
 import {
   addConfiguredMaxTokens,
   mapProviderMessages,
@@ -129,6 +129,16 @@ export class BaseLLMProvider {
   }
 
   /**
+   * Maximum tokens requested for a normal model generation. Providers may
+   * expose a larger budget in Settings; that value is clamped to the selected
+   * model's known output ceiling when we have one. Legacy configurations
+   * retain the historical 4k request cap.
+   */
+  get maxOutputTokens() {
+    return resolveMaxOutputTokens(this.config);
+  }
+
+  /**
    * Whether this provider is running a small/local model that benefits from
    * a compact system prompt. When true, the agent uses SYSTEM_PROMPT_ACT_COMPACT
    * instead of the full SYSTEM_PROMPT_ACT to save context budget.
@@ -226,7 +236,12 @@ export class BaseLLMProvider {
    */
   async testConnection() {
     try {
-      const res = await this.chat([{ role: 'user', content: 'Hi' }], { maxTokens: 5 });
+      // Responses reasoning models (e.g. muse-spark) count reasoning + output
+      // against max_output_tokens; 5 → 16 is too low and always returns
+      // `incomplete (max_output_tokens)`. Use a real budget for the health
+      // check when the provider routes to /responses.
+      const maxTokens = typeof this._usesResponsesApi === 'function' && this._usesResponsesApi() ? 512 : 5;
+      const res = await this.chat([{ role: 'user', content: 'Hi' }], { maxTokens });
       return { ok: true, model: this.config.model };
     } catch (e) {
       return { ok: false, error: e.message };

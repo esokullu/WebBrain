@@ -26,15 +26,15 @@
 
 用户在设置中选择他们的提供商。选项包括：
 
-- **WebBrain Cloud**：请求会经过 `api.webbrain.one`；“帮助改进 WebBrain”默认启用，在其保持启用期间，部分交互可能会被保留并用于评估、改进、微调和训练
+- **WebBrain Compass**：请求会经过 `api.webbrain.one`；“帮助改进 WebBrain”默认启用，在其保持启用期间，部分交互可能会被保留并用于评估、改进、微调和训练
 - **用户自带的云提供商**：OpenAI、Anthropic、Google Gemini、Mistral、DeepSeek、xAI、Groq、OpenRouter 等——请求使用用户凭据直接发送给提供商，WebBrain 不会收集这些请求
 - **本地模型运行时**：llama.cpp、Ollama、LM Studio、Jan、vLLM、SGLang、LocalAI
   和 GPT4All——推理请求保留在用户的机器上
 - **本地 OpenAI 兼容代理**：WebBrain 只连接已配置的本地网关，但网关可能把请求上下文
   转发给上游账户。实际数据去向取决于网关的配置和隐私政策。
 
-本地模型和用户自带 API 的请求不会被 WebBrain 收集。WebBrain Cloud
-请求会被处理，并可能按照[英文文档中的详细说明](../privacy-and-data-flow.md#webbrain-cloud-improvement-data)予以保留。
+本地模型和用户自带 API 的请求不会被 WebBrain 收集。WebBrain Compass
+请求会被处理，并可能按照[英文文档中的详细说明](../privacy-and-data-flow.md#webbrain-compass-improvement-data)予以保留。
 
 ---
 

@@ -1,6 +1,6 @@
 # WebBrain Chrome/Edge Extension — Architecture
 
-> Version 33.6.0 · Manifest V3 · Service Worker background
+> Version 34.1.0 · Manifest V3 · Service Worker background
 
 ## High-Level Overview
 
@@ -558,7 +558,7 @@ class BaseProvider {
 | `WebGPUProvider` | Chrome offscreen worker; no endpoint | Text-only selectable Hugging Face ONNX model |
 | `WebGPUVisionProvider` | Chrome offscreen worker; no endpoint | Always; dedicated screenshot-description sidecar only |
 
-`ProviderManager` seeds WebBrain Cloud, one Chromium in-browser WebGPU provider,
+`ProviderManager` seeds WebBrain Compass, one Chromium in-browser WebGPU provider,
 nine local endpoints, Azure OpenAI, AWS Bedrock, direct cloud providers, and router providers. The canonical current ID
 and default-model table is maintained in
 [`docs/providers-and-models.md`](../../docs/providers-and-models.md).
@@ -733,7 +733,7 @@ advertise mutation availability and route still-missing required inputs through
 |---|---|
 | Verbose mode | Shows full tool args + JSON results in chat instead of compact labels. |
 | Screenshot fallback | Capture a screenshot when DOM read fails or returns insufficient content. |
-| Site adapters | Inject per-site guidance into the first user message (default on). |
+| Site adapters | Inject per-site guidance and expose validated app-owned workflow jobs to the planner (default on). |
 | Auto-screenshot | `off` / `navigation` / `state_change` (default) / `every_step`. |
 | Record traces | Enable the trace recorder (see above). |
 | Completion sound | Play a chime in the side panel when the agent finishes. |
@@ -743,13 +743,13 @@ advertise mutation availability and route still-missing required inputs through
 
 ## Site Adapters
 
-58 adapters inject site-specific guidance into the first user message. Re-injected mid-conversation if the user navigates to a different matched site. Only ONE adapter fires at a time (the first matching `match(url)` wins), so the prompt cost is fixed regardless of total adapter count — what grows is the maintenance surface.
+110+ adapters inject site-specific guidance into the first user message. Re-injected mid-conversation if the user navigates to a different matched site. Only ONE adapter fires at a time (the first matching `match(url)` wins), so the prompt cost is fixed regardless of total adapter count — what grows is the maintenance surface. Every match emits content-free adapter/revision/notes-injected trace metadata. Selected high-evidence adapters also expose `webbrain-adapter-workflow/2` jobs. Both planner variants see only bounded app-owned job IDs/descriptions; the binding is revalidated against the live URL immediately before execution and a trusted Continue fallback retains it only on the same adapter/revision/schema/job. The executor receives the selected stages and evidence contract. Required submissions need job-bound terminal evidence after dispatch (for example paid/ticket-issued transaction state or recipient-bound sent-message state), and repeated jobs must exactly reconcile terminal ledger IDs against a complete app-owned accessibility-tree or seeded inventory. Edited review text clears hidden job routing, and selected jobs additionally record only adapter/revision/job/template identity.
 
 | Category | Sites |
 |---|---|
 | Code & Dev | GitHub, GitLab, Stack Overflow, Hacker News |
 | Coding practice | LeetCode, HackerRank |
-| Productivity | Gmail, Outlook, Google Docs, Google Sheets, Google Calendar, Slack, Notion, Jira, Trello |
+| Productivity | Microsoft Forms, Gmail, Outlook, Google Docs, Google Sheets, Google Calendar, Slack, Notion, Jira, Trello |
 | Social | Twitter/X, LinkedIn, Reddit, YouTube, Instagram, TikTok, Facebook |
 | Messaging | Discord, WhatsApp Web, Telegram |
 | Publishing | Medium, Substack, WordPress |
@@ -757,7 +757,7 @@ advertise mutation availability and route still-missing required inputs through
 | Travel | Airbnb, Booking.com, Expedia, Google Maps, Google Flights, Kayak, OpenTable |
 | Cloud / Infra | AWS, GCP, Cloudflare, Vercel |
 | News (paywalls) | NYT, WSJ, FT, Bloomberg, Economist, Washington Post |
-| Job portals | Greenhouse, Workday |
+| Job portals | NaukriGulf, Greenhouse, Workday |
 | Finance | Stripe, Coinbase, Robinhood, TradingView, `finance-generic` (banks/exchanges/payments) |
 
 Finance adapters carry a `[FINANCE / HIGH-STAKES]` banner and extra confirmation guidance. The `finance-generic` adapter matches a curated regex of bank, brokerage, crypto exchange, and payment domains as a catch-all when no site-specific adapter exists.

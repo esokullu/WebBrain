@@ -1,26 +1,26 @@
 ---
 title: >
-  WebBrain Cloud is live, and these are the local models we are benchmarking next
+  WebBrain Compass is live, and these are the local models we are benchmarking next
 slug: webbrain-cloud-local-model-benchmarks
 sortOrder: 1
 date: 2026-06-19
 readTime: 5 min read
 description: >
-  WebBrain Cloud is now live in the latest main branch, so you can try WebBrain without running a local LLM or bringing your own API key. The hosted route is request-limited, but it is enough to see how the browser agent feels. Next up: benchmarks for VibeThinker-3B, Gemma 4 12B Coder, DiffusionGemma 26B, and Cohere North-Mini-Code 30B across practical local-VRAM bands.
+  WebBrain Compass is now live in the latest main branch, so you can try WebBrain without running a local LLM or bringing your own API key. The hosted route is request-limited, but it is enough to see how the browser agent feels. Next up: benchmarks for VibeThinker-3B, Gemma 4 12B Coder, DiffusionGemma 26B, and Cohere North-Mini-Code 30B across practical local-VRAM bands.
 excerpt: >
-  WebBrain Cloud is live in the latest main branch, which means you can try WebBrain without a local LLM or API access. It is request-limited, but useful for a first look. We are also lining up the next local-model benchmark set by hardware band: 4-12GB, 12-24GB, and 24-64GB VRAM.
+  WebBrain Compass is live in the latest main branch, which means you can try WebBrain without a local LLM or API access. It is request-limited, but useful for a first look. We are also lining up the next local-model benchmark set by hardware band: 4-12GB, 12-24GB, and 24-64GB VRAM.
 titleTag: >
-  WebBrain Cloud is live, plus the next local model benchmark list - WebBrain Blog
+  WebBrain Compass is live, plus the next local model benchmark list - WebBrain Blog
 ogTitle: >
-  WebBrain Cloud is live, plus the next local model benchmark list
+  WebBrain Compass is live, plus the next local model benchmark list
 ogDescription: >
   Try WebBrain from the latest main branch without a local LLM or API key, then follow our next benchmarks for practical local models by VRAM tier.
 twitterTitle: >
-  WebBrain Cloud is live
+  WebBrain Compass is live
 twitterDescription: >
   No local LLM or API key needed for a limited first look. Next: local model benchmarks by VRAM tier.
 keywords:
-  - WebBrain Cloud
+  - WebBrain Compass
   - WebBrain
   - local LLM
   - browser agent
@@ -32,19 +32,19 @@ keywords:
   - VRAM
 html: true
 lede: >
-  Two updates. First: **WebBrain Cloud is now live** in the latest `main` branch, so you can start using WebBrain without a local LLM and without bringing your own API access. It is limited to a small number of hosted requests, but that is enough to see the product loop, test the browser-agent flow, and decide whether you want to wire in your own local or API-backed model. Second: our next benchmark pass will focus on the best local models for the hardware people actually have, grouped by VRAM.
+  Two updates. First: **WebBrain Compass is now live** in the latest `main` branch, so you can start using WebBrain without a local LLM and without bringing your own API access. It is limited to a small number of hosted requests, but that is enough to see the product loop, test the browser-agent flow, and decide whether you want to wire in your own local or API-backed model. Second: our next benchmark pass will focus on the best local models for the hardware people actually have, grouped by VRAM.
 ---
 
-## WebBrain Cloud is live
+## WebBrain Compass is live
 
 Until now, trying WebBrain seriously meant having one of two things ready: a local model server, or an API key for a hosted model provider. That is still the best setup for sustained use, but it is too much friction for a first look.
 
-The new cloud path removes that first-run blocker. Download and install the latest `main` branch from the [WebBrain GitHub repo](https://github.com/webbrain-one/webbrain), then run WebBrain as usual. You can use the built-in WebBrain Cloud route for a limited number of requests without configuring a local LLM or external API provider.
+The new cloud path removes that first-run blocker. Download and install the latest `main` branch from the [WebBrain GitHub repo](https://github.com/webbrain-one/webbrain), then run WebBrain as usual. You can use the built-in WebBrain Compass route for a limited number of requests without configuring a local LLM or external API provider.
 
 This is not meant to be an unlimited hosted tier. The point is simpler: you should be able to install WebBrain, try the browser agent, and see whether the workflow makes sense before spending time on model setup.
 
 <div class="callout">
-<strong>Recommended path:</strong> install from the latest <code>main</code> branch, try the limited WebBrain Cloud requests first, then switch to a local or API-backed model when you are ready for heavier usage.
+<strong>Recommended path:</strong> install from the latest <code>main</code> branch, try the limited WebBrain Compass requests first, then switch to a local or API-backed model when you are ready for heavier usage.
 </div>
 
 ## What we are benchmarking next

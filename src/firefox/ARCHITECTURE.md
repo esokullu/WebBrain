@@ -1,6 +1,6 @@
 # WebBrain Firefox Extension — Architecture
 
-> Version 33.6.0 · Manifest V2 · Background Page
+> Version 34.1.0 · Manifest V2 · Background Page
 
 ## How Firefox Differs from Chrome
 
@@ -449,7 +449,7 @@ Plus the legacy handlers: `read_page`, `click`, `type_text`, `press_keys`, `scro
 ## Provider System
 
 Identical to Chrome at the provider-class and configuration layer:
-WebBrain Cloud, nine local endpoints, Azure OpenAI, AWS Bedrock, Anthropic, and
+WebBrain Compass, nine local endpoints, Azure OpenAI, AWS Bedrock, Anthropic, and
 the current direct-cloud/router OpenAI-compatible configs use the same message
 format and conversion logic. The canonical current ID and default-model table
 is maintained in
@@ -493,7 +493,7 @@ All identical to Chrome:
   it classifies against differ and live in `agent/mutation-tools.js`
 - **Context management** — auto-trim at >50 messages or >80,000 chars, LLM-powered summarization, emergency trim on context overflow, image pruning (last 4 only), tool-result cap at 8,000 chars
 - **Verbose mode** — three levels: Normal / Verbose ON / Deep verbose (Shift+click dumps the LLM-payload ring buffer to DevTools console). Deep verbose works identically; there's just no persisted trace UI to browse it from
-- **Site adapters** — same adapter set as Chrome (58 sites across code/dev, productivity, social, messaging, e-commerce, travel, finance, news paywalls, job portals, etc.); same `getActiveAdapter(url)` matching, same mid-conversation re-injection on navigation. Only ONE adapter fires at a time so prompt cost is fixed regardless of total count.
+- **Site adapters** — same 110+ adapter set as Chrome across code/dev, productivity, social, messaging, e-commerce, travel, finance, news paywalls, job portals, and other regional surfaces; same `getActiveAdapter(url)` matching and mid-conversation re-injection. Only ONE adapter fires at a time so prompt cost is fixed regardless of total count. Every match emits content-free adapter/revision/notes-injected trace metadata. Selected high-evidence adapters also expose identical `webbrain-adapter-workflow/2` jobs: both planner variants receive bounded app-owned IDs/descriptions, the binding is revalidated against the live URL immediately before execution, and trusted Continue fallback retains it only for the same adapter/revision/schema/job. The executor receives the selected stages/evidence contract. Required submissions need job-bound terminal evidence after dispatch (for example paid/ticket-issued transaction state or recipient-bound sent-message state); repeated jobs must exactly reconcile terminal ledger IDs against a complete app-owned accessibility-tree or seeded inventory. Edited reviews clear hidden routing, and selected jobs additionally retain only adapter/revision/job/template identity.
 - **Recipient guard** — same structured planner target and URL-scoped runtime policy as Chrome. On Douyin `/chat`, Firefox pins an `active_conversation` request to exactly one strong visible header before any page tool runs, then uses a read-only content-script probe immediately before send-like dispatch. Only one unique exact identity from the narrow, non-scrollable header above a lower-page layout composer can authorize the send. Enter in another editable such as recipient search is non-message, and a structurally verified conversation row in the separate left rail remains selectable even when a short list does not overflow, while distant controls and nested row actions remain inconclusive. Protected composer Enter dispatch is limited to one keypress per verification. Send-capable clicks, accessibility clicks, submitted fields, and Enter presses carry a one-use binding to the action target, composer, URL, and identity set and consume it immediately before the consequential click or key event. Ordinary message text, mismatches, unresolved controls/composers, ambiguity, and dispatch paths that cannot bind their effects to the verified recipient all fail closed. `upload_file` is included because attaching a file can trigger an immediate page-side send. Saved workflows cannot inherit a planner recipient target, so any potentially dispatching step scoped to a protected messaging route stops before deterministic replay and must be run as a normal Act task with a freshly named recipient.
 
 ---

@@ -4,6 +4,23 @@ All notable changes to WebBrain are documented in this file.
 
 This changelog was generated from the repository Git history and release tags. Versions without a Git tag are inferred from version-bump commits and the current `package.json` / browser manifest versions.
 
+## [34.1.0] - 2026-09-01
+
+### Added
+- Refined the sidepanel empty conversation state and consolidated conversation controls.
+
+### Changed
+- Renamed the managed provider to **WebBrain Compass** (branding update).
+- Updated Compass provider label migration to match the new Compass naming.
+- Kept Compass name unlocalized to preserve consistent display across locales.
+
+### Fixed
+- Scoped Zen migrations and model normalization to avoid unintended side effects.
+- Improved selected-text localization and run details.
+
+### Tests
+- Updated/added LLM/vision benchmark fixtures and snapshots used by the test suite (including OpenRouter-related scenarios).
+
 ## [33.6.0] - 2026-08-28
 
 ### Added
@@ -26,9 +43,31 @@ This changelog was generated from the repository Git history and release tags. V
 
 ## [33.5.0] - 2026-08-27
 
+### Added
+- Added versioned site-workflow contracts for high-evidence GitHub, Product Hunt, Microsoft Forms, Gmail, LinkedIn, YouTube, 12306, Douyin, NaukriGulf, Greenhouse, and Workday tasks (Chrome + Firefox)
+- Added semantic planner routing through app-owned `site_job` IDs and content-free adapter/job/revision trace metadata
+- Added content-free `adapter_match` trace metadata for notes-only and structured adapters, plus live-UI-verified AdSense and SofaScore guidance without promoting either to a workflow contract
+
 ### Changed
 - Redesigned the sidebar loading and thinking UI with clearer live activity updates and a toggleable compact activity history (Chrome + Firefox)
 - Localized the new activity statuses and improved screen-reader announcements across all supported languages
+- Tightened selected site-workflow completion: live-URL binding survives trusted continuation only on the same adapter/job, the executor receives the app-owned stages/evidence contract, submission success needs job-bound terminal evidence (including paid/ticket-issued transaction state and recipient-bound sent confirmation), and ledger-backed workflows need exact reconciliation against an app-owned inventory rather than model-created rows
+- Bounded form-workflow inventory v1: exhaustive root reads must not be depth-truncated on includable descendants, skipped required rows cannot prove success (optional `required: false` rows may skip), and checkbox/Next actions stale completeness until a fresh root read
+
+### Fixed
+- Compact selected-workflow prompts now inject a brief execution contract and a shorter `progress_update.workflowReconciliation` schema; Mid/Full keep the full contract
+- YouTube `update-metadata` verification matches AX-truncated values via prefix plus `value_len`/`value_fp` after the same NFKC normalization used by verification, and values that equal the accessible name
+- AX inventory `value=` tokens escape backslash then quote, and inventory readback restores the app-owned string
+- Unknown metadata field names no longer discard the rest of the requirement list, but discarded classifier fields keep saved-state verification incomplete; playlist plural aliases are recognized
+- Form inventory emits `required=` only for explicit native/`aria-required` state, ignores decorative DOM depth, and omits erroring/empty third-party frames only when another frame already inventoried form controls; a lone failed cross-origin application frame stays incomplete
+- Reviewed plan wording edits re-resolve the live site-workflow contract instead of dropping it, and ARIA `searchbox` controls enter the form inventory
+- GitHub, LinkedIn, and Douyin publish success now requires the classifier-bound tag, title, notes, body, or visibility on the published resource, not only a re-observed URL
+- A complete empty GitHub `resolve-review-threads` inventory can reconcile as a no-op when no unresolved threads exist
+- Gmail inline thread replies resolve To/Cc/Bcc chips from the enclosing reply container when the composer is not inside a dialog or form
+- Successful `type_ax`, `set_field`, and `iframe_type` mutations stale a complete form inventory so value-driven branching cannot reconcile against the prior snapshot
+- Form workflow reconciliation completeness is preserved across final submit actions so post-submit confirmation navigation can complete successfully
+- Publication workflow field verification checks exact resource lines and blocks instead of unanchored substrings
+- The Gmail recipient probe returns up to 16 candidates to match the schema and guard capacity
 
 ## [33.4.1] - 2026-08-27
 
@@ -249,7 +288,7 @@ This changelog was generated from the repository Git history and release tags. V
 
 ### Changed
 - Changed the Chrome local vision fallback to the fine-tuned `webbrain-one/webbrain-vl-2-450M-onnx` release, with renewed opt-in consent and a versioned ready marker so older caches cannot be mistaken for the new model.
-- Added a consent-gated, durable WebBrain Cloud terminal-runtime outbox so executed terminal tool results survive provider-trace export gaps and can be joined through stable de-identified references.
+- Added a consent-gated, durable WebBrain Compass terminal-runtime outbox so executed terminal tool results survive provider-trace export gaps and can be joined through stable de-identified references.
 - fix: resume vision downloads and organize settings
 - fix: require vision cache marker and isolate queued worker deadlines
 - fix: verify local vision cache and abort timed-out remote vision
@@ -1046,7 +1085,7 @@ This changelog was generated from the repository Git history and release tags. V
 - Added a WebBrain MCP server introduction blog post covering setup for Claude Code, OpenCode, Codex, and Cursor, the loopback security model, and how WebBrain MCP differs from headless browser tools.
 
 ### Changed
-- Excluded WebBrain Cloud from per-run cost limits and metered dedicated vision provider costs separately, so vision-heavy WebBrain Cloud work does not count against the local/router cost allowance (Chrome and Firefox parity).
+- Excluded WebBrain Compass from per-run cost limits and metered dedicated vision provider costs separately, so vision-heavy WebBrain Compass work does not count against the local/router cost allowance (Chrome and Firefox parity).
 - Merged Cloud Bridge (MCP/LM Studio browser delegation) settings into Settings → General → Advanced → Cloud bridge, with synchronized setup guidance and the three bridge ports (MCP `17374`, LM Studio `17375`, WebBrain Cloud `17373`).
 - Hardened screenshot and attachment handling: staged screenshots persist durably until delivery is confirmed at every call site, the per-turn screenshot budget charges only when a model actually receives the capture (vision description or attachment), redaction binds to capture time and scopes to rendered frames, and a child frame URL that cannot identify exactly one descriptor fails closed instead of risking mis-paired redaction regions.
 - Did not stage a full-page screenshot when the capture-time privacy scan cannot prepare redaction geometry; the capture now reports `redactionUnavailable`, explains the blocker, and skips staging while still rendering the preview and save button (Chrome only).
@@ -1067,7 +1106,7 @@ This changelog was generated from the repository Git history and release tags. V
 ### Tests
 - Added mirrored Chrome/Firefox coverage for teacher mode: value-free demonstration capture, session store normalization, automated-run rejection, Enter-as-submit semantics, and cross-browser slash-command wiring.
 - Added mirrored coverage for the saved workflow manager, user-approved locator healing, atomic healing persistence with concurrent-update rejection, and workflow run-claim lifecycle.
-- Added mirrored coverage for screenshot redaction fail-closed behavior, staged attachment recovery, viewport budget charging, full-page capture refusals, Cloud Bridge settings placement, and the WebBrain Cloud cost-limit exclusion.
+- Added mirrored coverage for screenshot redaction fail-closed behavior, staged attachment recovery, viewport budget charging, full-page capture refusals, Cloud Bridge settings placement, and the WebBrain Compass cost-limit exclusion.
 - Updated `test/run.js` with the API badge removal assertions and the sidepanel authorization state checks.
 
 ## [27.0.0] - 2026-08-07
@@ -1202,7 +1241,7 @@ This changelog was generated from the repository Git history and release tags. V
 - Centralized text sanitization and shared UI utilities and standardized provider message logic across Chrome and Firefox, including a Firefox utils dedup follow-up.
 - Hardened interactive Ask streaming: traced the streaming run lifecycle, preserved trace ordering, redacted JSON-shaped streaming secrets, and fixed duplicate normalized streamed answers.
 - Hardened chat/run clearing and cancellation: kept the composer locked while clearing, bounded unavailable stop-state probes, waited for stopped/local/direct run followers before clearing, suppressed updates from cleared runs, guarded the Stop fallback and stopped runs until a terminal state, scoped New Chat aborts to their originating tab, discarded queued prompts before clearing, stopped active runs before starting new chats, and cancelled schedules once active runs settle.
-- Added WebBrain Cloud interface strings and microphone permission messages to all locales, refreshed the evroc provider icon and provider counts, and updated Discord links and added a Chinese community section to the docs sidebars.
+- Added WebBrain Compass interface strings and microphone permission messages to all locales, refreshed the evroc provider icon and provider counts, and updated Discord links and added a Chinese community section to the docs sidebars.
 - Disabled the mode-pill animation for `prefers-reduced-motion`.
 
 ### Fixed
@@ -1241,7 +1280,7 @@ This changelog was generated from the repository Git history and release tags. V
 ### Changed
 - Expanded interactive Ask streaming from GPT-5.6 to documented streaming- and function-calling-capable official OpenAI models, while keeping GPT-5.5 Pro and other unsupported variants non-streaming.
 - Routed Responses-only GPT-5 Pro variants through the Responses API and retained Chat Completions streaming for other supported OpenAI models.
-- Enabled interactive Ask streaming for Anthropic, Azure OpenAI, Gemini, DeepSeek, xAI, Mistral, Nvidia NIM, Groq, Together AI, Fireworks, z.ai, OpenRouter, WebBrain Cloud, llama.cpp, Ollama, LM Studio, Jan, vLLM, SGLang, and LocalAI with provider-specific terminal-event validation.
+- Enabled interactive Ask streaming for Anthropic, Azure OpenAI, Gemini, DeepSeek, xAI, Mistral, Nvidia NIM, Groq, Together AI, Fireworks, z.ai, OpenRouter, WebBrain Compass, llama.cpp, Ollama, LM Studio, Jan, vLLM, SGLang, and LocalAI with provider-specific terminal-event validation.
 - Generalized the Advanced streaming control and made safe transport/protocol fallback silent: the affected generation retries non-streaming once, then streaming stays disabled for the rest of that run.
 
 ### Fixed
@@ -1419,7 +1458,7 @@ This changelog was generated from the repository Git history and release tags. V
 
 ### Changed
 - Updated OpenAI model usage to **gpt-5.4-nano-2026-03-17** and switched to `max_completion_tokens` for completion limits.
-- Switched WebBrain Cloud provider integration from **GitHub Models** to direct **OpenAI API** calls (using `OPENAI_SECRET` via curl), improving consistency across providers.
+- Switched WebBrain Compass provider integration from **GitHub Models** to direct **OpenAI API** calls (using `OPENAI_SECRET` via curl), improving consistency across providers.
 - Updated Chrome and Firefox builds to reflect the provider/model changes and associated configuration/UI updates.
 
 ### Fixed
@@ -1557,11 +1596,11 @@ This changelog was generated from the repository Git history and release tags. V
 ## [23.3.6] - 2026-07-15
 
 ### Added
-- Added a default-on **Help Improve WebBrain** control at the bottom of the visible Settings → General area in Chrome and Firefox. WebBrain Cloud requests now send the current choice as `X-WebBrain-Help-Improve: 1` or `0`; local-model and bring-your-own API requests never receive that header.
+- Added a default-on **Help Improve WebBrain** control at the bottom of the visible Settings → General area in Chrome and Firefox. WebBrain Compass requests now send the current choice as `X-WebBrain-Help-Improve: 1` or `0`; local-model and bring-your-own API requests never receive that header.
 
 ### Changed
-- Updated the public privacy policy and developer data-flow documentation to disclose selected WebBrain Cloud interaction retention and model-improvement use, the future-interaction opt-out, a 12-month raw-data limit, and a five-year limit for de-identified datasets.
-- Added opaque per-conversation WebBrain Cloud session grouping across main, planner, compaction, intent, memory, and vision generations, with permanent opt-out tainting and no collection metadata on local or bring-your-own providers.
+- Updated the public privacy policy and developer data-flow documentation to disclose selected WebBrain Compass interaction retention and model-improvement use, the future-interaction opt-out, a 12-month raw-data limit, and a five-year limit for de-identified datasets.
+- Added opaque per-conversation WebBrain Compass session grouping across main, planner, compaction, intent, memory, and vision generations, with permanent opt-out tainting and no collection metadata on local or bring-your-own providers.
 - Added encrypted, compressed, text-and-tool-only Cloud improvement storage with image omission, authenticated session browsing, de-identified JSONL export, 12-month pruning, and isolated OpenRouter logging/no-logging key routing.
 
 ### Tests
@@ -1868,12 +1907,12 @@ This changelog was generated from the repository Git history and release tags. V
 ## [20.1.0] - 2026-07-03
 
 ### Changed
-- Raised the built-in WebBrain Cloud provider context window to 1,000,000 tokens in Chrome and Firefox, while migrating stored legacy 256k configs forward without dropping saved API keys.
+- Raised the built-in WebBrain Compass provider context window to 1,000,000 tokens in Chrome and Firefox, while migrating stored legacy 256k configs forward without dropping saved API keys.
 - Scaled the agent's soft context character and message budgets from the active provider token budget, so 1M-context providers no longer compact at the legacy 80k-character or 50-message limits.
 - Updated release metadata, Settings subtitle versions, Chrome / Firefox manifests, package versions, and browser architecture docs for 20.1.0.
 
 ### Tests
-- Added Chrome and Firefox regression coverage for the WebBrain Cloud 1M default, legacy context-window migration, adaptive character/message context budgets, and large-window conversations avoiding premature compaction.
+- Added Chrome and Firefox regression coverage for the WebBrain Compass 1M default, legacy context-window migration, adaptive character/message context budgets, and large-window conversations avoiding premature compaction.
 
 ## [20.0.0] - 2026-07-03
 
@@ -2105,17 +2144,17 @@ This changelog was generated from the repository Git history and release tags. V
 
 ### Added
 - Added XML-style raw tool-call parsing for Chrome and Firefox so local/chat-template models that emit `<tool_call><function=...><parameter=...>` output can execute tools instead of returning raw markup.
-- Added a WebBrain Cloud billing panel in Chrome and Firefox settings with device-bound Stripe account links, localized account copy, and expanded WebBrain Cloud provider notes for subscription, billing, and privacy links.
+- Added a WebBrain Compass billing panel in Chrome and Firefox settings with device-bound Stripe account links, localized account copy, and expanded WebBrain Compass provider notes for subscription, billing, and privacy links.
 - Added Polish UI locale support for the Chrome and Firefox settings/payment flows.
 
 ### Changed
-- Updated WebBrain Cloud `/subscribe` URLs and 402 allowance messages to include the device GUID as Stripe `client_reference_id`, and made the subscribe page require a device-bound link before redirecting to checkout.
+- Updated WebBrain Compass `/subscribe` URLs and 402 allowance messages to include the device GUID as Stripe `client_reference_id`, and made the subscribe page require a device-bound link before redirecting to checkout.
 - Reworded the subscribe fallback page to tell users with outdated extension links to update the browser plugin.
 - Documented the newer slash commands in the English, French, and Chinese README files.
 - Updated release metadata, Settings subtitle versions, architecture docs, Chrome / Firefox manifests, and package versions for 17.2.0.
 
 ### Fixed
-- Purged legacy `auth.webbrain.one` token, email, and default-model storage during settings startup now that WebBrain Cloud billing is device-GUID based.
+- Purged legacy `auth.webbrain.one` token, email, and default-model storage during settings startup now that WebBrain Compass billing is device-GUID based.
 - Firefox side-panel message bubbles now expose copy buttons on user messages, with styling that remains legible on accent-colored bubbles.
 - Suppressed streamed raw tool-call text before rendered tool steps, so fallback tool calls do not linger as assistant text.
 
@@ -2125,7 +2164,7 @@ This changelog was generated from the repository Git history and release tags. V
 ## [17.1.0] - 2026-06-24
 
 ### Added
-- Introduced a better payment UI for WebBrain Cloud: the quota-exceeded error now surfaces a Subscribe button that links users directly to upgrade their plan, with the button persisting and rebinding across chat restores.
+- Introduced a better payment UI for WebBrain Compass: the quota-exceeded error now surfaces a Subscribe button that links users directly to upgrade their plan, with the button persisting and rebinding across chat restores.
 
 ### Changed
 - Translated the Subscribe button strings into all supported locales.
@@ -2248,7 +2287,7 @@ This changelog was generated from the repository Git history and release tags. V
 
 ### Changed
 - Updated release metadata, Settings subtitle versions, architecture docs, Chrome / Firefox manifests, and package versions for 15.1.0.
-- Updated README and architecture docs to describe WebBrain Cloud 1.0 as the default managed cloud option and document the scheduled-task system.
+- Updated README and architecture docs to describe WebBrain Compass 1.0 as the default managed cloud option and document the scheduled-task system.
 - Refreshed release artwork and regenerated packaged Chrome / Firefox submission archives.
 
 ### Fixed
@@ -2335,7 +2374,7 @@ This changelog was generated from the repository Git history and release tags. V
 ## [14.0.0] - 2026-06-18
 
 ### Changed
-- WebBrain Cloud is now the default provider for new WebBrain configurations.
+- WebBrain Compass is now the default provider for new WebBrain configurations.
 - Updated release metadata, Settings subtitle versions, architecture docs, and Chrome / Firefox manifests for 14.0.0.
 
 ### Fixed

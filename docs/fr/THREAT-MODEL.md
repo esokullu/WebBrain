@@ -63,7 +63,7 @@ L'affirmation défendable n'est *pas* "nous sommes plus sécurisés que tout le 
 
 1. Le contenu provenant de la page est-il structurellement isolé du chemin d'instruction ? (Nous le faisons et le testons.)
 2. La surface d'action/automatisation est-elle limitée, ou l'agent hérite-t-il de toute l'autorité ambiante ? (Notre lacune G1/G2/G4 — en cours de comblement.)
-3. Où l'inférence s'exécute-t-elle, et qu'est-ce qui quitte l'appareil ? (Le fournisseur sélectionné le détermine : WebBrain Cloud et les fournisseurs cloud configurés par l'utilisateur reçoivent le contexte de la requête ; les moteurs de modèles locaux gardent l'inférence sur la machine, tandis qu'une passerelle locale peut la transmettre en amont.)
+3. Où l'inférence s'exécute-t-elle, et qu'est-ce qui quitte l'appareil ? (Le fournisseur sélectionné le détermine : WebBrain Compass et les fournisseurs cloud configurés par l'utilisateur reçoivent le contexte de la requête ; les moteurs de modèles locaux gardent l'inférence sur la machine, tandis qu'une passerelle locale peut la transmettre en amont.)
 4. Y a-t-il des preuves, ou juste des affirmations ? (Corpus adversarial + ablation, dans le dépôt.)
 
 Avant de faire une affirmation *comparative* sur un concurrent spécifique (Edge AI, navigateur OpenAI, navigateur Claude, etc.), vérifiez leur comportement réel — ne l'affirmez pas. La ligne forte et honnête est "voici les dimensions ; voici exactement où nous en sommes sur chacune, avec des tests" et laissez la comparaison parler d'elle-même.

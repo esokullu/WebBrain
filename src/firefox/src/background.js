@@ -54,6 +54,12 @@ import {
 } from './selection-shortcut-i18n.js';
 import { createTabChatHandoffCoordinator } from './ui/tab-chat-persistence.js';
 import { clearStagedScreenshots } from './ui/staged-screenshot-store.js';
+import {
+  loadUiScale,
+  nextUiScale,
+  saveUiScale,
+  uiScaleCommandAction,
+} from './ui/ui-scale.js';
 import { normalizeOllamaLaunchHandoff } from './ollama-handoff.js';
 import { RunUiJournal, RunUiPersistenceScheduler, compactRunUiSnapshotForPersist, runUiSnapshotForRequest } from './run-ui-journal.js';
 import {
@@ -198,10 +204,16 @@ const CONTEXT_MENU_ACTION_PREFIX = 'webbrain-selection-action-';
 const CONTEXT_MENU_TRANSLATE_ID = 'webbrain-selection-translate';
 const CONTEXT_MENU_TRANSLATE_PREFIX = 'webbrain-selection-translate-';
 const CONTEXT_MENU_GENERIC_ASK_ID = 'webbrain-selection-generic-ask';
-let selectionShortcutLocale = 'en';
-const selectionShortcutLocaleReady = browser.storage.local.get({ wbLocale: 'en' })
+function resolveStoredSelectionShortcutLocale(value) {
+  return normalizeSelectionShortcutLocale(
+    value || (typeof navigator !== 'undefined' ? navigator.language : 'en'),
+  );
+}
+
+let selectionShortcutLocale = resolveStoredSelectionShortcutLocale('');
+const selectionShortcutLocaleReady = browser.storage.local.get({ wbLocale: '' })
   .then((stored) => {
-    selectionShortcutLocale = normalizeSelectionShortcutLocale(stored?.wbLocale);
+    selectionShortcutLocale = resolveStoredSelectionShortcutLocale(stored?.wbLocale);
   })
   .catch(() => {});
 
@@ -3421,9 +3433,21 @@ async function handleMessage(msg, sender) {
 // to work. Custom commands fire here in the background script; we dispatch them via
 // storage.onChanged so the side panel (and any other extension page) can react
 // reliably — runtime.sendMessage can miss a sidepanel that isn't fully loaded.
+let uiScaleCommandQueue = Promise.resolve();
 browser.commands.onCommand.addListener(async (command, tab) => {
   // _execute_sidebar_action is handled natively by Firefox — no need to forward
   if (command === '_execute_sidebar_action') return;
+  const scaleAction = uiScaleCommandAction(command);
+  if (scaleAction) {
+    uiScaleCommandQueue = uiScaleCommandQueue.then(async () => {
+      const current = await loadUiScale(browser.storage.local);
+      await saveUiScale(browser.storage.local, nextUiScale(current, scaleAction));
+    }).catch((error) => {
+      console.error('[WebBrain] failed to update UI scale:', command, error);
+    });
+    await uiScaleCommandQueue;
+    return;
+  }
   const envelope = shortcutCommandEnvelope(command, tab);
   if (!envelope) return;
   try {

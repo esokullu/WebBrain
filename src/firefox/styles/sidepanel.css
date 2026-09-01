@@ -92,14 +92,20 @@ body {
   font-size: 13px;
   background: var(--bg-primary);
   color: var(--text-primary);
-  height: 100vh;
+  width: 100%;
+  /* `vh` is not adjusted for `zoom`, so the height is pre-divided by the zoom
+     factor; the percentage width already resolves in the zoomed space. */
+  height: var(--ui-scale-height, 100vh);
+  zoom: var(--ui-scale-zoom, 1);
   overflow: hidden;
 }
+
+html[data-ui-scale-ready="false"] body { visibility: hidden; }
 
 #app {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100%;
 }
 
 /* ==========================================================================
@@ -682,6 +688,12 @@ body {
 
 
 /* Header */
+.header-shell {
+  position: relative;
+  z-index: 25;
+  flex-shrink: 0;
+}
+
 #header {
   display: flex;
   align-items: center;
@@ -706,7 +718,53 @@ body {
   display: flex;
   align-items: center;
   gap: 2px;
+  flex-shrink: 0;
 }
+
+.ui-scale-menu {
+  position: relative;
+}
+
+.ui-scale-popover {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 7px);
+  /* Logical, so the popover opens inward from the trigger in RTL locales
+     instead of off the panel edge. */
+  inset-inline-end: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: max-content;
+  padding: 7px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+}
+
+.ui-scale-popover.hidden { display: none; }
+
+/* Two ids: the generic `#header .header-right button:not(...)` rule below is
+   more specific than a class-based selector, and these chips live inside
+   .header-right. */
+#header #ui-scale-popover button {
+  min-width: 28px;
+  min-height: 28px;
+  justify-content: center;
+  padding: 4px 7px;
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font: inherit;
+}
+
+/* The base rule above (two ids) outranks the generic `.header-right
+   button:hover`, so these chips need their own hover to react at all. */
+#header #ui-scale-popover button:hover:not(:disabled) { background: var(--accent-dim); }
+#header #ui-scale-popover button:disabled { opacity: 0.45; cursor: default; }
+#header #ui-scale-popover .ui-scale-reset { min-width: auto; padding-inline: 9px; }
+.ui-scale-popover output { min-width: 40px; text-align: center; font-size: 11px; font-variant-numeric: tabular-nums; }
 
 .status-dot {
   width: 8px;
@@ -822,8 +880,8 @@ body {
   left: 0;
   z-index: 40;
   min-width: max(100%, 200px);
-  max-width: min(280px, 90vw);
-  max-height: min(320px, 50vh);
+  max-width: min(280px, calc(90vw / var(--ui-scale-zoom, 1)));
+  max-height: min(320px, calc(50vh / var(--ui-scale-zoom, 1)));
   overflow-y: auto;
   overflow-x: hidden;
   background: var(--bg-secondary, var(--bg-input));
@@ -996,8 +1054,8 @@ body {
   right: 0;
   left: auto;
   min-width: 224px;
-  max-width: min(272px, calc(100vw - 16px));
-  max-height: min(352px, 60vh);
+  max-width: min(272px, calc(100vw / var(--ui-scale-zoom, 1) - 16px));
+  max-height: min(352px, calc(60vh / var(--ui-scale-zoom, 1)));
   direction: ltr;
 }
 
@@ -1092,6 +1150,13 @@ body {
 #header .header-right button:not(.language-picker-btn):not(.language-picker-option).active {
   color: var(--accent);
   background: var(--accent-dim);
+}
+
+/* Narrow panels: reduce only the outer chrome. The three remaining header
+   icons keep their normal gap and padding instead of collapsing together. */
+@media (max-width: 380px) {
+  #header { padding-inline: 8px; }
+  .language-picker-btn { padding-inline: 2px; }
 }
 
 .composer-toast {
@@ -1417,7 +1482,7 @@ body {
   display: none;
   align-items: center;
   width: max-content;
-  max-width: calc(100vw - 24px);
+  max-width: calc(100vw / var(--ui-scale-zoom, 1) - 24px);
   min-width: 0;
   margin-top: 3px;
 }
@@ -1530,7 +1595,7 @@ body {
 }
 
 .screenshot-result-image-full-page {
-  max-height: 70vh;
+  max-height: calc(70vh / var(--ui-scale-zoom, 1));
 }
 
 .screenshot-warning {
@@ -2412,7 +2477,7 @@ body {
   z-index: 10000;
   display: block;
   opacity: 1;
-  max-width: calc(100vw - 16px);
+  max-width: calc(100vw / var(--ui-scale-zoom, 1) - 16px);
   padding: 6px 10px;
   border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
   border-radius: 999px;
@@ -2445,19 +2510,49 @@ body {
 
 
 
-/* Context-aware recommendations — inline centered pill row in the chat body */
+/* First-turn empty state — optically centered a little above the mathematical
+   midpoint so the composer still feels connected to the invitation. */
+.chat-empty-state {
+  box-sizing: border-box;
+  display: flex;
+  min-height: 100%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 0 clamp(72px, 14vh, 112px);
+}
+
+/* The empty state is deliberately outside #messages, so it never becomes
+   transcript history. Its adjacent position lets the first message remove it
+   without a second source of conversation state. */
+#messages:not(:empty) + .chat-empty-state {
+  display: none;
+}
+
+.chat-empty-state-heading {
+  width: min(100%, 340px);
+  margin: 0 0 18px;
+  color: var(--text-primary);
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+  text-align: center;
+}
+
+/* Context-aware recommendations — a compact action list within the empty state. */
 .recommended-actions {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  margin: 12px 0 4px;
-  padding: 0 4px;
+  align-items: stretch;
+  gap: 9px;
+  margin: 0;
+  padding: 0;
   border: none;
   border-radius: 0;
   background: transparent;
   box-sizing: border-box;
-  width: 100%;
+  width: min(100%, 320px);
 }
 
 .recommended-actions.collapsed {
@@ -2471,9 +2566,10 @@ body {
 .recommended-actions-header {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
   gap: 6px;
   margin-bottom: 0;
+  padding-inline: 2px;
 }
 
 .recommended-actions.collapsed .recommended-actions-header {
@@ -2528,10 +2624,9 @@ body {
 
 .recommended-actions-list {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 6px;
-  justify-content: center;
-  max-width: min(100%, 340px);
+  width: 100%;
 }
 
 .recommended-actions.collapsed .recommended-actions-list {
@@ -2539,18 +2634,24 @@ body {
 }
 
 .recommended-action-chip {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
+  min-height: 36px;
   border: 1px solid var(--border);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--bg-secondary) 82%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-secondary) 72%, transparent);
   backdrop-filter: blur(6px);
   color: var(--text-secondary);
   cursor: pointer;
   font: inherit;
-  font-size: 11px;
-  line-height: 1.2;
-  padding: 6px 10px;
+  font-size: 12px;
+  line-height: 1.25;
+  padding: 8px 11px;
+  text-align: start;
   transition: border-color 0.15s, color 0.15s, background 0.15s, transform 0.1s;
-  box-shadow: 0 1px 2px color-mix(in srgb, var(--border) 40%, transparent);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--border) 28%, transparent);
 }
 
 .recommended-action-chip:hover {
@@ -2772,10 +2873,19 @@ html[data-standalone="true"] #mode-toggle {
   display: none;
 }
 
+.composer-control-row {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
 #mode-toggle {
   display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
   gap: 2px;
-  margin-bottom: 8px;
+  margin-bottom: 0;
   background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -2839,6 +2949,73 @@ html[data-standalone="true"] #mode-toggle {
 
 .mode-btn.active.act {
   color: var(--warning);
+}
+
+.conversation-action-group {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.conversation-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.16s ease, background 0.16s ease, border-color 0.16s ease;
+}
+
+.conversation-action:hover {
+  color: var(--text-primary);
+  background: var(--accent-dim);
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--border));
+}
+
+.conversation-action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.conversation-action svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+}
+
+@media (max-width: 430px) {
+  .conversation-action {
+    width: 30px;
+    padding-inline: 0;
+  }
+
+  .conversation-action-label {
+    display: none;
+  }
+}
+
+html[data-ui-scale="150"] .conversation-action,
+html[data-ui-scale="175"] .conversation-action {
+  width: 30px;
+  padding-inline: 0;
+}
+
+html[data-ui-scale="150"] .conversation-action-label,
+html[data-ui-scale="175"] .conversation-action-label {
+  display: none;
 }
 
 
@@ -3554,7 +3731,7 @@ html[data-standalone="true"] #mode-toggle {
   color: var(--text-primary);
 }
 
-/* WebBrain Cloud quota / subscribe prompt — bare URL upgraded to a button */
+/* WebBrain Compass quota / subscribe prompt — bare URL upgraded to a button */
 .message-text.subscribe-error {
   display: flex;
   flex-direction: column;

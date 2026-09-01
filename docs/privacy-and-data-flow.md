@@ -46,7 +46,7 @@ inference stay on-device.
 
 The user chooses their provider in Settings. Options include:
 
-- **WebBrain Cloud**: requests go through `api.webbrain.one`; selected interactions may be retained and used for evaluation, improvement, fine-tuning, and training while Help Improve WebBrain is enabled
+- **WebBrain Compass**: requests go through `api.webbrain.one`; selected interactions may be retained and used for evaluation, improvement, fine-tuning, and training while Help Improve WebBrain is enabled
 - **Bring-your-own cloud providers**: OpenAI, Anthropic, Google Gemini, Mistral, DeepSeek, xAI, Groq, OpenRouter, etc. — requests go directly to the provider using the user's credentials and are never collected by WebBrain
 - **Local model runtimes**: llama.cpp, Ollama, LM Studio, Jan, vLLM, SGLang,
   LocalAI, GPT4All, and Unsloth Studio — inference requests stay on the user's
@@ -57,7 +57,7 @@ The user chooses their provider in Settings. Options include:
   local gateway, but the gateway may forward the request context to an upstream
   account. Its configuration and privacy policy determine where data goes.
 
-Local-model and bring-your-own API requests are never collected by WebBrain. WebBrain Cloud requests are processed and may be retained as described below.
+Local-model and bring-your-own API requests are never collected by WebBrain. WebBrain Compass requests are processed and may be retained as described below.
 
 ### Optional research escalation to ChatGPT
 
@@ -99,31 +99,31 @@ on login, layout, or timeout failures. Turning Research escalation off removes
 both the delegation tool and the Ask-mode consent schema from later model
 requests.
 
-### WebBrain Cloud improvement data
+### WebBrain Compass improvement data
 
 Help Improve WebBrain is available under Settings -> General and is
-on by default. When it is on, WebBrain may retain eligible Cloud prompts, model
+on by default. When it is on, WebBrain may retain eligible Compass prompts, model
 responses, relevant page text, tool calls, browser-agent actions, feedback, and
 task outcome information for evaluation, development, improvement, fine-tuning,
 training, safety, and browser-automation research. Screenshots and uploaded
 images may be processed to answer the request, but image bytes, base64 media,
 and image URLs are excluded from WebBrain's improvement database. The extension
 sends the current preference, stable conversation id, and an allowlisted
-generation label with every WebBrain Cloud model request. It never attaches
+generation label with every WebBrain Compass model request. It never attaches
 those collection fields to local or bring-your-own providers.
 
-For WebBrain Cloud only, an enabled Help Improve preference also allows the
+For WebBrain Compass only, an enabled Help Improve preference also allows the
 extension to retain one bounded terminal tool call/result and the final run
-status in a local durable outbox until the Cloud improvement endpoint
-acknowledges it. Delivery is retried on a later Cloud run after transient
+status in a local durable outbox until the Compass improvement endpoint
+acknowledges it. Delivery is retried on a later Compass run after transient
 network/server failures. The outbox is not created for local or bring-your-own
 providers, and disabling Help Improve stops new terminal records; any older
 queued records are sent with the disabled preference so the server discards
 them and the client can remove them.
 
 Current clients explicitly send `X-WebBrain-Help-Improve: 1` or `0`. Older
-WebBrain Cloud clients that send neither the preference header nor a session id
-are treated as using the default-on setting. The Cloud service derives a
+WebBrain Compass clients that send neither the preference header nor a session id
+are treated as using the default-on setting. The Compass service derives a
 best-effort opaque legacy session from the device and the first user message;
 the raw device and prompt-derived fingerprint are not stored or sent upstream.
 Repeated identical opening messages can be grouped together, and compaction can
@@ -132,7 +132,7 @@ authoritative. Users of older clients must install the latest client to disable
 future collection under Settings -> General.
 
 An explicit `0` is always opted out. Once any explicit opt-out reaches a
-derived or client-provided session, the Cloud service permanently marks that
+derived or client-provided session, the Compass service permanently marks that
 opaque session ineligible. Turning the setting back on applies to the next new
 conversation; it cannot make the current conversation eligible again.
 
@@ -141,7 +141,7 @@ routed through an OpenRouter workspace where content logging is disabled. This
 does not prevent the minimal metadata-only operational logging required to
 provide the service, enforce quotas, prevent abuse, maintain security, or debug
 failures. Requests sent to local models or directly to providers using the
-user's own credentials never pass through WebBrain Cloud and are never eligible
+user's own credentials never pass through WebBrain Compass and are never eligible
 for WebBrain training.
 
 For eligible completed generations, MySQL is WebBrain's canonical store. The
@@ -158,9 +158,9 @@ Its separate **Use Inputs/Outputs** training/discount option remains disabled.
 OpenRouter logging is not treated as permanent storage or an image backup. See
 [OpenRouter Input & Output Logging](https://openrouter.ai/docs/guides/features/input-output-logging).
 
-Before retained Cloud interactions are used for model development, WebBrain
+Before retained Compass interactions are used for model development, WebBrain
 applies technical measures designed to remove or mask direct identifiers,
-credentials, secrets, and other sensitive information. Raw Cloud interactions
+credentials, secrets, and other sensitive information. Raw Compass interactions
 selected for improvement are retained for no longer than 12 months before
 deletion or de-identification. De-identified datasets may be retained for up to
 5 years for model development, evaluation, security, and reproducibility.
@@ -306,13 +306,13 @@ profile text, user memory, custom skills, and saved permission choices. Users
 should treat the file like a credential backup and store it securely.
 
 The snapshot does not include device-bound Cloud Sync authentication/session
-state, the WebBrain Cloud device ID, conversations, traces, scheduled jobs,
+state, the WebBrain Compass device ID, conversations, traces, scheduled jobs,
 usage counters, or accumulated spend. Import does not upload the JSON to
-WebBrain Cloud or to the configured LLM provider.
+WebBrain Compass or to the configured LLM provider.
 
 ### Optional Encrypted Cloud Sync
 
-Active WebBrain Cloud subscribers may explicitly enable encrypted profile sync in
+Active WebBrain Compass subscribers may explicitly enable encrypted profile sync in
 Settings. The extension combines user memory, profile autofill, and provider
 configuration (including API keys, but excluding legacy OAuth access/refresh
 token stores) into one vault. Chromium-only WebGPU provider configuration and
@@ -322,7 +322,7 @@ encrypts it in the browser with AES-256-GCM. Its key is derived from the sync
 password with PBKDF2-HMAC-SHA-256 (600,000 iterations). The password and derived
 key are retained in memory only for the browser session.
 
-WebBrain Cloud receives only ciphertext and cryptographic/version metadata. It
+WebBrain Compass receives only ciphertext and cryptographic/version metadata. It
 cannot decrypt the vault or recover a forgotten password. Authentication uses a
 separate email-approved, scoped token; the billing device GUID alone cannot read
 a vault. Sync is off by default, local writes continue while locked or offline,
@@ -359,13 +359,13 @@ support this path.
 ## Telemetry / Analytics
 
 The extension does not include an analytics SDK, crash-reporting SDK, or a
-separate product-telemetry endpoint. When WebBrain Cloud is selected, the model
-request itself goes to `api.webbrain.one` and is subject to the Cloud data-use
+separate product-telemetry endpoint. When WebBrain Compass is selected, the model
+request itself goes to `api.webbrain.one` and is subject to the Compass data-use
 terms above. Operational request metadata is retained separately for quota,
 security, abuse prevention, and debugging.
 
 The only outbound HTTP requests are:
-1. **WebBrain Cloud model calls** to `https://api.webbrain.one/v1` (when WebBrain Cloud is selected; the Help Improve WebBrain preference is sent with each request)
+1. **WebBrain Compass model calls** to `https://api.webbrain.one/v1` (when WebBrain Compass is selected; the Help Improve WebBrain preference is sent with each request)
 2. **Other LLM provider API calls** (directly to URLs the user configured)
 3. **CapSolver API calls** (if the user enables CAPTCHA solving)
 4. **Content fetches** via `fetch_url` / `research_url` tools (to URLs the agent is asked to fetch)

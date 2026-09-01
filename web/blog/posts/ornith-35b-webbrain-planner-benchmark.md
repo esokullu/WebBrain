@@ -90,7 +90,7 @@ test/llm/results/2026-06-26-ornith-35b-localhost8000_chrome_ornith-35b_frozen
 | p95 latency | 4.0s |
 | Total wall time | 128s at concurrency 2 |
 
-This is a credible result. Ornith is in the same broad planner tier as MiniMax M3, WebBrain Cloud 1.0, Qwen 3.6 35B, and the Gemma 4 31B local rows. It emits only valid frozen-schema tool names when it emits tools, it has a sane tool distribution, and its latency is much better than the saved Qwen 3.6 35B run.
+This is a credible result. Ornith is in the same broad planner tier as MiniMax M3, WebBrain Compass 1.0, Qwen 3.6 35B, and the Gemma 4 31B local rows. It emits only valid frozen-schema tool names when it emits tools, it has a sane tool distribution, and its latency is much better than the saved Qwen 3.6 35B run.
 
 It is not a new top row.
 
@@ -153,13 +153,13 @@ Here is where Ornith lands among the nearby frozen rows:
 | Gemma 4 31B QAT w4a16 | 95/100 | 19/100 | 37/100 | 77.0% | 78.3% | 0.55s |
 | Qwen 3.6 27B | 92/100 | 18/100 | 37/100 | 77.0% | 77.2% | 10.2s |
 | MiniMax M3 | 85/100 | 17/100 | 32/100 | 75.0% | 73.9% | 3.1s |
-| WebBrain Cloud 1.0 | 90/100 | 16/100 | 35/100 | 73.0% | 72.8% | 8.8s |
+| WebBrain Compass 1.0 | 90/100 | 16/100 | 35/100 | 73.0% | 72.8% | 8.8s |
 | Ornith-1.0-35B NVFP4 | 88/100 | 21/100 | 36/100 | 71.0% | 70.7% | 2.4s |
 | Qwen 3.6 35B-A3B | 90/100 | 18/100 | 38/100 | 70.0% | 70.7% | 10.3s |
 
 The interesting part is not that Ornith dominates. It does not. The interesting part is that it lands this close while being a coding-agent model evaluated on a browser-planner task that was not the benchmark advertised on its model card.
 
-The exact-match score is particularly good: 21/100 is higher than Gemma 4 31B, Qwen 3.6 35B, MiniMax M3, and WebBrain Cloud in this table. But exact ideal calls are only one lens. The broader Sonnet-alignment metric still keeps Gemma 4 31B and Qwen 3.6 27B ahead.
+The exact-match score is particularly good: 21/100 is higher than Gemma 4 31B, Qwen 3.6 35B, MiniMax M3, and WebBrain Compass in this table. But exact ideal calls are only one lens. The broader Sonnet-alignment metric still keeps Gemma 4 31B and Qwen 3.6 27B ahead.
 
 ## Bottom line
 

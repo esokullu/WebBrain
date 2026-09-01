@@ -43,19 +43,47 @@ export function runUiSnapshotForRequest(snapshot, requestedRequestId = '') {
   return String(snapshot?.requestId || '') === requested ? snapshot : null;
 }
 
+const RUN_UI_TOOL_RESULT_PREVIEW_CHARS = 500;
+
+function compactRunUiToolResult(result) {
+  const source = result && typeof result === 'object' && !Array.isArray(result) ? result : {};
+  const compacted = {};
+  if (typeof source.success === 'boolean') compacted.success = source.success;
+  if (typeof source.ok === 'boolean') compacted.ok = source.ok;
+  if (source.error) compacted.error = String(source.error).slice(0, 1000);
+  if (source.warning) compacted.warning = String(source.warning).slice(0, 1000);
+  if (source.summary) compacted.summary = String(source.summary).slice(0, 2000);
+  if (source.outcome) compacted.outcome = source.outcome;
+  if (typeof source.pageContent === 'string') {
+    compacted.pageContent = source.pageContent.slice(0, RUN_UI_TOOL_RESULT_PREVIEW_CHARS);
+    if (source.pageContentTruncated === true || source.pageContent.length > RUN_UI_TOOL_RESULT_PREVIEW_CHARS) {
+      compacted.pageContentTruncated = true;
+    }
+  } else if (typeof source.text === 'string' && source.text) {
+    compacted.text = source.text.slice(0, RUN_UI_TOOL_RESULT_PREVIEW_CHARS);
+    if (source.textTruncated === true || source.text.length > RUN_UI_TOOL_RESULT_PREVIEW_CHARS) {
+      compacted.textTruncated = true;
+    }
+  }
+  if (source.truncated === true) compacted.truncated = true;
+  if (source.hasMore === true) compacted.hasMore = true;
+  if (source.notice) compacted.notice = String(source.notice).slice(0, 300);
+  if (Object.keys(compacted).length === 0) {
+    try {
+      compacted.preview = String(JSON.stringify(source) || '{}').slice(0, 300);
+    } catch {
+      compacted.preview = '{}';
+    }
+  }
+  return compacted;
+}
+
 export function compactRunUiData(type, data) {
   if (!data || typeof data !== 'object') return data;
   if (type === 'tool_result') {
-    const result = data.result || {};
     return {
       name: data.name,
-      result: {
-        success: result.success,
-        ok: result.ok,
-        error: result.error ? String(result.error).slice(0, 1000) : undefined,
-        warning: result.warning ? String(result.warning).slice(0, 1000) : undefined,
-        summary: result.summary ? String(result.summary).slice(0, 2000) : undefined,
-      },
+      result: compactRunUiToolResult(data.result),
     };
   }
   if (type === 'text' || type === 'text_delta') {

@@ -63,6 +63,12 @@ import {
 import { createTabChatHandoffCoordinator } from './ui/tab-chat-persistence.js';
 import { clearStagedScreenshots } from './ui/staged-screenshot-store.js';
 import {
+  loadUiScale,
+  nextUiScale,
+  saveUiScale,
+  uiScaleCommandAction,
+} from './ui/ui-scale.js';
+import {
   prepareRecordingHost,
   startTabRecording,
   startDisplayRecording,
@@ -287,10 +293,16 @@ const CONTEXT_MENU_ACTION_PREFIX = 'webbrain-selection-action-';
 const CONTEXT_MENU_TRANSLATE_ID = 'webbrain-selection-translate';
 const CONTEXT_MENU_TRANSLATE_PREFIX = 'webbrain-selection-translate-';
 const CONTEXT_MENU_GENERIC_ASK_ID = 'webbrain-selection-generic-ask';
-let selectionShortcutLocale = 'en';
-const selectionShortcutLocaleReady = chrome.storage.local.get({ wbLocale: 'en' })
+function resolveStoredSelectionShortcutLocale(value) {
+  return normalizeSelectionShortcutLocale(
+    value || (typeof navigator !== 'undefined' ? navigator.language : 'en'),
+  );
+}
+
+let selectionShortcutLocale = resolveStoredSelectionShortcutLocale('');
+const selectionShortcutLocaleReady = chrome.storage.local.get({ wbLocale: '' })
   .then((stored) => {
-    selectionShortcutLocale = normalizeSelectionShortcutLocale(stored?.wbLocale);
+    selectionShortcutLocale = resolveStoredSelectionShortcutLocale(stored?.wbLocale);
   })
   .catch(() => {});
 
@@ -3989,3 +4001,16 @@ async function loadProvidersForRecordingFinalize() {
     await providerManager.load();
   }
 }
+
+let uiScaleCommandQueue = Promise.resolve();
+chrome.commands.onCommand.addListener(async (command) => {
+  const action = uiScaleCommandAction(command);
+  if (!action) return;
+  uiScaleCommandQueue = uiScaleCommandQueue.then(async () => {
+    const current = await loadUiScale(chrome.storage.local);
+    await saveUiScale(chrome.storage.local, nextUiScale(current, action));
+  }).catch((error) => {
+    console.error('[WebBrain] failed to update UI scale:', command, error);
+  });
+  await uiScaleCommandQueue;
+});

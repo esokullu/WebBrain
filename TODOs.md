@@ -156,7 +156,7 @@ work is staging/optionality and in-product explanations.
 
 ---
 
-## 7. Lock down the WebBrain Cloud auth handoff
+## 7. Lock down the WebBrain Compass auth handoff
 
 `src/chrome/src/ui/settings.js` accepts `WB_AUTH_TOKEN` from `window.message`
 and writes the token into extension storage, then auto-configures the WebBrain

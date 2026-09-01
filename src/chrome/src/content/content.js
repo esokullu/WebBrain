@@ -4145,10 +4145,15 @@
 
   function _messageRecipientIdentityKey(values = []) {
     return JSON.stringify(Array.from(new Set((Array.isArray(values) ? values : [])
-      .map(value => String(value ?? '')
+      .map(value => {
+        const legacy = typeof value === 'string' || typeof value === 'number';
+        const identity = String(legacy ? value : (value?.identity ?? value?.recipient) ?? '')
         .replace(/[\u200b-\u200d\ufeff]/g, '')
         .replace(/\s+/g, ' ')
-        .trim())
+        .trim();
+        const role = String(legacy ? 'to' : value?.role || '').trim().toLowerCase();
+        return identity && /^(?:to|cc|bcc)$/.test(role) ? `${role}:${identity}` : '';
+      })
       .filter(Boolean))).sort());
   }
 
@@ -4178,7 +4183,21 @@
       actionTarget,
       tool,
       args: dispatch.args && typeof dispatch.args === 'object' ? { ...dispatch.args } : {},
+      adapterName: String(dispatch.adapterName || ''),
+      expectedRecipients: Array.isArray(dispatch.expectedRecipients)
+        ? dispatch.expectedRecipients.map(value => (
+            value && typeof value === 'object'
+              ? { identity: String(value.identity || ''), role: String(value.role || '') }
+              : { identity: String(value || ''), role: 'to' }
+          )).filter(value => value.identity && /^(?:to|cc|bcc)$/.test(value.role)).slice(0, 16)
+        : [],
+      supportsRecipientSets: dispatch.supportsRecipientSets === true,
       identityKey,
+      messageBody: String(dispatch.messageBody || ''),
+      messageBodyBaselineCount: Number(dispatch.messageBodyBaselineCount || 0),
+      gmailComposeFlow: dispatch.gmailComposeFlow === true,
+      composerSubject: String(dispatch.composerSubject || ''),
+      composerSubjectAvailable: dispatch.composerSubjectAvailable === true,
       pageUrl: location.href,
       timer: null,
     };
@@ -4221,6 +4240,9 @@
       bindDispatch: false,
       expectedDispatchTarget: expected.actionTarget,
       expectedComposer: expected.composer,
+      adapterName: expected.adapterName,
+      expectedRecipients: expected.expectedRecipients,
+      supportsRecipientSets: expected.supportsRecipientSets,
     });
     if (live?.dispatchTargetChanged === true) {
       return {
@@ -4232,9 +4254,18 @@
         error: 'Message send blocked because the verified action target or composer changed before dispatch. Re-read the active conversation and retry the send once.',
       };
     }
-    const liveIdentityKey = _messageRecipientIdentityKey(live?.strongIdentityCandidates);
+    const liveIdentityKey = _messageRecipientIdentityKey(
+      Array.isArray(live?.strongRecipientCandidates)
+        ? live.strongRecipientCandidates
+        : live?.strongIdentityCandidates,
+    );
     if (live?.success !== true || live?.conclusive !== true || live?.messageSend !== true
-      || liveIdentityKey !== expected.identityKey) {
+      || liveIdentityKey !== expected.identityKey
+      || !expected.messageBody
+      || live?.messageBody !== expected.messageBody
+      || (expected.gmailComposeFlow === true && live?.gmailComposeFlow !== true)
+      || (expected.composerSubjectAvailable === true
+        && (live?.composerSubjectAvailable !== true || live?.composerSubject !== expected.composerSubject))) {
       return {
         success: false,
         dispatched: false,
@@ -4629,6 +4660,11 @@
         .replace(/\s+/g, ' ')
         .trim()
         .slice(0, max);
+      const normalizedIdentity = (value) => {
+        const identity = compact(value, 240);
+        if (!identity) return '';
+        try { return identity.normalize('NFKC').toLocaleLowerCase(); } catch { return identity.toLowerCase(); }
+      };
       const visible = (el) => {
         if (!el || el.nodeType !== 1 || !el.isConnected) return false;
         try {
@@ -4654,6 +4690,102 @@
           || textInput
           || role === 'textbox'
           || role === 'searchbox';
+      };
+      // Must stay identical to the agent's _workflowMessageBody: the probe
+      // compares page text against a body the agent already normalized, and a
+      // body whose paragraphs were collapsed must not match the requested one.
+      const normalizedMessageBody = (value) => {
+        let text = String(value ?? '')
+          .replace(/[\u200b-\u200d\ufeff]/g, '')
+          .replace(/\r\n?/g, '\n')
+          .split('\n')
+          .map(line => line.replace(/\s+/g, ' ').trim())
+          .filter(Boolean)
+          .join('\n');
+        try { text = text.normalize('NFKC'); } catch {}
+        return text.length <= 20000 ? text : '';
+      };
+      const composerMessageBody = (el) => {
+        try {
+          return normalizedMessageBody('value' in el ? el.value : (el.innerText || el.textContent || ''));
+        } catch {
+          return '';
+        }
+      };
+      const expectedRecipientIdentities = (Array.isArray(params.expectedRecipients)
+        ? params.expectedRecipients
+        : [])
+        .map(value => normalizedIdentity(value && typeof value === 'object' ? value.identity : value))
+        .filter(Boolean);
+      const outgoingMessageContainer = (el) => {
+        let current = el;
+        for (let depth = 0; current && depth < 8; depth += 1, current = current.parentElement) {
+          const direction = normalizedIdentity([
+            current.getAttribute?.('data-message-direction'),
+            current.getAttribute?.('data-direction'),
+            current.getAttribute?.('data-message-author-role'),
+            current.getAttribute?.('data-author-role'),
+          ].filter(Boolean).join(' '));
+          const booleanOutgoing = String(
+            current.getAttribute?.('data-outgoing')
+            || current.getAttribute?.('data-is-outgoing')
+            || '',
+          ).toLowerCase();
+          const className = normalizedIdentity(
+            typeof current.className === 'string' ? current.className : '',
+          );
+          const ariaLabel = normalizedIdentity(current.getAttribute?.('aria-label'));
+          if (/\b(?:outgoing|sent|self|own|user|from-me)\b/.test(direction)
+              || booleanOutgoing === 'true'
+              || /(?:^|[-_\s])(?:outgoing|message-out|sent-message|is-sent|from-me|own-message|self-message)(?:$|[-_\s])/.test(className)
+              || /^(?:you(?:\s+sent\b|[:,])|outgoing message\b|sent by you\b)/.test(ariaLabel)) {
+            return current;
+          }
+          if (params.adapterName === 'gmail'
+              && expectedRecipientIdentities.length > 0
+              && (current.hasAttribute?.('data-message-id')
+                || current.hasAttribute?.('data-legacy-message-id'))) {
+            let recipientNodes = [];
+            try {
+              recipientNodes = Array.from(current.querySelectorAll?.(
+                '[email],[data-email],[data-hovercard-id]'
+              ) || []);
+            } catch {}
+            const observedRecipients = new Set(recipientNodes.flatMap(node => [
+              node.getAttribute?.('email'),
+              node.getAttribute?.('data-email'),
+              node.getAttribute?.('data-hovercard-id'),
+            ]).map(normalizedIdentity).filter(Boolean));
+            if (expectedRecipientIdentities.every(identity => observedRecipients.has(identity))) return current;
+          }
+        }
+        return null;
+      };
+      const matchingMessageBodyCount = (expectedBody, activeComposer = null) => {
+        const expected = normalizedMessageBody(expectedBody);
+        if (!expected) return 0;
+        let candidates = [];
+        try {
+          candidates = Array.from(document.querySelectorAll(
+            'div,span,p,li,article,[role="listitem"],[data-message-id],[data-legacy-message-id]'
+          )).slice(0, 12000);
+        } catch {
+          return 0;
+        }
+        const matches = candidates.filter((el) => {
+          if (!visible(el) || editable(el)) return false;
+          if (activeComposer && (el === activeComposer || activeComposer.contains?.(el))) return false;
+          if (!outgoingMessageContainer(el)) return false;
+          try {
+            if (el.closest?.('button,[role="button"],[role="alert"],[role="status"],[aria-live],nav,[role="navigation"]')) {
+              return false;
+            }
+          } catch {}
+          return normalizedMessageBody(el.innerText || el.textContent || '') === expected;
+        });
+        // Nested wrappers often repeat the same innerText. Count only the
+        // innermost exact nodes so the before/after cardinality is stable.
+        return matches.filter(el => !matches.some(other => other !== el && el.contains?.(other))).length;
       };
       const verifiedNavigationEditable = (el) => {
         if (!editable(el)) return false;
@@ -4841,7 +4973,25 @@
         }
         composer = layoutComposer;
         if (!composer) {
-          return { success: true, messageSend: null, conclusive: false, identityCandidates: [] };
+          const actionLabel = compact(
+            control.getAttribute?.('aria-label')
+            || control.getAttribute?.('title')
+            || control.getAttribute?.('data-tooltip')
+            || control.value
+            || control.innerText
+            || control.textContent,
+            120,
+          );
+          const composerSetup = params.adapterName === 'gmail'
+            && /^(?:reply|reply all|forward)$/i.test(actionLabel);
+          return {
+            success: true,
+            messageSend: null,
+            conclusive: false,
+            composerAvailable: false,
+            ...(composerSetup ? { composerSetup: true } : {}),
+            identityCandidates: [],
+          };
         }
         if (editable(target) && target !== composer) {
           return { success: true, messageSend: false, conclusive: true, identityCandidates: [] };
@@ -4871,7 +5021,15 @@
       }
 
       if (!composer) {
-        return { success: false, messageSend: null, conclusive: false, identityCandidates: [], error: 'Active conversation composer could not be resolved.' };
+        return {
+          success: false,
+          messageSend: null,
+          conclusive: false,
+          composerAvailable: false,
+          matchingOutgoingMessageCount: matchingMessageBodyCount(params.expectedMessageBody, null),
+          identityCandidates: [],
+          error: 'Active conversation composer could not be resolved.',
+        };
       }
       if (params.expectedDispatchTarget
         && (dispatchTarget !== params.expectedDispatchTarget || composer !== params.expectedComposer)) {
@@ -4892,7 +5050,9 @@
         Math.min(220, Math.max(140, viewportHeight * 0.2)),
       );
       const strongIdentities = [];
+      const strongRecipients = [];
       const strongSeen = new Set();
+      const gmailRecipientMode = params.adapterName === 'gmail';
       const inConversationHeaderBand = (el) => {
         if (headerBandBottom <= 0) return false;
         const rect = el.getBoundingClientRect();
@@ -4915,43 +5075,240 @@
         strongIdentities.push(text);
       };
 
-      for (const el of document.querySelectorAll(
-        '[aria-selected="true"],[aria-current]:not([aria-current="false"])'
-      )) {
-        // Search results and navigation rows can also be selected/current, so
-        // they count only inside the narrow, non-scrollable conversation
-        // header above the composer.
-        addStrongIdentity(el);
-        if (strongIdentities.length >= 8) break;
-      }
+      let gmailComposeRoot = null;
+      if (gmailRecipientMode) {
+        const recipientRole = (el, root = null) => {
+          const roleFromAttribute = (attribute, value) => {
+            const text = compact(value, 120).toLowerCase();
+            if (!text) return '';
+            if (attribute === 'aria-label') {
+              if (/^(?:bcc|blind\s+carbon\s+copy)(?:$|\s*[:,-]\s*)/.test(text)) return 'bcc';
+              if (/^(?:cc|carbon\s+copy)(?:$|\s*[:,-]\s*)/.test(text)) return 'cc';
+              if (/^to(?:$|\s*[:,-]\s*)/.test(text)) return 'to';
+              return '';
+            }
+            if (attribute === 'name') {
+              return /^(?:to|cc|bcc)$/.test(text) ? text : '';
+            }
+            const tokens = text.split(/[^a-z]+/).filter(Boolean);
+            if (tokens.includes('bcc')) return 'bcc';
+            if (tokens.includes('cc')) return 'cc';
+            if (tokens.length === 1 && tokens[0] === 'to') return 'to';
+            return '';
+          };
+          let current = el;
+          for (let depth = 0; current && depth < 7; depth++, current = current.parentElement) {
+            for (const attribute of ['data-recipient-type', 'data-type', 'name', 'aria-label']) {
+              const role = roleFromAttribute(attribute, current.getAttribute?.(attribute));
+              if (role) return role;
+            }
+            if (root && current === root) break;
+            try {
+              const descendantRoles = new Set();
+              for (const marker of current.querySelectorAll?.(
+                'input[name="to"],input[name="cc"],input[name="bcc"],[aria-label]'
+              ) || []) {
+                const role = roleFromAttribute('name', marker.getAttribute?.('name'))
+                  || roleFromAttribute('aria-label', marker.getAttribute?.('aria-label'));
+                if (role) descendantRoles.add(role);
+              }
+              // A nearest row containing one role marker can classify its
+              // chips. A shared ancestor containing multiple rows cannot.
+              if (descendantRoles.size === 1) return [...descendantRoles][0];
+            } catch {}
+          }
+          return '';
+        };
+        const collectGmailRecipients = (root) => {
+          const collected = new Map();
+          if (!root?.querySelectorAll) return collected;
+          for (const el of root.querySelectorAll('[email],[data-hovercard-id],[data-email]')) {
+            if (!visible(el) || editable(el)) continue;
+            if (el === composer || composer.contains?.(el)) continue;
+            const email = [
+              el.getAttribute?.('email'),
+              el.getAttribute?.('data-email'),
+              el.getAttribute?.('data-hovercard-id'),
+            ].map(value => compact(value, 240)).find(value => /@/.test(value)) || '';
+            if (!email) continue;
+            const aliases = new Map();
+            for (const value of [
+              email,
+              el.getAttribute?.('name'),
+              el.getAttribute?.('aria-label'),
+              el.getAttribute?.('title'),
+              el.innerText,
+              el.textContent,
+            ]) {
+              const alias = compact(value, 240);
+              const normalized = normalizedIdentity(alias);
+              if (alias && normalized && !aliases.has(normalized)) aliases.set(normalized, alias);
+            }
+            const key = normalizedIdentity(email);
+            if (!key) continue;
+            const role = recipientRole(el, root);
+            if (!role) continue;
+            const recipientKey = `${role}:${key}`;
+            const prior = collected.get(recipientKey) || { identity: email, role, aliases: new Map() };
+            for (const [normalized, alias] of aliases) prior.aliases.set(normalized, alias);
+            collected.set(recipientKey, prior);
+          }
+          return collected;
+        };
+        // Dialog/popup compose keeps its form root. Inline thread replies are
+        // not inside [role=dialog] or form; use the nearest ancestor that
+        // already contains role-qualified To/Cc/Bcc chips so thread hovercards
+        // without a recipient role cannot pin a send.
+        const composeRoot = (() => {
+          const explicit = composer.closest?.('[role="dialog"],form') || null;
+          if (explicit) return explicit;
+          let current = composer.parentElement;
+          for (let depth = 0; current && depth < 16; depth += 1, current = current.parentElement) {
+            if (current === document.body || current === document.documentElement) break;
+            if (collectGmailRecipients(current).size > 0) return current;
+          }
+          return null;
+        })();
+        gmailComposeRoot = composeRoot;
+        const recipients = collectGmailRecipients(composeRoot);
+        // Match the complete authorized To/CC/BCC set. Each expected identity
+        // must resolve to exactly one distinct chip and no additional chip may
+        // remain; duplicate display names therefore fail closed.
+        const expectedRecipients = Array.isArray(params.expectedRecipients)
+          ? params.expectedRecipients.map(value => {
+              const legacy = typeof value === 'string' || typeof value === 'number';
+              return {
+                identity: compact(legacy ? value : (value?.identity ?? value?.recipient), 240),
+                role: compact(legacy ? 'to' : value?.role, 12).toLowerCase(),
+              };
+            }).filter(value => value.identity && /^(?:to|cc|bcc)$/.test(value.role)).slice(0, 16)
+          : [];
+        if (expectedRecipients.length > 0 && recipients.size === expectedRecipients.length) {
+          const claimed = new Set();
+          const matched = [];
+          for (const expected of expectedRecipients) {
+            const normalizedExpected = normalizedIdentity(expected.identity);
+            const candidates = [...recipients.entries()]
+              .filter(([key, recipient]) => !claimed.has(key)
+                && recipient.role === expected.role
+                && recipient.aliases.has(normalizedExpected));
+            if (!normalizedExpected || candidates.length !== 1) {
+              matched.length = 0;
+              break;
+            }
+            claimed.add(candidates[0][0]);
+            matched.push(expected);
+          }
+          if (matched.length === recipients.size) {
+            for (const recipient of matched) {
+              strongSeen.add(`${recipient.role}:${recipient.identity}`);
+              strongIdentities.push(recipient.identity);
+              strongRecipients.push(recipient);
+            }
+          }
+        } else if (expectedRecipients.length === 0) {
+          for (const [recipientKey, recipient] of recipients) {
+            const emailKey = recipientKey.slice(recipientKey.indexOf(':') + 1);
+            const identity = recipient.aliases.get(emailKey) || [...recipient.aliases.values()][0] || '';
+            if (identity && !strongSeen.has(recipientKey)) {
+              strongSeen.add(recipientKey);
+              strongIdentities.push(identity);
+              strongRecipients.push({ identity, role: recipient.role });
+            }
+          }
+        }
+      } else {
+        for (const el of document.querySelectorAll(
+          '[aria-selected="true"],[aria-current]:not([aria-current="false"])'
+        )) {
+          // Search results and navigation rows can also be selected/current, so
+          // they count only inside the narrow, non-scrollable conversation
+          // header above the composer.
+          addStrongIdentity(el);
+          if (strongIdentities.length >= 8) break;
+        }
 
-      if (strongIdentities.length < 8) {
         for (const el of document.querySelectorAll(
           'h1,h2,h3,h4,[role="heading"]'
         )) {
           addStrongIdentity(el);
           if (strongIdentities.length >= 8) break;
         }
+        for (const identity of strongIdentities) strongRecipients.push({ identity, role: 'to' });
       }
 
+      const composerText = (() => {
+        try {
+          if ('value' in composer) return String(composer.value || '');
+          return String(composer.innerText || composer.textContent || '');
+        } catch { return ''; }
+      })();
+      const submittedFieldBody = tool === 'set_field' && args.submit === true
+        ? normalizedMessageBody(args.text)
+        : '';
+      const messageBody = submittedFieldBody || composerMessageBody(composer);
+      const messageBodyBaselineCount = matchingMessageBodyCount(messageBody, composer);
+      // Gmail's subject control keeps a locale-independent name, so the
+      // reviewed subject binds without reading a localized label. Only a
+      // visible field counts; a collapsed compose proves nothing.
+      const composeContainer = gmailComposeRoot || composer.closest?.('[role="dialog"],form') || null;
+      const subjectField = composeContainer?.querySelector?.('input[name="subjectbox"]') || null;
+      const composerSubjectAvailable = !!subjectField && visible(subjectField);
+      const composerSubject = composerSubjectAvailable ? compact(subjectField.value, 998) : '';
+      // The provider writes "Draft saved" into the compose window's own status
+      // region. Page-wide text would also match a message that quotes it.
+      const composerStatusMessages = composeContainer
+        ? Array.from(composeContainer.querySelectorAll?.('[aria-live],[role="status"],[role="alert"]') || [])
+            .filter(visible)
+            .map(el => compact(el.innerText || el.textContent, 200))
+            .filter(Boolean)
+            .slice(0, 6)
+        : [];
+      const gmailComposeFlow = gmailRecipientMode
+        && !!composer.closest?.('[role="dialog"]');
+      const matchingOutgoingMessageCount = matchingMessageBodyCount(
+        params.expectedMessageBody,
+        composer,
+      );
       const messageRecipientDispatchToken = params.bindDispatch === true
         && messageSend === true
-        && strongIdentities.length === 1
-        ? _rememberMessageRecipientDispatchBinding(composer, strongIdentities, {
+        && !!messageBody
+        && (params.supportsRecipientSets === true
+          ? strongRecipients.length > 0
+          : strongRecipients.length === 1)
+        ? _rememberMessageRecipientDispatchBinding(composer, strongRecipients, {
             tool,
             args,
             actionTarget: dispatchTarget,
+            adapterName: params.adapterName,
+            expectedRecipients: params.expectedRecipients,
+            supportsRecipientSets: params.supportsRecipientSets,
+            messageBody,
+            messageBodyBaselineCount,
+            gmailComposeFlow,
+            composerSubject,
+            composerSubjectAvailable,
           })
         : '';
       return {
         success: true,
         messageSend: observationOnly ? false : messageSend === true,
         conclusive: true,
+        composerAvailable: true,
+        composerEmpty: composerText.replace(/[\u200b-\u200d\ufeff]/g, '').trim() === '',
+        messageBody,
+        messageBodyBaselineCount,
+        gmailComposeFlow,
+        composerSubject,
+        composerSubjectAvailable,
+        composerStatusMessages,
+        matchingOutgoingMessageCount,
         // Only recipient-specific header evidence is authoritative. Ordinary
         // message text, test-id containers, and other leaf content are never
         // returned as dispatch identities.
-        identityCandidates: strongIdentities.slice(0, 8),
-        strongIdentityCandidates: strongIdentities.slice(0, 8),
+        identityCandidates: strongIdentities.slice(0, 16),
+        strongIdentityCandidates: strongIdentities.slice(0, 16),
+        strongRecipientCandidates: strongRecipients.slice(0, 16),
         ...(messageRecipientDispatchToken
           ? { messageRecipientDispatchBinding: { token: messageRecipientDispatchToken } }
           : {}),

@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WebBrain Cloud is live, plus the next local model benchmark list - WebBrain Blog</title>
-  <meta name="description" content="WebBrain Cloud is now live in the latest main branch, so you can try WebBrain without running a local LLM or bringing your own API key. The hosted route is request-limited, but it is enough to see how the browser agent feels. Next up: benchmarks for VibeThinker-3B, Gemma 4 12B Coder, DiffusionGemma 26B, and Cohere North-Mini-Code 30B across practical local-VRAM bands.">
-  <meta name="keywords" content="WebBrain Cloud, WebBrain, local LLM, browser agent, VibeThinker-3B, Gemma 4 12B Coder, DiffusionGemma, Cohere North-Mini-Code, local model benchmark, VRAM">
-  <meta property="og:title" content="WebBrain Cloud is live, plus the next local model benchmark list">
+  <title>WebBrain Compass is live, plus the next local model benchmark list - WebBrain Blog</title>
+  <meta name="description" content="WebBrain Compass is now live in the latest main branch, so you can try WebBrain without running a local LLM or bringing your own API key. The hosted route is request-limited, but it is enough to see how the browser agent feels. Next up: benchmarks for VibeThinker-3B, Gemma 4 12B Coder, DiffusionGemma 26B, and Cohere North-Mini-Code 30B across practical local-VRAM bands.">
+  <meta name="keywords" content="WebBrain Compass, WebBrain, local LLM, browser agent, VibeThinker-3B, Gemma 4 12B Coder, DiffusionGemma, Cohere North-Mini-Code, local model benchmark, VRAM">
+  <meta property="og:title" content="WebBrain Compass is live, plus the next local model benchmark list">
   <meta property="og:description" content="Try WebBrain from the latest main branch without a local LLM or API key, then follow our next benchmarks for practical local models by VRAM tier.">
   <meta property="og:type" content="article">
   <meta property="og:url" content="https://webbrain.one/blog/webbrain-cloud-local-model-benchmarks">
@@ -17,7 +17,7 @@
   <meta property="og:image:height" content="630">
   <meta property="og:image:alt" content="WebBrain — Open-source AI browser agent">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="WebBrain Cloud is live">
+  <meta name="twitter:title" content="WebBrain Compass is live">
   <meta name="twitter:description" content="No local LLM or API key needed for a limited first look. Next: local model benchmarks by VRAM tier.">
   <meta name="twitter:image" content="https://webbrain.one/twitter-image.png">
   <meta name="twitter:image:alt" content="WebBrain — Open-source AI browser agent">
@@ -474,8 +474,8 @@
 {
   "@context": "https://schema.org",
   "@type": "BlogPosting",
-  "headline": "WebBrain Cloud is live, and these are the local models we are benchmarking next",
-  "description": "WebBrain Cloud is now live in the latest main branch, so you can try WebBrain without running a local LLM or bringing your own API key. The hosted route is request-limited, but it is enough to see how the browser agent feels. Next up: benchmarks for VibeThinker-3B, Gemma 4 12B Coder, DiffusionGemma 26B, and Cohere North-Mini-Code 30B across practical local-VRAM bands.",
+  "headline": "WebBrain Compass is live, and these are the local models we are benchmarking next",
+  "description": "WebBrain Compass is now live in the latest main branch, so you can try WebBrain without running a local LLM or bringing your own API key. The hosted route is request-limited, but it is enough to see how the browser agent feels. Next up: benchmarks for VibeThinker-3B, Gemma 4 12B Coder, DiffusionGemma 26B, and Cohere North-Mini-Code 30B across practical local-VRAM bands.",
   "author": {
     "@type": "Person",
     "name": "Emre Sokullu",
@@ -524,14 +524,14 @@
 
   <article>
     <div class="meta">June 19, 2026 &middot; 5 min read &middot; <a href="/blog">&larr; All posts</a></div>
-    <h1>WebBrain Cloud is live, and these are the local models we are benchmarking next</h1>
-    <p class="lede">Two updates. First: <strong>WebBrain Cloud is now live</strong> in the latest <code>main</code> branch, so you can start using WebBrain without a local LLM and without bringing your own API access. It is limited to a small number of hosted requests, but that is enough to see the product loop, test the browser-agent flow, and decide whether you want to wire in your own local or API-backed model. Second: our next benchmark pass will focus on the best local models for the hardware people actually have, grouped by VRAM.</p>
-<h2 id="webbrain-cloud-is-live">WebBrain Cloud is live</h2>
+    <h1>WebBrain Compass is live, and these are the local models we are benchmarking next</h1>
+    <p class="lede">Two updates. First: <strong>WebBrain Compass is now live</strong> in the latest <code>main</code> branch, so you can start using WebBrain without a local LLM and without bringing your own API access. It is limited to a small number of hosted requests, but that is enough to see the product loop, test the browser-agent flow, and decide whether you want to wire in your own local or API-backed model. Second: our next benchmark pass will focus on the best local models for the hardware people actually have, grouped by VRAM.</p>
+<h2 id="webbrain-compass-is-live">WebBrain Compass is live</h2>
 <p>Until now, trying WebBrain seriously meant having one of two things ready: a local model server, or an API key for a hosted model provider. That is still the best setup for sustained use, but it is too much friction for a first look.</p>
-<p>The new cloud path removes that first-run blocker. Download and install the latest <code>main</code> branch from the <a href="https://github.com/webbrain-one/webbrain" target="_blank" rel="noopener">WebBrain GitHub repo</a>, then run WebBrain as usual. You can use the built-in WebBrain Cloud route for a limited number of requests without configuring a local LLM or external API provider.</p>
+<p>The new cloud path removes that first-run blocker. Download and install the latest <code>main</code> branch from the <a href="https://github.com/webbrain-one/webbrain" target="_blank" rel="noopener">WebBrain GitHub repo</a>, then run WebBrain as usual. You can use the built-in WebBrain Compass route for a limited number of requests without configuring a local LLM or external API provider.</p>
 <p>This is not meant to be an unlimited hosted tier. The point is simpler: you should be able to install WebBrain, try the browser agent, and see whether the workflow makes sense before spending time on model setup.</p>
 <div class="callout">
-<strong>Recommended path:</strong> install from the latest <code>main</code> branch, try the limited WebBrain Cloud requests first, then switch to a local or API-backed model when you are ready for heavier usage.
+<strong>Recommended path:</strong> install from the latest <code>main</code> branch, try the limited WebBrain Compass requests first, then switch to a local or API-backed model when you are ready for heavier usage.
 </div>
 <h2 id="what-we-are-benchmarking-next">What we are benchmarking next</h2>
 <p>The next benchmark set is about practical local deployment. "Best model" is not one category. A model that is excellent on a 48GB card may be irrelevant to someone with a laptop GPU, and a tiny model that is fast enough to be delightful may be too weak for harder browser-agent planning.</p>
