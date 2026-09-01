@@ -145,7 +145,8 @@
 
   <div id="app">
     <!-- Header -->
-    <header id="header">
+    <div class="header-shell">
+      <header id="header">
       <div class="header-left">
         <div class="provider-picker" id="provider-picker">
           <!-- Native select kept as the value source for existing handlers.
@@ -176,12 +177,28 @@
           </button>
           <div class="provider-picker-menu language-picker-menu hidden" id="language-picker-menu" role="listbox" tabindex="-1"></div>
         </div>
-        <button id="btn-history" data-i18n-title="sp.btn.history" data-i18n-aria-label="sp.btn.history">
-          <svg data-icon="messages-square" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M16 10a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 14.286V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
-            <path d="M20 9a2 2 0 0 1 2 2v10.286a.71.71 0 0 1-1.212.502l-2.202-2.202A2 2 0 0 0 17.172 19H10a2 2 0 0 1-2-2v-1"/>
+        <button id="btn-settings" data-i18n-title="sp.btn.settings">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
           </svg>
         </button>
+        <div id="ui-scale-menu" class="ui-scale-menu">
+          <button type="button" id="btn-ui-scale" aria-haspopup="true" aria-expanded="false" aria-controls="ui-scale-popover" data-i18n-title="sp.ui_scale.label" data-i18n-aria-label="sp.ui_scale.label">
+            <svg data-icon="a-large-small" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="m15 16 2.536-7.328a1.02 1.02 0 0 1 1.928 0L22 16"/>
+              <path d="M15.697 14h5.606"/>
+              <path d="m2 16 4.039-9.69a.5.5 0 0 1 .923 0L11 16"/>
+              <path d="M3.304 13h6.392"/>
+            </svg>
+          </button>
+          <div id="ui-scale-popover" class="ui-scale-popover hidden" role="group" data-i18n-aria-label="sp.ui_scale.label">
+            <button type="button" data-ui-scale-action="decrease" data-i18n-title="sp.ui_scale.decrease" data-i18n-aria-label="sp.ui_scale.decrease">−</button>
+            <output id="ui-scale-value" aria-live="polite">100%</output>
+            <button type="button" data-ui-scale-action="increase" data-i18n-title="sp.ui_scale.increase" data-i18n-aria-label="sp.ui_scale.increase">+</button>
+            <button type="button" class="ui-scale-reset" data-ui-scale-action="reset" data-i18n="sp.ui_scale.reset"></button>
+          </div>
+        </div>
         <button id="btn-expand" data-i18n-title="sp.btn.expand" data-i18n-aria-label="sp.btn.expand">
           <svg data-icon="external-link" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M15 3h6v6"/>
@@ -189,21 +206,9 @@
             <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
           </svg>
         </button>
-        <button id="btn-settings" data-i18n-title="sp.btn.settings">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="3"/>
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-          </svg>
-        </button>
-        <button id="btn-clear" data-i18n-title="sp.btn.clear" data-i18n-aria-label="sp.btn.clear">
-          <svg data-icon="message-square-plus" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M20 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h9a4 4 0 0 1 4 4z"/>
-            <path d="M11.5 8v6"/>
-            <path d="M8.5 11h6"/>
-          </svg>
-        </button>
       </div>
-    </header>
+      </header>
+    </div>
 
     <section id="standalone-rag-readiness" class="offline-rag-readiness hidden" aria-live="polite"></section>
 
@@ -218,32 +223,29 @@
     <!-- Chat Messages -->
     <div id="chat-shell">
       <div id="chat-container">
-        <div id="messages">
-          <div class="message system">
-            <div class="message-content">
-              <p data-i18n-html="sp.greeting.html"></p>
+        <div id="messages"></div>
+        <section id="chat-empty-state" class="chat-empty-state" aria-labelledby="chat-empty-state-heading">
+          <h2 id="chat-empty-state-heading" class="chat-empty-state-heading" data-i18n="sp.help_message">How can I help with this page?</h2>
+          <div id="recommended-actions" class="recommended-actions hidden" aria-live="polite">
+            <div class="recommended-actions-header">
+              <div class="recommended-actions-title" data-i18n="sp.recommended.title">Suggested actions</div>
+              <button
+                id="recommended-actions-toggle"
+                class="recommended-actions-toggle"
+                type="button"
+                aria-controls="recommended-actions-list"
+                aria-expanded="true"
+                data-i18n-title="sp.recommended.collapse"
+                data-i18n-aria-label="sp.recommended.collapse"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M6 9l6 6 6-6"/>
+                </svg>
+              </button>
             </div>
+            <div id="recommended-actions-list" class="recommended-actions-list"></div>
           </div>
-        </div>
-        <div id="recommended-actions" class="recommended-actions hidden" aria-live="polite">
-          <div class="recommended-actions-header">
-            <div class="recommended-actions-title" data-i18n="sp.recommended.title">Suggested actions</div>
-            <button
-              id="recommended-actions-toggle"
-              class="recommended-actions-toggle"
-              type="button"
-              aria-controls="recommended-actions-list"
-              aria-expanded="true"
-              data-i18n-title="sp.recommended.collapse"
-              data-i18n-aria-label="sp.recommended.collapse"
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M6 9l6 6 6-6"/>
-              </svg>
-            </button>
-          </div>
-          <div id="recommended-actions-list" class="recommended-actions-list"></div>
-        </div>
+        </section>
         <div id="store-review-prompt" class="store-review-prompt hidden" role="dialog" aria-live="polite" aria-labelledby="store-review-title">
           <div class="store-review-card">
             <button type="button" id="store-review-close" class="store-review-close" data-i18n-aria-label="sp.review.close" aria-label="Dismiss">×</button>
@@ -327,10 +329,27 @@
 
     <!-- Input Area -->
     <div id="input-area">
-      <div id="mode-toggle">
-        <button id="btn-mode-ask" class="mode-btn active" data-i18n="sp.mode.ask" data-i18n-title="sp.mode.ask.title"></button>
-        <button id="btn-mode-act" class="mode-btn" data-i18n="sp.mode.act" data-i18n-title="sp.mode.act.title"></button>
-        <button id="btn-mode-dev" class="mode-btn" data-i18n="sp.mode.dev" data-i18n-title="sp.mode.dev.title"></button>
+      <div class="composer-control-row">
+        <div id="mode-toggle">
+          <button id="btn-mode-ask" class="mode-btn active" data-i18n="sp.mode.ask" data-i18n-title="sp.mode.ask.title"></button>
+          <button id="btn-mode-act" class="mode-btn" data-i18n="sp.mode.act" data-i18n-title="sp.mode.act.title"></button>
+          <button id="btn-mode-dev" class="mode-btn" data-i18n="sp.mode.dev" data-i18n-title="sp.mode.dev.title"></button>
+        </div>
+        <div class="conversation-action-group">
+          <button id="btn-history" class="conversation-action" type="button" data-i18n-title="sp.btn.history_short" data-i18n-aria-label="sp.btn.history_short">
+            <svg data-icon="history" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+              <path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>
+            </svg>
+            <span class="conversation-action-label" data-i18n="sp.btn.history_short">History</span>
+          </button>
+          <button id="btn-clear" class="conversation-action" type="button" data-i18n-title="sp.btn.clear_short" data-i18n-aria-label="sp.btn.clear_short">
+            <svg data-icon="plus" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M5 12h14"/><path d="M12 5v14"/>
+            </svg>
+            <span class="conversation-action-label" data-i18n="sp.btn.clear_short">New chat</span>
+          </button>
+        </div>
       </div>
       <div id="queued-messages" class="queued-messages hidden" role="list" aria-live="polite"></div>
       <div id="slash-command-menu" class="slash-command-menu hidden" role="listbox" data-i18n-aria-label="sp.slash.commands_label"></div>

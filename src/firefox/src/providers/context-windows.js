@@ -333,3 +333,53 @@ export function inferContextWindow(config = {}) {
 
   return DEFAULT_CLOUD_CONTEXT_WINDOW;
 }
+
+export const DEFAULT_MAX_OUTPUT_TOKENS = 4096;
+
+/**
+ * Known per-model generation ceiling. Used to clamp a card-wide Settings
+ * budget (for example Anthropic's shipped 128k) so a selected model with a
+ * lower output limit does not receive a request the API will reject.
+ * Returns null when the model is unknown — do not invent a cap.
+ */
+export function inferMaxOutputTokens(config = {}) {
+  const model = clean(config.model);
+  if (!model) return null;
+
+  // OpenAI and router slugs
+  if (/^gpt-5(?:[.\-]|$)/.test(model) || model.includes('/gpt-5')) return 128000;
+  if (/(?:^|\/)o[1-4](?:[.\-]|$)/.test(model)) return 100000;
+  if (model.includes('gpt-4.1')) return 32768;
+  if (model.includes('gpt-4o')) return 16384;
+
+  // Anthropic Claude (direct, Bedrock, Vertex, and router slugs)
+  if (/claude-(?:fable-5|mythos-5|mythos|opus-5|sonnet-5|opus-4-[6-8]|sonnet-4-6)/.test(model)) {
+    return 128000;
+  }
+  if (/claude-haiku-4-5/.test(model)) return 64000;
+  if (/claude-(?:opus|sonnet|haiku)-4/.test(model)) return 64000;
+  if (/claude-3-7/.test(model)) return 64000;
+  if (/claude-3-5/.test(model)) return 8192;
+  if (/claude-3/.test(model)) return 4096;
+  if (model.includes('claude-')) return 64000;
+
+  // DeepSeek
+  if (model.includes('deepseek-v4')) return 384000;
+  if (model.includes('deepseek')) return 8192;
+
+  return null;
+}
+
+/**
+ * Requested output budget: the configured Settings value (or the legacy 4k
+ * fallback), clamped to the selected model's known ceiling when we have one.
+ */
+export function resolveMaxOutputTokens(config = {}, fallback = DEFAULT_MAX_OUTPUT_TOKENS) {
+  const configured = Number(config.maxOutputTokens);
+  const budget = Number.isFinite(configured) && configured > 0
+    ? Math.floor(configured)
+    : fallback;
+  const ceiling = inferMaxOutputTokens(config);
+  if (Number.isFinite(ceiling) && ceiling > 0) return Math.min(budget, ceiling);
+  return budget;
+}

@@ -381,7 +381,7 @@ function offerScene() {
     theme: 'dark',
     body: `
       <div style="height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;">
-        <h1 style="font-size:60px;">WebBrain Cloud launch pricing</h1>
+        <h1 style="font-size:60px;">WebBrain Compass launch pricing</h1>
         <div style="display:flex; align-items:baseline; gap:28px; margin-top:30px;">
           <!-- Bricolage sets line-through low on heavy figures, so the strike is drawn manually. -->
           <span class="num" style="position:relative; font-size:60px; line-height:1; color:var(--muted);">$8

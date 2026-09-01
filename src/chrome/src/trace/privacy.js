@@ -36,6 +36,7 @@ const NOTE_METADATA_FIELDS = [
   'context', 'visionRoute', 'phase', 'failureKind', 'reason', 'queryCount',
   'matchCount', 'multiSource', 'attempted', 'archiveDates', 'durationMs',
   'success', 'approved', 'outcome', 'verification', 'count',
+  'adapter', 'revision', 'notesInjected', 'workflowSchema', 'job', 'template',
 ];
 
 function pick(source, fields) {

@@ -39,7 +39,7 @@ Files (1280×800):
 - 03-ask-any-page.png: Ask mode, cropped to the answer panel
 - 04-any-llm.png: Model picker, cropped to the provider dropdown
 - 05-plan-before-act.png: Plan review with Approve/Adjust before actions run
-- 06-launch-offer.png: WebBrain Cloud $5/mo (reg. $8), Save 35%
+- 06-launch-offer.png: WebBrain Compass $5/mo (reg. $8), Save 35%
 - 07-social-proof.png: ~1000 GitHub stars, ~50 contributors, GPL — repo bar with contributor avatars
 
 Light-background alternates of the two dark slides (originals kept, use whichever fits the gallery):

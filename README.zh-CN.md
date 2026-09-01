@@ -71,7 +71,7 @@ git clone https://github.com/webbrain-one/webbrain.git
 
 ## 选择模型
 
-**WebBrain Cloud 1.0** 是默认选项，无需 API 密钥或本地配置。
+**WebBrain Compass 1.0** 是默认选项，无需 API 密钥或本地配置。
 
 **本地模型** 同样无需 API 密钥。将 WebBrain 指向任意 OpenAI 兼容服务即可：
 

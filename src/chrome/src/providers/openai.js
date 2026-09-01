@@ -4,6 +4,7 @@ import {
   isDirectDeepSeekConfig,
   isNewOpenAIContractConfig,
   isOfficialOpenAIConfig,
+  isOpenCodeZenConfig,
   shouldUseOpenAIResponsesApi,
   supportsOpenAIAskStreaming,
   applyOpenRouterRoutingVariant,
@@ -88,7 +89,10 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
   }
 
   get model() {
-    if (this.config.model) return this.config.model;
+    if (this.config.model) {
+      const model = String(this.config.model);
+      return isOpenCodeZenConfig(this.config) ? model.replace(/^opencode\//i, '') : model;
+    }
     if (this.config.requiresModel) throw new Error(`${this.config.label || this.name} model is required.`);
     // Some local servers apply their own default when no model is configured.
     // Others carry `requiresModel: true` and throw above. Treat the category as
@@ -254,7 +258,7 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
     if (status === 402 && providerName === 'webbrain-cloud') {
       let actionUrl = this._webbrainSubscribeUrl();
       let actionLabel = 'Subscribe for more usage';
-      let message = 'Daily free WebBrain Cloud allowance used.';
+      let message = 'Daily free WebBrain Compass allowance used.';
       try {
         const parsed = JSON.parse(body || '{}');
         if (parsed.upgrade_url) {

@@ -451,9 +451,12 @@ host.lang = localization.locale;
     positionShortcut();
   }
 
-  function openPopup() {
+  async function openPopup() {
+    if (!snapshot || submitting) return;
+    if (!localization) await refreshLocalization(interfaceLanguage);
     if (!snapshot || submitting) return;
     ensureSurface();
+    applyLocalization();
     popup.hidden = false;
     popup.style.visibility = 'hidden';
     positionPopup();

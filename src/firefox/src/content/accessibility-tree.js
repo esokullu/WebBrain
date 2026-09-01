@@ -271,14 +271,6 @@
     const siteInteraction = getSiteInteractionDescriptor(el);
     if (siteInteraction) return siteInteraction.name;
 
-    // <select> — prefer the currently selected option's label.
-    if (tag === 'select') {
-      const opt = el.querySelector('option[selected]') || (el.options && el.options[el.selectedIndex]);
-      if (opt && opt.textContent && opt.textContent.trim()) {
-        return opt.textContent.trim();
-      }
-    }
-
     const ariaLabel = el.getAttribute('aria-label');
     if (ariaLabel && ariaLabel.trim()) return ariaLabel.trim();
 
@@ -343,6 +335,16 @@
           : wrappingText;
       }
     } catch {}
+
+    // A native select's accessible name is its associated field label. Only
+    // fall back to the selected option when the control has no label; the
+    // selected option is emitted separately as its current value.
+    if (tag === 'select') {
+      const opt = (el.options && el.options[el.selectedIndex]) || el.querySelector('option[selected]');
+      if (opt && opt.textContent && opt.textContent.trim()) {
+        return opt.textContent.trim();
+      }
+    }
 
     if (tag === 'input') {
       const t = (el.getAttribute('type') || '').toLowerCase();
@@ -462,6 +464,67 @@
     if (cs.opacity === '0') return false;
     if (el.offsetWidth <= 0 || el.offsetHeight <= 0) return false;
     return true;
+  }
+
+  // A checkbox, radio, select, or file input is routinely made transparent or
+  // clipped and driven through a visible label or wrapper. Such a control is
+  // still operable by set_checked or by activating its label, so it is not
+  // hidden in the sense a conditional or honeypot field is.
+  function _axGroupLabelledByText(el) {
+    try {
+      const ids = String(el.getAttribute('aria-labelledby') || '').trim();
+      if (!ids) return '';
+      const root = el.getRootNode && el.getRootNode() || document;
+      return ids.split(/\s+/)
+        .map(id => (root.getElementById && root.getElementById(id)) || document.getElementById(id))
+        .filter(Boolean)
+        .map(node => node.innerText || node.textContent || '')
+        .join(' ');
+    } catch (e) {
+      return '';
+    }
+  }
+
+  function isLabelDrivenControl(el) {
+    const tag = el.tagName ? el.tagName.toLowerCase() : '';
+    if (tag === 'select') return true;
+    if (tag !== 'input') return false;
+    const type = (el.getAttribute('type') || 'text').toLowerCase();
+    return type === 'checkbox' || type === 'radio' || type === 'file';
+  }
+
+  function hasVisibleControlActivator(el) {
+    try {
+      const id = el.getAttribute('id');
+      if (id) {
+        const escaped = window.CSS && CSS.escape ? CSS.escape(id) : id.replace(/["\\]/g, '\\$&');
+        const root = el.getRootNode && el.getRootNode() || document;
+        const label = (root.querySelector && root.querySelector('label[for="' + escaped + '"]'))
+          || document.querySelector('label[for="' + escaped + '"]');
+        if (label && isVisible(label)) return true;
+      }
+      const wrapping = el.closest && el.closest('label');
+      if (wrapping && isVisible(wrapping)) return true;
+      // An ordinary container is not an activator. A custom control wraps its
+      // input in a label or in something that carries the control's own role,
+      // and that is what a click can actually drive.
+      const ACTIVATOR_ROLES = [
+        'checkbox', 'radio', 'switch', 'button', 'option',
+        'menuitemcheckbox', 'menuitemradio', 'combobox', 'listbox',
+      ];
+      let parent = el.parentElement;
+      for (let depth = 0; parent && depth < 3; depth += 1, parent = parent.parentElement) {
+        const parentTag = parent.tagName ? parent.tagName.toLowerCase() : '';
+        const parentRole = String(
+          (parent.getAttribute && parent.getAttribute('role')) || '',
+        ).toLowerCase();
+        const activates = parentTag === 'label'
+          || parentTag === 'button'
+          || ACTIVATOR_ROLES.includes(parentRole);
+        if (activates && isVisible(parent)) return true;
+      }
+    } catch (e) { /* fall through */ }
+    return false;
   }
 
   function isInViewport(el) {
@@ -629,6 +692,7 @@
     const role = getRole(el);
     let name = getAccessibleName(el);
     const ref = getOrMintRef(el);
+    const tag = el.tagName.toLowerCase();
 
     let line = ' '.repeat(depth) + role;
     if (name) {
@@ -641,6 +705,18 @@
     if (href) line += ' href="' + href + '"';
     const type = el.getAttribute('type');
     if (type) line += ' type="' + type + '"';
+    // A React-style form can replace a control node on every change, which
+    // mints a new ref for the same logical field. The app-owned id and name
+    // survive that, so a form inventory can key on them instead of the ref.
+    {
+      const encodeIdentity = value => String(value || '')
+        .replace(/\s+/g, ' ').trim().substring(0, 160)
+        .replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+      const domId = encodeIdentity(el.getAttribute('id'));
+      const fieldName = encodeIdentity(el.getAttribute('name'));
+      if (domId) line += ' dom_id="' + domId + '"';
+      if (fieldName) line += ' field_name="' + fieldName + '"';
+    }
     const ph = el.getAttribute('placeholder');
     if (ph) line += ' placeholder="' + ph + '"';
 
@@ -659,40 +735,141 @@
     // Checkbox/radio state is an action-critical value, not decorative
     // metadata. Without it the model has to infer state from a focus ring or
     // screenshot and can accidentally toggle a control back off.
-    const tag = el.tagName.toLowerCase();
     const inputType = tag === 'input'
       ? (el.getAttribute('type') || 'text').toLowerCase()
       : '';
+    const attrRole = (el.getAttribute('role') || '').toLowerCase();
+    const inventoryRole = (role || attrRole || '').toLowerCase();
+    const isInventoryFormControl = tag === 'textarea' || tag === 'select'
+      || (tag === 'input' && !['submit', 'button', 'reset', 'image', 'hidden'].includes(inputType))
+      || isEditableRoot(el)
+      || ['textbox', 'searchbox', 'combobox', 'checkbox', 'radio', 'switch', 'slider', 'spinbutton', 'listbox'].includes(inventoryRole);
+    if (isInventoryFormControl) {
+      try {
+        const ariaRequired = String(el.getAttribute('aria-required') || '').trim().toLowerCase();
+        // HTML answers this for a native control: an optional input, textarea,
+        // or select reports required === false while carrying no attribute at
+        // all. Only a custom ARIA control can leave the answer unknown.
+        const nativeControl = tag === 'input' || tag === 'textarea' || tag === 'select';
+        if (el.required === true || ariaRequired === 'true') line += ' required=true';
+        else if (ariaRequired === 'false' || (nativeControl && el.required === false)) line += ' required=false';
+      } catch {}
+      // A readonly control is excluded from constraint validation and cannot
+      // take the mutation a processed row needs, so the inventory has to know.
+      try {
+        if (el.readOnly === true || el.getAttribute('aria-readonly') === 'true') {
+          line += ' readonly=true';
+        }
+      } catch {}
+      // A custom radio group carries no HTML name, so nothing else says which
+      // options are alternatives to each other.
+      try {
+        if (inventoryRole === 'radio' && !el.getAttribute('name')) {
+          const group = el.closest('[role="radiogroup"]');
+          const groupIdentity = group
+            ? String(
+              group.getAttribute('id')
+              || group.getAttribute('aria-label')
+              || _axGroupLabelledByText(group)
+              || '',
+            ).replace(/\s+/g, ' ').trim().substring(0, 160)
+              .replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+            : '';
+          if (groupIdentity) line += ' group="' + groupIdentity + '"';
+        }
+      } catch {}
+      // filter=all deliberately keeps aria-hidden and invisible nodes, which
+      // pulls conditional and honeypot inputs into the tree. Mark them so a
+      // form inventory can leave out controls the user was never shown and
+      // cannot act on. Under the other filters these are already excluded.
+      // A control that is merely transparent or clipped behind a visible label
+      // or wrapper is a custom control, not a hidden field, so it stays.
+      try {
+        const style = window.getComputedStyle(el);
+        const notRendered = style.display === 'none' || style.visibility === 'hidden';
+        const ariaHidden = el.getAttribute('aria-hidden') === 'true'
+          || !!el.closest('[aria-hidden="true"]');
+        const visuallyReplaced = !notRendered
+          && isLabelDrivenControl(el)
+          && hasVisibleControlActivator(el);
+        if (ariaHidden || notRendered || (!isVisible(el) && !visuallyReplaced)) {
+          line += ' hidden=true';
+        }
+      } catch {}
+    }
     if (inputType === 'checkbox' || inputType === 'radio') {
       line += ` checked=${el.checked ? 'true' : 'false'}`;
-    } else {
-      const role = (el.getAttribute('role') || '').toLowerCase();
-      if (['checkbox', 'radio', 'switch'].includes(role) || el.hasAttribute('aria-checked')) {
-        const ariaChecked = el.getAttribute('aria-checked');
-        if (ariaChecked != null) line += ` checked=${ariaChecked}`;
-      }
+    } else if (['checkbox', 'radio', 'switch'].includes(attrRole) || el.hasAttribute('aria-checked')) {
+      const ariaChecked = el.getAttribute('aria-checked');
+      if (ariaChecked != null) line += ` checked=${ariaChecked}`;
     }
 
     // Surface the current value for text-like inputs/textareas so the model
     // can see what's already filled in. Skipped for submit/button/reset/file
-    // (value is the label there), checkboxes/radios, and when the value
-    // already matches the rendered name.
+    // (value is the label there) and checkboxes/radios. Always emit even when
+    // the value equals the accessible name so inventory verification can
+    // read it back; the model-facing cap is 60 characters plus '...'.
+    // Truncated values also emit value_len and value_fp so verification can
+    // bind the full app-owned string without putting it in the tree.
+    const AX_VALUE_MAX_LEN = 60;
+    const axInventoryValue = (raw) => {
+      let text = String(raw ?? '')
+        .replace(/\r\n?/g, '\n')
+        .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '');
+      try { text = text.normalize('NFKC'); } catch { /* ignore */ }
+      return text.trim();
+    };
+    const axValueFingerprint = (text) => {
+      let hash = 0x811c9dc5;
+      const value = String(text || '');
+      for (let i = 0; i < value.length; i++) {
+        hash ^= value.charCodeAt(i);
+        hash = Math.imul(hash, 0x01000193) >>> 0;
+      }
+      return hash.toString(16).padStart(8, '0');
+    };
+    const appendAxValue = (current, raw) => {
+      const v = axInventoryValue(raw);
+      if (!v) return current;
+      const truncated = v.length > AX_VALUE_MAX_LEN;
+      const trimmed = truncated ? v.substring(0, AX_VALUE_MAX_LEN) + '...' : v;
+      const escaped = trimmed.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+      current += ' value="' + escaped + '"';
+      if (truncated) {
+        current += ' value_len=' + v.length;
+        current += ' value_fp=' + axValueFingerprint(v);
+      }
+      return current;
+    };
     if (tag === 'input' || tag === 'textarea') {
-      const inputType = (el.getAttribute('type') || 'text').toLowerCase();
       const skipValueTypes = new Set(['submit', 'button', 'reset', 'file', 'checkbox', 'radio', 'image', 'hidden', 'color', 'range', 'password']);
       if (!skipValueTypes.has(inputType)) {
-        const v = (el.value == null ? '' : String(el.value));
-        if (v && v !== name) {
-          const trimmed = v.length > 60 ? v.substring(0, 60) + '...' : v;
-          line += ' value="' + trimmed.replace(/"/g, '\\"') + '"';
-        }
+        line = appendAxValue(line, el.value == null ? '' : String(el.value));
       }
     } else if (isEditableRoot(el)) {
-      const v = String(el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
-      if (v && v !== name) {
-        const trimmed = v.length > 60 ? v.substring(0, 60) + '...' : v;
-        line += ' value="' + trimmed.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
+      line = appendAxValue(line, String(el.innerText || el.textContent || '').replace(/\s+/g, ' '));
+    } else if (tag === 'select' || ['combobox', 'listbox'].includes(attrRole)) {
+      let v = '';
+      if (tag === 'select') {
+        const selected = (el.options && el.options[el.selectedIndex])
+          || el.querySelector('option[selected]');
+        v = String(selected?.textContent || '').replace(/\s+/g, ' ').trim();
+      } else {
+        v = String(
+          el.getAttribute('aria-valuetext')
+          || el.getAttribute('aria-valuenow')
+          || (el.value == null ? '' : el.value),
+        ).replace(/\s+/g, ' ').trim();
+        if (!v) {
+          let selected = null;
+          try {
+            selected = el.querySelector('[aria-selected="true"],[role="option"][data-selected="true"]');
+          } catch {}
+          v = String(selected?.innerText || selected?.textContent || '').replace(/\s+/g, ' ').trim();
+        }
+        if (!v) v = String(el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
       }
+      line = appendAxValue(line, v);
     }
 
     return line;
@@ -713,8 +890,45 @@
   }
 
   // ── Walker ─────────────────────────────────────────────────────────────
+  function nodeHasWalkableChildren(el) {
+    if (!el) return false;
+    if (el.children && el.children.length) return true;
+    try {
+      return !!(window.__wbSiteInteractions.shouldPierceShadowRoots()
+        && el.shadowRoot
+        && el.shadowRoot.children
+        && el.shadowRoot.children.length);
+    } catch {
+      return false;
+    }
+  }
+
+  function pushWalkableChildren(el, stack) {
+    for (const child of el.children || []) stack.push(child);
+    try {
+      if (window.__wbSiteInteractions.shouldPierceShadowRoots() && el.shadowRoot) {
+        for (const child of el.shadowRoot.children || []) stack.push(child);
+      }
+    } catch {}
+  }
+
+  // depthTruncated is form-relevant: set it only if an omitted descendant
+  // would have been included. Decorative wrappers at the depth cap stay silent.
+  function omittedDescendantWouldBeIncluded(el, opts) {
+    const stack = [];
+    pushWalkableChildren(el, stack);
+    while (stack.length) {
+      const node = stack.pop();
+      if (!node || !node.tagName) continue;
+      if (opts._skipPrioritySet && opts._skipPrioritySet.has(node)) continue;
+      if (opts._skipOverlaySet && opts._skipOverlaySet.has(node)) continue;
+      if (shouldInclude(node, opts)) return true;
+      pushWalkableChildren(node, stack);
+    }
+    return false;
+  }
+
   function walk(el, depth, opts, lines) {
-    if (depth > opts.maxDepth) return;
     if (!el || !el.tagName) return;
 
     // Skip nodes already emitted in the priority/action prelude.
@@ -724,6 +938,13 @@
     // guard ensures we still enter the overlay itself when it's the
     // explicit walk root.
     if (depth > 0 && opts._skipOverlaySet && opts._skipOverlaySet.has(el)) return;
+
+    if (depth > opts.maxDepth) {
+      if (shouldInclude(el, opts) || omittedDescendantWouldBeIncluded(el, opts)) {
+        opts.depthTruncated = true;
+      }
+      return;
+    }
 
     // An element anchored via refId is always included at depth 0, even if
     // it wouldn't normally pass the include filter.
@@ -739,9 +960,9 @@
       }
     }
 
-    if (el.children && depth < opts.maxDepth) {
+    if (nodeHasWalkableChildren(el) && depth < opts.maxDepth) {
       const nextDepth = included ? depth + 1 : depth;
-      for (const child of el.children) {
+      for (const child of el.children || []) {
         walk(child, nextDepth, opts, lines);
       }
       // Bilibili's current comment system is a hierarchy of open custom-
@@ -752,6 +973,8 @@
           walk(child, nextDepth, opts, lines);
         }
       }
+    } else if (nodeHasWalkableChildren(el) && omittedDescendantWouldBeIncluded(el, opts)) {
+      opts.depthTruncated = true;
     }
   }
 
@@ -1302,6 +1525,7 @@
 
       const output = lines.join('\n');
       const treeRevision = fingerprintTreeContent(output);
+      const depthTruncated = opts.depthTruncated === true;
       const revisionBound = !!refId;
       const continuationBase = {
         ...baseTreeScope,
@@ -1336,7 +1560,7 @@
         };
       }
       if (effMaxChars != null && page != null && Math.floor(Number(page) || 1) > 1) {
-        return { ...sliceTreePage(output, lines, effMaxChars, page, continuationBase), viewport, treeRevision, ...conversationMetadata };
+        return { ...sliceTreePage(output, lines, effMaxChars, page, continuationBase), viewport, treeRevision, depthTruncated, ...conversationMetadata };
       }
       // For 'visible' / 'interactive', truncate gracefully on overflow —
       // small models prefer a partial tree to a hard error. For 'all'
@@ -1351,7 +1575,7 @@
       //      empty (chunkSize too small).
       if (effMaxChars != null && output.length > effMaxChars) {
         if (filter && filter !== 'all' && maxChars == null) {
-          return { ...sliceTreePage(output, lines, effMaxChars, page, continuationBase), viewport, treeRevision, ...conversationMetadata };
+          return { ...sliceTreePage(output, lines, effMaxChars, page, continuationBase), viewport, treeRevision, depthTruncated, ...conversationMetadata };
         }
         const sliced = sliceTreePage(output, lines, effMaxChars, page, continuationBase);
         if (sliced.pageContent && !sliced.pageContent.startsWith('[tree page')) {
@@ -1363,6 +1587,7 @@
             ...sliced,
             viewport,
             treeRevision,
+            depthTruncated,
             autoDegraded: true,
             notice: hint,
             ...conversationMetadata,
@@ -1379,7 +1604,7 @@
         return { error: hint, pageContent: '', viewport };
       }
 
-      return { pageContent: output, viewport, treeRevision, ...conversationMetadata };
+      return { pageContent: output, viewport, treeRevision, depthTruncated, ...conversationMetadata };
     } catch (e) {
       return {
         error: 'Error generating accessibility tree: ' + (e && e.message || 'Unknown error'),

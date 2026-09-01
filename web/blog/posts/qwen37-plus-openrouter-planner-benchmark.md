@@ -189,7 +189,7 @@ Rows are ranked by all-case Sonnet match, then Sonnet-tooled match.
 | 5 | MiniMax M3 | 85/100 | 17/100 | 32/100 | 75.0% | 73.9% | 3.1s |
 | 6 | Qwen 3.6 27B NVFP4 | 96/100 | 18/100 | 38/100 | 74.0% | 77.2% | 1.76s |
 | 7 | Intel Gemma 4 31B int4 AutoRound | 88/100 | 14/100 | 34/100 | 74.0% | 72.8% | 0.63s |
-| 8 | WebBrain Cloud 1.0 | 90/100 | 16/100 | 35/100 | 73.0% | 72.8% | 8.8s |
+| 8 | WebBrain Compass 1.0 | 90/100 | 16/100 | 35/100 | 73.0% | 72.8% | 8.8s |
 
 This is a nice result, but it is not a new overall winner. The top three all have 77/100 all-case Sonnet alignment. Qwen 3.7 Plus lands one row below that cluster and wins the tiebreaker against MiniMax M3.
 

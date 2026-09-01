@@ -194,10 +194,28 @@ export function isOfficialOpenAIConfig(config = {}) {
   }
 }
 
+export function isOpenCodeZenConfig(config = {}) {
+  try {
+    const url = new URL(config.baseUrl || '');
+    return url.protocol === 'https:'
+      && url.hostname.toLowerCase() === 'opencode.ai'
+      && url.pathname.replace(/\/+$/, '') === '/zen/v1';
+  } catch {
+    return false;
+  }
+}
+
 export function shouldUseOpenAIResponsesApi(config = {}) {
   if (config.apiFormat === 'responses') return true;
+  if (config.apiFormat === 'chat') return false;
+  // OpenCode Zen: https://opencode.ai/zen/v1/responses for muse-spark, gpt-5.x, claude, gemini, grok
+  // WebBrain's OpenCode Zen provider previously forced Chat Completions for all Zen models (404 for Responses models).
+  const rawModel = String(config.model || '');
+  const model = rawModel.replace(/^opencode\//i, '').trim().toLowerCase();
+  if (isOpenCodeZenConfig(config)) {
+    return /^(muse-spark|gpt-5|claude|gemini|grok)(?:$|[-_.\/])/.test(model);
+  }
   if (!isOfficialOpenAIConfig(config)) return false;
-  const model = String(config.model || '').trim().toLowerCase();
   // GPT-5.6 needs Responses for reliable reasoning/tool replay. GPT-5 Pro,
   // GPT-5.2 Pro, GPT-5.4 Pro, and GPT-5.5 Pro are Responses-only. Proxies and
   // compatible providers keep their existing Chat Completions wire format even

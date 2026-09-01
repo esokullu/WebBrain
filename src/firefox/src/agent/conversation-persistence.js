@@ -82,17 +82,33 @@ function sanitizeMessage(message, state, caps) {
   return out;
 }
 
-function reduceToBudget(messages, maxBytes, state) {
+function reduceToBudget(messages, maxBytes, state, preserveMessageIndices = []) {
   if (byteLength(messages) <= maxBytes) return messages;
   const out = messages.map(message => ({ ...message }));
+  const preserved = new Set(
+    Array.isArray(preserveMessageIndices)
+      ? preserveMessageIndices.filter(index => Number.isInteger(index) && index >= 0 && index < out.length)
+      : [],
+  );
   let keepRecentFrom = Math.max(1, out.length - 14);
   for (let index = 1; index < keepRecentFrom && byteLength(out) > maxBytes; index++) {
     const message = out[index];
-    if (!message || message.role === 'system') continue;
+    // The agent supplies the active task binding's original user turn,
+    // clarification questions, and answers. Keep those small authority-bearing
+    // messages intact even when a long tool loop pushes them outside the
+    // ordinary recent-message window; otherwise a worker restart can promote
+    // only the latest answer fragment as a new task.
+    if (!message || message.role === 'system' || preserved.has(index)) continue;
     state.compacted = true;
     out[index] = {
       role: message.role,
       ...(message.tool_call_id ? { tool_call_id: message.tool_call_id } : {}),
+      // The collapsed text is gone, so this turn no longer carries any task
+      // authority. Mark it app-owned or the agent's task binding would treat
+      // the placeholder as the latest genuine user request after a restart.
+      ...(message.role === 'user'
+        ? { webbrainAppOwned: true, webbrainAppOwnedKind: 'session_recovery_placeholder' }
+        : {}),
       content: '[Earlier message omitted from bounded session recovery snapshot.]',
     };
   }
@@ -161,7 +177,7 @@ export function serializeConversationForSession(messages, options = {}) {
     : { textChars: 96_000, toolChars: 32_000, toolArgsChars: 24_000 };
   const state = { compacted: false };
   const sanitized = Array.isArray(messages) ? messages.map(message => sanitizeMessage(message, state, caps)) : [];
-  const bounded = reduceToBudget(sanitized, maxBytes, state);
+  const bounded = reduceToBudget(sanitized, maxBytes, state, options.preserveMessageIndices);
   return { messages: bounded, bytes: byteLength(bounded), compacted: state.compacted };
 }
 

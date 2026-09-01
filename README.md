@@ -74,7 +74,7 @@ Three modes control what the agent is allowed to do:
 
 ## Pick a model
 
-**WebBrain Cloud 1.0** is the default and needs no API key or local setup.
+**WebBrain Compass 1.0** is the default and needs no API key or local setup.
 
 **Local models** need no API key either. Point WebBrain at any OpenAI-compatible
 server:
@@ -199,7 +199,7 @@ Chrome side panel shortcuts work when the WebBrain side panel has focus.
 | [Prompt-injection defense](docs/prompt-injection-defense.md)                                                             | Defense layers and known gaps                            |
 | [Privacy and data flow](docs/privacy-and-data-flow.md)                                                                   | What leaves the browser, and what doesn't                |
 | [Accessibility tree and refs](docs/accessibility-tree-and-refs.md)                                                       | How pages are read and targeted                          |
-| [Site adapters](docs/site-adapters.md)                                                                                   | Per-site guidance                                        |
+| [Site adapters](docs/site-adapters.md)                                                                                   | Per-site guidance and versioned workflow contracts       |
 | [Export and workflow formats](docs/export-and-workflow-formats.md)                                                       | `webbrain-config/1`, `webbrain-workflow/1`               |
 | [Adding a tool](docs/adding-a-tool.md) · [Localization](docs/localization.md) · [Test scenarios](docs/test-scenarios.md) | Contributor guides                                       |
 | [Community](docs/community.md)                                                                                           | Discord server guide: channels, roles, rules, escalation |

@@ -110,10 +110,10 @@ Rows are ranked by all-case Sonnet match, then Sonnet-tooled match.
 | 6 | Qwen 3.6 27B NVFP4 | 96/100 | 18/100 | 38/100 | 74.0% | 77.2% | 1.76s |
 | 7 | Intel Gemma 4 31B int4 AutoRound | 88/100 | 14/100 | 34/100 | 74.0% | 72.8% | 0.63s |
 | 8 | **Tencent Hy3** | **95/100** | **20/100** | **38/100** | **73.0%** | **75.0%** | **3.68s** |
-| 9 | WebBrain Cloud 1.0 | 90/100 | 16/100 | 35/100 | 73.0% | 72.8% | 8.77s |
+| 9 | WebBrain Compass 1.0 | 90/100 | 16/100 | 35/100 | 73.0% | 72.8% | 8.77s |
 | 10 | Qwen 3.5 4B | 82/100 | 12/100 | 33/100 | 73.0% | 71.7% | 5.44s |
 
-This is a good debut. Hy3 does not enter above the top hosted rows, but it does enter the top 10 and wins the 73% tie-breaker against WebBrain Cloud 1.0 and Qwen 3.5 4B. It also has the second-best exact-match count in the table.
+This is a good debut. Hy3 does not enter above the top hosted rows, but it does enter the top 10 and wins the 73% tie-breaker against WebBrain Compass 1.0 and Qwen 3.5 4B. It also has the second-best exact-match count in the table.
 
 ## Where it is strong
 

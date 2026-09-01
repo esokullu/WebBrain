@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "WebBrain",
-  "version": "33.6.0",
+  "version": "34.1.0",
   "description": "Open-source AI browser agent — chat with pages, automate tasks, multi-provider LLM support.",
   "permissions": [
     "activeTab",
@@ -141,6 +141,24 @@
         "default": "Alt+Shift+I"
       },
       "description": "Focus the input"
+    },
+    "decrease-ui-scale": {
+      "suggested_key": {
+        "default": "Alt+Shift+Comma"
+      },
+      "description": "Zoom WebBrain UI out"
+    },
+    "increase-ui-scale": {
+      "suggested_key": {
+        "default": "Alt+Shift+Period"
+      },
+      "description": "Zoom WebBrain UI in"
+    },
+    "reset-ui-scale": {
+      "suggested_key": {
+        "default": "Alt+Shift+0"
+      },
+      "description": "Reset WebBrain UI zoom"
     }
   }
 }

@@ -65,6 +65,7 @@ import {
 } from './connection-test-assets.js';
 
 const WEBBRAIN_CLOUD_PROVIDER_ID = 'webbrain_cloud';
+const WEBBRAIN_CLOUD_PROVIDER_LABEL = 'WebBrain Compass';
 const DUPLICATE_PROVIDER_SUFFIX = '__duplicate';
 const LOCAL_MODEL_LIST_PROVIDER_IDS = ['llamacpp', 'ollama', 'lmstudio', 'jan', 'vllm', 'sglang', 'localai', 'gpt4all', 'local_openai_proxy', 'unsloth'];
 const WEBBRAIN_CLOUD_CONTEXT_WINDOW = 1000000;
@@ -78,6 +79,7 @@ const OPENAI_LEGACY_DEFAULT_MODEL = 'gpt-5.5';
 const DEEPSEEK_DEFAULT_BASE_URL = 'https://api.deepseek.com';
 const DEEPSEEK_LEGACY_DEFAULT_BASE_URL = 'https://api.deepseek.com/v1';
 const DEEPSEEK_DEFAULT_MODEL = 'deepseek-v4-flash';
+const OPENCODE_LEGACY_DEFAULT_MODEL = 'ring-2.6-1t-free';
 const SUPPORTED_PROVIDER_TYPES = new Set(['llamacpp', 'webgpu', 'openai', 'azure_openai', 'aws_bedrock', 'anthropic', 'anthropic_oauth', 'vertex_anthropic']);
 const SAFE_PROVIDER_ID_RE = /^[A-Za-z0-9_-]+$/;
 const ROUTER_PROVIDER_IDS = ['openrouter', 'cloudflare', 'nvidia', 'groq', 'huggingface', 'fireworks', 'together'];
@@ -252,6 +254,7 @@ const DUPLICATE_BLANK_CONFIG_KEYS = [
   'baseUrl',
   'model',
   'contextWindow',
+  'maxOutputTokens',
   'apiVersion',
   'region',
   'accountId',
@@ -458,7 +461,7 @@ export class ProviderManager {
       webbrain_cloud: {
         type: 'openai',
         category: 'cloud',
-        label: 'WebBrain Cloud',
+        label: WEBBRAIN_CLOUD_PROVIDER_LABEL,
         providerName: 'webbrain-cloud',
         baseUrl: 'https://api.webbrain.one/v1',
         model: 'webbrain-cloud 1.0',
@@ -468,7 +471,7 @@ export class ProviderManager {
         supportsStreamUsageOptions: true,
         supportsAskStreaming: true,
         supportsVision: true,
-        // WebBrain Cloud proxies to OpenRouter, whose upstream models
+        // WebBrain Compass proxies to OpenRouter, whose upstream models
         // (minimax, stepfun, …) handle tools + images together fine. Dropping
         // tools on image turns forced the model into prompt-based tool calling,
         // which leaks raw tool-call template tokens (e.g. `]<]minimax[>[`) into
@@ -678,6 +681,10 @@ export class ProviderManager {
         providerName: 'openai',
         baseUrl: 'https://api.openai.com/v1',
         model: OPENAI_DEFAULT_MODEL,
+        // Keep the default at the standard-price input threshold; users can
+        // opt into the model's larger window when long-context pricing is acceptable.
+        contextWindow: 272000,
+        maxOutputTokens: 128000,
         inputCostPerMillionUsd: 2.5,
         cacheReadCostPerMillionUsd: 0.25,
         // GPT-5.6 family bills included cache writes at 1.25× input.
@@ -694,6 +701,8 @@ export class ProviderManager {
         label: 'Anthropic Claude',
         baseUrl: 'https://api.anthropic.com',
         model: 'claude-sonnet-5',
+        contextWindow: 1000000,
+        maxOutputTokens: 128000,
         inputCostPerMillionUsd: 2,
         cacheReadCostPerMillionUsd: 0.2,
         cacheWriteCostPerMillionUsd: 2.5,
@@ -757,6 +766,7 @@ export class ProviderManager {
         baseUrl: DEEPSEEK_DEFAULT_BASE_URL,
         model: DEEPSEEK_DEFAULT_MODEL,
         contextWindow: 1000000,
+        maxOutputTokens: 384000,
         inputCostPerMillionUsd: 0.27,
         outputCostPerMillionUsd: 1.1,
         supportsStreamUsageOptions: true,
@@ -958,6 +968,20 @@ export class ProviderManager {
       };
     }
     this._migrateUntouchedShippedDefaults(migrated);
+    // The OpenCode entry is editable, so only replace the retired shipped
+    // model while it still points at the official Zen endpoint. In particular,
+    // preserve model ids selected for custom endpoints even when configured.
+    {
+      const cur = migrated.opencode;
+      if (cur && typeof cur.model === 'string') {
+        const defaults = this._defaultConfigs().opencode;
+        const baseUrl = String(cur.baseUrl || defaults.baseUrl).replace(/\/+$/, '');
+        const model = String(cur.model).trim().toLowerCase().replace(/^opencode\//, '');
+        if (baseUrl === defaults.baseUrl && model === OPENCODE_LEGACY_DEFAULT_MODEL) {
+          migrated.opencode = { ...cur, model: defaults.model };
+        }
+      }
+    }
     if (migrated.ollama) {
       const config = migrated.ollama;
       const visionMode = OLLAMA_VISION_MODES.has(config.visionMode)
@@ -998,8 +1022,19 @@ export class ProviderManager {
         delete migrated[id].supportsVision;
       }
     }
+    // The managed provider name is shipped UI, not a user customization. Older
+    // releases persisted the complete config, so migrate their stored label.
+    if (
+      migrated[WEBBRAIN_CLOUD_PROVIDER_ID]
+      && migrated[WEBBRAIN_CLOUD_PROVIDER_ID].label !== WEBBRAIN_CLOUD_PROVIDER_LABEL
+    ) {
+      migrated[WEBBRAIN_CLOUD_PROVIDER_ID] = {
+        ...migrated[WEBBRAIN_CLOUD_PROVIDER_ID],
+        label: WEBBRAIN_CLOUD_PROVIDER_LABEL,
+      };
+    }
     // Existing installs stored omitToolsWhenImagesPresent:true for WebBrain
-    // Cloud, which suppressed native tools on every screenshot turn and broke
+    // Compass, which suppressed native tools on every screenshot turn and broke
     // tool calling. Force it off so the saved config picks up the new default.
     if (migrated.webbrain_cloud?.omitToolsWhenImagesPresent) {
       migrated.webbrain_cloud = {

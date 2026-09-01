@@ -1,5 +1,6 @@
 import {
   ADAPTER_WORKFLOW_SCHEMA,
+  cloneAdapterWorkflowJob,
   validateAdapterWorkflowProfile,
 } from './adapter-workflow.js';
 
@@ -16,6 +17,9 @@ import {
  *   - notes: short bulleted guidance, injected into the first user message
  *   - fullPageCapture?.infiniteScroll(url): optional machine-readable capture policy
  *   - messaging?.verifyActiveRecipient: optional URL-aware pre-dispatch recipient guard
+ *   - messaging?.deferActiveConversationUntilComposer: allow composer setup before pinning
+ *   - messaging?.supportsRecipientSets: require exact multi-recipient set equality
+ *   - revision?: positive workflow-contract revision for trace attribution
  *   - regions?: stable region identifiers for structured adapter discovery
  *   - jobs?: stable job identifiers covered by the optional workflow profile
  *   - workflow?: versioned state, evidence, confirmation, and terminal metadata
@@ -15748,6 +15752,31 @@ function isBaiduSearchUrl(url) {
   return targets.length > 0 && targets.every(isDirectBaiduSearchUrl);
 }
 
+function applicationWorkflowJobs() {
+  return {
+    'prepare-application': {
+      description: 'Fill and review an application without submitting it.',
+      template: 'form',
+      stateChange: true,
+      requiresSubmission: false,
+      requiresLedger: true,
+      stages: ['access_gate', 'inventory', 'fill', 'review', 'reconcile', 'verify'],
+      successEvidence: ['Every requested field is reconciled against supplied information and the application remains unsubmitted.'],
+      partialEvidence: ['Completed, unresolved, and intentionally unanswered fields plus the exact blocker are reported.'],
+    },
+    'submit-application': {
+      description: 'Fill, review, submit, and verify an application.',
+      template: 'form',
+      stateChange: true,
+      requiresSubmission: true,
+      requiresLedger: true,
+      stages: ['access_gate', 'inventory', 'fill', 'review', 'reconcile', 'commit', 'verify'],
+      successEvidence: ['A post-submit confirmation, receipt, or application identifier is visible for the intended role.'],
+      partialEvidence: ['Completed, unresolved, and intentionally unanswered fields plus the exact submission blocker are reported.'],
+    },
+  };
+}
+
 const ADAPTERS = [
   // ─── Code & Dev Tools ─────────────────────────────────────────────────
   {
@@ -15761,6 +15790,54 @@ const ADAPTERS = [
   {
     name: 'github',
     category: 'general',
+    revision: 3,
+    regions: ['global'],
+    jobs: ['publish-release', 'upload-release-assets', 'review-pull-request', 'resolve-review-threads'],
+    workflow: {
+      schema: ADAPTER_WORKFLOW_SCHEMA,
+      jobs: {
+        'publish-release': {
+          description: 'Prepare, publish, and verify a GitHub release.',
+          template: 'publish',
+          stateChange: true,
+          requiresSubmission: true,
+          requiresLedger: false,
+          stages: ['access_gate', 'fill', 'review', 'commit', 'verify', 'deliver'],
+          successEvidence: ['The intended tag has a published release page with the reviewed title and notes.'],
+          partialEvidence: ['The prepared tag, title, notes, and exact publication blocker are reported without claiming a release exists.'],
+        },
+        'upload-release-assets': {
+          description: 'Upload, save, and verify one or more GitHub release assets.',
+          template: 'publish',
+          stateChange: true,
+          requiresSubmission: true,
+          requiresLedger: true,
+          stages: ['access_gate', 'inventory', 'fill', 'review', 'commit', 'reconcile', 'verify', 'deliver'],
+          successEvidence: ['Every requested filename appears on the saved release page for the intended tag.'],
+          partialEvidence: ['Uploaded, saved, failed, and remaining filenames plus the exact blocker are reconciled.'],
+        },
+        'review-pull-request': {
+          description: 'Inspect a pull request and deliver evidence-backed review findings.',
+          template: 'reading',
+          stateChange: false,
+          requiresSubmission: false,
+          requiresLedger: false,
+          stages: ['scope', 'collect', 'verify', 'deliver'],
+          successEvidence: ['Every file in the requested review scope is inspected, and every actionable finding is supported by code evidence.'],
+          partialEvidence: ['Reviewed and unread files, current findings, and the exact access or scale blocker are reported.'],
+        },
+        'resolve-review-threads': {
+          description: 'Address, reply to, and resolve requested pull-request review threads.',
+          template: 'form',
+          stateChange: true,
+          requiresSubmission: true,
+          requiresLedger: true,
+          stages: ['access_gate', 'inventory', 'fill', 'review', 'commit', 'reconcile', 'verify'],
+          successEvidence: ['Every requested thread shows the intended reply and resolved state on the current pull-request head.'],
+          partialEvidence: ['Addressed, replied, resolved, and remaining thread counts plus the exact blocker are reported.'],
+        },
+      },
+    },
     matches: (url) => /^https?:\/\/(www\.)?github\.com\//.test(url),
     notes: `
 - Username may only contain alphanumeric characters or single hyphens, and cannot begin or end with a hyphen.
@@ -15823,12 +15900,137 @@ const ADAPTERS = [
 - Comments are nested via indentation (the "indent" image's width tells you the depth). To find the top-level reply chain for a comment, walk back to the matching depth.
 - "More" link at the bottom of comment pages loads the next page — the URL has a "next" token, not a numeric page.`,
   },
+  {
+    name: 'producthunt',
+    category: 'general',
+    revision: 2,
+    regions: ['global'],
+    jobs: ['collect-ranked-products'],
+    workflow: {
+      schema: ADAPTER_WORKFLOW_SCHEMA,
+      jobs: {
+        'collect-ranked-products': {
+          description: 'Collect and reconcile a requested ranked Product Hunt list.',
+          template: 'collection',
+          stateChange: false,
+          requiresSubmission: false,
+          requiresLedger: false,
+          stages: ['scope', 'collect', 'verify', 'deliver'],
+          requiredRowFields: ['product_name', 'product_url', 'rank_context'],
+          successEvidence: ['Every requested row is reconciled with product name, stable product URL, observed rank context, and requested fields.'],
+          partialEvidence: ['Collected, duplicate, promoted, inaccessible, and remaining rows plus the exact coverage blocker are reported.'],
+        },
+      },
+    },
+    matches: (url) => /^https?:\/\/(?:www\.)?producthunt\.com(?:[/?#]|$)/i.test(url),
+    notes: `
+- Product Hunt rankings depend on the selected day, topic, and sort. Verify and report that scope before collecting; a personalized home feed is not automatically the requested leaderboard.
+- Keep promoted/sponsored cards separate from organic ranked products. A card's visual position alone is not proof of its organic rank.
+- Record each product's name and stable /products/... or /posts/... URL before scrolling because feeds can rerank or virtualize.
+- For multi-item requests, add one ledger row per requested rank or product, deduplicate stable URLs, and reconcile collected versus remaining rows before finishing.
+- Open product pages to verify requested details; do not infer taglines, maker identity, launch date, pricing, or availability from a truncated card.
+- Upvotes, comments, follows, collection saves, and submissions change account or public state. Do not activate them during collection tasks.`,
+  },
 
   // ─── Communication & Productivity ─────────────────────────────────────
   {
+    name: 'microsoft-forms',
+    category: 'general',
+    revision: 1,
+    regions: ['global'],
+    jobs: ['prepare-form', 'submit-form'],
+    workflow: {
+      schema: ADAPTER_WORKFLOW_SCHEMA,
+      jobs: {
+        'prepare-form': {
+          description: 'Fill and review a Microsoft Form without submitting it.',
+          template: 'form',
+          stateChange: true,
+          requiresSubmission: false,
+          requiresLedger: true,
+          stages: ['access_gate', 'inventory', 'fill', 'review', 'reconcile', 'verify'],
+          successEvidence: ['Every visible or conditionally revealed question is reconciled and the form remains unsubmitted.'],
+          partialEvidence: ['Answered, unanswered, hidden, and ambiguous questions plus the exact blocker are reported.'],
+        },
+        'submit-form': {
+          description: 'Fill, review, submit, and verify a Microsoft Form.',
+          template: 'form',
+          stateChange: true,
+          requiresSubmission: true,
+          requiresLedger: true,
+          stages: ['access_gate', 'inventory', 'fill', 'review', 'reconcile', 'commit', 'verify'],
+          successEvidence: ['Microsoft Forms shows a post-submit response confirmation for the intended form.'],
+          partialEvidence: ['Answered, unanswered, hidden, and ambiguous questions plus the exact submit blocker are reported.'],
+        },
+      },
+    },
+    matches: (url) => /^https?:\/\/forms\.(?:cloud\.microsoft|office\.com)(?:[/?#]|$)/i.test(url),
+    notes: `
+- Inventory the current section's question labels, required state, answer type, and supplied answer before filling. Never invent personal, confidential, demographic, preference, or attestation answers.
+- A choice can reveal, hide, or replace later questions. After each branching answer or Next action, wait for stability, re-read the current section, and use fresh refs.
+- Long forms and grids can scroll inside a form region. Scroll the region that contains the unanswered questions rather than repeatedly scrolling the document.
+- Keep one progress row per question or stable question label, and reconcile answered, intentionally unanswered, ambiguous, and remaining questions before review.
+- Validation errors can appear only after Next or Submit. Treat them as evidence that the form is incomplete, correct only fields supported by user input, and do not loop unchanged actions.
+- Review the full visible response state before final Submit. A filled page, navigation to the last section, or successful click is not submission evidence.
+- Report success only from the post-submit confirmation. If sign-in, organization access, CAPTCHA, a missing answer, or an unavailable file blocks progress, preserve completed answers and report the exact blocker.`,
+  },
+  {
     name: 'gmail',
     category: 'general',
+    revision: 6,
+    regions: ['global'],
+    jobs: ['read-complete-thread', 'count-results', 'draft-email', 'send-email'],
+    workflow: {
+      schema: ADAPTER_WORKFLOW_SCHEMA,
+      jobs: {
+        'read-complete-thread': {
+          description: 'Read an entire Gmail conversation from oldest to newest.',
+          template: 'reading',
+          stateChange: false,
+          requiresSubmission: false,
+          requiresLedger: false,
+          stages: ['access_gate', 'scope', 'collect', 'verify', 'deliver'],
+          successEvidence: ['Trusted conversation-root coverage reaches its terminal page after every message is expanded and read oldest to newest.'],
+          partialEvidence: ['Read and unread message coverage plus the exact expansion, pagination, or access blocker are reported.'],
+        },
+        'count-results': {
+          description: 'Count all conversations in the active Gmail label or search.',
+          template: 'collection',
+          stateChange: false,
+          requiresSubmission: false,
+          requiresLedger: false,
+          stages: ['scope', 'search', 'collect', 'reconcile', 'verify', 'deliver'],
+          successEvidence: ['The deterministic Gmail count tool reports an exact conversation count for the verified query or label.'],
+          partialEvidence: ['The verified query, observed range, and exact reason an exact terminal count was unavailable are reported.'],
+        },
+        'draft-email': {
+          description: 'Create or revise and verify an unsent Gmail draft.',
+          template: 'message',
+          stateChange: true,
+          requiresSubmission: false,
+          requiresLedger: false,
+          stages: ['access_gate', 'scope', 'fill', 'review', 'verify'],
+          successEvidence: ['Gmail shows its own saved-draft state while the intended recipients, subject, and complete body are visible in the unsent draft.'],
+          partialEvidence: ['Verified draft fields and every missing or ambiguous field are reported without claiming the email was sent.'],
+        },
+        'send-email': {
+          description: 'Review, send, and verify a Gmail message.',
+          template: 'message',
+          stateChange: true,
+          requiresSubmission: true,
+          requiresLedger: false,
+          stages: ['access_gate', 'scope', 'fill', 'review', 'commit', 'verify'],
+          successEvidence: ['Gmail shows the reviewed message as sent to the intended recipients.'],
+          partialEvidence: ['The verified draft state and exact recipient, authorization, validation, or send blocker are reported.'],
+        },
+      },
+    },
     matches: (url) => /^https?:\/\/mail\.google\.com\//.test(url),
+    messaging: {
+      verifyActiveRecipient: true,
+      deferActiveConversationUntilComposer: true,
+      supportsRecipientSets: true,
+    },
     notes: `
 - Composing: the "Compose" button opens a floating window. The "To" field is a contact picker — type the name and pick from the dropdown, don't just type the raw email.
 - For a task that explicitly starts a new email or saves a new draft, if no compose window is open and the user named a recipient, click Compose immediately and use the To contact picker. Do not inspect the current thread or search the page merely to discover the recipient's raw email first; do that only if the picker fails, returns multiple ambiguous matches, or the user explicitly asked for the address. This fast path does not apply to reply or forward tasks; use the thread's Reply/Forward controls for those.
@@ -15990,7 +16192,36 @@ const ADAPTERS = [
   {
     name: 'linkedin',
     category: 'general',
+    revision: 3,
+    regions: ['global'],
+    jobs: ['publish-post', 'send-message'],
+    workflow: {
+      schema: ADAPTER_WORKFLOW_SCHEMA,
+      jobs: {
+        'publish-post': {
+          description: 'Prepare, publish, and verify a LinkedIn post.',
+          template: 'publish',
+          stateChange: true,
+          requiresSubmission: true,
+          requiresLedger: false,
+          stages: ['access_gate', 'fill', 'review', 'commit', 'verify', 'deliver'],
+          successEvidence: ['The reviewed post appears on the intended profile or page with a stable post URL.'],
+          partialEvidence: ['The verified composer content and exact account, validation, publication, or verification blocker are reported.'],
+        },
+        'send-message': {
+          description: 'Prepare, send, and verify a LinkedIn message.',
+          template: 'message',
+          stateChange: true,
+          requiresSubmission: true,
+          requiresLedger: false,
+          stages: ['access_gate', 'scope', 'fill', 'review', 'commit', 'verify'],
+          successEvidence: ['The exact message is visible in the intended recipient conversation as sent.'],
+          partialEvidence: ['The verified recipient and composer state plus the exact send blocker are reported.'],
+        },
+      },
+    },
     matches: (url) => /^https?:\/\/(www\.)?linkedin\.com\//.test(url),
+    messaging: { verifyActiveRecipient: true },
     fullPageCapture: { infiniteScroll: isLinkedInInfiniteScrollUrl },
     notes: `
 - LinkedIn aggressively lazy-loads everything; scroll to populate the feed/profile, but most content lives in modal-style detail panes.
@@ -16016,15 +16247,41 @@ const ADAPTERS = [
   {
     name: 'youtube',
     category: 'general',
-    matches: (url) => /^https?:\/\/((www|m)\.)?youtube\.com\//.test(url) || /^https?:\/\/youtu\.be\//.test(url),
+    revision: 2,
+    regions: ['global'],
+    jobs: ['read-transcript', 'update-metadata'],
+    workflow: {
+      schema: ADAPTER_WORKFLOW_SCHEMA,
+      jobs: {
+        'read-transcript': {
+          description: 'Collect enough transcript evidence to answer a video-content request.',
+          template: 'reading',
+          stateChange: false,
+          requiresSubmission: false,
+          requiresLedger: false,
+          stages: ['scope', 'collect', 'reconcile', 'verify', 'deliver'],
+          successEvidence: ['The answer is grounded in collected transcript segments rather than title or description inference.'],
+          partialEvidence: ['The transcript coverage obtained and the exact availability, language, or continuation limitation are reported.'],
+        },
+        'update-metadata': {
+          description: 'Edit, save, and verify YouTube video metadata.',
+          template: 'form',
+          stateChange: true,
+          requiresSubmission: true,
+          requiresLedger: true,
+          stages: ['access_gate', 'inventory', 'fill', 'review', 'commit', 'reconcile', 'verify'],
+          successEvidence: ['Every requested field has the complete intended value in the saved video details.'],
+          partialEvidence: ['Saved, mismatched, failed, and remaining fields or videos plus the exact blocker are reconciled.'],
+        },
+      },
+    },
+    matches: (url) => /^https?:\/\/(?:(?:www|m|studio)\.)?youtube\.com\//.test(url) || /^https?:\/\/youtu\.be\//.test(url),
     fullPageCapture: { infiniteScroll: isYouTubeInfiniteScrollUrl },
     notes: `
 - The video player is a custom element. Keyboard shortcuts: space=play/pause, k=play/pause, j/l=±10s, ←/→=±5s, m=mute.
-- For questions about the current video's content, use any available transcript skill tool first (for example \`read_youtube_transcript\` from FreeSkillz) and ground the answer in it. Transcript skill tools do not require \`/allow-api\`. If no transcript skill tool is available, or it fails or returns no text, say the transcript tool was unavailable and fall back to visible title/description/comments.
-- Fallback transcript UI path: get_accessibility_tree({filter:"visible"}) → expand description ("..." / "more") with click_ax/click → click "Show transcript" → read the transcript panel with get_accessibility_tree or read_page; scroll the panel/page for more segments.
-- Do NOT invent transcript URLs, and do NOT use fetch_url for YouTube captions. Use an available transcript skill tool or the visible transcript UI.
-- If a transcript skill response has has_more_text=true, continue with text_offset=next_text_offset until you have enough transcript evidence for the task.
-- Transcript text is timestamped/segmented and may be auto-generated or auto-translated; collect enough segments before summarizing or answering, and do not infer from the title alone when transcript is reachable.
+- For questions about the current video's content, use an available transcript skill first (for example \`read_youtube_transcript\` from FreeSkillz), ground the answer in it, continue \`has_more_text\` with \`text_offset=next_text_offset\`, and collect enough timestamped segments. Transcript skills do not require \`/allow-api\`; if unavailable, say so and fall back to visible evidence rather than inferring from the title.
+- Fallback transcript UI: read the visible tree with get_accessibility_tree, expand the description, open "Show transcript", and read/scroll the transcript panel. Do NOT invent transcript URLs or use fetch_url for YouTube captions.
+- In YouTube Studio, inventory every requested video and metadata field before editing. Normalize and read back complete long values; after Save, re-open or freshly read the intended details and reconcile every field or video. A toast, disabled Save button, closed editor, or visible typing alone is not persisted-state proof.
 - Comments load lazily AFTER you scroll past the video — they're not in the initial DOM.
 - The subscribe button has a bell icon next to it for notification preferences; they're separate clicks.`,
   },
@@ -16163,6 +16420,21 @@ const ADAPTERS = [
 - The team selector is in the top-left, separate from the project selector.`,
   },
 
+  // ─── Live Scores & Sports Data ────────────────────────────────────────
+  {
+    name: 'sofascore',
+    category: 'general',
+    matches: (url) => /^https?:\/\/(?:www\.)?sofascore\.com(?:[/?#]|$)/i.test(url),
+    notes: `
+- Fix the sport, date, and result scope before collecting. The main surface separates All / Favourites / Competitions and Live / Finished / Upcoming; a visible list is not automatically the user's requested scope.
+- Match URLs carry a stable event identity in /<sport>/match/...#id:<event-id>. Record that URL or event ID with the team names before scrolling or opening details.
+- Rows can show bookmaker odds (1 / X / 2) beside status, clock, and score. Never report an odds value as a score; anchor the result to both team labels and the explicit status/score fields.
+- Interpret status explicitly: a live minute is provisional, FT is full time, AET is after extra time, and AP is after penalties. Do not collapse those outcomes into a bare number.
+- Live scores can change while the task is running. For freshness-sensitive answers, re-read the requested match immediately before delivery and state the observed status/time.
+- Search and trending surfaces are discovery aids, not authoritative rankings or complete schedules. Open the match or competition page to verify requested details.
+- FAVOURITE, VOTE NOW, fantasy, and challenge controls change account state or submit a choice. Do not activate them during a read-only score or statistics task.`,
+  },
+
   // ─── News Paywalls ────────────────────────────────────────────────────
   // For each of these, full article bodies are subscription-gated. The
   // universal paywall note already says "don't bypass" — these adapters
@@ -16229,6 +16501,17 @@ const ADAPTERS = [
   },
 
   // ─── Finance / High-Stakes ────────────────────────────────────────────
+  {
+    name: 'adsense',
+    category: 'finance',
+    matches: (url) => /^https?:\/\/adsense\.google\.com(?:[/?#]|$)/i.test(url),
+    notes: `
+- Distinguish the public /start marketing site from the authenticated /adsense application. A landing page, sign-in link, or signup link is not evidence about the user's account, earnings, sites, ads, or payments.
+- AdSense, Google Ads, Ad Manager, and AdMob are separate products even when the public footer links them together. Do not carry data or actions from one product into another.
+- For account reports, verify the active account/property, date range, comparison period, currency, and any filters before reading totals. Preserve qualifiers such as estimated versus finalized earnings.
+- Prefer labelled metrics and tables over chart geometry. Never infer an exact amount, date, or trend from pixel position alone.
+- Treat payment, tax, identity, site-ownership, ad-unit, blocking-control, and account-setting changes as high-stakes state changes. Stop at an authentication or verification gate and report the exact blocker rather than substituting public help content.`,
+  },
   {
     name: 'stripe',
     category: 'finance',
@@ -16446,43 +16729,21 @@ const ADAPTERS = [
   {
     name: 'railway-12306',
     category: 'general',
+    revision: 1,
     regions: ['CN'],
     jobs: ['rail-booking'],
     workflow: {
       schema: ADAPTER_WORKFLOW_SCHEMA,
-      states: {
-        access_gate: {
-          readOnly: true,
-          evidence: ['A QR, SMS, identity, or anti-bot challenge is visible.'],
-        },
-        search: {
-          readOnly: true,
-          evidence: ['The departure station, arrival station, and travel date are visible.'],
-        },
-        selection: {
-          readOnly: true,
-          evidence: ['The selected train number, stations, date, and seat class are visible.'],
-        },
-        review: {
-          readOnly: true,
-          evidence: ['The passenger, ticket type, itinerary, seat class, and total are visible.'],
-        },
-        commit: {
-          requiresConfirmation: true,
-          evidence: ['An order number, queue result, or pending-order status is visible.'],
-        },
-        payment: {
-          requiresConfirmation: true,
-          evidence: ['The official payment page or payment status is visible.'],
-        },
-        fulfillment: {
-          readOnly: true,
-          evidence: ['An order number and successful paid or ticket-issued status are visible.'],
-          terminalFor: ['rail-booking'],
-        },
-        after_sales: {
-          requiresConfirmation: true,
-          evidence: ['The change or refund review and its terms are visible.'],
+      jobs: {
+        'rail-booking': {
+          description: 'Search, review, submit, and verify an official 12306 rail booking.',
+          template: 'transaction',
+          stateChange: true,
+          requiresSubmission: true,
+          requiresLedger: false,
+          stages: ['access_gate', 'search', 'selection', 'review', 'commit', 'payment', 'fulfillment', 'verify'],
+          successEvidence: ['An order number and successful paid or ticket-issued status are visible.'],
+          partialEvidence: ['The exact itinerary stage, verified selections, and unresolved payment, identity, queue, or availability blocker are reported.'],
         },
       },
     },
@@ -16968,6 +17229,45 @@ const ADAPTERS = [
   },
   {
     name: 'douyin', category: 'general',
+    revision: 2,
+    regions: ['CN'],
+    jobs: ['collect-comments', 'publish-content', 'send-message'],
+    workflow: {
+      schema: ADAPTER_WORKFLOW_SCHEMA,
+      jobs: {
+        'collect-comments': {
+          description: 'Collect and reconcile comments from a verified Douyin video.',
+          template: 'collection',
+          stateChange: false,
+          requiresSubmission: false,
+          requiresLedger: false,
+          stages: ['access_gate', 'scope', 'collect', 'verify', 'deliver'],
+          requiredRowFields: ['comment_author', 'comment_text'],
+          successEvidence: ['Collected rows come from the verified comments container and requested coverage is reconciled.'],
+          partialEvidence: ['Collected comment count, remaining coverage, and the exact verification or pagination blocker are reported.'],
+        },
+        'publish-content': {
+          description: 'Prepare, publish, and verify Douyin content.',
+          template: 'publish',
+          stateChange: true,
+          requiresSubmission: true,
+          requiresLedger: false,
+          stages: ['access_gate', 'fill', 'review', 'commit', 'verify', 'deliver'],
+          successEvidence: ['The intended content appears on the intended profile with a stable URL and reviewed visibility.'],
+          partialEvidence: ['Upload, processing, review, draft, and publication state plus the exact blocker are distinguished.'],
+        },
+        'send-message': {
+          description: 'Prepare, send, and verify a Douyin private message.',
+          template: 'message',
+          stateChange: true,
+          requiresSubmission: true,
+          requiresLedger: false,
+          stages: ['access_gate', 'scope', 'fill', 'review', 'commit', 'verify'],
+          successEvidence: ['The exact message appears as sent in the verified active-recipient conversation.'],
+          partialEvidence: ['The verified recipient and composer state plus the exact send or verification blocker are reported.'],
+        },
+      },
+    },
     matches: (url) => /^https?:\/\/(?:(?:www|live|v|creator)\.)?douyin\.com\//.test(url),
     messaging: {
       verifyActiveRecipient: (url) => {
@@ -17109,6 +17409,23 @@ const ADAPTERS = [
 
   // ─── Job Portals ──────────────────────────────────────────────────────
   {
+    name: 'naukrigulf',
+    category: 'general',
+    revision: 1,
+    regions: ['MENA'],
+    jobs: ['prepare-application', 'submit-application'],
+    workflow: { schema: ADAPTER_WORKFLOW_SCHEMA, jobs: applicationWorkflowJobs() },
+    matches: (url) => /^https?:\/\/(?:[a-z0-9-]+\.)*naukrigulf\.com(?:[/?#]|$)/i.test(url),
+    notes: `
+- Verify the exact role, company, location, and stable job URL before opening Apply. Similar job cards, recommendations, and sponsored listings are not interchangeable.
+- Sign-in, profile-completion, and application forms can appear as separate dialogs or routes. After each transition, wait for stability, re-read the active form, and use fresh refs.
+- Inventory every required field, screening question, résumé/attachment, and consent before filling. Use only user-supplied facts; never invent salary, notice period, visa, experience, demographic, or eligibility answers.
+- Keep one progress row per field or screening question and, for bulk requests, per job. Reconcile prepared, submitted, skipped, failed, and unresolved items rather than restarting completed applications.
+- Resume upload or a populated profile is not an application. Review the intended résumé, contact visibility, answers, role, and company immediately before final submission.
+- Stop for CAPTCHA, OTP, account verification, missing personal answers, or a final submit that the user did not authorize. Preserve entered data and report the exact blocker.
+- Report application success only from a post-submit confirmation or application-history state tied to the intended role. An Apply click, closed dialog, toast, or changed URL alone is not proof.`,
+  },
+  {
     name: 'boss-zhipin',
     category: 'general',
     matches: (url) => /^https?:\/\/(?:(?:www|m)\.)?zhipin\.com\//.test(url),
@@ -17127,6 +17444,10 @@ const ADAPTERS = [
   {
     name: 'greenhouse',
     category: 'general',
+    revision: 1,
+    regions: ['global'],
+    jobs: ['prepare-application', 'submit-application'],
+    workflow: { schema: ADAPTER_WORKFLOW_SCHEMA, jobs: applicationWorkflowJobs() },
     // Greenhouse hosts ATS for many employers under boards.greenhouse.io
     // (or job-boards.greenhouse.io for the newer build).
     matches: (url) => /^https?:\/\/(boards|job-boards)\.greenhouse\.io\//.test(url),
@@ -17142,6 +17463,10 @@ const ADAPTERS = [
   {
     name: 'workday',
     category: 'general',
+    revision: 2,
+    regions: ['global'],
+    jobs: ['prepare-application', 'submit-application'],
+    workflow: { schema: ADAPTER_WORKFLOW_SCHEMA, jobs: applicationWorkflowJobs() },
     // Workday's tenant URLs are like myworkdayjobs.com or <company>.wd1.myworkdayjobs.com.
     matches: (url) => /^https?:\/\/[^\/]*\.myworkdayjobs\.com\//.test(url) || /^https?:\/\/[^\/]*\.wd[0-9]+\.myworkdayjobs\.com\//.test(url),
     notes: `
@@ -17150,7 +17475,7 @@ const ADAPTERS = [
 - Many fields are nested in collapsed accordions (Education, Experience, References). EXPAND each accordion before reading or filling — collapsed required fields will fail validation but you can't see what's missing.
 - Date pickers are custom widgets. Click the field, type MM/DD/YYYY (or DD/MM/YYYY depending on tenant locale), then Tab. Don't try to click calendar cells — the popup is portal-rendered outside the field's subtree.
 - "Add Another" buttons for experiences / education clone the entire panel — fill the FIRST one fully before clicking Add Another, or the new clone may copy partial state.
-- Some employers wrap Workday in an iframe — if get_accessibility_tree shows almost no form fields, check for an iframe and switch to iframe_read / iframe_type.
+- Some employers wrap Workday in an iframe — if get_accessibility_tree shows almost no form fields, use iframe_read with one broad control selector and limit 50 before filling. A truncated read is not a complete inventory: repeat the identical selector with offset set to the returned nextOffset until truncated is false. Narrow reads are only for follow-up inspection. Reuse the returned selector + matchIndex with iframe_type.
 - File upload (resume, CV) lives in the "My Information" or "Resume/CV" step. The drop zone has a "Select Files" button over an underlying \`input[type=file]\` — use \`upload_file({selector: "input[type=file]", downloadId: N})\` when the file is already downloaded, or omit downloadId to open the user picker.
 - "Review" step at the end shows everything filled — read it back to the user before clicking Submit; mistakes at this stage usually require restarting the whole application.`,
   },
@@ -17505,7 +17830,16 @@ export function getMessageRecipientGuardPolicy(url) {
     enabled = false;
   }
   if (!enabled) return null;
-  return { adapterName: adapter.name, verifyActiveRecipient: true };
+  return {
+    adapterName: adapter.name,
+    verifyActiveRecipient: true,
+    ...(adapter.messaging.deferActiveConversationUntilComposer === true
+      ? { deferActiveConversationUntilComposer: true }
+      : {}),
+    ...(adapter.messaging.supportsRecipientSets === true
+      ? { supportsRecipientSets: true }
+      : {}),
+  };
 }
 
 /**
@@ -17513,6 +17847,40 @@ export function getMessageRecipientGuardPolicy(url) {
  */
 export function listAdapters() {
   return ADAPTERS.map(a => ({ name: a.name, category: a.category }));
+}
+
+/** Return bounded app-owned routing metadata for the planner. */
+export function getAdapterWorkflowRouting(url) {
+  const adapter = getActiveAdapter(url);
+  if (!adapter?.workflow) return null;
+  const validation = validateAdapterWorkflowProfile(adapter);
+  if (!validation.ok) return null;
+  return {
+    adapterName: adapter.name,
+    revision: adapter.revision,
+    schema: adapter.workflow.schema,
+    jobs: adapter.jobs.map(id => ({
+      id,
+      description: adapter.workflow.jobs[id].description,
+    })),
+  };
+}
+
+/** Resolve a planner-selected job only against the adapter for this exact URL. */
+export function resolveAdapterWorkflowJob(url, jobId) {
+  const id = String(jobId || '').trim();
+  if (!id) return null;
+  const adapter = getActiveAdapter(url);
+  if (!adapter?.workflow || !adapter.jobs?.includes(id)) return null;
+  const validation = validateAdapterWorkflowProfile(adapter);
+  if (!validation.ok) return null;
+  const job = cloneAdapterWorkflowJob(id, adapter.workflow.jobs[id]);
+  return job ? {
+    adapterName: adapter.name,
+    revision: adapter.revision,
+    schema: adapter.workflow.schema,
+    job,
+  } : null;
 }
 
 /**
@@ -17525,7 +17893,8 @@ export function listAdapterWorkflowProfiles() {
   for (const adapter of ADAPTERS) {
     const hasProfile = adapter.regions !== undefined
       || adapter.jobs !== undefined
-      || adapter.workflow !== undefined;
+      || adapter.workflow !== undefined
+      || adapter.revision !== undefined;
     if (!hasProfile) continue;
 
     const validation = validateAdapterWorkflowProfile(adapter);
@@ -17534,19 +17903,17 @@ export function listAdapterWorkflowProfiles() {
     }
     profiles.push({
       name: adapter.name,
+      revision: adapter.revision,
       regions: [...adapter.regions],
       jobs: [...adapter.jobs],
       workflow: {
         schema: adapter.workflow.schema,
-        states: Object.fromEntries(
-          Object.entries(adapter.workflow.states).map(([stateName, state]) => [
-            stateName,
-            {
-              ...state,
-              evidence: [...state.evidence],
-              ...(state.terminalFor === undefined ? {} : { terminalFor: [...state.terminalFor] }),
-            },
-          ]),
+        jobs: Object.fromEntries(
+          Object.entries(adapter.workflow.jobs).map(([jobName, job]) => {
+            const snapshot = cloneAdapterWorkflowJob(jobName, job);
+            delete snapshot.id;
+            return [jobName, snapshot];
+          }),
         ),
       },
     });
