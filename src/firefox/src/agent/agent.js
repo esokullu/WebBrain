@@ -12226,6 +12226,31 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     return this._sameAdapterWorkflowBinding(planned, live) ? live : null;
   }
 
+  // A social URL in the task text names a publication destination only when it
+  // points at that site's composer or feed surface. A permalink to an existing
+  // post is something to read, so "read https://x.com/user/status/123 and
+  // submit its details in the form" must not rebind the run to publish-post
+  // and hold the real form submission to social-post terminal evidence.
+  _socialPublishDestinationAdapter(rawUrl) {
+    let parsed;
+    try {
+      parsed = new URL(String(rawUrl || ''));
+    } catch (_) {
+      return '';
+    }
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+    const path = (parsed.pathname.replace(/\/+$/, '') || '').toLowerCase();
+    if (host === 'x.com' || host === 'twitter.com') {
+      return /^(?:|\/home|\/compose(?:\/(?:post|tweet))?|\/intent\/(?:post|tweet)|\/i\/flow\/(?:post|tweet))$/.test(path)
+        ? 'twitter'
+        : '';
+    }
+    if (host === 'bsky.app') {
+      return /^(?:|\/home|\/intent\/compose)$/.test(path) ? 'bluesky' : '';
+    }
+    return '';
+  }
+
   _trustedSocialPublishTargetAdapters(guard) {
     const targets = new Set();
     const current = guard?.siteWorkflow;
@@ -12242,10 +12267,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     const hasPublishIntent = /\b(?:post|publish|tweet|share)\b/i.test(trustedContext);
     for (const rawUrl of trustedContext.match(/https?:\/\/[^\s<>"'`]+/gi) || []) {
       const url = rawUrl.replace(/[\]),.;!?]+$/, '');
+      const destination = this._socialPublishDestinationAdapter(url);
+      if (!destination) continue;
       const workflow = resolveAdapterWorkflowJob(url, 'publish-post');
-      if (workflow?.job && ['twitter', 'bluesky'].includes(workflow.adapterName)) {
-        targets.add(workflow.adapterName);
-      }
+      if (workflow?.job && workflow.adapterName === destination) targets.add(destination);
     }
     if (!currentIsSocialPublish && !hasPublishIntent && targets.size < 1) return targets;
     if (/\b(?:bluesky|bsky)\b/i.test(trustedContext)) targets.add('bluesky');
@@ -16023,8 +16048,13 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       const changedText = changedFields.length
         ? `Changed/filled fields: ${changedFields.map(field => `${field.label}: ${field.value || '(blank)'}`).join('; ')}.`
         : 'No changed or filled fields were detected.';
+      // A form-less social composer is summarized too, so the publish
+      // confirmation still shows what is about to go out.
+      const origin = String(form.tagName || '').toUpperCase() === 'FORM'
+        ? `Form action: ${method} ${action}.`
+        : `Composer on ${action} (no enclosing HTML form).`;
       return {
-        summary: `Form action: ${method} ${action}. ${changedText}`,
+        summary: `${origin} ${changedText}`,
         fields: fields.slice(0, 12),
         changedFields,
       };
@@ -16183,6 +16213,55 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       } catch {}
       return target && target.nodeType === 1 ? target : null;
     };
+    const socialPublishAdapterName = () => {
+      const siteHost = String(host || '').toLowerCase().replace(/^www\./, '');
+      if (siteHost === 'x.com' || siteHost === 'twitter.com') return 'twitter';
+      if (siteHost === 'bsky.app') return 'bluesky';
+      return '';
+    };
+    const socialPublishComposerFor = (candidate) => {
+      if (!socialPublishAdapterName() || !candidate || candidate.nodeType !== 1) return null;
+      let node = candidate;
+      for (let depth = 0; node && depth < 10; depth++, node = node.parentElement) {
+        let hasEditor = false;
+        try {
+          hasEditor = !!node.querySelector?.('textarea,[contenteditable="true"],[role="textbox"]');
+        } catch {}
+        if (hasEditor) return node;
+      }
+      return null;
+    };
+    // X and Bluesky render their Post control outside any <form>. Without this
+    // the surrounding form requirement rejects the click, the probe reports no
+    // submit, and published-resource verification never receives its
+    // pre-dispatch permalink baseline or the publishing account identity — so a
+    // post that really was published can never satisfy same-route verification.
+    const socialPublishControlEvidence = (candidate) => {
+      const adapterName = socialPublishAdapterName();
+      if (!adapterName || !candidate || candidate.nodeType !== 1) return { isSubmit: false, strong: false };
+      const tag = String(candidate.tagName || '').toLowerCase();
+      const role = String(candidate.getAttribute?.('role') || '').toLowerCase();
+      const type = String(candidate.getAttribute?.('type') || candidate.type || '').toLowerCase();
+      const clickable = tag === 'button'
+        || role === 'button'
+        || (tag === 'input' && ['button', 'submit', 'image'].includes(type));
+      if (!clickable) return { isSubmit: false, strong: false };
+      const testId = String(candidate.getAttribute?.('data-testid') || '').trim();
+      const publishTestId = adapterName === 'twitter'
+        ? /^tweetButton(?:Inline)?$/i.test(testId)
+        : /^composerPublish(?:Btn|Button)$/i.test(testId);
+      const label = compact(
+        candidate.innerText || candidate.textContent || candidate.getAttribute?.('aria-label') || '',
+        120,
+      ).trim();
+      const publishLabel = /^(?:post|post all|publish|reply)$/i.test(label);
+      if (!publishTestId && !publishLabel) return { isSubmit: false, strong: false };
+      // Only a control that belongs to an open composer publishes anything; a
+      // timeline "Reply" affordance merely opens one.
+      return socialPublishComposerFor(candidate)
+        ? { isSubmit: true, strong: publishTestId }
+        : { isSubmit: false, strong: false };
+    };
     const submitControlEvidence = (el) => {
       const target = labelControlFor(el) || el;
       if (!target || target.nodeType !== 1) return { isSubmit: false, strong: false };
@@ -16192,7 +16271,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       const role = String(candidate.getAttribute?.('role') || '').toLowerCase();
       const hasActivationHandler = candidate.hasAttribute?.('onclick') || candidate.hasAttribute?.('data-action');
       const form = candidate.form || candidate.closest?.('form');
-      if (!form) return { isSubmit: false, strong: false };
+      if (!form) return socialPublishControlEvidence(candidate);
       const inlineHandler = String(candidate.getAttribute?.('onclick') || '');
       const dataAction = String(candidate.getAttribute?.('data-action') || '');
       const label = compact(
@@ -16217,7 +16296,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     const formForSubmitControl = (el) => {
       const target = labelControlFor(el) || el;
       const candidate = target?.closest?.('button,input') || target;
-      return candidate?.form || candidate?.closest?.('form') || null;
+      return candidate?.form
+        || candidate?.closest?.('form')
+        || socialPublishComposerFor(candidate)
+        || null;
     };
     const isFormField = (el) => {
       if (!el || el.nodeType !== 1) return false;

@@ -74297,6 +74297,14 @@ test('submit detector source covers submit controls, Enter, set_field, iframes, 
     assert.match(agent, /const labelControlFor = \(el\) => \{[\s\S]*String\(el\.tagName \|\| ''\)\.toUpperCase\(\) !== 'LABEL'[\s\S]*el\.htmlFor[\s\S]*doc\.getElementById\(el\.htmlFor\)[\s\S]*button,input,textarea,select/, `${label}: submit probe should resolve labels to associated controls`);
     assert.match(agent, /const target = labelControlFor\(el\) \|\| el;[\s\S]*const candidate = target\.closest\?\.\('button,input,\[role="button"\],\[onclick\],\[data-action\]'\)/, `${label}: submit-control detection should inspect label-backed controls`);
     assert.match(agent, /const submitControlEvidence = \(el\) => \{/, `${label}: custom submit controls should classify preflight evidence strength`);
+    assert.match(agent, /if \(!form\) return socialPublishControlEvidence\(candidate\);/, `${label}: form-less social publish controls should still reach the submit probe`);
+    assert.match(agent, /const socialPublishAdapterName = \(\) => \{[\s\S]*x\.com[\s\S]*twitter\.com[\s\S]*bsky\.app/, `${label}: the probe should recognize the X and Bluesky publish surfaces`);
+    assert.match(agent, /\^tweetButton\(\?:Inline\)\?\$/, `${label}: the X Post control should be recognized by its app-owned test id`);
+    assert.match(agent, /\^composerPublish\(\?:Btn\|Button\)\$/, `${label}: the Bluesky publish control should be recognized by its app-owned test id`);
+    assert.match(agent, /const socialPublishComposerFor = \(candidate\) => \{[\s\S]*textarea,\[contenteditable="true"\],\[role="textbox"\]/, `${label}: a form-less publish control must belong to an open composer`);
+    assert.match(agent, /return socialPublishComposerFor\(candidate\)\s*\n\s*\? \{ isSubmit: true, strong: publishTestId \}/, `${label}: only composer-bound social publish controls should count as submits`);
+    assert.match(agent, /\|\| socialPublishComposerFor\(candidate\)/, `${label}: the composer should stand in for the missing form when summarizing the publish`);
+    assert.match(agent, /Composer on \$\{action\} \(no enclosing HTML form\)/, `${label}: publish confirmations should summarize a form-less composer`);
     assert.match(agent, /const submitInfo = \(form, reason, pendingEl = null, pendingValue = null, validationSubmitEvidence = 'strong', submitTarget = null\)/, `${label}: submit summaries should carry preflight evidence strength`);
     assert.match(agent, /const publicationAccountEvidence = \(submitTarget\) => \{/, `${label}: social publication submits should bind the active account`);
     assert.match(agent, /AppTabBar_Profile_Link/, `${label}: X publishing account should use the app-owned profile navigation link`);
@@ -84872,6 +84880,30 @@ test('social publication workflow follows the live X or Bluesky destination and 
     assert.equal(await agent._adoptLiveSocialPublishWorkflow(nonEnglishTabId, provider), true);
     assert.equal(nonEnglishGuard.siteWorkflow?.adapterName, 'twitter',
       AgentClass.name + ': explicit social destination URL was hidden behind English-only intent words');
+
+    const referenceOnlyTabId = tabId + 250;
+    agent.conversations.set(referenceOnlyTabId, [
+      { role: 'system', content: 'system' },
+      { role: 'user', content: 'Read https://x.com/nasa/status/1234567890 and submit its details in the form.' },
+    ]);
+    const referenceOnlyGuard = agent._startPlanExecutionGuard(referenceOnlyTabId, 'act', {
+      requestKind: 'execute',
+      requiresStateChange: true,
+      requiresSubmission: true,
+      approvedScratchpadText: [
+        '[Approved plan pinned by planner]',
+        '- Read https://x.com/nasa/status/1234567890 and submit its details in the form.',
+      ].join('\n'),
+    });
+    assert.equal(await agent._adoptLiveSocialPublishWorkflow(referenceOnlyTabId, provider), false,
+      AgentClass.name + ': a referenced X permalink was treated as the publication destination');
+    assert.equal(referenceOnlyGuard.siteWorkflow, null);
+    assert.equal(agent._socialPublishDestinationAdapter('https://x.com/nasa/status/1234567890'), '');
+    assert.equal(agent._socialPublishDestinationAdapter('https://bsky.app/profile/nasa.gov/post/3kabc'), '');
+    assert.equal(agent._socialPublishDestinationAdapter('https://x.com/nasa'), '');
+    assert.equal(agent._socialPublishDestinationAdapter('https://x.com/home'), 'twitter');
+    assert.equal(agent._socialPublishDestinationAdapter('https://x.com/compose/post'), 'twitter');
+    assert.equal(agent._socialPublishDestinationAdapter('https://bsky.app/'), 'bluesky');
 
     const genericTabId = tabId + 300;
     agent.conversations.set(genericTabId, [
