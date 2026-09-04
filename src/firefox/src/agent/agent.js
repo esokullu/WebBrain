@@ -620,6 +620,8 @@ export class Agent extends LoopDetector {
     // Default off; user opts in via Settings → "Strict secret handling".
     this.strictSecretMode = false;
     this._lastAxScopes = new Map(); // tabId -> { documentToken, pageUrl }, captured by the latest AX read
+    this._uncertainTextMutations = new Map(); // tabId -> Map(target -> unresolved, potentially applied text write; no raw text)
+    this._verifiedTextReplacements = new Map(); // tabId -> exact replacement digest bound to the live document
     this._richTextToolbarGuard = new RichTextToolbarGuard();
     this._richTextToolbarProbe = new RichTextToolbarProbe(this);
     this._uploadSelectorRecoveryRequired = new Map(); // tabId -> prior ambiguous match count; cleared only by inspection/navigation/cleanup
@@ -1402,6 +1404,51 @@ export class Agent extends LoopDetector {
       || metadataDetails.incomplete === true
       || (this._workflowJobStoresMetadataRequirements(siteWorkflow)
         && guard.workflowMetadataRequirementsResolved !== true);
+    const replacementRecords = this._verifiedTextReplacements.get(tabId);
+    const replacementRecordValues = [...(replacementRecords instanceof Map
+      ? replacementRecords.values()
+      : (replacementRecords ? [replacementRecords] : []))];
+    const githubEditorReplacements = replacementRecordValues
+      .filter(record => record?.ambiguous !== true
+        && !!record?.expectedSha256
+        && !!record?.readbackSha256
+        && this._normalizeUrl(record.pageUrl || '') === this._normalizeUrl(pageUrl)
+        && (record?.fieldMeta?.contentEditable === true
+          || /contenteditable/i.test(String(record?.key || ''))
+          || /\bediting\b[\s\S]*\bfile contents\b/i.test(String(record?.fieldMeta?.ariaLabelledByText || ''))));
+    const githubEditorPayloads = new Set(githubEditorReplacements
+      .map(record => `${record.expectedLength}:${record.expectedSha256}`));
+    const verifiedReplacement = githubEditorPayloads.size === 1
+      ? githubEditorReplacements.sort((left, right) => Number(right?.verifiedAt || 0) - Number(left?.verifiedAt || 0))[0]
+      : null;
+    const githubEditScope = siteWorkflow?.adapterName === 'github'
+      && siteWorkflow?.job?.id === 'edit-file-and-commit'
+      ? this._workflowGithubEditFileScope(pageUrl, metadataRequirements)
+      : null;
+    const commitMessageRequirement = metadataRequirements
+      .find(requirement => requirement?.field === 'commit_message');
+    const expectedCommitMessage = this._workflowMetadataValue(commitMessageRequirement?.value);
+    const commitMessageVerified = !commitMessageRequirement || replacementRecordValues.some(record => (
+      record?.ambiguous !== true
+      && !!record?.readbackSha256
+      && this._normalizeUrl(record.pageUrl || '') === this._normalizeUrl(pageUrl)
+      && /^(?:commit-message-input|commit_message)$/i.test(String(
+        record?.fieldMeta?.id || record?.fieldMeta?.name || '',
+      ))
+      && record.expectedLength === expectedCommitMessage.length
+      && record.expectedFp === this._workflowInventoryFingerprint(expectedCommitMessage)
+    ));
+    const githubFileCommit = !metadataIncomplete
+      && githubEditScope
+      && verifiedReplacement
+      && commitMessageVerified
+      ? {
+          ...githubEditScope,
+          expectedLength: verifiedReplacement.expectedLength,
+          expectedSha256: verifiedReplacement.expectedSha256,
+          commitMessageVerified,
+        }
+      : null;
     const verificationKind = this._workflowVerificationKind(siteWorkflow);
     const normalizeOrderIdentities = values => [...new Set((Array.isArray(values) ? values : [])
       .map(value => String(value || '').trim().toUpperCase())
@@ -1444,6 +1491,7 @@ export class Agent extends LoopDetector {
         metadataRequirements: metadataRequirements.map(requirement => ({ ...requirement })),
         ...(metadataIncomplete ? { metadataRequirementsIncomplete: true } : {}),
       } : {}),
+      ...(githubFileCommit ? { githubFileCommit } : {}),
       ...(verificationKind === 'form_confirmation' ? {
         formDocumentScope: this._workflowInventoryDocumentScope(tabId, pageUrl),
         formIdentity: this._workflowFormOriginIdentity(pageUrl),
@@ -1455,6 +1503,47 @@ export class Agent extends LoopDetector {
           ? { transactionOrderIdentity: transactionOrderIdentities[0] }
           : {}),
       } : {}),
+    };
+  }
+
+  async _workflowPreSubmitDispatchBlock(tabId, name, args = {}, detectedSubmit = null) {
+    const guard = this._planExecutionGuards.get(tabId);
+    if (guard?.siteWorkflow?.adapterName !== 'github'
+        || guard.siteWorkflow?.job?.id !== 'edit-file-and-commit') return null;
+    const looksLikeSubmit = detectedSubmit?.isSubmit === true
+      || this._formValidationActionLooksSubmit(name, args, null, detectedSubmit);
+    if (!looksLikeSubmit) return null;
+    const detectedFields = [
+      ...(Array.isArray(detectedSubmit?.fields) ? detectedSubmit.fields : []),
+      ...(Array.isArray(detectedSubmit?.changedFields) ? detectedSubmit.changedFields : []),
+    ];
+    const hasCommitMessageField = detectedFields.some(field => (
+      /\bcommit[\s_-]*message\b/i.test(String(field?.label || ''))
+    ));
+    // GitHub's first "Commit changes..." control only opens the commit dialog.
+    // It can live inside the editor form and therefore look like a heuristic
+    // submit, but the commit-message field is not present until the dialog is
+    // open. Exempt only that narrow reversible click; missing probe evidence,
+    // Enter/set_field submission, and modal controls remain fail-closed.
+    const reversibleDialogLauncher = (name === 'click' || name === 'click_ax')
+      && detectedSubmit?.githubCommitDialogLauncher === true
+      && detectedSubmit?.isSubmit === true
+      && detectedSubmit.validationSubmitEvidence === 'heuristic'
+      && !hasCommitMessageField;
+    if (reversibleDialogLauncher) return null;
+    const pageUrl = await this._currentUrl(tabId);
+    await this._refreshGithubTextReplacementProofs(tabId, pageUrl);
+    const binding = this._workflowSubmitBindingForAttempt(tabId, pageUrl, {}, detectedSubmit);
+    if (binding?.metadataRequirementsIncomplete !== true && binding?.githubFileCommit) return null;
+    return {
+      success: false,
+      dispatched: false,
+      noDispatch: true,
+      retryable: true,
+      repeatBlocked: true,
+      workflowJob: 'edit-file-and-commit',
+      recoveryRequired: 'verify_or_restore_field',
+      error: 'Commit submission is blocked because the complete GitHub file-editor replacement, requested commit message, path, or branch is not bound to exact pre-submit evidence. Resolve any uncertain text write with exact readback or reload and restore the editor, then verify the complete file and requested commit message before committing.',
     };
   }
 
@@ -1653,6 +1742,9 @@ export class Agent extends LoopDetector {
       ['seat_class', ['seat class', 'seat', 'class', 'berth', 'koltuk', '座位', '席', '좌석']],
       ['subject', ['subject', 'subject line', 'email subject', 'sujet', 'objet', 'asunto', 'assunto', 'betreff', 'oggetto', 'konu', '件名', '主题', '主旨']],
       ['body', ['body', 'post', 'post body', 'post text', 'composer']],
+      ['path', ['path', 'file path', 'repository path']],
+      ['branch', ['branch', 'git branch']],
+      ['commit_message', ['commit message', 'commit summary', 'commit title']],
       ['title', ['title', 'titre', 'título', 'titulo', 'titel', 'titolo', 'başlık', 'タイトル', '제목', '标题', '標題', 'название']],
     ];
     const paddedText = ` ${text} `;
@@ -1820,6 +1912,116 @@ export class Agent extends LoopDetector {
     }
   }
 
+  _workflowGithubCommitIdentityParts(identity) {
+    const match = /^github:github\.com\/([^/]+\/[^/]+)\/commit\/([0-9a-f]{7,40})$/i.exec(String(identity || ''));
+    return match ? { repository: match[1].toLowerCase(), sha: match[2].toLowerCase() } : null;
+  }
+
+  _workflowGithubEditFileScope(pageUrl, requirements = []) {
+    try {
+      const parsed = new URL(String(pageUrl || ''));
+      if (parsed.hostname.toLowerCase().replace(/^www\./, '') !== 'github.com') return null;
+      const match = /^\/([^/]+)\/([^/]+)\/edit\/(.+)$/i.exec(parsed.pathname);
+      if (!match) return null;
+      const repository = `${match[1]}/${match[2]}`.toLowerCase();
+      const rest = match[3].split('/').map(segment => {
+        try { return decodeURIComponent(segment); } catch { return segment; }
+      });
+      const byField = new Map((Array.isArray(requirements) ? requirements : [])
+        .map(item => [item?.field, this._workflowMetadataValue(item?.value)]));
+      const requestedPath = String(byField.get('path') || '').replace(/^\/+/, '');
+      const requestedBranch = String(byField.get('branch') || '').replace(/^\/+|\/+$/g, '');
+      let branch = requestedBranch;
+      let path = requestedPath;
+      if (requestedPath) {
+        const pathParts = requestedPath.split('/');
+        if (rest.length <= pathParts.length
+            || rest.slice(-pathParts.length).join('/') !== requestedPath) return null;
+        const branchParts = rest.slice(0, -pathParts.length);
+        branch = branchParts.join('/');
+        if (requestedBranch && branch !== requestedBranch) return null;
+      } else if (requestedBranch) {
+        const routeSuffix = rest.join('/');
+        const branchPrefix = `${requestedBranch}/`;
+        if (!routeSuffix.startsWith(branchPrefix)) return null;
+        branch = requestedBranch;
+        path = routeSuffix.slice(branchPrefix.length);
+      } else {
+        branch = rest.shift() || '';
+        path = rest.join('/');
+      }
+      if (!branch || !path) return null;
+      return { repository, branch, path };
+    } catch {
+      return null;
+    }
+  }
+
+  async _githubCommittedFileVerification(tabId, pageState, pageUrl, submissionEvidence) {
+    const state = this._planExecutionGuards.get(tabId);
+    if (state?.siteWorkflow?.adapterName !== 'github'
+        || state.siteWorkflow?.job?.id !== 'edit-file-and-commit') return null;
+    const submit = submissionEvidence?.submit;
+    const binding = submit?.workflowBinding;
+    const expected = binding?.githubFileCommit;
+    if (!binding || !expected || submissionEvidence?.verifiedFinalSubmit !== true) {
+      return { verified: false, reason: 'missing_bound_verified_replacement' };
+    }
+    const observed = this._workflowPublishedResourceIdentities(state.siteWorkflow, [
+      pageUrl,
+      pageState?.workflowResourceUrls,
+    ], pageUrl);
+    let identity = binding.publishedResourceIdentity || '';
+    if (!identity) {
+      const baseline = new Set(binding.preDispatchPublishedResourceIdentities || []);
+      const pageIdentity = this._workflowPublishedResourceIdentity(
+        state.siteWorkflow, pageUrl, pageUrl,
+      );
+      const pageCommit = this._workflowGithubCommitIdentityParts(pageIdentity);
+      const candidates = observed.filter(value => !baseline.has(value));
+      if (pageCommit && !baseline.has(pageIdentity)) {
+        identity = pageIdentity;
+        binding.publishedResourceIdentity = identity;
+      } else if (candidates.length === 1) {
+        identity = candidates[0];
+        binding.publishedResourceIdentity = identity;
+      }
+    }
+    const commit = this._workflowGithubCommitIdentityParts(identity);
+    if (!commit || commit.repository !== expected.repository || !observed.includes(identity)) {
+      return { verified: false, reason: 'commit_identity_mismatch' };
+    }
+    try {
+      const encodedPath = expected.path.split('/').map(encodeURIComponent).join('/');
+      const rawUrl = `https://github.com/${expected.repository}/raw/${commit.sha}/${encodedPath}`;
+      const response = await fetch(rawUrl, {
+        credentials: 'include',
+        cache: 'no-store',
+        redirect: 'follow',
+      });
+      if (!response.ok) return { verified: false, reason: `raw_http_${response.status}` };
+      const contentLength = Number(response.headers?.get?.('content-length') || 0);
+      if (contentLength > 2_000_000) return { verified: false, reason: 'raw_file_too_large' };
+      const text = await response.text();
+      if (text.length > 2_000_000) return { verified: false, reason: 'raw_file_too_large' };
+      const actualSha256 = await this._sha256Text(text);
+      return {
+        verified: !!actualSha256
+          && text.length === expected.expectedLength
+          && actualSha256 === expected.expectedSha256,
+        repository: commit.repository,
+        commitSha: commit.sha,
+        path: expected.path,
+        expectedLength: expected.expectedLength,
+        actualLength: text.length,
+        expectedSha256: expected.expectedSha256,
+        actualSha256,
+      };
+    } catch {
+      return { verified: false, reason: 'raw_file_read_failed' };
+    }
+  }
+
   // The filename ledger proves which assets were uploaded, not which release
   // they landed on. Bind the saved release to the repository the dispatch came
   // from, and to the tag the request named when it named one, so the same
@@ -1838,6 +2040,33 @@ export class Agent extends LoopDetector {
   }
 
   _workflowPublishedResourcePayloadMatch(binding, state, pageState, pageUrl, submit) {
+    if (state?.siteWorkflow?.adapterName === 'github'
+        && state.siteWorkflow?.job?.id === 'edit-file-and-commit') {
+      const proof = pageState?.githubCommittedFileVerification;
+      const requirements = Array.isArray(binding?.metadataRequirements)
+        ? binding.metadataRequirements
+        : [];
+      const metadataMatched = binding?.metadataRequirementsIncomplete !== true
+        && requirements.every(requirement => {
+          if (requirement?.field === 'path') {
+            return String(requirement.value || '').replace(/^\/+/, '') === binding?.githubFileCommit?.path;
+          }
+          if (requirement?.field === 'branch') {
+            return this._workflowMetadataValue(requirement.value) === this._workflowMetadataValue(
+              binding?.githubFileCommit?.branch,
+            );
+          }
+          if (requirement?.field === 'commit_message') {
+            return binding?.githubFileCommit?.commitMessageVerified === true;
+          }
+          return false;
+        });
+      return proof?.verified === true
+        && metadataMatched
+        && proof.repository === binding?.githubFileCommit?.repository
+        && proof.path === binding?.githubFileCommit?.path
+        && proof.expectedSha256 === binding?.githubFileCommit?.expectedSha256;
+    }
     if (this._workflowJobIsReleaseAssetUpload(state?.siteWorkflow)) {
       return this._workflowReleaseAssetResourceMatch(binding, pageUrl, submit);
     }
@@ -1944,6 +2173,14 @@ export class Agent extends LoopDetector {
       && /^\/[^/]+\/[^/]+\/releases\/tag\/[^/]+$/i.test(path)
     ) {
       return `github:${host}${path}`;
+    }
+    if (
+      siteWorkflow?.adapterName === 'github'
+      && siteWorkflow?.job?.id === 'edit-file-and-commit'
+      && host === 'github.com'
+      && /^\/[^/]+\/[^/]+\/commit\/[0-9a-f]{7,40}$/i.test(path)
+    ) {
+      return `github:${host}${path.toLowerCase()}`;
     }
     if (
       siteWorkflow?.adapterName === 'linkedin'
@@ -3946,7 +4183,11 @@ export class Agent extends LoopDetector {
     } else if (revisitingRoute) {
       this._clearPageLoopState(tabId);
     }
-    if (documentChanged || routeChanged) this._clearRichTextToolbarDocumentState(tabId);
+    if (documentChanged || routeChanged) {
+      this._clearRichTextToolbarDocumentState(tabId);
+      this._uncertainTextMutations.delete(tabId);
+      this._verifiedTextReplacements.delete(tabId);
+    }
     this._lastAxScopes.set(tabId, next);
   }
 
@@ -6965,6 +7206,25 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           host: 'chromewebstore.googleapis.com',
           reason: 'submit the configured Chrome Web Store release for review',
         };
+      }
+      const workflowPreSubmitBlock = await this._workflowPreSubmitDispatchBlock(
+        tabId, fnName, fnArgs, detectedSubmitAction,
+      );
+      if (workflowPreSubmitBlock) {
+        onUpdate('tool_call', { name: fnName, args: fnArgs, outcomeUnknown: false });
+        onUpdate('tool_result', { name: fnName, result: workflowPreSubmitBlock });
+        messages.push({
+          role: 'tool',
+          tool_call_id: tc.id,
+          content: this._wrapUntrusted(fnName, this._limitToolResult(workflowPreSubmitBlock)),
+        });
+        const runId = this.currentRunId.get(tabId);
+        if (runId) trace.recordToolCall(runId, step, {
+          name: fnName, args: fnArgs, result: workflowPreSubmitBlock, latencyMs: 0,
+        });
+        onUpdate('warning', { message: 'GitHub commit blocked until the exact file-editor value and requested commit metadata are verified.' });
+        if (interruptFailedBrowserAction(toolIndex, fnName)) { navNotices.length = 0; break; }
+        continue;
       }
       let priorValidationFailure = !!validationBlock;
       let correctedPriorValidationFailure = false;
@@ -15572,6 +15832,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           summary: String(detected.summary || '').slice(0, 1200),
           fields: Array.isArray(detected.fields) ? detected.fields.slice(0, 12) : [],
           changedFields: Array.isArray(detected.changedFields) ? detected.changedFields.slice(0, 8) : [],
+          githubCommitDialogLauncher: detected.githubCommitDialogLauncher === true,
           publicationResourceUrls: Array.isArray(detected.publicationResourceUrls)
             ? detected.publicationResourceUrls.slice(0, 200)
             : [],
@@ -15786,20 +16047,36 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           .map((link) => {
             try { return new URL(link.getAttribute('href') || link.href || '', url).href; } catch { return ''; }
           })
-          .filter(value => /linkedin\.com\/(?:feed\/update|posts)\/|github\.com\/[^/]+\/[^/]+\/releases\/tag\/|douyin\.com\/video\/\d+/i.test(value))
+          .filter(value => /linkedin\.com\/(?:feed\/update|posts)\/|github\.com\/[^/]+\/[^/]+\/(?:releases\/tag\/|commit\/[0-9a-f]{7,40})|douyin\.com\/video\/\d+/i.test(value))
           .slice(0, 200);
       } catch {
         return [];
       }
     };
     const transactionOrderSite = /(?:^|\.)12306\.cn$/i.test(host);
-    const submitInfo = (form, reason, pendingEl = null, pendingValue = null, validationSubmitEvidence = 'strong') => {
+    const submitInfo = (form, reason, pendingEl = null, pendingValue = null, validationSubmitEvidence = 'strong', submitControl = null) => {
       const formOrders = transactionOrderSite
         ? transactionOrderScan(form)
         : { ids: [], complete: false };
       const pageOrders = transactionOrderSite
         ? transactionOrderScan(doc.body || doc.documentElement)
         : { ids: [], complete: false };
+      const control = labelControlFor(submitControl) || submitControl;
+      const controlLabel = compact(
+        control?.innerText || control?.textContent || control?.getAttribute?.('aria-label') || '',
+        120,
+      );
+      const activeModal = findTopmostModal();
+      const controlInModal = !!(control && activeModal?.contains?.(control));
+      const githubEditPage = (() => {
+        try {
+          const parsed = new URL(url);
+          return parsed.hostname.toLowerCase().replace(/^www\./, '') === 'github.com'
+            && /^\/[^/]+\/[^/]+\/edit\//i.test(parsed.pathname);
+        } catch {
+          return false;
+        }
+      })();
       return {
         isSubmit: true,
         host,
@@ -15811,6 +16088,9 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         transactionOrderIdsComplete: formOrders.complete,
         transactionPageOrderIds: pageOrders.ids,
         transactionPageOrderIdsComplete: pageOrders.complete,
+        githubCommitDialogLauncher: githubEditPage
+          && !controlInModal
+          && /^commit changes(?:\.{3}|…)?$/i.test(controlLabel),
         ...summarizeForm(form, pendingEl, pendingValue),
       };
     };
@@ -15991,6 +16271,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           null,
           null,
           evidence.strong ? 'strong' : 'heuristic',
+          target,
         );
       }
     } catch {}
@@ -17157,6 +17438,327 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     this._lastTypeFieldEpoch.set(tabId, nextEpoch);
   }
 
+  _textMutationTarget(tabId, name, args = {}) {
+    const scope = this._lastAxScopes.get(tabId) || {};
+    const documentToken = String(scope.documentToken || '');
+    const pageUrl = String(scope.pageUrl || '');
+    if ((name === 'set_field' || name === 'type_ax') && typeof args.ref_id === 'string') {
+      return {
+        key: `ax:${documentToken || pageUrl || 'document'}:${args.ref_id}`,
+        locatorType: 'ax',
+        refId: args.ref_id,
+        documentToken,
+        pageUrl,
+        ambiguous: false,
+      };
+    }
+    if (name === 'type_text' && typeof args.selector === 'string' && args.selector.trim()) {
+      return {
+        key: `selector:${documentToken || pageUrl || 'document'}:${args.selector.trim()}`,
+        locatorType: 'selector',
+        selector: args.selector.trim(),
+        documentToken,
+        pageUrl,
+        ambiguous: false,
+      };
+    }
+    return {
+      key: `focused:${documentToken || pageUrl || 'document'}`,
+      locatorType: 'focused',
+      documentToken,
+      pageUrl,
+      ambiguous: true,
+    };
+  }
+
+  _textMutationReplacesValue(name, args = {}) {
+    return name === 'set_field' ? args.clear !== false : args.clear === true;
+  }
+
+  _textMutationFieldsProvenDistinct(previousMeta, nextMeta) {
+    if (!previousMeta || typeof previousMeta !== 'object'
+        || !nextMeta || typeof nextMeta !== 'object') return false;
+    const normalized = (meta, field) => String(meta?.[field] || '').trim().toLowerCase();
+    const identityFields = ['id', 'name', 'ariaLabel', 'ariaLabelledByText', 'labelText', 'placeholder'];
+    for (const field of identityFields) {
+      const previous = normalized(previousMeta, field);
+      const next = normalized(nextMeta, field);
+      if (previous && next && previous === next) return false;
+    }
+    if (typeof previousMeta.contentEditable === 'boolean'
+        && typeof nextMeta.contentEditable === 'boolean'
+        && previousMeta.contentEditable !== nextMeta.contentEditable) return true;
+    const differingIdentityCount = identityFields.reduce((count, field) => {
+      const previous = normalized(previousMeta, field);
+      const next = normalized(nextMeta, field);
+      return count + (previous && next && previous !== next ? 1 : 0);
+    }, 0);
+    return differingIdentityCount >= 2;
+  }
+
+  async _sha256Text(value) {
+    try {
+      const bytes = new TextEncoder().encode(String(value ?? ''));
+      const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes);
+      return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
+    } catch {
+      return '';
+    }
+  }
+
+  async _textMutationValueDigest(tabId, target, expected = null) {
+    if (!target || target.ambiguous === true) return null;
+    const params = target.locatorType === 'ax' && typeof target.refId === 'string'
+      ? { ref_id: target.refId }
+      : target.locatorType === 'selector' && typeof target.selector === 'string'
+        ? { selector: target.selector }
+        : null;
+    if (!params) return null;
+    try {
+      const response = await browser.tabs.sendMessage(tabId, {
+        target: 'content',
+        action: 'field_value_digest',
+        params: {
+          ...params,
+          ...(typeof expected === 'string' ? { expected } : {}),
+        },
+      });
+      if (response?.success !== true
+          || !Number.isInteger(response.valueLength)
+          || response.valueLength < 0
+          || !/^[0-9a-f]{64}$/i.test(String(response.valueSha256 || ''))) return null;
+      return {
+        valueLength: response.valueLength,
+        valueSha256: String(response.valueSha256).toLowerCase(),
+        verified: response.verified === true,
+        fieldMeta: response.fieldMeta || null,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  async _verifiedTextReplacementRecord(tabId, target, text, fieldMeta = null) {
+    const workflow = this._planExecutionGuards.get(tabId)?.siteWorkflow;
+    const needsCommitProof = workflow?.adapterName === 'github'
+      && workflow?.job?.id === 'edit-file-and-commit';
+    const candidateReadback = needsCommitProof
+      ? await this._textMutationValueDigest(tabId, target, text)
+      : null;
+    const readback = candidateReadback?.verified === true ? candidateReadback : null;
+    return {
+      ...target,
+      expectedLength: text.length,
+      expectedSha256: await this._sha256Text(text),
+      expectedFp: this._workflowInventoryFingerprint(text),
+      fieldMeta: readback?.fieldMeta || fieldMeta || null,
+      ...(readback ? {
+        readbackLength: readback.valueLength,
+        readbackSha256: readback.valueSha256,
+      } : {}),
+      verifiedAt: Date.now(),
+    };
+  }
+
+  async _refreshGithubTextReplacementProofs(tabId, pageUrl) {
+    const records = this._verifiedTextReplacements.get(tabId);
+    if (!(records instanceof Map)) return;
+    for (const [key, record] of records) {
+      if (this._normalizeUrl(record?.pageUrl || '') !== this._normalizeUrl(pageUrl)) continue;
+      const githubEditor = record?.fieldMeta?.contentEditable === true
+        || /contenteditable/i.test(String(record?.key || key))
+        || /\bediting\b[\s\S]*\bfile contents\b/i.test(String(record?.fieldMeta?.ariaLabelledByText || ''));
+      const commitMessage = /^(?:commit-message-input|commit_message)$/i.test(String(
+        record?.fieldMeta?.id || record?.fieldMeta?.name || '',
+      ));
+      if (!githubEditor && !commitMessage) continue;
+      const current = await this._textMutationValueDigest(tabId, record);
+      if (!current
+          || !record.readbackSha256
+          || current.valueLength !== record.readbackLength
+          || current.valueSha256 !== record.readbackSha256) {
+        records.delete(key);
+      }
+    }
+    if (records.size === 0) this._verifiedTextReplacements.delete(tabId);
+  }
+
+  async _uncertainTextMutationBlock(tabId, name, args = {}) {
+    if (!['set_field', 'type_ax', 'type_text'].includes(name)) return null;
+    const debts = this._uncertainTextMutations?.get(tabId);
+    if (!(debts instanceof Map) || debts.size === 0) return null;
+    const target = this._textMutationTarget(tabId, name, args);
+    for (const [key, candidate] of debts) {
+      if (candidate.documentToken && target.documentToken
+          && candidate.documentToken !== target.documentToken) debts.delete(key);
+    }
+    if (debts.size === 0) {
+      this._uncertainTextMutations.delete(tabId);
+      return null;
+    }
+    const replacement = this._textMutationReplacesValue(name, args);
+    const text = typeof args.text === 'string' ? args.text : '';
+    const expectedSha256 = await this._sha256Text(text);
+    let axReadback = null;
+    let axReadbackAttempted = false;
+    const readAxTarget = async () => {
+      if (axReadbackAttempted) return axReadback;
+      axReadbackAttempted = true;
+      if (!((name === 'set_field' || name === 'type_ax') && typeof args.ref_id === 'string')) return null;
+      try {
+        axReadback = await browser.tabs.sendMessage(tabId, {
+          target: 'content',
+          action: 'ax_verify_field_value',
+          params: { ref_id: args.ref_id, expected: text },
+        });
+      } catch { /* an unavailable probe cannot prove that this is a different field */ }
+      return axReadback;
+    };
+    let debt = null;
+    for (const candidate of debts.values()) {
+      if (candidate.ambiguous || target.ambiguous || candidate.key === target.key) {
+        debt = candidate;
+        break;
+      }
+      const distinctAxRefs = candidate.key.startsWith('ax:')
+        && target.key.startsWith('ax:')
+        && candidate.key !== target.key;
+      if (distinctAxRefs) {
+        const readback = await readAxTarget();
+        if (readback?.success === true
+            && this._textMutationFieldsProvenDistinct(candidate.fieldMeta, readback.fieldMeta)) continue;
+      }
+      debt = candidate;
+      break;
+    }
+    if (!debt) return null;
+
+    const sameReplacement = debt.replacesValue === true
+      && replacement
+      && debt.expectedLength === text.length
+      && !!expectedSha256
+      && debt.expectedSha256 === expectedSha256;
+    if (sameReplacement && !target.ambiguous
+        && (name === 'set_field' || name === 'type_ax')
+        && typeof args.ref_id === 'string') {
+      let verified = false;
+      let readback = null;
+      try {
+        readback = await readAxTarget();
+        verified = readback?.success === true && readback.verified === true;
+      } catch { /* an unavailable full readback leaves the write blocked */ }
+      if (verified) {
+        debts.delete(debt.key);
+        if (debts.size === 0) this._uncertainTextMutations.delete(tabId);
+        let verifiedReplacements = this._verifiedTextReplacements.get(tabId);
+        if (!(verifiedReplacements instanceof Map)) {
+          verifiedReplacements = new Map();
+          this._verifiedTextReplacements.set(tabId, verifiedReplacements);
+        }
+        verifiedReplacements.set(target.key, await this._verifiedTextReplacementRecord(
+          tabId, target, text, readback?.fieldMeta || debt.fieldMeta || null,
+        ));
+        return {
+          success: true,
+          verified: true,
+          dispatched: false,
+          noDispatch: true,
+          recoveredUncertainMutation: true,
+          method: 'exact-text-readback',
+          expectedLength: text.length,
+          expectedSha256,
+        };
+      }
+    }
+
+    return {
+      success: false,
+      dispatched: false,
+      noDispatch: true,
+      outcomeUnknown: true,
+      mutationMayHaveOccurred: true,
+      repeatBlocked: true,
+      recoveryRequired: 'verify_or_restore_field',
+      expectedLength: debt.expectedLength,
+      expectedSha256: debt.expectedSha256,
+      error: 'Text entry is blocked because an earlier write to this editor may already have changed it. A generic page/tree read cannot prove the full value. Repeat the exact same replacement call once for readback-only recovery, or reload/restore the document before any further write to this editor.',
+    };
+  }
+
+  async _finalizeTextMutationResult(tabId, name, args = {}, result) {
+    if (!['set_field', 'type_ax', 'type_text'].includes(name) || !result || typeof result !== 'object') {
+      return result;
+    }
+    const target = this._textMutationTarget(tabId, name, args);
+    const replacesValue = this._textMutationReplacesValue(name, args);
+    const text = typeof args.text === 'string' ? args.text : '';
+    const expectedSha256 = await this._sha256Text(text);
+    const uncertain = result.mutationMayHaveOccurred === true
+      || (result.outcomeUnknown === true && result.noDispatch !== true)
+      || (result.success === true && result.verified !== true
+        && result.noDispatch !== true && result.method !== 'select-keyboard')
+      || (result.success === false && result.dispatched === true)
+      || (result.success === false && result.verified === false && result.noDispatch !== true)
+      || (result.recoveryRequired === 'fresh_tree' && result.noDispatch !== true);
+    if (uncertain) {
+      const verifiedReplacements = this._verifiedTextReplacements.get(tabId);
+      if (verifiedReplacements instanceof Map) {
+        if (target.ambiguous) verifiedReplacements.clear();
+        else if (result?.fieldMeta?.contentEditable === true
+            || /contenteditable/i.test(target.key)) {
+          for (const [key, record] of verifiedReplacements) {
+            if (record?.fieldMeta?.contentEditable === true
+                || /contenteditable/i.test(String(record?.key || key))) verifiedReplacements.delete(key);
+          }
+        } else verifiedReplacements.delete(target.key);
+      }
+      if (!this._uncertainTextMutations) this._uncertainTextMutations = new Map();
+      let debts = this._uncertainTextMutations.get(tabId);
+      if (!(debts instanceof Map)) {
+        debts = new Map();
+        this._uncertainTextMutations.set(tabId, debts);
+      }
+      debts.set(target.key, {
+        ...target,
+        tool: name,
+        replacesValue,
+        expectedLength: text.length,
+        expectedSha256,
+        expectedFp: this._workflowInventoryFingerprint(text),
+        fieldMeta: result.fieldMeta || null,
+        recordedAt: Date.now(),
+      });
+      return {
+        ...result,
+        success: false,
+        outcomeUnknown: true,
+        mutationMayHaveOccurred: true,
+        repeatBlocked: true,
+        recoveryRequired: 'verify_or_restore_field',
+        expectedLength: text.length,
+        expectedSha256,
+      };
+    }
+    if (result.success === true && result.verified === true && replacesValue) {
+      if (!this._verifiedTextReplacements) this._verifiedTextReplacements = new Map();
+      let verifiedReplacements = this._verifiedTextReplacements.get(tabId);
+      if (!(verifiedReplacements instanceof Map)) {
+        verifiedReplacements = new Map();
+        this._verifiedTextReplacements.set(tabId, verifiedReplacements);
+      }
+      verifiedReplacements.set(target.key, await this._verifiedTextReplacementRecord(
+        tabId, target, text, result.fieldMeta || null,
+      ));
+    } else if (result.success === true) {
+      const verifiedReplacements = this._verifiedTextReplacements.get(tabId);
+      if (verifiedReplacements instanceof Map) {
+        if (target.ambiguous) verifiedReplacements.clear();
+        else verifiedReplacements.delete(target.key);
+      }
+    }
+    return result;
+  }
+
   _captureLastTypeFieldEpoch(tabId) {
     return this._lastTypeFieldEpoch?.get(tabId) || 0;
   }
@@ -17178,6 +17780,8 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     this._isPdfTabCache.delete(tabId);
     this._lastTypeFieldIdent?.delete(tabId);
     this._lastTypeFieldEpoch?.delete(tabId);
+    this._uncertainTextMutations.delete(tabId);
+    this._verifiedTextReplacements.delete(tabId);
     this.progressPageScopes.delete(tabId);
     this.progressSessions.delete(tabId);
     this.progressExpectedItems.delete(tabId);
@@ -18507,7 +19111,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           'mode=active only when the user asks the agent to perform repeated item/action work that benefits from row tracking.',
           'Exception: for siteContext.workflow.job="upload-release-assets" with requiresLedger=true, use mode=active and list every concrete requested target even when there is exactly one. Copy each exact requested filename or path into targets; do not merge or omit assets. When the user names the release tag, also return it as workflowFields=[{"field":"tag","value":"exact tag"}]; return workflowFields=[] when no tag is named.',
           'For siteContext.workflow.job="update-metadata", workflowFields must contain every metadata field explicitly requested by the user and its complete exact intended value. Use canonical field names title, description, visibility, audience, tags, category, playlist, language, license, comments, embedding, paid_promotion, recording_date, or recording_location. Never infer a field or value from page content.',
-          'For siteContext.workflow.job="publish-release", "publish-post", or "publish-content", workflowFields must contain every publication field explicitly requested by the user and its complete exact intended value. Use canonical field names tag, title, notes, body, or visibility. Never infer a field or value from page content.',
+          'For siteContext.workflow.job="publish-release", "publish-post", "publish-content", or "edit-file-and-commit", workflowFields must contain every publication field explicitly requested by the user and its complete exact intended value. Use canonical field names tag, title, notes, body, visibility, path, branch, or commit_message. For edit-file-and-commit, include path/branch/commit_message only when the user explicitly supplied them; the runtime separately binds the exact verified editor content. Never infer a field or value from page content.',
           'For siteContext.workflow.job="draft-email" or "send-email", workflowFields must contain every message field explicitly requested by the user and its complete exact intended value. Use canonical field names subject or body. Never infer a field or value from page content.',
           'For siteContext.workflow.template="transaction", workflowFields must contain every booking detail explicitly requested by the user and its exact value. Use canonical field names train, travel_date, departure, arrival, passenger, or seat_class. Never infer a detail from page content.',
           'For siteContext.workflow.template="form", workflowLabelValues must contain one entry per field the user supplied an exact value for, as {"label":"the field in the user\'s words","value":"the exact value"}. Return workflowLabelValues=[] when the user supplied no exact values, and never copy a value from page content.',
@@ -19972,7 +20576,9 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           : missingRequiredDownload
           ? '[PLAN EXECUTION BLOCK: This task requires a file to be downloaded before it can finish successfully. Finding a URL, link, button, or media source is only read evidence. Use an authorized tool call with the DOWNLOAD capability and verify that it returned successful download evidence. If permission is denied or no file can be saved, call done with outcome partial or failed and explain the limitation; do not claim the file was downloaded.]'
           : missingRequiredSubmission
-          ? `[PLAN EXECUTION BLOCK: The selected ${state.siteWorkflow?.job?.id || 'workflow'} job requires terminal evidence for its own submit/send/publish/commit contract. Filling fields, another site's submit, or an unrelated success signal is not completion. Dispatch the intended action and observe the job-specific terminal state (for example recipient-bound sent state, saved/published resource, form confirmation, or paid/ticket-issued transaction) before calling done again. If that cannot be verified, use outcome partial or failed and report the exact blocker.]`
+          ? (state.siteWorkflow?.job?.id
+            ? `[PLAN EXECUTION BLOCK: The selected ${state.siteWorkflow.job.id} job requires terminal evidence for its own submit/send/publish/commit contract. Filling fields, another site's submit, or an unrelated success signal is not completion. Dispatch the intended action and observe the job-specific terminal state (for example recipient-bound sent state, saved/published resource, form confirmation, or paid/ticket-issued transaction) before calling done again. If that cannot be verified, use outcome partial or failed and report the exact blocker.]`
+            : '[PLAN EXECUTION BLOCK: This task requires submission evidence, but no site workflow job was selected. A field edit, click, or unrelated success signal is not proof of submission. Observe a dispatch-bound terminal state before calling done again; if the site has no supported submission contract, use outcome partial or failed and report that submission evidence is unverified.]')
           : forbiddenSubmission
           ? `[PLAN EXECUTION BLOCK: The selected ${state.siteWorkflow?.job?.id || 'workflow'} job prepares the form and leaves it unsubmitted, but a submit action was dispatched. Do not submit again or try to undo it by submitting anything else. Call done with outcome partial or failed, state plainly that the form was submitted without authorization, and report what the page shows now.]`
           : missingJobEvidence
@@ -20010,7 +20616,9 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     }
     if (missingRequiredSubmission) {
       return {
-        failure: `[Agent stopped because the selected ${state.siteWorkflow?.job?.id || 'workflow'} job required job-bound terminal evidence after its commit/submit dispatch, but that evidence was still missing after one recovery nudge. Some fields or page state may have changed; inspect the current page before retrying to avoid duplicate submission.]`,
+        failure: state.siteWorkflow?.job?.id
+          ? `[Agent stopped because the selected ${state.siteWorkflow.job.id} job required job-bound terminal evidence after its commit/submit dispatch, but that evidence was still missing after one recovery nudge. Some fields or page state may have changed; inspect the current page before retrying to avoid duplicate submission.]`
+          : '[Agent stopped because this task required verified submission evidence, but no site workflow job was selected and no dispatch-bound terminal state was verified after one recovery nudge. Some page state may have changed; inspect it before retrying to avoid duplicate submission.]',
         status: 'required_evidence_missing',
       };
     }
@@ -22459,6 +23067,13 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
   }
 
   async executeTool(tabId, name, args, onUpdate = null, executionContext = null) {
+    const uncertainTextBlock = await this._uncertainTextMutationBlock(tabId, name, args || {});
+    if (uncertainTextBlock) return uncertainTextBlock;
+    const result = await this._executeToolImpl(tabId, name, args, onUpdate, executionContext);
+    return this._finalizeTextMutationResult(tabId, name, args || {}, result);
+  }
+
+  async _executeToolImpl(tabId, name, args, onUpdate = null, executionContext = null) {
     const dispatchContext = executionContext && typeof executionContext === 'object'
       ? executionContext
       : {};
@@ -23713,7 +24328,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
                   .map(link => {
                     try { return new URL(link.getAttribute('href') || link.href || '', location.href).href; } catch { return ''; }
                   })
-                  .filter(url => /linkedin\\.com\\/(?:feed\\/update|posts)\\/|github\\.com\\/[^/]+\\/[^/]+\\/releases\\/tag\\/|douyin\\.com\\/video\\/\\d+/i.test(url))
+                  .filter(url => /linkedin\\.com\\/(?:feed\\/update|posts)\\/|github\\.com\\/[^/]+\\/[^/]+\\/(?:releases\\/tag\\/|commit\\/[0-9a-f]{7,40})|douyin\\.com\\/video\\/\\d+/i.test(url))
                   .slice(0, 200);
                 return {
                   url: location.href,
@@ -23765,6 +24380,12 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
             const submissionEvidence = this._completionSubmissionEvidence(
               tabId, pageState, pageState.url || '',
             );
+            const githubCommittedFileVerification = await this._githubCommittedFileVerification(
+              tabId, pageState, pageState.url || '', submissionEvidence,
+            );
+            if (githubCommittedFileVerification) {
+              pageState.githubCommittedFileVerification = githubCommittedFileVerification;
+            }
             const executionGuard = this._planExecutionGuards.get(tabId);
             let workflowMessageProbe = null;
             const workflowMessageKind = executionGuard?.enabled

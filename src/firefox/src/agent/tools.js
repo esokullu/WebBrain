@@ -98,7 +98,7 @@ export const AGENT_TOOLS = [
     type: 'function',
     function: {
       name: 'set_field',
-      description: 'Atomically focus + (optionally clear) + type text into a form field by ref_id, then verify the exact settled value. Prefer set_field({submit:true}) for search fields. Enter is sent only after verification succeeds; a failed verification returns recoveryRequired:"fresh_tree".',
+      description: 'Focus + (optionally clear) + type text into a form field by ref_id, then verify the exact settled value. Prefer set_field({submit:true}) for search fields. Enter is sent only after verification succeeds. If dispatch occurred but exact readback fails, the result reports mutationMayHaveOccurred:true and recoveryRequired:"verify_or_restore_field"; do not switch typing tools or resend text blindly.',
       parameters: {
         type: 'object',
         properties: {
@@ -332,7 +332,7 @@ export const AGENT_TOOLS = [
     type: 'function',
     function: {
       name: 'type_text',
-      description: 'Type text into an input field. TWO WAYS to use it: (1) CSS selector, or (2) ONLY text (no selector) to type into the currently focused element — use this RIGHT AFTER clicking a field. The second form is most reliable for forms with weird selectors (GitHub release[name], Stripe nested inputs). DO NOT pass `index` — type_text does not support indices. To type into an indexed field, call click({index: N}) first, then type_text({text: "..."}).',
+      description: 'Type text into an input field. TWO WAYS to use it: (1) CSS selector, or (2) ONLY text (no selector) to type into the currently focused element — use this RIGHT AFTER clicking a field. The second form is most reliable for forms with weird selectors (GitHub release[name], Stripe nested inputs). DO NOT pass index. With clear:true, WebBrain must prove the field empty before inserting; if that proof fails, it inserts nothing and blocks blind retries.',
       parameters: {
         type: 'object',
         properties: {

@@ -4268,6 +4268,19 @@ export class CDPClient {
     return typeof result?.result?.value === 'string' ? result.result.value : null;
   }
 
+  async selectAllModifier(tabId) {
+    let platform = '';
+    try {
+      const result = await this.evaluate(tabId, `(() => navigator.userAgentData?.platform || navigator.platform || '')()`);
+      platform = String(result?.result?.value || '');
+    } catch {}
+    if (!platform) {
+      try { platform = String(globalThis.navigator?.userAgentData?.platform || globalThis.navigator?.platform || ''); } catch {}
+    }
+    // CDP modifier bits: Alt=1, Control=2, Meta=4, Shift=8.
+    return /mac/i.test(platform) ? 4 : 2;
+  }
+
   /**
    * Prove a text edit landed. Returns `true` when proven and `null` when it
    * could not be proven — never `false`.
@@ -4924,9 +4937,11 @@ export class CDPClient {
     if (clear) {
       try {
         // Select all
+        const selectAllModifiers = await this.selectAllModifier(tabId);
+        throwIfAborted();
         dispatched = true;
         await dispatchKeyPress({
-          key: 'a', code: 'KeyA', modifiers: 2 /* Ctrl */, windowsVirtualKeyCode: 65,
+          key: 'a', code: 'KeyA', modifiers: selectAllModifiers, windowsVirtualKeyCode: 65,
         });
         // Delete selection
         await dispatchKeyPress({
@@ -4934,103 +4949,48 @@ export class CDPClient {
         });
       } catch (e) {
         if (actionExpired()) throwIfAborted();
-        // best effort
+        return {
+          success: false,
+          dispatched,
+          ...(dispatched ? {} : { noDispatch: true }),
+          verified: false,
+          mutationMayHaveOccurred: dispatched,
+          error: `Could not safely clear the text field: ${e?.message || String(e)}`,
+        };
+      }
+      const cleared = await this.verifyTextEntry(tabId, {
+        selector,
+        nodeId: info.nodeId,
+        text: '',
+        clear: true,
+      });
+      throwIfAborted();
+      if (cleared !== true) {
+        return {
+          success: false,
+          dispatched: true,
+          verified: false,
+          mutationMayHaveOccurred: true,
+          error: 'The existing field value could not be proven empty, so no replacement text was inserted.',
+        };
       }
     }
 
     // Type via Input.insertText — atomic, fires beforeinput/input correctly.
-    let typed = false;
     try {
       dispatched = true;
       markDispatch();
       await this.sendCommand(tabId, 'Input.insertText', { text });
       throwIfAborted();
-      typed = true;
     } catch (e) {
       if (actionExpired()) throwIfAborted();
-      // fall through to JS setter
-    }
-
-    if (!typed) {
-      // JS fallback using native setter. Properly escape via JSON.
-      const selectorJSON = JSON.stringify(selector);
-      const textJSON = JSON.stringify(text);
-      const targetTokenJSON = JSON.stringify(dispatchBindingToken);
-      dispatched = true;
-      markDispatch();
-      const result = await this.evaluate(tabId, `
-        (() => {
-          const actionDeadlineAt = ${deadlineAt};
-          const deadlineExpired = () => actionDeadlineAt > 0 && Date.now() >= actionDeadlineAt;
-          if (deadlineExpired()) return { success: false, deadlineExpired: true, error: 'Text action deadline expired' };
-          const sel = ${selectorJSON};
-          const txt = ${textJSON};
-          const targetToken = ${targetTokenJSON};
-          const queryDeep = (root) => {
-            try { const h = root.querySelector(sel); if (h) return h; } catch (e) { return null; }
-            const w = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
-            let n = w.currentNode;
-            while (n) { if (n.shadowRoot) { const i = queryDeep(n.shadowRoot); if (i) return i; } n = w.nextNode(); }
-            return null;
-          };
-          const el = queryDeep(document);
-          if (!el) return { success: false, error: 'Element not found (fallback)' };
-          if (targetToken && el[Symbol.for('webbrain.dispatchBinding')] !== targetToken) {
-            return { success: false, dispatched: false, noDispatch: true, retryable: true, error: 'The selector target changed after safety preflight' };
-          }
-          if (deadlineExpired()) return { success: false, deadlineExpired: true, error: 'Text action deadline expired' };
-          try { el.focus(); } catch (e) {}
-
-          if (el.isContentEditable) {
-            if (deadlineExpired()) return { success: false, deadlineExpired: true, error: 'Text action deadline expired' };
-            if (${clear}) el.textContent = '';
-            el.textContent += txt;
-            el.dispatchEvent(new InputEvent('input', { bubbles: true, data: txt }));
-            const r = el.getBoundingClientRect();
-            return {
-              success: true,
-              method: 'js-contenteditable',
-              value: el.textContent.slice(0, 100),
-              rect: { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) },
-            };
-          }
-
-          const proto = el instanceof HTMLTextAreaElement
-            ? HTMLTextAreaElement.prototype
-            : HTMLInputElement.prototype;
-          const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
-          const newVal = (${clear} ? '' : (el.value || '')) + txt;
-          if (deadlineExpired()) return { success: false, deadlineExpired: true, error: 'Text action deadline expired' };
-          if (setter) setter.call(el, newVal); else el.value = newVal;
-
-          el.dispatchEvent(new Event('input', { bubbles: true }));
-          el.dispatchEvent(new Event('change', { bubbles: true }));
-          const r = el.getBoundingClientRect();
-          return {
-            success: true,
-            method: 'js-setter',
-            value: (el.value || '').slice(0, 100),
-            rect: { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) },
-          };
-        })()
-      `);
-      throwIfAborted();
-      const fallbackResult = result?.result?.value || { success: false, error: 'Type failed' };
-      if (fallbackResult.success === false && fallbackResult.dispatched == null) {
-        fallbackResult.dispatched = dispatched;
-      }
-      if (fallbackResult.success === true) {
-        // Only ever assert a positive proof — see verifyTextEntry.
-        const fallbackVerified = await this.verifyTextEntry(tabId, {
-          selector,
-          nodeId: info.nodeId,
-          text,
-          clear,
-          beforeSignature,
-        });
-        if (fallbackVerified === true) fallbackResult.verified = true;
-      }
-      return fallbackResult;
+      return {
+        success: false,
+        dispatched: true,
+        verified: false,
+        mutationMayHaveOccurred: true,
+        error: `Text insertion outcome became uncertain: ${e?.message || String(e)}`,
+      };
     }
 
     const verified = await this.verifyTextEntry(tabId, {
@@ -5040,9 +5000,18 @@ export class CDPClient {
       clear,
       beforeSignature,
     });
+    if (verified !== true) {
+      return {
+        success: false,
+        dispatched: true,
+        verified: false,
+        mutationMayHaveOccurred: true,
+        error: 'Text was inserted, but the complete settled field value could not be verified exactly.',
+      };
+    }
     return {
       success: true,
-      ...(verified === true ? { verified: true } : {}),
+      verified: true,
       method: 'cdp-insert-text',
       tag: info.tag,
       rect: {

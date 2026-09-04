@@ -3350,48 +3350,6 @@
     } catch { return null; }
   }
 
-  async function _retryFieldWithExecCommand(el, expected, actionDeadlineExpired = () => false) {
-    try {
-      if (actionDeadlineExpired()) return false;
-      el.focus({ preventScroll: true });
-      if (actionDeadlineExpired()) return false;
-      if (el.isContentEditable) {
-        const selection = window.getSelection();
-        const range = document.createRange();
-        range.selectNodeContents(el);
-        selection.removeAllRanges();
-        selection.addRange(range);
-      } else if (typeof el.select === 'function') {
-        if (actionDeadlineExpired()) return false;
-        el.select();
-      } else if (typeof el.setSelectionRange === 'function') {
-        if (actionDeadlineExpired()) return false;
-        el.setSelectionRange(0, String(el.value || '').length);
-      }
-      if (actionDeadlineExpired()) return false;
-      const inserted = document.execCommand('insertText', false, expected);
-      if (actionDeadlineExpired()) return false;
-      if (!inserted) {
-        if (el.isContentEditable) {
-          el.textContent = expected;
-        } else {
-          const proto = el.tagName === 'TEXTAREA'
-            ? window.HTMLTextAreaElement.prototype
-            : window.HTMLInputElement.prototype;
-          const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
-          if (actionDeadlineExpired()) return false;
-          if (setter) setter.call(el, expected); else el.value = expected;
-        }
-        if (actionDeadlineExpired()) return false;
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-      }
-      if (actionDeadlineExpired()) return false;
-      el.dispatchEvent(new Event('change', { bubbles: true }));
-      await new Promise(resolve => setTimeout(resolve, SET_FIELD_VERIFY_DELAY_MS));
-      return !actionDeadlineExpired();
-    } catch { return false; }
-  }
-
   function _richTextToolbarContextForElement(el) {
     try {
       if (!el || !el.isConnected) return { toolbarContext: false, toolbarRegionRef: '', toolbarRegionKey: '' };
@@ -5305,25 +5263,14 @@
           if (!el.isConnected) {
             return failure(
               `ref_id ${ref_id} was replaced while the value was being typed. Re-read the accessibility tree and retry with the current field ref_id.`,
-              { ref_id, verified: false, recoveryRequired: 'fresh_tree', failureScope: `field-value:${ref_id}`, retryable: false, fieldMeta },
+              { ref_id, verified: false, recoveryRequired: 'verify_or_restore_field', failureScope: `field-value:${ref_id}`, retryable: false, fieldMeta },
             );
           }
-          let actual = el.isContentEditable ? _editableTextValue(el) : (el.value || '');
-          let verified = selectExpected !== null
+          const actual = el.isContentEditable ? _editableTextValue(el) : (el.value || '');
+          const verified = selectExpected !== null
             ? actual === selectExpected
             : _setFieldValueMatches(actual, previous, text, !!clear, el.isContentEditable);
-          let fallbackAttempted = false;
-          if (!verified && selectExpected === null) {
-            if (actionDeadlineExpired()) return deadlineFailure();
-            fallbackAttempted = await _retryFieldWithExecCommand(
-              el,
-              clear ? text : previous + text,
-              actionDeadlineExpired,
-            );
-            if (actionDeadlineExpired()) return deadlineFailure();
-            actual = el.isContentEditable ? _editableTextValue(el) : (el.value || '');
-            verified = _setFieldValueMatches(actual, previous, text, !!clear, el.isContentEditable);
-          }
+          const fallbackAttempted = false;
           if (!verified) {
             return failure(
               'The field value did not exactly match the requested text after the page settled. Re-read the field and retry with a fresh ref_id.',
@@ -5335,7 +5282,7 @@
                 actual: actual.slice(0, 200),
                 fieldMeta,
                 fallbackAttempted,
-                recoveryRequired: 'fresh_tree',
+                recoveryRequired: 'verify_or_restore_field',
                 failureScope: `field-value:${ref_id}`,
                 retryable: false,
               },
@@ -5472,29 +5419,18 @@
               {
                 ref_id,
                 verified: false,
-                recoveryRequired: 'fresh_tree',
+                recoveryRequired: 'verify_or_restore_field',
                 failureScope: `field-value:${ref_id}`,
                 retryable: false,
               },
             );
           }
           const fieldMeta = _fieldMeta(el);
-          let actual = el.isContentEditable ? _editableTextValue(el) : (el.value || '');
-          let verified = _setFieldValueMatches(actual, prevValue, text, clear, el.isContentEditable);
-          let fallbackAttempted = false;
+          const actual = el.isContentEditable ? _editableTextValue(el) : (el.value || '');
+          const verified = _setFieldValueMatches(actual, prevValue, text, clear, el.isContentEditable);
+          const fallbackAttempted = false;
           let nativeSubmitAttempted = false;
           let submissionOutcomeUnknown = false;
-          if (!verified) {
-            fallbackAttempted = true;
-            await _retryFieldWithExecCommand(
-              el,
-              (clear ? '' : prevValue) + text,
-              actionDeadlineExpired,
-            );
-            if (actionDeadlineExpired()) return deadlineFailure();
-            actual = el.isContentEditable ? _editableTextValue(el) : (el.value || '');
-            verified = _setFieldValueMatches(actual, prevValue, text, clear, el.isContentEditable);
-          }
 
           if (submit && verified) {
             if (actionDeadlineExpired()) return deadlineFailure();
@@ -5626,7 +5562,7 @@
                 actual: actual.slice(0, 200),
                 fieldMeta,
                 fallbackAttempted,
-                recoveryRequired: 'fresh_tree',
+                recoveryRequired: 'verify_or_restore_field',
                 failureScope: `field-value:${ref_id}`,
                 retryable: false,
               },
@@ -5645,6 +5581,90 @@
           };
         } catch (e) {
           return failure(e && e.message || String(e));
+        }
+      },
+      'ax_verify_field_value': () => {
+        try {
+          const { ref_id, expected, appendText } = msg.params || {};
+          if (typeof ref_id !== 'string' || typeof expected !== 'string') {
+            return { success: false, verified: false, error: 'ref_id and expected are required' };
+          }
+          if (typeof window.__wb_ax_lookup !== 'function') return { success: false, verified: false, error: 'accessibility-tree.js not injected' };
+          const el = window.__wb_ax_lookup(ref_id);
+          if (!el || !el.isConnected) return { success: false, verified: false, error: `ref_id ${ref_id} is stale` };
+          const actual = el.isContentEditable ? _editableTextValue(el) : (el.value || '');
+          const verifiesAppend = el.isContentEditable && typeof appendText === 'string';
+          const expectedPrefix = verifiesAppend
+            ? expected.slice(0, expected.length - appendText.length)
+            : '';
+          return {
+            success: true,
+            verified: verifiesAppend && !expected.endsWith(appendText)
+              ? false
+              : _setFieldValueMatches(
+                  actual,
+                  expectedPrefix,
+                  verifiesAppend ? appendText : expected,
+                  !verifiesAppend,
+                  el.isContentEditable,
+                ),
+            actual: actual.slice(0, 200),
+            fieldMeta: _fieldMeta(el),
+          };
+        } catch (error) {
+          return { success: false, verified: false, error: error && error.message || String(error) };
+        }
+      },
+      'field_value_digest': async () => {
+        try {
+          const { ref_id, selector, expected } = msg.params || {};
+          let el = null;
+          if (typeof ref_id === 'string' && ref_id) {
+            if (typeof window.__wb_ax_lookup !== 'function') {
+              return { success: false, error: 'accessibility-tree.js not injected' };
+            }
+            el = window.__wb_ax_lookup(ref_id);
+          } else if (typeof selector === 'string' && selector.trim()) {
+            const queryDeep = (root) => {
+              const match = root.querySelector(selector.trim());
+              if (match) return match;
+              const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+              let node = walker.currentNode;
+              while (node) {
+                if (node.shadowRoot) {
+                  const nested = queryDeep(node.shadowRoot);
+                  if (nested) return nested;
+                }
+                node = walker.nextNode();
+              }
+              return null;
+            };
+            el = queryDeep(document);
+          } else {
+            return { success: false, error: 'ref_id or selector is required' };
+          }
+          if (!el || !el.isConnected) return { success: false, error: 'field is stale or unavailable' };
+          const tag = String(el.tagName || '').toUpperCase();
+          if (!(el.isContentEditable || tag === 'INPUT' || tag === 'TEXTAREA')) {
+            return { success: false, error: 'target is not a text field' };
+          }
+          const value = String(el.isContentEditable ? _editableTextValue(el) : (el.value || ''));
+          if (!globalThis.crypto?.subtle) return { success: false, error: 'SHA-256 is unavailable' };
+          const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+          const valueSha256 = [...new Uint8Array(digest)]
+            .map(byte => byte.toString(16).padStart(2, '0'))
+            .join('');
+          return {
+            success: true,
+            ...(typeof expected === 'string' ? {
+              verified: _setFieldValueMatches(value, '', expected, true, el.isContentEditable),
+            } : {}),
+            valueLength: value.length,
+            valueSha256,
+            fieldMeta: _fieldMeta(el),
+          };
+        } catch (error) {
+          return { success: false, error: error && error.message || String(error) };
         }
       },
       // ── hover ──────────────────────────────────────────────────────────────

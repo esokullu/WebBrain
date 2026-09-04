@@ -6160,7 +6160,7 @@
           if (!el.isConnected) {
             return failure(
               `ref_id ${ref_id} was replaced while the value was being typed. Re-read the accessibility tree and retry with the current field ref_id.`,
-              { ref_id, verified: false, recoveryRequired: 'fresh_tree', failureScope: `field-value:${ref_id}`, retryable: false, fieldMeta },
+              { ref_id, verified: false, recoveryRequired: 'verify_or_restore_field', failureScope: `field-value:${ref_id}`, retryable: false, fieldMeta },
             );
           }
           const actual = el.isContentEditable ? _editableTextValue(el) : (el.value || '');
@@ -6180,7 +6180,7 @@
                 fieldMeta,
                 fallbackAttempted,
                 ...(selectExpected === null ? { _expectedValue: (clear ? '' : previous) + text } : {}),
-                recoveryRequired: 'fresh_tree',
+                recoveryRequired: 'verify_or_restore_field',
                 failureScope: `field-value:${ref_id}`,
                 retryable: false,
               },
@@ -6318,7 +6318,7 @@
           if (!el.isConnected) {
             return failure(
               `ref_id ${ref_id} was replaced while the value was being set. Re-read the accessibility tree and retry with the current field ref_id.`,
-              { ref_id, verified: false, recoveryRequired: 'fresh_tree', failureScope: `field-value:${ref_id}`, retryable: false },
+              { ref_id, verified: false, recoveryRequired: 'verify_or_restore_field', failureScope: `field-value:${ref_id}`, retryable: false },
             );
           }
           const actual = el.isContentEditable ? _editableTextValue(el) : (el.value || '');
@@ -6464,7 +6464,7 @@
                 fieldMeta,
                 fallbackAttempted,
                 _expectedValue: (clear ? '' : prevValue) + text,
-                recoveryRequired: 'fresh_tree',
+                recoveryRequired: 'verify_or_restore_field',
                 failureScope: `field-value:${ref_id}`,
                 retryable: false,
               },
@@ -6564,6 +6564,58 @@
           };
         } catch (error) {
           return { success: false, verified: false, error: error && error.message || String(error) };
+        }
+      },
+      'field_value_digest': async () => {
+        try {
+          const { ref_id, selector, expected } = msg.params || {};
+          let el = null;
+          if (typeof ref_id === 'string' && ref_id) {
+            if (typeof window.__wb_ax_lookup !== 'function') {
+              return { success: false, error: 'accessibility-tree.js not injected' };
+            }
+            el = window.__wb_ax_lookup(ref_id);
+          } else if (typeof selector === 'string' && selector.trim()) {
+            const queryDeep = (root) => {
+              const match = root.querySelector(selector.trim());
+              if (match) return match;
+              const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+              let node = walker.currentNode;
+              while (node) {
+                if (node.shadowRoot) {
+                  const nested = queryDeep(node.shadowRoot);
+                  if (nested) return nested;
+                }
+                node = walker.nextNode();
+              }
+              return null;
+            };
+            el = queryDeep(document);
+          } else {
+            return { success: false, error: 'ref_id or selector is required' };
+          }
+          if (!el || !el.isConnected) return { success: false, error: 'field is stale or unavailable' };
+          const tag = String(el.tagName || '').toUpperCase();
+          if (!(el.isContentEditable || tag === 'INPUT' || tag === 'TEXTAREA')) {
+            return { success: false, error: 'target is not a text field' };
+          }
+          const value = String(el.isContentEditable ? _editableTextValue(el) : (el.value || ''));
+          if (!globalThis.crypto?.subtle) return { success: false, error: 'SHA-256 is unavailable' };
+          const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+          const valueSha256 = [...new Uint8Array(digest)]
+            .map(byte => byte.toString(16).padStart(2, '0'))
+            .join('');
+          return {
+            success: true,
+            ...(typeof expected === 'string' ? {
+              verified: _setFieldValueMatches(value, '', expected, true, el.isContentEditable),
+            } : {}),
+            valueLength: value.length,
+            valueSha256,
+            fieldMeta: _fieldMeta(el),
+          };
+        } catch (error) {
+          return { success: false, error: error && error.message || String(error) };
         }
       },
       'resolve_visual_target': () => {
