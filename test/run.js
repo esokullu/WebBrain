@@ -74571,6 +74571,59 @@ test('GitHub edit-file workflow verifies the exact committed raw blob', async ()
   }
 });
 
+test('GitHub edit-file workflow fails closed when submit detection is inconclusive', async () => {
+  const editUrl = 'https://github.com/Example/Repo/edit/main/docs/plan.md';
+  for (const [label, AgentClass, tabId] of [
+    ['chrome', AgentCh, 9451],
+    ['firefox', AgentFx, 9452],
+  ]) {
+    const agent = new AgentClass({});
+    agent._planExecutionGuards.set(tabId, {
+      enabled: true,
+      siteWorkflow: { adapterName: 'github', job: { id: 'edit-file-and-commit' } },
+      workflowMetadataRequirements: [],
+      workflowMetadataRequirementsResolved: true,
+    });
+    agent._currentUrl = async () => editUrl;
+    agent._workflowSubmitBindingForAttempt = () => ({ metadataRequirementsIncomplete: true });
+    // click_ax with only a ref_id and no probe evidence cannot be proven to be
+    // a non-submit, so it must block until the exact binding exists.
+    const inconclusiveAx = await agent._workflowPreSubmitDispatchBlock(
+      tabId, 'click_ax', { ref_id: 'ref_commit' }, null,
+    );
+    assert.equal(inconclusiveAx?.noDispatch, true, `${label}: inconclusive click_ax bypassed the commit guard`);
+    assert.equal(inconclusiveAx?.inconclusiveSubmitDetection, true, `${label}: inconclusive block was not marked`);
+    assert.equal(inconclusiveAx?.recoveryRequired, 'verify_or_restore_field');
+    // click({text:'Commit changes'}) is classified as a submit even without probe evidence.
+    const commitText = await agent._workflowPreSubmitDispatchBlock(
+      tabId, 'click', { text: 'Commit changes' }, null,
+    );
+    assert.equal(commitText?.noDispatch, true, `${label}: text commit click bypassed the commit guard`);
+    assert.equal(commitText?.inconclusiveSubmitDetection, undefined, `${label}: label-classified submit mislabeled as inconclusive`);
+    // Enter in a field is submit-capable and stays blocked; other keys and
+    // non-submit field writes remain allowed.
+    const inconclusiveEnter = await agent._workflowPreSubmitDispatchBlock(
+      tabId, 'press_keys', { key: 'Enter' }, null,
+    );
+    assert.equal(inconclusiveEnter?.noDispatch, true, `${label}: inconclusive Enter bypassed the commit guard`);
+    assert.equal(await agent._workflowPreSubmitDispatchBlock(
+      tabId, 'press_keys', { key: 'ArrowDown' }, null,
+    ), null, `${label}: non-submit key was blocked`);
+    assert.equal(await agent._workflowPreSubmitDispatchBlock(
+      tabId, 'set_field', { ref_id: 'ref_editor', text: 'draft' }, null,
+    ), null, `${label}: non-submit field write was blocked`);
+    // Once the exact binding exists, inconclusive actions are allowed again.
+    agent._workflowSubmitBindingForAttempt = () => ({
+      githubFileCommit: {
+        repository: 'example/repo', branch: 'main', path: 'docs/plan.md',
+      },
+    });
+    assert.equal(await agent._workflowPreSubmitDispatchBlock(
+      tabId, 'click_ax', { ref_id: 'ref_commit' }, null,
+    ), null, `${label}: bound inconclusive action remained blocked`);
+  }
+});
+
 test('click_ax rejects stale zero-sized targets before activation', () => {
   for (const [label, rel] of [
     ['chrome', 'src/chrome/src/content/content.js'],

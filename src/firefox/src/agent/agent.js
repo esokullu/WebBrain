@@ -1512,7 +1512,15 @@ export class Agent extends LoopDetector {
         || guard.siteWorkflow?.job?.id !== 'edit-file-and-commit') return null;
     const looksLikeSubmit = detectedSubmit?.isSubmit === true
       || this._formValidationActionLooksSubmit(name, args, null, detectedSubmit);
-    if (!looksLikeSubmit) return null;
+    // Fail closed when submit detection is inconclusive: a click_ax carrying
+    // only a ref_id (or any other submit-capable action whose probe produced
+    // no evidence) cannot be proven to be a non-submit, so it must clear the
+    // same binding gate as an observed submit. Non-submit-capable tools keep
+    // the early exit; the positively identified reversible dialog launcher is
+    // exempted below.
+    const inconclusiveSubmitCapable = !looksLikeSubmit
+      && this._isFormValidationCandidate(name, args);
+    if (!looksLikeSubmit && !inconclusiveSubmitCapable) return null;
     const detectedFields = [
       ...(Array.isArray(detectedSubmit?.fields) ? detectedSubmit.fields : []),
       ...(Array.isArray(detectedSubmit?.changedFields) ? detectedSubmit.changedFields : []),
@@ -1543,6 +1551,7 @@ export class Agent extends LoopDetector {
       repeatBlocked: true,
       workflowJob: 'edit-file-and-commit',
       recoveryRequired: 'verify_or_restore_field',
+      ...(inconclusiveSubmitCapable ? { inconclusiveSubmitDetection: true } : {}),
       error: 'Commit submission is blocked because the complete GitHub file-editor replacement, requested commit message, path, or branch is not bound to exact pre-submit evidence. Resolve any uncertain text write with exact readback or reload and restore the editor, then verify the complete file and requested commit message before committing.',
     };
   }
@@ -14992,10 +15001,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     const label = String(args?.text || result?.name || result?.matched || result?.text || '').trim();
     const selector = String(args?.selector || '').toLowerCase();
     if (detectedSubmit?.isSubmit === true) {
-      return /^(?:continue|save|submit|post|publish|send|confirm|resolve|sign up|sign in|log in|register|place order|pay|checkout|finish)\b/i.test(label)
+      return /^(?:continue|save|submit|post|publish|send|confirm|commit|resolve|sign up|sign in|log in|register|place order|pay|checkout|finish)\b/i.test(label)
         || /(?:type\s*=\s*["']?(?:submit|image)|\bsubmit\b|\bcontinue\b|\bconfirm\b|\bcheckout\b|\bfinish\b)/.test(selector);
     }
-    if (/^(?:continue|next|create|save|submit|add|post|publish|send|confirm|resolve|sign up|sign in|log in|register|place order|pay|checkout|update|apply|finish|done)\b/i.test(label)) {
+    if (/^(?:continue|next|create|save|submit|add|post|publish|send|confirm|commit|resolve|sign up|sign in|log in|register|place order|pay|checkout|update|apply|finish|done)\b/i.test(label)) {
       return true;
     }
     return /(?:type\s*=\s*["']?(?:submit|image)|\bsubmit\b|\bcontinue\b|\bconfirm\b|\bcheckout\b|\bfinish\b)/.test(selector);
