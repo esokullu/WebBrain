@@ -2132,10 +2132,20 @@ export class Agent extends LoopDetector {
       .some(field => this._workflowSocialDisplayedUrlMatchesRequested(link[field], requested));
   }
 
+  // A card also renders the author name, timestamp, and controls, so matching
+  // the requested body anywhere in it lets an account named "WebBrain" satisfy
+  // a requested body of "WebBrain" from its own byline. Prefer the app's own
+  // post-text elements, and once they exist never fall back to card chrome.
+  _workflowSocialAuthoredText(record) {
+    const authored = this._workflowMessageBody(record?.bodyText);
+    return authored ? record.bodyText : record?.text;
+  }
+
   _workflowSocialPublishedBodyObserved(requirement, record) {
-    if (this._workflowPublishedPayloadValueObserved(requirement, { pageText: record?.text })) return true;
+    const authoredText = this._workflowSocialAuthoredText(record);
+    if (this._workflowPublishedPayloadValueObserved(requirement, { pageText: authoredText })) return true;
     const expectedBody = this._workflowMessageBody(requirement?.value);
-    let observedBody = this._workflowMessageBody(record?.text);
+    let observedBody = this._workflowMessageBody(authoredText);
     if (!expectedBody || !observedBody) return false;
     const requestedUrls = (expectedBody.match(/https?:\/\/[^\s<>"']+/gi) || [])
       .map(rawUrl => this._workflowTrimUrlPunctuation(rawUrl));
@@ -2246,9 +2256,12 @@ export class Agent extends LoopDetector {
         state.siteWorkflow,
         records[0].url,
       );
+      const accountMatches = candidate => !candidate
+        || candidate === publishedAccount
+        || this._workflowSocialAccountAliasProven(state.siteWorkflow, candidate, publishedAccount, records[0]);
       if (!intendedAccount || !publishedAccount
-          || (requestedAccount && requestedAccount !== publishedAccount)
-          || (capturedAccount && capturedAccount !== publishedAccount)) return false;
+          || !accountMatches(requestedAccount)
+          || !accountMatches(capturedAccount)) return false;
       return requirements.every(requirement => (
         requirement?.field === 'account'
           ? true
@@ -2372,6 +2385,24 @@ export class Agent extends LoopDetector {
     if (adapterName === 'twitter' && !/^[A-Za-z0-9_]{1,15}$/.test(text)) return '';
     if (adapterName === 'bluesky' && !/^(?:did:[a-z0-9:._-]+|[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?)$/i.test(text)) return '';
     return `${adapterName}:${text.toLowerCase()}`;
+  }
+
+  // Bluesky names one account either by handle or by DID, so a permalink and a
+  // profile link can identify the same account without matching as strings.
+  // The card that shows the published post is the only page evidence that ties
+  // the two together, and only when it is unambiguous: mentions render as
+  // handles, never as DIDs, so a lone identifier of the other kind inside this
+  // post's own card is that post's author. Anything ambiguous fails closed.
+  _workflowSocialAccountAliasProven(siteWorkflow, intended, published, record) {
+    if (siteWorkflow?.adapterName !== 'bluesky') return false;
+    if (!intended || !published || intended === published) return false;
+    const isDid = value => /^bluesky:did:/i.test(String(value || ''));
+    if (isDid(intended) === isDid(published)) return false;
+    const cardAccounts = new Set((Array.isArray(record?.links) ? record.links : [])
+      .flatMap(link => [link?.href, link?.expandedUrl])
+      .map(value => this._workflowSocialPublicationAccountIdentity(siteWorkflow, value))
+      .filter(value => !!value && isDid(value) !== isDid(published)));
+    return cardAccounts.size === 1 && cardAccounts.has(intended);
   }
 
   _workflowPublishedResourceIdentity(siteWorkflow, pageUrl) {
@@ -14442,11 +14473,20 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
   // closer it opened itself. Strip a delimiter only when the URL never opened
   // it, or exact-body verification can never match the link the site rendered.
   _workflowTrimUrlPunctuation(rawUrl) {
-    const openerFor = { ')': '(', ']': '[', '}': '{', '>': '<' };
+    const openerFor = {
+      ')': '(', ']': '[', '}': '{', '>': '<',
+      '\uff09': '\uff08', '\u3011': '\u3010', '\u300f': '\u300e', '\u300d': '\u300c',
+      '\u300b': '\u300a', '\u3009': '\u3008', '\uff3d': '\uff3b', '\uff5d': '\uff5b',
+    };
+    // NFKC keeps CJK sentence delimiters and the ellipsis as themselves, and a
+    // site renders them as post text outside the link, so they have to come off
+    // the requested URL the same way a period does.
+    const sentenceEnders = '.,;:!?\'"'
+      + '\u3002\u3001\uff0c\uff1b\uff1a\uff01\uff1f\u2026\u2025\uff0e';
     let url = String(rawUrl || '');
     while (url) {
       const last = url.slice(-1);
-      if ('.,;:!?\'"'.includes(last)) {
+      if (sentenceEnders.includes(last)) {
         url = url.slice(0, -1);
         continue;
       }
@@ -27792,13 +27832,21 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
                     walk(root);
                     return parts.join('\\n');
                   };
-                  const text = authoredText(best)
+                  const normalizeLines = (value, limit) => String(value || '')
                     .replace(/\\r\\n?/g, '\\n')
                     .split('\\n')
                     .map(line => line.replace(/[^\\S\\n]+/g, ' ').trim())
                     .filter(Boolean)
                     .join('\\n')
-                    .slice(0, 5000);
+                    .slice(0, limit);
+                  const text = normalizeLines(authoredText(best), 5000);
+                  // The app's own post-text elements, so a one-line requested
+                  // body cannot be satisfied by the author name or timestamp
+                  // the card also renders. Sized for X Premium long posts.
+                  const authoredNodes = Array.isArray(record?.authored) ? record.authored : [];
+                  const bodyText = authoredNodes.length
+                    ? normalizeLines(authoredNodes.map(node => String(node.innerText || '')).join('\\n'), 25000)
+                    : '';
                   const recordLinks = [
                     ...(best.matches?.('a[href]') ? [best] : []),
                     ...Array.from(best.querySelectorAll?.('a[href]') || []),
@@ -27823,9 +27871,11 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
                     candidate,
                   ])).values()).slice(0, 24);
                   const prior = workflowResourceRecordMap.get(identity);
-                  if (!prior || text.length > prior.text.length) workflowResourceRecordMap.set(identity, { url, text, links });
+                  if (!prior || text.length > prior.text.length) {
+                    workflowResourceRecordMap.set(identity, { url, text, bodyText, links });
+                  }
                 }
-                const workflowResourceRecords = Array.from(workflowResourceRecordMap.values()).slice(0, 100);
+                const workflowResourceRecords = Array.from(workflowResourceRecordMap.values()).slice(0, 40);
                 return {
                   openDialogCount: dialogs.length,
                   dialogTitles: dialogs.map(d => {

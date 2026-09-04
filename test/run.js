@@ -23490,6 +23490,27 @@ test('publication resource records keep the owning social card when it embeds an
     assert.equal(plainRecord.root, plainCard);
     assert.deepEqual(plainRecord.excluded, [],
       `${label}: an ordinary post was treated as if it embedded another`);
+
+    // An X Premium long post still belongs to the card the app drew.
+    const longPermalink = {
+      innerText: '2m',
+      getAttribute: () => '/me/status/222',
+      href: '/me/status/222',
+      closest: () => longCard,
+    };
+    const longBody = { innerText: 'x'.repeat(9000), getAttribute: () => null };
+    const longCard = {
+      innerText: 'WebBrain\n' + 'x'.repeat(9000),
+      querySelectorAll: selector => (String(selector).includes('Text') ? [longBody] : [longPermalink]),
+      contains: node => node === longPermalink || node === longCard || node === longBody,
+    };
+    longPermalink.parentElement = longCard;
+    longBody.parentElement = longCard;
+    const longRecord = invariant.publicationResourceRecordRoot(longPermalink, identity, identityOf);
+    assert.equal(longRecord.root, longCard,
+      `${label}: a long post fell out of its own card and lost its body`);
+    assert.deepEqual(longRecord.authored, [longBody],
+      `${label}: the app's own post-text element was not reported`);
   }
 
   for (const [label, rel] of [
@@ -23505,8 +23526,12 @@ test('publication resource records keep the owning social card when it embeds an
       `${label}: the record builder does not exclude embedded posts`);
     assert.match(source, /\.filter\(candidate => !isEmbedded\(candidate\)\)\.slice\(0, 100\)/,
       `${label}: an embedded post's links still reach the record`);
-    assert.match(source, /const text = authoredText\(best\)/,
+    assert.match(source, /const text = normalizeLines\(authoredText\(best\), 5000\);/,
       `${label}: record text is not restricted to authored content`);
+    assert.match(source, /const bodyText = authoredNodes\.length/,
+      `${label}: the record does not carry the app's own post text`);
+    assert.match(source, /normalizeLines\(authoredNodes\.map\(node => String\(node\.innerText \|\| ''\)\)\.join\('\\\\n'\), 25000\)/,
+      `${label}: authored post text is not sized for a long X Premium post`);
   }
 });
 
@@ -85251,6 +85276,17 @@ test('a requested URL keeps the closing delimiter it opened', () => {
       agent._workflowTrimUrlPunctuation('https://example.com/x?y=(1)'),
       'https://example.com/x?y=(1)',
     );
+    // CJK sentence delimiters survive NFKC and the site keeps them as post
+    // text outside the link.
+    assert.equal(agent._workflowTrimUrlPunctuation('https://example.com/path\u3002'), 'https://example.com/path',
+      AgentClass.name + ': a CJK full stop stayed inside the requested URL');
+    assert.equal(agent._workflowTrimUrlPunctuation('https://example.com/path\u3001'), 'https://example.com/path');
+    assert.equal(agent._workflowTrimUrlPunctuation('https://example.com/path\u2026'), 'https://example.com/path');
+    assert.equal(
+      agent._workflowTrimUrlPunctuation('https://ja.wikipedia.org/wiki/\u95a2\u6570\uff08\u6570\u5b66\uff09\u3002'),
+      'https://ja.wikipedia.org/wiki/\u95a2\u6570\uff08\u6570\u5b66\uff09',
+      AgentClass.name + ': a balanced full-width closer was stripped with the sentence punctuation',
+    );
 
     // The whole point is that exact-body verification still matches the link
     // the site rendered for a URL shaped like that.
@@ -85261,6 +85297,96 @@ test('a requested URL keeps the closing delimiter it opened', () => {
         links: [{ href: 'https://t.co/abc', text: 'en.wikipedia.org/wiki/Function_…', expandedUrl: balanced }],
       },
     ), true, AgentClass.name + ': a URL ending in a balanced closer blocked exact-body verification');
+  }
+});
+
+test('social body verification reads the authored post text, not the card chrome', () => {
+  for (const AgentClass of [AgentCh, AgentFx]) {
+    const agent = new AgentClass({});
+    // The account is called WebBrain, so the card's byline equals the body the
+    // task asked for while the post itself says something else entirely.
+    const staleCard = {
+      url: 'https://x.com/webbrain/status/2222222222222222222',
+      text: 'WebBrain\n@webbrain\nA completely different post.\n2m',
+      bodyText: 'A completely different post.',
+      links: [],
+    };
+    assert.equal(
+      agent._workflowSocialPublishedBodyObserved({ field: 'body', value: 'WebBrain' }, staleCard),
+      false,
+      AgentClass.name + ': the author byline satisfied the requested body',
+    );
+    assert.equal(
+      agent._workflowSocialPublishedBodyObserved(
+        { field: 'body', value: 'A completely different post.' },
+        staleCard,
+      ),
+      true,
+      AgentClass.name + ': the authored post text did not satisfy its own body',
+    );
+    // Without the app's post-text element there is nothing better than the
+    // card, so the previous behavior has to stay available.
+    assert.equal(
+      agent._workflowSocialPublishedBodyObserved(
+        { field: 'body', value: 'A completely different post.' },
+        { ...staleCard, bodyText: '' },
+      ),
+      true,
+      AgentClass.name + ': a card without app-owned post text lost body verification',
+    );
+  }
+});
+
+test('a Bluesky DID and handle name one account only on the card that proves it', () => {
+  for (const AgentClass of [AgentCh, AgentFx]) {
+    const agent = new AgentClass({});
+    const workflow = agent._resolvePlannerSiteWorkflow('https://bsky.app/', {
+      request_kind: 'execute',
+      site_job: 'publish-post',
+    });
+    const did = 'bluesky:did:plc:abc123';
+    const handle = 'bluesky:webbrain.one';
+    const cardWithDid = {
+      url: 'https://bsky.app/profile/webbrain.one/post/4def',
+      links: [{ href: 'https://bsky.app/profile/did:plc:abc123' }],
+    };
+    assert.equal(agent._workflowSocialAccountAliasProven(workflow, did, handle, cardWithDid), true,
+      AgentClass.name + ': the card proving the DID belongs to this post was ignored');
+
+    // A mention adds another handle, so a handle-form intent stays ambiguous.
+    assert.equal(agent._workflowSocialAccountAliasProven(
+      workflow,
+      handle,
+      did,
+      {
+        url: 'https://bsky.app/profile/did:plc:abc123/post/4def',
+        links: [
+          { href: 'https://bsky.app/profile/webbrain.one' },
+          { href: 'https://bsky.app/profile/someone.else' },
+        ],
+      },
+    ), false, AgentClass.name + ': an ambiguous card bridged two account identifiers');
+
+    // Two accounts of the same kind are a plain mismatch, never an alias.
+    assert.equal(agent._workflowSocialAccountAliasProven(
+      workflow,
+      'bluesky:notwebbrain.test',
+      handle,
+      cardWithDid,
+    ), false, AgentClass.name + ': a different handle was accepted as an alias');
+    assert.equal(
+      agent._workflowSocialAccountAliasProven(
+        agent._resolvePlannerSiteWorkflow('https://x.com/home', {
+          request_kind: 'execute',
+          site_job: 'publish-post',
+        }),
+        'twitter:webbrain',
+        'twitter:notwebbrain',
+        { links: [] },
+      ),
+      false,
+      AgentClass.name + ': X accounts were bridged by an alias rule that only Bluesky needs',
+    );
   }
 });
 

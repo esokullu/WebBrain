@@ -254,19 +254,27 @@ export function classifyCompletionForm({
  * conservative single-resource ancestry fallback for other sites/markup. The
  * card boundary is wider than the authored content, so the embedded post's
  * subtree is reported separately: its text and shortened links must not be
- * able to satisfy the reviewed body on the outer post's behalf.
- * Returns { root, excluded }.
+ * able to satisfy the reviewed body on the outer post's behalf. The app's own
+ * post-text elements are reported too, because a card also carries the author
+ * name, timestamp, and controls, and a short requested body can equal one of
+ * those lines instead of anything the post actually says.
+ * Returns { root, excluded, authored }.
  * Keep this function self-contained because Agent serializes it into the page.
  */
 export function publicationResourceRecordRoot(link, identity, publicationResourceIdentity) {
   if (!link || typeof publicationResourceIdentity !== 'function') {
-    return { root: link || null, excluded: [] };
+    return { root: link || null, excluded: [], authored: [] };
   }
   const value = String(identity || '');
   const cardSelector = value.startsWith('twitter:')
     ? 'article[data-testid="tweet"],[data-testid="tweet"]'
     : value.startsWith('bluesky:')
     ? '[data-testid^="feedItem-by-"],[data-testid^="postThreadItem-by-"]'
+    : '';
+  const bodySelector = value.startsWith('twitter:')
+    ? '[data-testid="tweetText"]'
+    : value.startsWith('bluesky:')
+    ? '[data-testid="postText"]'
     : '';
   const identityOf = (candidate) => {
     try {
@@ -305,11 +313,28 @@ export function publicationResourceRecordRoot(link, identity, publicationResourc
     return excluded.slice(0, 8);
   };
 
+  const authoredTextNodesIn = (card, excluded) => {
+    if (!bodySelector) return [];
+    try {
+      return Array.from(card.querySelectorAll(bodySelector))
+        .filter(node => !excluded.some(entry => entry === node || entry.contains?.(node)))
+        .slice(0, 8);
+    } catch {
+      return [];
+    }
+  };
+
   if (cardSelector) {
     try {
       const card = link.closest?.(cardSelector) || null;
-      const text = String(card?.innerText || '').trim();
-      if (text && text.length <= 5000) return { root: card, excluded: embeddedResourcesIn(card) };
+      // The app drew this boundary, so its size is not evidence that it is the
+      // wrong element. A long X Premium post must not fall through to the
+      // ancestry walk, which skips long ancestors and would leave a timestamp
+      // subtree carrying no post body at all.
+      if (card && String(card.innerText || '').trim()) {
+        const excluded = embeddedResourcesIn(card);
+        return { root: card, excluded, authored: authoredTextNodesIn(card, excluded) };
+      }
     } catch {}
   }
 
@@ -324,7 +349,7 @@ export function publicationResourceRecordRoot(link, identity, publicationResourc
     if (resourceIdentities.size > 1) break;
     best = node;
   }
-  return { root: best, excluded: [] };
+  return { root: best, excluded: [], authored: [] };
 }
 
 export function isCompletionActionTool(name, args = {}) {
