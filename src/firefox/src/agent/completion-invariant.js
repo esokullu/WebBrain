@@ -289,6 +289,7 @@ export function publicationResourceRecordRoot(link, identity, publicationResourc
     if (!links) return [];
     const excluded = [];
     for (const candidate of links) {
+      if (excluded.length >= 8) break;
       const found = identityOf(candidate);
       if (!found || found === value) continue;
       if (excluded.some(node => node === candidate || node.contains?.(candidate))) continue;

@@ -2138,7 +2138,7 @@ export class Agent extends LoopDetector {
     let observedBody = this._workflowMessageBody(record?.text);
     if (!expectedBody || !observedBody) return false;
     const requestedUrls = (expectedBody.match(/https?:\/\/[^\s<>"']+/gi) || [])
-      .map(rawUrl => rawUrl.replace(/[),.;!?]+$/, ''));
+      .map(rawUrl => this._workflowTrimUrlPunctuation(rawUrl));
     if (requestedUrls.length < 1) return false;
     let comparableExpected = expectedBody;
     let comparableObserved = observedBody;
@@ -14437,6 +14437,33 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
   // post is something to read, so "read https://x.com/user/status/123 and
   // submit its details in the form" must not rebind the run to publish-post
   // and hold the real form submission to social-post terminal evidence.
+  // Trailing punctuation usually belongs to the sentence, not the URL — but
+  // not always: https://en.wikipedia.org/wiki/Function_(mathematics) ends in a
+  // closer it opened itself. Strip a delimiter only when the URL never opened
+  // it, or exact-body verification can never match the link the site rendered.
+  _workflowTrimUrlPunctuation(rawUrl) {
+    const openerFor = { ')': '(', ']': '[', '}': '{', '>': '<' };
+    let url = String(rawUrl || '');
+    while (url) {
+      const last = url.slice(-1);
+      if ('.,;:!?\'"'.includes(last)) {
+        url = url.slice(0, -1);
+        continue;
+      }
+      const opener = openerFor[last];
+      if (opener) {
+        const opened = url.split(opener).length - 1;
+        const closed = url.split(last).length - 1;
+        if (closed > opened) {
+          url = url.slice(0, -1);
+          continue;
+        }
+      }
+      break;
+    }
+    return url;
+  }
+
   _socialPublishDestinationAdapter(rawUrl) {
     let parsed;
     try {
@@ -14472,17 +14499,26 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       .join(' ');
     const hasPublishIntent = /\b(?:post|publish|tweet|share)\b/i.test(trustedContext);
     for (const rawUrl of trustedContext.match(/https?:\/\/[^\s<>"'`]+/gi) || []) {
-      const url = rawUrl.replace(/[\]),.;!?]+$/, '');
+      const url = this._workflowTrimUrlPunctuation(rawUrl);
       const destination = this._socialPublishDestinationAdapter(url);
       if (!destination) continue;
       const workflow = resolveAdapterWorkflowJob(url, 'publish-post');
       if (workflow?.job && workflow.adapterName === destination) targets.add(destination);
     }
     if (!currentIsSocialPublish && !hasPublishIntent && targets.size < 1) return targets;
-    if (/\b(?:bluesky|bsky)\b/i.test(trustedContext)) targets.add('bluesky');
-    if (/\b(?:twitter|x\.com)\b/i.test(trustedContext)
-        || /\b(?:on(?:\s+to)?|onto)\s+(?:the\s+)?x\b/i.test(trustedContext)
-        || /\b(?:post|publish|share|tweet)\b.{0,80}\b(?:to|on)\s+x\b/i.test(trustedContext)) {
+    // A platform named anywhere in the task is not a destination: "read Acme's
+    // posts on X, then share the findings in the survey" mentions both a
+    // publish verb and X without ever asking for a post. The verb has to
+    // govern the platform through a destination preposition for this to be a
+    // publication target.
+    const publishesTo = (platform) => new RegExp(
+      `\\b(?:post|publish|share|tweet|skeet)\\b[^.!?\\n]{0,60}?\\b(?:to|on|onto|in|at|via)\\s+(?:the\\s+)?${platform}\\b`,
+      'i',
+    ).test(trustedContext);
+    if (publishesTo('(?:bluesky|bsky(?:\\.app)?)')) targets.add('bluesky');
+    if (publishesTo('(?:x|x\\.com|twitter(?:\\.com)?)')
+        // "tweet this" names its own destination.
+        || /\b(?:tweet|retweet)\s+(?:this|that|it|the\s+following)\b/i.test(trustedContext)) {
       targets.add('twitter');
     }
     return targets;

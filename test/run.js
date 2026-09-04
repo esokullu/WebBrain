@@ -84948,6 +84948,41 @@ test('social publication workflow follows the live X or Bluesky destination and 
     assert.equal(agent._socialPublishDestinationAdapter('https://x.com/compose/post'), 'twitter');
     assert.equal(agent._socialPublishDestinationAdapter('https://bsky.app/'), 'bluesky');
 
+    // A publish verb and a platform name can both appear in a task that never
+    // asks for a post. Only a verb that governs the platform is a destination.
+    const readOnlyMentionTabId = tabId + 275;
+    agent.conversations.set(readOnlyMentionTabId, [
+      { role: 'system', content: 'system' },
+      { role: 'user', content: "Read Acme's posts on X, then share the findings in the survey." },
+    ]);
+    const readOnlyMentionGuard = agent._startPlanExecutionGuard(readOnlyMentionTabId, 'act', {
+      requestKind: 'execute',
+      requiresStateChange: true,
+      requiresSubmission: true,
+      approvedScratchpadText: [
+        '[Approved plan pinned by planner]',
+        "- Read Acme's posts on X, then share the findings in the survey.",
+      ].join('\n'),
+    });
+    assert.equal(await agent._adoptLiveSocialPublishWorkflow(readOnlyMentionTabId, provider), false,
+      AgentClass.name + ': an unrelated X mention plus a publish verb bound the run to publish-post');
+    assert.equal(readOnlyMentionGuard.siteWorkflow, null);
+    assert.deepEqual(
+      [...agent._trustedSocialPublishTargetAdapters({
+        taskText: 'Read the latest tweets on Twitter and summarize them in the form.',
+      })],
+      [],
+      AgentClass.name + ': reading a platform was treated as publishing to it',
+    );
+    assert.deepEqual(
+      [...agent._trustedSocialPublishTargetAdapters({ taskText: 'Share this to bsky please' })],
+      ['bluesky'],
+    );
+    assert.deepEqual(
+      [...agent._trustedSocialPublishTargetAdapters({ taskText: 'tweet this: hello world' })],
+      ['twitter'],
+    );
+
     const genericTabId = tabId + 300;
     agent.conversations.set(genericTabId, [
       { role: 'system', content: 'system' },
@@ -85199,6 +85234,33 @@ test('X and Bluesky same-route publication accepts only one new permalink with t
       )?.source, 'dispatch_bound_published_resource');
       assert.equal(submit.workflowBinding?.publishedResourceIdentity, fixture.expectedIdentity);
     }
+  }
+});
+
+test('a requested URL keeps the closing delimiter it opened', () => {
+  for (const AgentClass of [AgentCh, AgentFx]) {
+    const agent = new AgentClass({});
+    const balanced = 'https://en.wikipedia.org/wiki/Function_(mathematics)';
+    assert.equal(agent._workflowTrimUrlPunctuation(balanced), balanced,
+      AgentClass.name + ': a balanced closing parenthesis was stripped from the requested URL');
+    assert.equal(agent._workflowTrimUrlPunctuation(balanced + '.'), balanced,
+      AgentClass.name + ': sentence punctuation after a balanced URL survived');
+    assert.equal(agent._workflowTrimUrlPunctuation('https://example.com/a),'), 'https://example.com/a',
+      AgentClass.name + ': an unopened closer was kept');
+    assert.equal(
+      agent._workflowTrimUrlPunctuation('https://example.com/x?y=(1)'),
+      'https://example.com/x?y=(1)',
+    );
+
+    // The whole point is that exact-body verification still matches the link
+    // the site rendered for a URL shaped like that.
+    assert.equal(agent._workflowSocialPublishedBodyObserved(
+      { field: 'body', value: `Read ${balanced} today` },
+      {
+        text: 'Read en.wikipedia.org/wiki/Function_… today',
+        links: [{ href: 'https://t.co/abc', text: 'en.wikipedia.org/wiki/Function_…', expandedUrl: balanced }],
+      },
+    ), true, AgentClass.name + ': a URL ending in a balanced closer blocked exact-body verification');
   }
 });
 
