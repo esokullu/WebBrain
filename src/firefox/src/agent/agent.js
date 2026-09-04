@@ -4194,6 +4194,15 @@ export class Agent extends LoopDetector {
     }
     if (documentChanged || routeChanged) {
       this._clearRichTextToolbarDocumentState(tabId);
+    }
+    // Uncertain text writes and their verified proofs are keyed to the live
+    // document, not the URL: a query/hash change or SPA navigation can change
+    // the route while the same document and editor value persist. Clearing on
+    // a bare route change would drop the readback-only guard and let an
+    // append-style retry duplicate landed text, so these records survive until
+    // the document itself changes. Per-field staleness across documents is
+    // still handled by the documentToken checks in the mutation guards.
+    if (documentChanged) {
       this._uncertainTextMutations.delete(tabId);
       this._verifiedTextReplacements.delete(tabId);
     }
@@ -17647,7 +17656,13 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       && debt.expectedLength === text.length
       && !!expectedSha256
       && debt.expectedSha256 === expectedSha256;
-    if (sameReplacement && !target.ambiguous
+    // Readback-only recovery requires positive same-field identity. The
+    // readback proves the current target holds the text, but when the debt
+    // belongs to another field (ambiguous locator, or a re-issued AX ref that
+    // could not be proven distinct), clearing that debt and minting proof for
+    // the target would unguard a partial or duplicated write. Those cases
+    // stay blocked until the document changes.
+    if (sameReplacement && !target.ambiguous && debt.key === target.key
         && (name === 'set_field' || name === 'type_ax')
         && typeof args.ref_id === 'string') {
       let verified = false;

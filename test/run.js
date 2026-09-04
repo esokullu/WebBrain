@@ -74366,6 +74366,89 @@ test('an uncertain contenteditable write invalidates stale proof across locator 
   }
 });
 
+test('uncertain text mutation debt survives same-document route changes', async () => {
+  for (const [label, AgentClass, tabId] of [
+    ['chrome', AgentCh, 9453],
+    ['firefox', AgentFx, 9454],
+  ]) {
+    const agent = new AgentClass({});
+    const pageUrl = 'https://github.com/example/repo/edit/main/docs/plan.md';
+    agent._lastAxScopes.set(tabId, { documentToken: 'doc-route', pageUrl });
+    const uncertain = await agent._finalizeTextMutationResult(
+      tabId,
+      'set_field',
+      { ref_id: 'ref_editor', text: 'intended body' },
+      { success: false, dispatched: true, verified: false },
+    );
+    assert.equal(uncertain.mutationMayHaveOccurred, true, `${label}: uncertain write was not recorded`);
+    // A hash-only change keeps the same document and editor value: the guard must survive it.
+    agent._rememberAxScope(tabId, 'doc-route', `${pageUrl}#L10`);
+    assert.equal(agent._uncertainTextMutations.get(tabId)?.size, 1,
+      `${label}: same-document route change cleared mutation debt`);
+    const stillBlocked = await agent._uncertainTextMutationBlock(
+      tabId, 'set_field', { ref_id: 'ref_editor', text: 'intended body appended' },
+    );
+    assert.equal(stillBlocked?.repeatBlocked, true,
+      `${label}: append retry escaped the guard after a same-document route change`);
+    // A genuine document change still discards the debt.
+    agent._rememberAxScope(tabId, 'doc-next', `${pageUrl}#L10`);
+    assert.equal(agent._uncertainTextMutations.has(tabId), false,
+      `${label}: document change retained stale mutation debt`);
+  }
+});
+
+test('uncertain text mutation recovery requires same-field identity', async () => {
+  const originalChrome = globalThis.chrome;
+  const originalBrowser = globalThis.browser;
+  try {
+    const tabs = {
+      async sendMessage(_tabId, message) {
+        assert.equal(message.action, 'ax_verify_field_value');
+        // The other field genuinely contains the requested text, but it is
+        // not the indebted field and cannot be proven distinct from it.
+        return { success: true, verified: true, fieldMeta: { labelText: 'Editor' } };
+      },
+    };
+    globalThis.chrome = { tabs };
+    globalThis.browser = { tabs };
+    for (const [label, AgentClass, tabId] of [
+      ['chrome', AgentCh, 9455],
+      ['firefox', AgentFx, 9456],
+    ]) {
+      const agent = new AgentClass({});
+      agent._lastAxScopes.set(tabId, {
+        documentToken: 'doc-identity',
+        pageUrl: 'https://github.com/example/repo/edit/main/docs/plan.md',
+      });
+      await agent._finalizeTextMutationResult(
+        tabId,
+        'set_field',
+        { ref_id: 'ref_a', text: 'shared text' },
+        {
+          success: false, dispatched: true, verified: false,
+          fieldMeta: { id: 'field-a', labelText: 'Editor' },
+        },
+      );
+      const blocked = await agent._uncertainTextMutationBlock(
+        tabId, 'set_field', { ref_id: 'ref_b', text: 'shared text' },
+      );
+      assert.equal(blocked?.repeatBlocked, true,
+        `${label}: cross-field readback cleared another field's debt`);
+      assert.equal(blocked?.recoveredUncertainMutation, undefined,
+        `${label}: cross-field readback reported recovery`);
+      assert.equal(agent._uncertainTextMutations.get(tabId)?.size, 1,
+        `${label}: cross-field readback deleted the original debt`);
+      assert.equal(agent._verifiedTextReplacements.has(tabId), false,
+        `${label}: cross-field readback minted proof for the wrong field`);
+    }
+  } finally {
+    if (originalChrome === undefined) delete globalThis.chrome;
+    else globalThis.chrome = originalChrome;
+    if (originalBrowser === undefined) delete globalThis.browser;
+    else globalThis.browser = originalBrowser;
+  }
+});
+
 test('GitHub edit-file workflow verifies the exact committed raw blob', async () => {
   const originalFetch = globalThis.fetch;
   const body = '# Corrected document\n\nOne complete copy.\n';
