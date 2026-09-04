@@ -74449,6 +74449,104 @@ test('uncertain text mutation recovery requires same-field identity', async () =
   }
 });
 
+test('githubFileCommit binding tolerates Chromium newline expansion in readback', async () => {
+  for (const [label, AgentClass, resolveJob, tabId] of [
+    ['chrome', AgentCh, resolveAdapterWorkflowJob, 9457],
+    ['firefox', AgentFx, resolveAdapterWorkflowJobFx, 9458],
+  ]) {
+    const agent = new AgentClass({});
+    const pageUrl = 'https://github.com/Example/Repo/edit/main/docs/plan.md';
+    agent._planExecutionGuards.set(tabId, {
+      enabled: true,
+      siteWorkflow: resolveJob(pageUrl, 'edit-file-and-commit'),
+      workflowMetadataRequirements: [],
+      workflowMetadataRequirementsResolved: true,
+    });
+    const body = '# Title\n\nOne complete copy.\n';
+    // Chromium serializes the trailing line feed of a contenteditable editor
+    // as an extra newline on readback while the digest still verifies: the
+    // proof is exact about intent but not byte-exact. The binding must
+    // survive this (the byte-exact raw-blob check after the commit is the
+    // backstop); requiring byte-exact readback here would permanently block
+    // every newline-terminated file.
+    const expanded = '# Title\n\n\nOne complete copy.\n\n';
+    agent._verifiedTextReplacements.set(tabId, new Map([['ax:doc:ref_editor', {
+      key: 'ax:doc:ref_editor',
+      locatorType: 'ax',
+      refId: 'ref_editor',
+      documentToken: 'doc',
+      pageUrl,
+      ambiguous: false,
+      expectedLength: body.length,
+      expectedSha256: await agent._sha256Text(body),
+      expectedFp: agent._workflowInventoryFingerprint(body),
+      fieldMeta: { contentEditable: true, ariaLabelledByText: 'Editing file contents' },
+      readbackLength: expanded.length,
+      readbackSha256: await agent._sha256Text(expanded),
+      verifiedAt: Date.now(),
+    }]]));
+    const binding = agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {});
+    assert.ok(binding?.githubFileCommit, `${label}: expansion-tolerant proof lost its commit binding`);
+    assert.equal(binding.githubFileCommit.readbackByteExact, false,
+      `${label}: inexact proof mislabeled byte-exact`);
+    assert.equal(binding.githubFileCommit.expectedSha256, await agent._sha256Text(body));
+  }
+});
+
+test('GitHub committed-file verification resolves slash-branch scope by content', async () => {
+  const originalFetch = globalThis.fetch;
+  const body = '# Corrected document\n\nOne complete copy.\n';
+  const commitSha = '0123456789abcdef0123456789abcdef01234567';
+  const commitUrl = `https://github.com/Example/Repo/commit/${commitSha}`;
+  try {
+    const naiveUrl = `https://github.com/example/repo/raw/${commitSha}/fix-copy/docs/plan.md`;
+    const trueUrl = `https://github.com/example/repo/raw/${commitSha}/docs/plan.md`;
+    const seen = [];
+    globalThis.fetch = async (url) => {
+      seen.push(url);
+      if (url === trueUrl) {
+        return { ok: true, status: 200, headers: { get: () => String(body.length) }, text: async () => body };
+      }
+      return { ok: false, status: 404, headers: { get: () => '0' }, text: async () => 'Not Found' };
+    };
+    for (const [label, AgentClass, tabId] of [
+      ['chrome', AgentCh, 9459],
+      ['firefox', AgentFx, 9460],
+    ]) {
+      const agent = new AgentClass({});
+      agent._planExecutionGuards.set(tabId, {
+        enabled: true,
+        siteWorkflow: { adapterName: 'github', job: { id: 'edit-file-and-commit' } },
+      });
+      const binding = {
+        githubFileCommit: {
+          // Naive first-segment cut; the true branch is feature/fix-copy.
+          repository: 'example/repo',
+          branch: 'feature',
+          path: 'fix-copy/docs/plan.md',
+          expectedLength: body.length,
+          expectedSha256: await agent._sha256Text(body),
+          commitMessageVerified: true,
+        },
+        metadataRequirements: [],
+        preDispatchPublishedResourceIdentities: [],
+      };
+      const pageState = { workflowResourceUrls: [commitUrl] };
+      const proof = await agent._githubCommittedFileVerification(
+        tabId, pageState, commitUrl, { verifiedFinalSubmit: true, submit: { workflowBinding: binding } },
+      );
+      assert.equal(proof.verified, true, `${label}: slash-branch commit was not verified by content`);
+      assert.equal(proof.path, 'docs/plan.md');
+      assert.equal(binding.githubFileCommit.branch, 'feature/fix-copy');
+      assert.equal(binding.githubFileCommit.path, 'docs/plan.md');
+      assert.ok(seen.includes(naiveUrl) && seen.includes(trueUrl),
+        `${label}: scope fallbacks were not probed`);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('GitHub edit-file workflow verifies the exact committed raw blob', async () => {
   const originalFetch = globalThis.fetch;
   const body = '# Corrected document\n\nOne complete copy.\n';
@@ -74611,7 +74709,9 @@ test('GitHub edit-file workflow verifies the exact committed raw blob', async ()
       };
       let served = body;
       globalThis.fetch = async (url) => {
-        assert.equal(url, `https://github.com/example/repo/raw/${commitSha}/docs/plan.md`);
+        if (url !== `https://github.com/example/repo/raw/${commitSha}/docs/plan.md`) {
+          return { ok: false, status: 404, headers: { get: () => '0' }, text: async () => 'Not Found' };
+        }
         return {
           ok: true,
           status: 200,

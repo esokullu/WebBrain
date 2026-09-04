@@ -1447,6 +1447,14 @@ export class Agent extends LoopDetector {
           expectedLength: verifiedReplacement.expectedLength,
           expectedSha256: verifiedReplacement.expectedSha256,
           commitMessageVerified,
+          // Chromium's contenteditable readback deterministically expands
+          // newline runs (see _contentEditableValueMatches), so a verified
+          // proof is not always byte-exact. Requiring byte-exact readback
+          // here would permanently block every newline-terminated file;
+          // record which notion of exactness authorized the binding instead.
+          // The byte-exact raw-blob check after the commit stays fail-closed.
+          readbackByteExact: verifiedReplacement.readbackLength === verifiedReplacement.expectedLength
+            && verifiedReplacement.readbackSha256 === verifiedReplacement.expectedSha256,
         }
       : null;
     const verificationKind = this._workflowVerificationKind(siteWorkflow);
@@ -2001,31 +2009,80 @@ export class Agent extends LoopDetector {
       return { verified: false, reason: 'commit_identity_mismatch' };
     }
     try {
-      const encodedPath = expected.path.split('/').map(encodeURIComponent).join('/');
-      const rawUrl = `https://github.com/${expected.repository}/raw/${commit.sha}/${encodedPath}`;
-      const response = await fetch(rawUrl, {
-        credentials: 'include',
-        cache: 'no-store',
-        redirect: 'follow',
-      });
-      if (!response.ok) return { verified: false, reason: `raw_http_${response.status}` };
-      const contentLength = Number(response.headers?.get?.('content-length') || 0);
-      if (contentLength > 2_000_000) return { verified: false, reason: 'raw_file_too_large' };
-      const text = await response.text();
-      if (text.length > 2_000_000) return { verified: false, reason: 'raw_file_too_large' };
-      const actualSha256 = await this._sha256Text(text);
-      return {
-        verified: !!actualSha256
-          && text.length === expected.expectedLength
-          && actualSha256 === expected.expectedSha256,
-        repository: commit.repository,
-        commitSha: commit.sha,
-        path: expected.path,
-        expectedLength: expected.expectedLength,
-        actualLength: text.length,
-        expectedSha256: expected.expectedSha256,
-        actualSha256,
-      };
+      // The branch/path cut is ambiguous when the request named neither: a
+      // URL like /edit/feature/fix-copy/docs/plan.md may hide a slash branch
+      // behind the first segment. The commit itself always lands correctly
+      // (the page form owns the scope), so resolve the true scope here by
+      // content: every re-partition of the same segments is tried, naive cut
+      // first, and the first whose raw bytes match the expected hash wins,
+      // correcting the binding in place. Bounded and content-addressed, so a
+      // wrong guess can only delay failure, never fake success.
+      const segments = `${expected.branch}/${expected.path}`.split('/');
+      const attempts = [{ branch: expected.branch, path: expected.path }];
+      for (let cut = segments.length - 1; cut >= 1 && attempts.length < 10; cut -= 1) {
+        const branch = segments.slice(0, cut).join('/');
+        const path = segments.slice(cut).join('/');
+        if (branch !== expected.branch || path !== expected.path) {
+          attempts.push({ branch, path });
+        }
+      }
+      let firstMismatch = null;
+      let lastFetchReason = 'raw_file_read_failed';
+      for (const attempt of attempts) {
+        const encodedPath = attempt.path.split('/').map(encodeURIComponent).join('/');
+        const rawUrl = `https://github.com/${expected.repository}/raw/${commit.sha}/${encodedPath}`;
+        let response = null;
+        try {
+          response = await fetch(rawUrl, {
+            credentials: 'include',
+            cache: 'no-store',
+            redirect: 'follow',
+          });
+        } catch {
+          lastFetchReason = 'raw_file_read_failed';
+          continue;
+        }
+        if (!response.ok) {
+          lastFetchReason = `raw_http_${response.status}`;
+          continue;
+        }
+        const contentLength = Number(response.headers?.get?.('content-length') || 0);
+        if (contentLength > 2_000_000) return { verified: false, reason: 'raw_file_too_large' };
+        const text = await response.text();
+        if (text.length > 2_000_000) return { verified: false, reason: 'raw_file_too_large' };
+        const actualSha256 = await this._sha256Text(text);
+        if (!!actualSha256
+            && text.length === expected.expectedLength
+            && actualSha256 === expected.expectedSha256) {
+          if (attempt.branch !== expected.branch || attempt.path !== expected.path) {
+            binding.githubFileCommit = { ...expected, branch: attempt.branch, path: attempt.path };
+          }
+          return {
+            verified: true,
+            repository: commit.repository,
+            commitSha: commit.sha,
+            path: attempt.path,
+            expectedLength: expected.expectedLength,
+            actualLength: text.length,
+            expectedSha256: expected.expectedSha256,
+            actualSha256,
+          };
+        }
+        if (!firstMismatch) firstMismatch = { text, actualSha256 };
+      }
+      if (firstMismatch) {
+        return {
+          verified: false,
+          repository: commit.repository,
+          commitSha: commit.sha,
+          path: expected.path,
+          expectedLength: expected.expectedLength,
+          actualLength: firstMismatch.text.length,
+          expectedSha256: expected.expectedSha256,
+          actualSha256: firstMismatch.actualSha256,
+        };
+      }
+      return { verified: false, reason: lastFetchReason };
     } catch {
       return { verified: false, reason: 'raw_file_read_failed' };
     }
