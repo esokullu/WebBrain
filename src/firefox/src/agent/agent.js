@@ -1403,6 +1403,14 @@ export class Agent extends LoopDetector {
       || (this._workflowJobStoresMetadataRequirements(siteWorkflow)
         && guard.workflowMetadataRequirementsResolved !== true);
     const verificationKind = this._workflowVerificationKind(siteWorkflow);
+    const preDispatchPublicationAccountIdentity = verificationKind === 'published_resource'
+      && ['twitter', 'bluesky'].includes(siteWorkflow.adapterName)
+      && detectedSubmit?.publicationAccountIdentityComplete === true
+      ? this._workflowSocialPublicationAccountIdentity(
+          siteWorkflow,
+          detectedSubmit.publicationAccountIdentity,
+        )
+      : '';
     const normalizeOrderIdentities = values => [...new Set((Array.isArray(values) ? values : [])
       .map(value => String(value || '').trim().toUpperCase())
       .filter(value => /^[A-Z0-9][A-Z0-9-]{3,}$/.test(value)))];
@@ -1444,6 +1452,13 @@ export class Agent extends LoopDetector {
         metadataRequirements: metadataRequirements.map(requirement => ({ ...requirement })),
         ...(metadataIncomplete ? { metadataRequirementsIncomplete: true } : {}),
       } : {}),
+      ...(verificationKind === 'published_resource'
+        && ['twitter', 'bluesky'].includes(siteWorkflow.adapterName)
+        ? {
+            preDispatchPublicationAccountIdentity,
+            preDispatchPublicationAccountIdentityComplete: !!preDispatchPublicationAccountIdentity,
+          }
+        : {}),
       ...(verificationKind === 'form_confirmation' ? {
         formDocumentScope: this._workflowInventoryDocumentScope(tabId, pageUrl),
         formIdentity: this._workflowFormOriginIdentity(pageUrl),
@@ -1651,6 +1666,7 @@ export class Agent extends LoopDetector {
       ['arrival', ['arrival', 'to', 'destination', 'arrival station', 'varış', '到达站', '到着駅', '도착역']],
       ['passenger', ['passenger', 'traveller', 'traveler', 'yolcu', '乘客', '乗客', '승객']],
       ['seat_class', ['seat class', 'seat', 'class', 'berth', 'koltuk', '座位', '席', '좌석']],
+      ['account', ['account', 'profile', 'handle', 'username', 'publishing account', 'posting account']],
       ['subject', ['subject', 'subject line', 'email subject', 'sujet', 'objet', 'asunto', 'assunto', 'betreff', 'oggetto', 'konu', '件名', '主题', '主旨']],
       ['body', ['body', 'post', 'post body', 'post text', 'composer']],
       ['title', ['title', 'titre', 'título', 'titulo', 'titel', 'titolo', 'başlık', 'タイトル', '제목', '标题', '標題', 'название']],
@@ -1832,8 +1848,8 @@ export class Agent extends LoopDetector {
 
   _workflowSocialPublishedBodyObserved(requirement, record) {
     if (this._workflowPublishedPayloadValueObserved(requirement, { pageText: record?.text })) return true;
-    const expectedBody = this._workflowMetadataValue(requirement?.value);
-    let observedBody = this._workflowMetadataValue(record?.text);
+    const expectedBody = this._workflowMessageBody(requirement?.value);
+    let observedBody = this._workflowMessageBody(record?.text);
     if (!expectedBody || !observedBody) return false;
     const requestedUrls = [...new Set(
       (expectedBody.match(/https?:\/\/[^\s<>"']+/gi) || [])
@@ -1914,8 +1930,29 @@ export class Agent extends LoopDetector {
           === binding?.publishedResourceIdentity
       ));
       if (records.length !== 1 || !this._workflowMetadataValue(records[0]?.text)) return false;
+      const accountRequirement = requirements.find(requirement => requirement?.field === 'account');
+      const requestedAccount = accountRequirement
+        ? this._workflowSocialPublicationAccountIdentity(state.siteWorkflow, accountRequirement.value)
+        : '';
+      if (accountRequirement && !requestedAccount) return false;
+      const capturedAccount = binding?.preDispatchPublicationAccountIdentityComplete === true
+        ? this._workflowSocialPublicationAccountIdentity(
+            state.siteWorkflow,
+            binding.preDispatchPublicationAccountIdentity,
+          )
+        : '';
+      const intendedAccount = requestedAccount || capturedAccount;
+      const publishedAccount = this._workflowSocialPublicationAccountIdentity(
+        state.siteWorkflow,
+        records[0].url,
+      );
+      if (!intendedAccount || !publishedAccount
+          || (requestedAccount && requestedAccount !== publishedAccount)
+          || (capturedAccount && capturedAccount !== publishedAccount)) return false;
       return requirements.every(requirement => (
-        requirement?.field === 'body'
+        requirement?.field === 'account'
+          ? true
+          : requirement?.field === 'body'
           ? this._workflowSocialPublishedBodyObserved(requirement, records[0])
           : this._workflowPublishedPayloadValueObserved(requirement, {
               pageText: records[0].text,
@@ -2006,6 +2043,35 @@ export class Agent extends LoopDetector {
     }
     if (siteWorkflow?.adapterName !== 'gmail' && siteWorkflow?.adapterName !== 'linkedin') return false;
     return /\bmessage\s+sent\b|(?:邮件已发送|郵件已傳送|メッセージを送信しました|메시지를 보냈습니다|ileti gönderildi|message envoyé|mensaje enviado|mensagem enviada)/i.test(text);
+  }
+
+  _workflowSocialPublicationAccountIdentity(siteWorkflow, value) {
+    const adapterName = siteWorkflow?.adapterName;
+    if (!['twitter', 'bluesky'].includes(adapterName)) return '';
+    let text = this._workflowMetadataValue(value);
+    const canonical = /^(twitter|bluesky):(.+)$/i.exec(text);
+    if (canonical) {
+      if (canonical[1].toLowerCase() !== adapterName) return '';
+      text = canonical[2].replace(/^@/, '');
+    } else {
+      try {
+        const parsed = new URL(text);
+        const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+        const path = parsed.pathname.replace(/\/+$/, '') || '/';
+        if (adapterName === 'twitter' && (host === 'x.com' || host === 'twitter.com')) {
+          text = path.match(/^\/([^/]+)(?:\/status\/\d+)?$/i)?.[1] || '';
+        } else if (adapterName === 'bluesky' && host === 'bsky.app') {
+          text = path.match(/^\/profile\/([^/]+)(?:\/post\/[^/]+)?$/i)?.[1] || '';
+        } else {
+          text = '';
+        }
+      } catch {
+        text = text.replace(/^@/, '');
+      }
+    }
+    if (adapterName === 'twitter' && !/^[A-Za-z0-9_]{1,15}$/.test(text)) return '';
+    if (adapterName === 'bluesky' && !/^(?:did:[a-z0-9:._-]+|[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?)$/i.test(text)) return '';
+    return `${adapterName}:${text.toLowerCase()}`;
   }
 
   _workflowPublishedResourceIdentity(siteWorkflow, pageUrl) {
@@ -15769,6 +15835,8 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           publicationResourceUrls: Array.isArray(detected.publicationResourceUrls)
             ? detected.publicationResourceUrls.slice(0, 200)
             : [],
+          publicationAccountIdentity: String(detected.publicationAccountIdentity || '').slice(0, 300),
+          publicationAccountIdentityComplete: detected.publicationAccountIdentityComplete === true,
           transactionOrderIds: Array.isArray(detected.transactionOrderIds)
             ? detected.transactionOrderIds.slice(0, 20)
             : [],
@@ -15999,14 +16067,70 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         return [];
       }
     };
+    const publicationAccountEvidence = (submitTarget) => {
+      const siteHost = String(host || '').toLowerCase().replace(/^www\./, '');
+      const adapterName = siteHost === 'x.com' || siteHost === 'twitter.com'
+        ? 'twitter'
+        : siteHost === 'bsky.app'
+        ? 'bluesky'
+        : '';
+      if (!adapterName) return { identity: '', complete: false };
+      const accountFromHref = (href) => {
+        try {
+          const parsed = new URL(href || '', url);
+          const linkHost = parsed.hostname.toLowerCase().replace(/^www\./, '');
+          const path = parsed.pathname.replace(/\/+$/, '') || '/';
+          if (adapterName === 'twitter' && (linkHost === 'x.com' || linkHost === 'twitter.com')) {
+            const handle = path.match(/^\/([A-Za-z0-9_]{1,15})$/)?.[1] || '';
+            const reserved = new Set(['home', 'explore', 'notifications', 'messages', 'search', 'settings', 'compose', 'i']);
+            return handle && !reserved.has(handle.toLowerCase()) ? `twitter:${handle.toLowerCase()}` : '';
+          }
+          if (adapterName === 'bluesky' && linkHost === 'bsky.app') {
+            const account = path.match(/^\/profile\/([^/]+)$/i)?.[1] || '';
+            return account ? `bluesky:${account.toLowerCase()}` : '';
+          }
+        } catch {}
+        return '';
+      };
+      const identitiesIn = (root, selector = 'a[href]') => {
+        if (!root?.querySelectorAll) return [];
+        return [...new Set(Array.from(root.querySelectorAll(selector))
+          .slice(0, 120)
+          .filter(isVisible)
+          .map(link => accountFromHref(link.getAttribute('href') || link.href || ''))
+          .filter(Boolean))];
+      };
+      if (adapterName === 'twitter') {
+        const profileNav = identitiesIn(doc, 'a[data-testid="AppTabBar_Profile_Link"][href]');
+        if (profileNav.length === 1) return { identity: profileNav[0], complete: true };
+      }
+      let node = submitTarget;
+      for (let depth = 0; node && depth < 10; depth++, node = node.parentElement) {
+        let hasEditor = false;
+        try {
+          hasEditor = !!node.querySelector?.('textarea,[contenteditable="true"],[role="textbox"]');
+        } catch {}
+        if (!hasEditor) continue;
+        const identities = identitiesIn(node);
+        if (identities.length === 1) return { identity: identities[0], complete: true };
+        if (identities.length > 1) break;
+      }
+      if (adapterName === 'bluesky') {
+        const profileNav = identitiesIn(doc, 'nav a[href^="/profile/"], [role="navigation"] a[href^="/profile/"]');
+        if (profileNav.length === 1) return { identity: profileNav[0], complete: true };
+      }
+      return { identity: '', complete: false };
+    };
     const transactionOrderSite = /(?:^|\.)12306\.cn$/i.test(host);
-    const submitInfo = (form, reason, pendingEl = null, pendingValue = null, validationSubmitEvidence = 'strong') => {
+    const submitInfo = (form, reason, pendingEl = null, pendingValue = null, validationSubmitEvidence = 'strong', submitTarget = null) => {
       const formOrders = transactionOrderSite
         ? transactionOrderScan(form)
         : { ids: [], complete: false };
       const pageOrders = transactionOrderSite
         ? transactionOrderScan(doc.body || doc.documentElement)
         : { ids: [], complete: false };
+      const publicationAccount = publicationAccountEvidence(submitTarget);
+      const formSummary = summarizeForm(form, pendingEl, pendingValue);
       return {
         isSubmit: true,
         host,
@@ -16014,11 +16138,17 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         reason,
         validationSubmitEvidence,
         publicationResourceUrls: publicationResourceUrls(),
+        publicationAccountIdentity: publicationAccount.identity,
+        publicationAccountIdentityComplete: publicationAccount.complete,
         transactionOrderIds: formOrders.ids,
         transactionOrderIdsComplete: formOrders.complete,
         transactionPageOrderIds: pageOrders.ids,
         transactionPageOrderIdsComplete: pageOrders.complete,
-        ...summarizeForm(form, pendingEl, pendingValue),
+        ...formSummary,
+        summary: [
+          formSummary.summary,
+          publicationAccount.complete ? `Publishing account: ${publicationAccount.identity}.` : '',
+        ].filter(Boolean).join(' '),
       };
     };
     const labelControlFor = (el) => {
@@ -16180,15 +16310,15 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       const target = resolveClickTarget();
       if (toolName === 'set_field' && args.submit) {
         const form = target?.form || target?.closest?.('form') || null;
-        return submitInfo(form, 'set_field({submit:true})', target, args.text || '');
+        return submitInfo(form, 'set_field({submit:true})', target, args.text || '', 'strong', target);
       }
       if (toolName === 'press_keys') {
         if (target && isSubmitControl(target)) {
-          return submitInfo(formForSubmitControl(target), 'Enter key on a submit button/control');
+          return submitInfo(formForSubmitControl(target), 'Enter key on a submit button/control', null, null, 'strong', target);
         }
         const field = isFormField(target) ? target : null;
         const form = field?.form || field?.closest?.('form') || null;
-        return form ? submitInfo(form, 'Enter key in a form field') : null;
+        return form ? submitInfo(form, 'Enter key in a form field', null, null, 'strong', field) : null;
       }
       if (target && isSubmitControl(target)) {
         const evidence = submitControlEvidence(target);
@@ -16198,6 +16328,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           null,
           null,
           evidence.strong ? 'strong' : 'heuristic',
+          target,
         );
       }
     } catch {}
@@ -18715,7 +18846,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           'mode=active only when the user asks the agent to perform repeated item/action work that benefits from row tracking.',
           'Exception: for siteContext.workflow.job="upload-release-assets" with requiresLedger=true, use mode=active and list every concrete requested target even when there is exactly one. Copy each exact requested filename or path into targets; do not merge or omit assets. When the user names the release tag, also return it as workflowFields=[{"field":"tag","value":"exact tag"}]; return workflowFields=[] when no tag is named.',
           'For siteContext.workflow.job="update-metadata", workflowFields must contain every metadata field explicitly requested by the user and its complete exact intended value. Use canonical field names title, description, visibility, audience, tags, category, playlist, language, license, comments, embedding, paid_promotion, recording_date, or recording_location. Never infer a field or value from page content.',
-          'For siteContext.workflow.job="publish-release", "publish-post", or "publish-content", workflowFields must contain every publication field explicitly requested by the user and its complete exact intended value. Use canonical field names tag, title, notes, body, or visibility. Never infer a field or value from page content.',
+          'For siteContext.workflow.job="publish-release", "publish-post", or "publish-content", workflowFields must contain every publication field explicitly requested by the user and its complete exact intended value. Use canonical field names tag, title, notes, body, or visibility; for publish-post only, also use account when the user explicitly names the publishing account. Never infer a field or value from page content.',
           'For siteContext.workflow.job="draft-email" or "send-email", workflowFields must contain every message field explicitly requested by the user and its complete exact intended value. Use canonical field names subject or body. Never infer a field or value from page content.',
           'For siteContext.workflow.template="transaction", workflowFields must contain every booking detail explicitly requested by the user and its exact value. Use canonical field names train, travel_date, departure, arrival, passenger, or seat_class. Never infer a detail from page content.',
           'For siteContext.workflow.template="form", workflowLabelValues must contain one entry per field the user supplied an exact value for, as {"label":"the field in the user\'s words","value":"the exact value"}. Return workflowLabelValues=[] when the user supplied no exact values, and never copy a value from page content.',

@@ -74249,7 +74249,10 @@ test('submit detector source covers submit controls, Enter, set_field, iframes, 
     assert.match(agent, /const labelControlFor = \(el\) => \{[\s\S]*String\(el\.tagName \|\| ''\)\.toUpperCase\(\) !== 'LABEL'[\s\S]*el\.htmlFor[\s\S]*doc\.getElementById\(el\.htmlFor\)[\s\S]*button,input,textarea,select/, `${label}: submit probe should resolve labels to associated controls`);
     assert.match(agent, /const target = labelControlFor\(el\) \|\| el;[\s\S]*const candidate = target\.closest\?\.\('button,input,\[role="button"\],\[onclick\],\[data-action\]'\)/, `${label}: submit-control detection should inspect label-backed controls`);
     assert.match(agent, /const submitControlEvidence = \(el\) => \{/, `${label}: custom submit controls should classify preflight evidence strength`);
-    assert.match(agent, /const submitInfo = \(form, reason, pendingEl = null, pendingValue = null, validationSubmitEvidence = 'strong'\)/, `${label}: submit summaries should carry preflight evidence strength`);
+    assert.match(agent, /const submitInfo = \(form, reason, pendingEl = null, pendingValue = null, validationSubmitEvidence = 'strong', submitTarget = null\)/, `${label}: submit summaries should carry preflight evidence strength`);
+    assert.match(agent, /const publicationAccountEvidence = \(submitTarget\) => \{/, `${label}: social publication submits should bind the active account`);
+    assert.match(agent, /AppTabBar_Profile_Link/, `${label}: X publishing account should use the app-owned profile navigation link`);
+    assert.match(agent, /publicationAccountIdentityComplete: publicationAccount\.complete/, `${label}: account evidence completeness should survive the page probe`);
     assert.match(agent, /evidence\.strong \? 'strong' : 'heuristic'/, `${label}: custom submit probes should label strong and heuristic evidence`);
     assert.match(agent, /detected\.validationSubmitEvidence === 'strong' \? 'strong' : 'heuristic'/, `${label}: submit evidence strength should survive page-probe normalization`);
     assert.match(agent, /const findTopmostModal = \(\) => \{[\s\S]*dialog\[open\][\s\S]*\[role="dialog"\]\[aria-modal="true"\][\s\S]*\[class\*="DialogOverlay"\]/, `${label}: text submit probing should mirror modal scoping`);
@@ -84721,6 +84724,7 @@ test('publication workflows classify and bind requested payload fields', async (
     const prompt = agent._progressIntentClassifierMessages(taskText, classifierContext)[0].content;
     assert.match(prompt, /publish-release/);
     assert.match(prompt, /\bcanonical field names tag, title, notes, body, or visibility\b/);
+    assert.match(prompt, /for publish-post only, also use account/);
   }
 });
 
@@ -84833,6 +84837,8 @@ test('X and Bluesky same-route publication accepts only one new permalink with t
       publishedUrl: 'https://x.com/webbrain/status/2222222222222222222',
       otherNewUrl: 'https://x.com/webbrain/status/3333333333333333333',
       expectedIdentity: 'twitter:status:2222222222222222222',
+      accountIdentity: 'twitter:webbrain',
+      wrongAccountUrl: 'https://x.com/notwebbrain/status/4444444444444444444',
       displayedRepoUrl: 'github.com/webbrain-one/…',
       repoLink: { href: 'https://t.co/abc123', text: 'github.com/webbrain-one/…' },
     },
@@ -84843,6 +84849,8 @@ test('X and Bluesky same-route publication accepts only one new permalink with t
       publishedUrl: 'https://bsky.app/profile/webbrain.one/post/4DEF',
       otherNewUrl: 'https://bsky.app/profile/webbrain.one/post/5ghi',
       expectedIdentity: 'bluesky:bsky.app/profile/webbrain.one/post/4def',
+      accountIdentity: 'bluesky:webbrain.one',
+      wrongAccountUrl: 'https://bsky.app/profile/notwebbrain.test/post/6jkl',
       displayedRepoUrl: 'github.com/webbrain-one/webbrain',
       repoLink: {
         href: 'https://github.com/webbrain-one/webbrain',
@@ -84870,6 +84878,11 @@ test('X and Bluesky same-route publication accepts only one new permalink with t
         site_job: 'publish-post',
       });
       assert.equal(workflow?.adapterName, fixture.adapterName);
+      assert.equal(
+        agent._workflowSocialPublicationAccountIdentity(workflow, fixture.publishedUrl),
+        fixture.accountIdentity,
+      );
+      assert.equal(agent._workflowMetadataFieldKey('Publishing account'), 'account');
       const guard = agent._startPlanExecutionGuard(tabId, 'act', {
         requestKind: 'execute',
         requiresStateChange: true,
@@ -84888,7 +84901,12 @@ test('X and Bluesky same-route publication accepts only one new permalink with t
       );
       agent._recordCompletionSubmitAttempt(
         tabId,
-        { isSubmit: true, publicationResourceUrls: [fixture.existingUrl] },
+        {
+          isSubmit: true,
+          publicationResourceUrls: [fixture.existingUrl],
+          publicationAccountIdentity: fixture.accountIdentity,
+          publicationAccountIdentityComplete: true,
+        },
         'click_ax',
         { ref_id: 'publish-post' },
         fixture.feedUrl,
@@ -84901,6 +84919,8 @@ test('X and Bluesky same-route publication accepts only one new permalink with t
         content: 'Feed refreshed.',
       });
       const submit = agent._completionSubmitStates.get(tabId);
+      assert.equal(submit.workflowBinding?.preDispatchPublicationAccountIdentity, fixture.accountIdentity);
+      assert.equal(submit.workflowBinding?.preDispatchPublicationAccountIdentityComplete, true);
       assert.equal(agent._completionSubmissionEvidence(
         tabId,
         { relevantFormCount: 0, successMessages: [] },
@@ -84923,6 +84943,11 @@ test('X and Bluesky same-route publication accepts only one new permalink with t
       assert.equal(submit.workflowBinding?.publishedResourceIdentity, undefined);
 
       const renderedBody = body.replace('https://github.com/webbrain-one/webbrain', fixture.displayedRepoUrl);
+      const productionNormalizedBody = renderedBody
+        .split('\n')
+        .map(line => line.replace(/[^\S\n]+/g, ' ').trim())
+        .filter(Boolean)
+        .join('\n');
       const wrongBodyPageState = {
         workflowResourceUrls: [fixture.existingUrl, fixture.publishedUrl],
         workflowResourceRecords: [
@@ -84951,16 +84976,64 @@ test('X and Bluesky same-route publication accepts only one new permalink with t
       ), null, AgentClass.name + ': shortened URL text passed without card-bound link evidence');
       assert.equal(submit.workflowBinding?.publishedResourceIdentity, undefined);
 
+      const wrongAccountPageState = {
+        workflowResourceUrls: [fixture.existingUrl, fixture.wrongAccountUrl],
+        workflowResourceRecords: [
+          {
+            url: fixture.wrongAccountUrl,
+            text: 'Not WebBrain\n' + productionNormalizedBody + '\n2m',
+            links: [fixture.repoLink],
+          },
+        ],
+      };
+      assert.equal(agent._workflowTerminalEvidenceFromDone(
+        tabId,
+        wrongAccountPageState,
+        fixture.feedUrl,
+        { submit, verifiedFinalSubmit: false, relevantForms: 0 },
+      ), null, AgentClass.name + ': matching body on the wrong publishing account satisfied publication');
+      assert.equal(submit.workflowBinding?.publishedResourceIdentity, undefined);
+
       const exactPageState = {
         workflowResourceUrls: [fixture.existingUrl, fixture.publishedUrl],
         workflowResourceRecords: [
           {
             url: fixture.publishedUrl,
-            text: 'WebBrain\n' + renderedBody + '\n2m',
+            text: 'WebBrain\n' + productionNormalizedBody + '\n2m',
             links: [fixture.repoLink],
           },
         ],
       };
+      assert.equal(agent._workflowPublishedResourcePayloadMatch(
+        {
+          ...submit.workflowBinding,
+          publishedResourceIdentity: fixture.expectedIdentity,
+          preDispatchPublicationAccountIdentity: '',
+          preDispatchPublicationAccountIdentityComplete: false,
+        },
+        guard,
+        exactPageState,
+        fixture.feedUrl,
+        submit,
+      ), false, AgentClass.name + ': publication passed without an intended-account binding');
+      assert.equal(agent._workflowPublishedResourcePayloadMatch(
+        {
+          ...submit.workflowBinding,
+          metadataRequirements: [
+            ...submit.workflowBinding.metadataRequirements,
+            { field: 'account', value: fixture.accountIdentity },
+          ],
+          publishedResourceIdentity: fixture.expectedIdentity,
+          preDispatchPublicationAccountIdentity: fixture.adapterName === 'twitter'
+            ? 'twitter:notwebbrain'
+            : 'bluesky:notwebbrain.test',
+          preDispatchPublicationAccountIdentityComplete: true,
+        },
+        guard,
+        exactPageState,
+        fixture.feedUrl,
+        submit,
+      ), false, AgentClass.name + ': requested account hid a conflicting active account at dispatch');
       assert.equal(agent._workflowTerminalEvidenceFromDone(
         tabId,
         exactPageState,
