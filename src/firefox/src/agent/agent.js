@@ -1537,9 +1537,12 @@ export class Agent extends LoopDetector {
     // only a ref_id (or any other submit-capable action whose probe produced
     // no evidence) cannot be proven to be a non-submit, so it must clear the
     // same binding gate as an observed submit. Non-submit-capable tools keep
-    // the early exit; the positively identified reversible dialog launcher is
-    // exempted below.
-    const inconclusiveSubmitCapable = !looksLikeSubmit
+    // the early exit, as do clicks the probe resolved to an editable field
+    // (focusing it cannot submit); the positively identified reversible
+    // dialog launcher is exempted below.
+    const resolvedEditableTarget = (name === 'click' || name === 'click_ax' || name === 'iframe_click')
+      && detectedSubmit?.resolvedEditableTarget === true;
+    const inconclusiveSubmitCapable = !looksLikeSubmit && !resolvedEditableTarget
       && this._isFormValidationCandidate(name, args);
     if (!looksLikeSubmit && !inconclusiveSubmitCapable) return null;
     const detectedFields = [
@@ -16036,6 +16039,22 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           transactionPageOrderIdsComplete: detected.transactionPageOrderIdsComplete === true,
         };
       }
+      // Explicit negative: the probe resolved the click target to an editable
+      // field, proving activation only focuses it. Propagated (not dropped
+      // like inconclusive results) so gates can pass proven non-submits while
+      // still blocking unresolvable clicks. Never a submit: isSubmit stays false.
+      const resolvedEditable = (Array.isArray(rawResults) ? rawResults : [])
+        .find(item => item && item.isSubmit !== true && item.resolvedEditableTarget === true);
+      if (resolvedEditable
+          && (name === 'click' || name === 'click_ax' || name === 'iframe_click')) {
+        return {
+          isSubmit: false,
+          host: normalizeHost(resolvedEditable.host || resolvedEditable.url || args?.urlFilter || currentUrl) || 'this site',
+          tool: name,
+          reason: String(resolvedEditable.reason || 'click target is an editable field').slice(0, 200),
+          resolvedEditableTarget: true,
+        };
+      }
     } catch {
       // Fall through to explicit-argument fallbacks below.
     }
@@ -16351,6 +16370,25 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       return { isSubmit: false, strong: false };
     };
     const isSubmitControl = el => submitControlEvidence(el).isSubmit;
+    // Explicit negative for the commit gate: activation on an editable field
+    // only focuses it and can never submit. Unlike an inconclusive probe (no
+    // target, failed lookup), a resolved editable target proves the click is
+    // not a submit. Checkboxes, radios, file/button inputs and anything
+    // unresolvable stay inconclusive (fail-closed).
+    const isEditableActivationTarget = (el) => {
+      try {
+        if (!el || el.nodeType !== 1) return false;
+        if (el.isContentEditable) return true;
+        const tag = String(el.tagName || '').toLowerCase();
+        if (tag === 'textarea' || tag === 'select') return true;
+        if (tag !== 'input') return false;
+        const type = String(el.type || el.getAttribute?.('type') || 'text').toLowerCase();
+        return ['text', 'search', 'url', 'tel', 'password', 'number', 'email',
+          'date', 'time', 'datetime-local', 'month', 'week'].includes(type);
+      } catch {
+        return false;
+      }
+    };
     const formForSubmitControl = (el) => {
       const target = labelControlFor(el) || el;
       const candidate = target?.closest?.('button,input') || target;
@@ -16481,6 +16519,18 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           evidence.strong ? 'strong' : 'heuristic',
           target,
         );
+      }
+      if (target
+          && (toolName === 'click' || toolName === 'click_ax' || toolName === 'iframe_click')
+          && isEditableActivationTarget(target)) {
+        return {
+          isSubmit: false,
+          host,
+          url,
+          tool: toolName,
+          reason: 'click target resolves to an editable field',
+          resolvedEditableTarget: true,
+        };
       }
     } catch {}
     return null;

@@ -74986,6 +74986,110 @@ test('GitHub edit-file workflow blocks compound submit actions on existing bindi
   }
 });
 
+test('GitHub edit-file workflow passes clicks on resolved editable fields', async () => {
+  const editUrl = 'https://github.com/Example/Repo/edit/main/docs/plan.md';
+  for (const [label, AgentClass, tabId] of [
+    ['chrome', AgentCh, 9476],
+    ['firefox', AgentFx, 9477],
+  ]) {
+    const agent = new AgentClass({});
+    agent._planExecutionGuards.set(tabId, {
+      enabled: true,
+      siteWorkflow: { adapterName: 'github', job: { id: 'edit-file-and-commit' } },
+    });
+    agent._workflowSubmitBindingForAttempt = () => ({ metadataRequirementsIncomplete: true });
+    // Focusing the editor (or the commit-message input) cannot submit, so the
+    // probe-resolved click passes even though no binding exists yet.
+    assert.equal(await agent._workflowPreSubmitDispatchBlock(
+      tabId, 'click_ax', { ref_id: 'ref_editor' },
+      { isSubmit: false, resolvedEditableTarget: true },
+    ), null, `${label}: focus click on an editable field was blocked`);
+    // No probe evidence at all stays blocked (fail-closed baseline).
+    assert.equal((await agent._workflowPreSubmitDispatchBlock(
+      tabId, 'click_ax', { ref_id: 'ref_editor' }, null,
+    ))?.noDispatch, true, `${label}: unevidenced click bypassed the commit guard`);
+    // The flag is meaningless off the click family: a writing tool stays gated.
+    assert.equal((await agent._workflowPreSubmitDispatchBlock(
+      tabId, 'set_field', { ref_id: 'ref_editor', text: 'x', submit: true },
+      { isSubmit: false, resolvedEditableTarget: true },
+    ))?.noDispatch, true, `${label}: flagged field submission bypassed the commit guard`);
+  }
+});
+
+test('submit detection propagates resolved editable click targets', async () => {
+  const originalChrome = globalThis.chrome;
+  const originalBrowser = globalThis.browser;
+  try {
+    const probeResult = {
+      isSubmit: false,
+      resolvedEditableTarget: true,
+      host: 'github.com',
+      reason: 'click target resolves to an editable field',
+    };
+    globalThis.chrome = { scripting: { executeScript: async () => [{ frameId: 0, result: probeResult }] } };
+    globalThis.browser = { tabs: { executeScript: async () => [probeResult] } };
+    for (const [label, AgentClass, tabId] of [
+      ['chrome', AgentCh, 9478],
+      ['firefox', AgentFx, 9479],
+    ]) {
+      const agent = new AgentClass({});
+      // The chrome stub above also satisfies Firefox's scripting branch, so
+      // force the browser-tabs path per build.
+      if (label === 'firefox') globalThis.chrome = {};
+      else globalThis.chrome = { scripting: { executeScript: async () => [{ frameId: 0, result: probeResult }] } };
+      const detected = await agent._detectLikelySubmitAction(tabId, 'click_ax', { ref_id: 'ref_editor' });
+      assert.equal(detected?.isSubmit, false, `${label}: editable click misclassified as submit`);
+      assert.equal(detected?.resolvedEditableTarget, true, `${label}: editable evidence was dropped`);
+      assert.equal(detected?.tool, 'click_ax');
+    }
+  } finally {
+    if (originalChrome === undefined) delete globalThis.chrome;
+    else globalThis.chrome = originalChrome;
+    if (originalBrowser === undefined) delete globalThis.browser;
+    else globalThis.browser = originalBrowser;
+  }
+});
+
+test('submit probe marks editable click targets as proven non-submits', () => {
+  const originalDocument = globalThis.document;
+  const originalLocation = globalThis.location;
+  const originalWindow = globalThis.window;
+  try {
+    globalThis.document = {};
+    globalThis.location = {
+      hostname: 'github.com',
+      host: 'github.com',
+      href: 'https://github.com/o/r/edit/main/f.md',
+    };
+    const fakeTextarea = {
+      nodeType: 1, tagName: 'TEXTAREA', isContentEditable: false,
+      getAttribute: () => null, hasAttribute: () => false,
+    };
+    const fakeCheckbox = {
+      nodeType: 1, tagName: 'INPUT', type: 'checkbox', isContentEditable: false, form: null,
+      getAttribute: (name) => name === 'type' ? 'checkbox' : null, hasAttribute: () => false,
+    };
+    globalThis.window = {
+      __wb_ax_lookup: (refId) => refId === 'ref_editor' ? fakeTextarea : fakeCheckbox,
+    };
+    for (const [label, AgentClass] of [['chrome', AgentCh], ['firefox', AgentFx]]) {
+      const editable = AgentClass._submitActionProbe('click_ax', { ref_id: 'ref_editor' });
+      assert.equal(editable?.isSubmit, false, `${label}: editable click misclassified`);
+      assert.equal(editable?.resolvedEditableTarget, true, `${label}: editable proof missing`);
+      assert.equal(editable?.host, 'github.com');
+      assert.equal(AgentClass._submitActionProbe('click_ax', { ref_id: 'ref_box' }), null,
+        `${label}: checkbox click must stay inconclusive`);
+    }
+  } finally {
+    if (originalDocument === undefined) delete globalThis.document;
+    else globalThis.document = originalDocument;
+    if (originalLocation === undefined) delete globalThis.location;
+    else globalThis.location = originalLocation;
+    if (originalWindow === undefined) delete globalThis.window;
+    else globalThis.window = originalWindow;
+  }
+});
+
 test('GitHub commit-dialog launcher detection is locale-independent', () => {
   for (const rel of [
     'src/chrome/src/agent/agent.js',
