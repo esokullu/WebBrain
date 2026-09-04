@@ -74462,6 +74462,7 @@ test('githubFileCommit binding tolerates Chromium newline expansion in readback'
       workflowMetadataRequirements: [],
       workflowMetadataRequirementsResolved: true,
     });
+    agent._taskTokens.set(tabId, `task-expansion-${tabId}`);
     const body = '# Title\n\nOne complete copy.\n';
     // Chromium serializes the trailing line feed of a contenteditable editor
     // as an extra newline on readback while the digest still verifies: the
@@ -74484,6 +74485,7 @@ test('githubFileCommit binding tolerates Chromium newline expansion in readback'
       readbackLength: expanded.length,
       readbackSha256: await agent._sha256Text(expanded),
       verifiedAt: Date.now(),
+      taskToken: `task-expansion-${tabId}`,
     }]]));
     const binding = agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {});
     assert.ok(binding?.githubFileCommit, `${label}: expansion-tolerant proof lost its commit binding`);
@@ -74679,6 +74681,8 @@ test('GitHub edit-file workflow verifies the exact committed raw blob', async ()
     ]) {
       const agent = new AgentClass({});
       const tabId = label === 'chrome' ? 9445 : 9446;
+      // Proofs bind to the active task token, minted here as _startTraceRun does.
+      agent._taskTokens.set(tabId, `task-blob-${tabId}`);
       const siteWorkflow = resolveJob(editUrl, 'edit-file-and-commit');
       assert.equal(siteWorkflow?.job?.id, 'edit-file-and-commit');
       assert.deepEqual(agent._workflowGithubEditFileScope(
@@ -74808,6 +74812,7 @@ test('GitHub edit-file workflow verifies the exact committed raw blob', async ()
         expectedSha256: await agent._sha256Text(duplicate),
         readbackLength: duplicate.length,
         readbackSha256: await agent._sha256Text(duplicate),
+        taskToken: `task-blob-${tabId}`,
       });
       assert.equal(agent._workflowSubmitBindingForAttempt(tabId, editUrl, {}).githubFileCommit, undefined,
         `${label}: conflicting editor payloads must fail closed`);
@@ -75045,6 +75050,52 @@ test('replacement proof task tokens do not depend on tracing', () => {
       `${rel}: task token is not minted per task`);
     assert.match(source, /this\._taskTokens\.delete\(tabId\)/,
       `${rel}: task token is never discarded`);
+    // The mint must precede the recorder call so recorder/storage failures
+    // cannot return before the token exists.
+    const startFn = source.slice(source.indexOf('async _startTraceRun('));
+    assert.ok(startFn.indexOf('this._taskTokens.set(tabId') < startFn.indexOf('trace.startRun('),
+      `${rel}: task token minted after optional tracing starts`);
+  }
+});
+
+test('GitHub replacement proofs require a nonempty task token', async () => {
+  for (const [label, AgentClass, resolveJob, tabId] of [
+    ['chrome', AgentCh, resolveAdapterWorkflowJob, 9472],
+    ['firefox', AgentFx, resolveAdapterWorkflowJobFx, 9473],
+  ]) {
+    const agent = new AgentClass({});
+    const pageUrl = 'https://github.com/Example/Repo/edit/main/docs/plan.md';
+    agent._planExecutionGuards.set(tabId, {
+      enabled: true,
+      siteWorkflow: resolveJob(pageUrl, 'edit-file-and-commit'),
+      workflowMetadataRequirements: [],
+      workflowMetadataRequirementsResolved: true,
+    });
+    const record = {
+      key: 'ax:doc:ref_editor',
+      locatorType: 'ax',
+      refId: 'ref_editor',
+      documentToken: 'doc',
+      pageUrl,
+      ambiguous: false,
+      expectedLength: 4,
+      expectedSha256: await agent._sha256Text('body'),
+      expectedFp: agent._workflowInventoryFingerprint('body'),
+      fieldMeta: { contentEditable: true, ariaLabelledByText: 'Editing file contents' },
+      readbackLength: 4,
+      readbackSha256: await agent._sha256Text('body'),
+      verifiedAt: Date.now(),
+    };
+    // Tokenless proof with a live task token: rejected.
+    agent._verifiedTextReplacements.set(tabId, new Map([['ax:doc:ref_editor', { ...record }]]));
+    agent._taskTokens.set(tabId, 'task-live');
+    assert.equal(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit, undefined,
+      `${label}: tokenless proof authorized a commit`);
+    // Live proof with no active token: rejected.
+    agent._verifiedTextReplacements.set(tabId, new Map([['ax:doc:ref_editor', { ...record, taskToken: 'task-live' }]]));
+    agent._taskTokens.delete(tabId);
+    assert.equal(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit, undefined,
+      `${label}: proof authorized without an active task`);
   }
 });
 

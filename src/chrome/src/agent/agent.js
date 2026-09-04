@@ -1697,10 +1697,15 @@ export class Agent extends LoopDetector {
       : (replacementRecords ? [replacementRecords] : []))];
     // Proofs authorize a commit only for the task that verified them. Records
     // survive run teardown, so without this a later run in the same tab could
-    // authorize a stale replacement it never verified.
+    // authorize a stale replacement it never verified. The match requires a
+    // nonempty token on both sides: two tokenless runs must never satisfy it
+    // (e.g. a persistent recorder failure must not collapse every task into
+    // one identity).
     const activeTaskToken = this._taskTokens.get(tabId);
+    const activeTaskTokenValid = typeof activeTaskToken === 'string' && activeTaskToken.length > 0;
     const githubEditorReplacements = replacementRecordValues
       .filter(record => record?.ambiguous !== true
+        && activeTaskTokenValid
         && record?.taskToken === activeTaskToken
         && !!record?.expectedSha256
         && !!record?.readbackSha256
@@ -1722,6 +1727,7 @@ export class Agent extends LoopDetector {
     const expectedCommitMessage = this._workflowMetadataValue(commitMessageRequirement?.value);
     const commitMessageVerified = !commitMessageRequirement || replacementRecordValues.some(record => (
       record?.ambiguous !== true
+      && activeTaskTokenValid
       && record?.taskToken === activeTaskToken
       && !!record?.readbackSha256
       && this._normalizeUrl(record.pageUrl || '') === this._normalizeUrl(pageUrl)
@@ -14706,6 +14712,11 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
   }
 
   async _startTraceRun(tabId, userMessage, mode, provider, tabInfo = null, runOptions = {}) {
+    // Mint first: proof scoping needs a task token on every path, including
+    // recorder/storage failures that return before tracing starts (and the
+    // disabled-by-default untraced path). currentRunId must not double as the
+    // task boundary since it stays empty then.
+    this._taskTokens.set(tabId, `task_${secureRandomBase36Token(12)}`);
     const { tabUrl, tabTitle } = this._isStandaloneChatRun(runOptions)
       ? { tabUrl: '', tabTitle: '' }
       : (tabInfo || await this._getTabUrlTitle(tabId));
@@ -14761,10 +14772,6 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       this.pendingVisionStatusTraces.delete(tabId);
       this.pendingVisionSubCallTraces.delete(tabId);
     }
-    // Proof scoping needs a task token even when tracing is disabled (the
-    // default): trace.startRun() returns null then, so currentRunId stays
-    // empty and must not double as the task boundary.
-    this._taskTokens.set(tabId, `task_${secureRandomBase36Token(12)}`);
     return runId;
   }
 
