@@ -75107,6 +75107,41 @@ test('Firefox selector debt recovers on exact digest readback', async () => {
   }
 });
 
+test('verified value with unobserved submission is not mutation debt', async () => {
+  for (const [label, AgentClass, tabId] of [
+    ['chrome', AgentCh, 9470],
+    ['firefox', AgentFx, 9471],
+  ]) {
+    const agent = new AgentClass({});
+    agent._lastAxScopes.set(tabId, {
+      documentToken: 'doc-submit',
+      pageUrl: 'https://example.test/search',
+    });
+    // set_field({submit:true}) proving the value while submission observation
+    // fails: the text demonstrably landed, so no debt may be recorded and the
+    // success must survive with submission doubt kept separate.
+    const result = await agent._finalizeTextMutationResult(
+      tabId,
+      'set_field',
+      { ref_id: 'ref_search', text: 'query', submit: true },
+      { success: true, verified: true, outcomeUnknown: true, dispatched: true, fieldMeta: { id: 'search' } },
+    );
+    assert.equal(result.success, true, `${label}: verified write was converted into failure`);
+    assert.equal(result.verified, true);
+    assert.equal(result.outcomeUnknown, true, `${label}: submission doubt was dropped`);
+    assert.equal(result.mutationMayHaveOccurred, undefined, `${label}: verified write marked as mutation`);
+    assert.equal(result.repeatBlocked, undefined, `${label}: verified write blocked repeats`);
+    assert.equal(agent._uncertainTextMutations.has(tabId), false, `${label}: verified write recorded debt`);
+    // Follow-up writes on the same document proceed (e.g. correcting the search).
+    assert.equal(await agent._uncertainTextMutationBlock(
+      tabId, 'set_field', { ref_id: 'ref_search', text: 'refined query' },
+    ), null, `${label}: follow-up write stayed blocked`);
+    // And the verified write still mints its replacement proof.
+    assert.ok(agent._verifiedTextReplacements.get(tabId)?.has('ax:doc-submit:ref_search'),
+      `${label}: verified write lost its replacement proof`);
+  }
+});
+
 test('click_ax rejects stale zero-sized targets before activation', () => {
   for (const [label, rel] of [
     ['chrome', 'src/chrome/src/content/content.js'],

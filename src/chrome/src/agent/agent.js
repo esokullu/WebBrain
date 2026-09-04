@@ -20306,7 +20306,12 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     const text = typeof args.text === 'string' ? args.text : '';
     const expectedSha256 = await this._sha256Text(text);
     const uncertain = result.mutationMayHaveOccurred === true
-      || (result.outcomeUnknown === true && result.noDispatch !== true)
+      // A positively verified value is not mutation-uncertain even when a
+      // bundled submission went unobserved (e.g. set_field({submit:true})
+      // proving the value while submission observation fails): the text
+      // demonstrably landed, and submission doubt rides along separately in
+      // outcomeUnknown instead of blocking all further writes as debt.
+      || (result.outcomeUnknown === true && result.noDispatch !== true && result.verified !== true)
       || (result.success === true && result.verified !== true
         && result.noDispatch !== true && result.method !== 'select-keyboard')
       || (result.success === false && result.dispatched === true)
