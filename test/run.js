@@ -85007,6 +85007,30 @@ test('social publication workflow follows the live X or Bluesky destination and 
       [...agent._trustedSocialPublishTargetAdapters({ taskText: 'tweet this: hello world' })],
       ['twitter'],
     );
+    for (const [taskText, expected, why] of [
+      ['Read https://x.com/home, then submit a summary in the survey.', [],
+        'a feed used as a read source was treated as a destination'],
+      ['Open https://bsky.app/ and read the feed', [],
+        'an opened feed was treated as a destination'],
+      ['Read the publication at https://x.com/home and submit it', [],
+        'the noun "publication" was read as publication intent'],
+      // Publication language is not English-only, and a composer route needs
+      // no verb at all.
+      ['Publ\u00edcalo en https://x.com/home', ['twitter'], 'Spanish publication intent was not recognized'],
+      ['Yay\u0131nla: https://x.com/home', ['twitter'], 'Turkish publication intent was not recognized'],
+      ['\u6295\u7a3f\u3057\u3066\u304f\u3060\u3055\u3044 https://x.com/home', ['twitter'],
+        'Japanese publication intent was not recognized'],
+      ['\u5728 https://x.com/compose/post \u4e0a\u53d1\u5e03\u8fd9\u6761\u6d88\u606f', ['twitter'],
+        'a composer route needed an English verb'],
+      ['Just open https://x.com/compose/post', ['twitter'],
+        'a composer route is a destination by construction'],
+    ]) {
+      assert.deepEqual(
+        [...agent._trustedSocialPublishTargetAdapters({ taskText })],
+        expected,
+        AgentClass.name + ': ' + why,
+      );
+    }
 
     const genericTabId = tabId + 300;
     agent.conversations.set(genericTabId, [
@@ -85287,6 +85311,27 @@ test('a requested URL keeps the closing delimiter it opened', () => {
       'https://ja.wikipedia.org/wiki/\u95a2\u6570\uff08\u6570\u5b66\uff09',
       AgentClass.name + ': a balanced full-width closer was stripped with the sentence punctuation',
     );
+
+    // Sentence delimiters are also valid path characters, so the raw URL wins
+    // whenever the page actually rendered it.
+    const yahoo = 'https://en.wikipedia.org/wiki/Yahoo!';
+    assert.equal(agent._workflowSocialPublishedBodyObserved(
+      { field: 'body', value: `See ${yahoo} now` },
+      {
+        bodyText: `See ${yahoo} now`,
+        links: [{ href: 'https://t.co/z', text: 'en.wikipedia.org/wiki/Yahoo!', expandedUrl: yahoo }],
+      },
+    ), true, AgentClass.name + ': a URL ending in "!" was trimmed even though the post rendered it');
+    // With no evidence the site kept it, the delimiter is still sentence
+    // punctuation and comes off.
+    assert.equal(agent._workflowSocialPublishedBodyObserved(
+      { field: 'body', value: 'See https://example.com/path! now' },
+      {
+        // The site keeps the delimiter as post text, outside the link.
+        bodyText: 'See example.com/path! now',
+        links: [{ href: 'https://t.co/z', text: 'example.com/path', expandedUrl: 'https://example.com/path' }],
+      },
+    ), true, AgentClass.name + ': trailing sentence punctuation blocked the shortened-link match');
 
     // The whole point is that exact-body verification still matches the link
     // the site rendered for a URL shaped like that.

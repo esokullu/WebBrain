@@ -211,6 +211,30 @@ const COST_EPSILON = 1e-9;
 const TOKENS_PER_MILLION = 1_000_000;
 const DEFAULT_INPUT_COST_PER_MILLION_USD = 3;
 const DEFAULT_OUTPUT_COST_PER_MILLION_USD = 15;
+// Publication intent, in the languages a task is actually written in. An
+// English-only verb list made a non-English task unable to name its own
+// destination, and a bare platform or feed reference is not intent at all, so
+// this is the single gate both the destination scan and the platform-keyword
+// rules go through. Forms are listed explicitly: "publication" and "public"
+// are not requests to publish anything.
+const SOCIAL_PUBLISH_VERBS = new RegExp([
+  '\\b(?:post|posts|posted|posting|publish|publishes|published|publishing',
+  '|tweet|tweets|tweeted|tweeting|retweet|retweets|skeet|skeets',
+  '|share|shares|shared|sharing)\\b',
+  // Spanish, Portuguese
+  '|\\b(?:publica|public\u00e1|publ\u00edcalo|publ\u00edcala|publicalo|publicala|publicar|publicas|publican',
+  '|publique|publiquen|publiquem|publicando|posta|postar|comparte|compartir|compartilhe|compartilhar)\\b',
+  // French, Italian, German
+  '|\\b(?:publie|publier|publiez|publions|publi\u00e9e?|partage|partager|partagez',
+  '|pubblica|pubblicare|pubblicate|condividi|condividere',
+  '|ver\u00f6ffentliche|ver\u00f6ffentlichen|ver\u00f6ffentlicht|poste|posten|teile|teilen)\\b',
+  // Turkish, Russian
+  '|\\b(?:yay\u0131nla|yay\u0131nlay\u0131n|yay\u0131mla|payla\u015f|payla\u015f\u0131n',
+  '|\u043e\u043f\u0443\u0431\u043b\u0438\u043a\u0443\u0439|\u043e\u043f\u0443\u0431\u043b\u0438\u043a\u043e\u0432\u0430\u0442\u044c|\u043e\u043f\u0443\u0431\u043b\u0438\u043a\u0443\u0439\u0442\u0435|\u043f\u0443\u0431\u043b\u0438\u043a\u0443\u0439|\u043f\u043e\u0434\u0435\u043b\u0438\u0441\u044c)\\b',
+  // Scripts without word boundaries
+  '|\u6295\u7a3f|\u767a\u4fe1|\u30c4\u30a4\u30fc\u30c8|\u53d1\u5e03|\u767c\u5e03|\u53d1\u5e16|\u767c\u5e16|\u53d1\u63a8|\u63a8\u6587|\uac8c\uc2dc|\uc62c\ub824|\uc62c\ub9ac|\u0646\u0634\u0631|\u0627\u0646\u0634\u0631',
+].join(''), 'i');
+
 const VISION_SUB_CALL_TIMEOUT_MS = 90_000;
 const CONTENT_ACTION_TIMEOUT_MS = 60_000;
 const CONTENT_ACTION_RESPONSE_GRACE_MS = 5_000;
@@ -2147,12 +2171,21 @@ export class Agent extends LoopDetector {
     const expectedBody = this._workflowMessageBody(requirement?.value);
     let observedBody = this._workflowMessageBody(authoredText);
     if (!expectedBody || !observedBody) return false;
+    const links = Array.isArray(record?.links) ? record.links : [];
+    // "!", ";" and ":" are valid path characters, so a URL like
+    // https://en.wikipedia.org/wiki/Yahoo! is not punctuated, it just ends
+    // that way. Trim only when the page never rendered the raw form.
     const requestedUrls = (expectedBody.match(/https?:\/\/[^\s<>"']+/gi) || [])
-      .map(rawUrl => this._workflowTrimUrlPunctuation(rawUrl));
+      .map((rawUrl) => {
+        const trimmed = this._workflowTrimUrlPunctuation(rawUrl);
+        if (trimmed === rawUrl) return rawUrl;
+        const renderedRaw = observedBody.includes(rawUrl)
+          || links.some(link => this._workflowSocialLinkMatchesRequested(link, rawUrl));
+        return renderedRaw ? rawUrl : trimmed;
+      });
     if (requestedUrls.length < 1) return false;
     let comparableExpected = expectedBody;
     let comparableObserved = observedBody;
-    const links = Array.isArray(record?.links) ? record.links : [];
     const consumedLinks = new Set();
     const priorLinkByRequestedUrl = new Map();
     const replaceFirst = (text, value, replacement) => {
@@ -14537,11 +14570,18 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       .map(value => String(value || '').trim())
       .filter(Boolean)
       .join(' ');
-    const hasPublishIntent = /\b(?:post|publish|tweet|share)\b/i.test(trustedContext);
-    for (const rawUrl of trustedContext.match(/https?:\/\/[^\s<>"'`]+/gi) || []) {
-      const url = this._workflowTrimUrlPunctuation(rawUrl);
+    const hasPublishIntent = SOCIAL_PUBLISH_VERBS.test(trustedContext);
+    for (const match of trustedContext.matchAll(/https?:\/\/[^\s<>"'`]+/gi)) {
+      const url = this._workflowTrimUrlPunctuation(match[0]);
       const destination = this._socialPublishDestinationAdapter(url);
       if (!destination) continue;
+      // A feed or profile root is where you read as often as where you post,
+      // so it is a destination only when publication language governs it.
+      // A composer route needs no verb: it is a destination by construction,
+      // in any language.
+      const governed = /\/(?:compose|intent|i\/flow)\//.test(url)
+        || SOCIAL_PUBLISH_VERBS.test(trustedContext.slice(Math.max(0, match.index - 60), match.index));
+      if (!governed) continue;
       const workflow = resolveAdapterWorkflowJob(url, 'publish-post');
       if (workflow?.job && workflow.adapterName === destination) targets.add(destination);
     }
