@@ -30,7 +30,7 @@ import { detectProgressAction, formatLedgerRow, formatLedgerSummary, isBlockedLe
 import { buildGithubStargazerProgressItems } from './observers/github-stargazers.js';
 import { analyzeMastodonPage, mastodonHandoffInstruction, mastodonProgressGuard } from './observers/mastodon.js';
 import { isProgressActionAllowed, isProgressIntentActive, normalizeProgressAction, normalizeProgressIntent } from './progress-intent.js';
-import { classifyCompletionForm, completionDoneBlock, completionPlainFinalBlock, completionPlainFinalPartial, consumeCompletionObservation, consumeCompletionObservationResult, createCompletionInvariantState, hasUnconsumedCompletionObservation, hasUnconsumedCompletionObservationResult, recordCompletionToolResult } from './completion-invariant.js';
+import { classifyCompletionForm, completionDoneBlock, completionPlainFinalBlock, completionPlainFinalPartial, consumeCompletionObservation, consumeCompletionObservationResult, createCompletionInvariantState, hasUnconsumedCompletionObservation, hasUnconsumedCompletionObservationResult, publicationResourceRecordRoot, recordCompletionToolResult } from './completion-invariant.js';
 import { cdpClient } from '../cdp/cdp-client.js';
 import { findLastGmailResultPage, getActiveAdapter, getAdapterWorkflowRouting, getCarouselNavigationPolicy, getCarouselNavigationTarget, getFullPageCapturePolicy, getGmailResultCountPolicy, getGmailResultPageUrl, getMessageRecipientGuardPolicy, parseCarouselSlideCount, parseGmailPaginationRange, resolveAdapterWorkflowJob, UNIVERSAL_PREAMBLE } from './adapters.js';
 import { formatAdapterWorkflowExecutionPolicy } from './adapter-workflow.js';
@@ -2137,25 +2137,39 @@ export class Agent extends LoopDetector {
     const expectedBody = this._workflowMessageBody(requirement?.value);
     let observedBody = this._workflowMessageBody(record?.text);
     if (!expectedBody || !observedBody) return false;
-    const requestedUrls = [...new Set(
-      (expectedBody.match(/https?:\/\/[^\s<>"']+/gi) || [])
-        .map(rawUrl => rawUrl.replace(/[),.;!?]+$/, '')),
-    )];
+    const requestedUrls = (expectedBody.match(/https?:\/\/[^\s<>"']+/gi) || [])
+      .map(rawUrl => rawUrl.replace(/[),.;!?]+$/, ''));
     if (requestedUrls.length < 1) return false;
     let comparableExpected = expectedBody;
     let comparableObserved = observedBody;
     const links = Array.isArray(record?.links) ? record.links : [];
+    const consumedLinks = new Set();
+    const priorLinkByRequestedUrl = new Map();
+    const replaceFirst = (text, value, replacement) => {
+      const offset = text.indexOf(value);
+      return offset < 0
+        ? ''
+        : text.slice(0, offset) + replacement + text.slice(offset + value.length);
+    };
     for (const [index, requested] of requestedUrls.entries()) {
-      const link = links.find(candidate => this._workflowSocialLinkMatchesRequested(candidate, requested));
+      let linkIndex = links.findIndex((candidate, candidateIndex) => (
+        !consumedLinks.has(candidateIndex)
+        && this._workflowSocialLinkMatchesRequested(candidate, requested)
+      ));
+      if (linkIndex < 0) linkIndex = priorLinkByRequestedUrl.get(requested) ?? -1;
+      const link = linkIndex >= 0 ? links[linkIndex] : null;
       if (!link) return false;
+      consumedLinks.add(linkIndex);
+      if (!priorLinkByRequestedUrl.has(requested)) priorLinkByRequestedUrl.set(requested, linkIndex);
       const displayed = ['text', 'title', 'ariaLabel', 'expandedUrl', 'href']
         .map(field => this._workflowMetadataValue(link[field]))
         .filter(value => value && comparableObserved.includes(value))
         .find(value => this._workflowSocialDisplayedUrlMatchesRequested(value, requested));
       if (!displayed) return false;
       const marker = `__WEBBRAIN_PUBLISHED_URL_${index}__`;
-      comparableExpected = comparableExpected.split(requested).join(marker);
-      comparableObserved = comparableObserved.split(displayed).join(marker);
+      comparableExpected = replaceFirst(comparableExpected, requested, marker);
+      comparableObserved = replaceFirst(comparableObserved, displayed, marker);
+      if (!comparableExpected || !comparableObserved) return false;
     }
     return this._workflowPublishedPayloadValueObserved(
       { ...requirement, value: comparableExpected },
@@ -14426,7 +14440,6 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       .filter(Boolean)
       .join(' ');
     const hasPublishIntent = /\b(?:post|publish|tweet|share)\b/i.test(trustedContext);
-    if (!currentIsSocialPublish && !hasPublishIntent) return targets;
     for (const rawUrl of trustedContext.match(/https?:\/\/[^\s<>"'`]+/gi) || []) {
       const url = rawUrl.replace(/[\]),.;!?]+$/, '');
       const workflow = resolveAdapterWorkflowJob(url, 'publish-post');
@@ -14434,6 +14447,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         targets.add(workflow.adapterName);
       }
     }
+    if (!currentIsSocialPublish && !hasPublishIntent && targets.size < 1) return targets;
     if (/\b(?:bluesky|bsky)\b/i.test(trustedContext)) targets.add('bluesky');
     if (/\b(?:twitter|x\.com)\b/i.test(trustedContext)
         || /\b(?:on(?:\s+to)?|onto)\s+(?:the\s+)?x\b/i.test(trustedContext)
@@ -27542,6 +27556,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
                   } catch (e) { return false; }
                 }
                 const classifyForm = ${classifyCompletionForm.toString()};
+                const publicationRecordRoot = ${publicationResourceRecordRoot.toString()};
                 const dialogs = Array.from(document.querySelectorAll('[role=dialog],[role=alertdialog],[aria-modal="true"],dialog[open]')).filter(visible);
                 const forms = Array.from(document.querySelectorAll('form')).filter(visible);
                 const primaryContent = document.querySelector('main,[role=main]');
@@ -27617,17 +27632,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
                 ).values()).slice(0, 200);
                 const workflowResourceRecordMap = new Map();
                 for (const { link, url, identity } of workflowResourceLinks) {
-                  let node = link;
-                  let best = link;
-                  for (let depth = 0; node && depth < 9; depth++, node = node.parentElement) {
-                    const text = String(node.innerText || '').trim();
-                    if (!text || text.length > 5000) continue;
-                    const resourceIdentities = new Set(Array.from(node.querySelectorAll('a[href]'))
-                      .map(candidate => publicationResourceIdentity(candidate.getAttribute('href') || candidate.href || ''))
-                      .filter(Boolean));
-                    if (resourceIdentities.size > 1) break;
-                    best = node;
-                  }
+                  const best = publicationRecordRoot(link, identity, publicationResourceIdentity) || link;
                   const text = String(best.innerText || '')
                     .replace(/\r\n?/g, '\n')
                     .split('\n')

@@ -244,6 +244,50 @@ export function classifyCompletionForm({
   };
 }
 
+/**
+ * Pick the smallest app-owned publication card for one resource link.
+ *
+ * Social cards may contain another post as a quote/embed, so counting resource
+ * permalinks alone cannot distinguish that nested resource from a sibling feed
+ * item. Prefer the app's card boundary when it is available, then retain the
+ * conservative single-resource ancestry fallback for other sites/markup.
+ * Keep this function self-contained because Agent serializes it into the page.
+ */
+export function publicationResourceRecordRoot(link, identity, publicationResourceIdentity) {
+  if (!link || typeof publicationResourceIdentity !== 'function') return link || null;
+  const value = String(identity || '');
+  const cardSelector = value.startsWith('twitter:')
+    ? 'article[data-testid="tweet"],[data-testid="tweet"]'
+    : value.startsWith('bluesky:')
+    ? '[data-testid^="feedItem-by-"],[data-testid^="postThreadItem-by-"]'
+    : '';
+  if (cardSelector) {
+    try {
+      const card = link.closest?.(cardSelector) || null;
+      const text = String(card?.innerText || '').trim();
+      if (text && text.length <= 5000) return card;
+    } catch {}
+  }
+
+  let node = link;
+  let best = link;
+  for (let depth = 0; node && depth < 9; depth++, node = node.parentElement) {
+    const text = String(node.innerText || '').trim();
+    if (!text || text.length > 5000) continue;
+    let resourceIdentities;
+    try {
+      resourceIdentities = new Set(Array.from(node.querySelectorAll('a[href]'))
+        .map(candidate => publicationResourceIdentity(candidate.getAttribute('href') || candidate.href || ''))
+        .filter(Boolean));
+    } catch {
+      continue;
+    }
+    if (resourceIdentities.size > 1) break;
+    best = node;
+  }
+  return best;
+}
+
 export function isCompletionActionTool(name, args = {}) {
   if (name === 'execute_webmcp_tool') return true;
   if (

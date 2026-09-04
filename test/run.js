@@ -23421,6 +23421,54 @@ test('completion form classification ignores passive localized utility shells wi
   }
 });
 
+test('publication resource records keep the owning social card when it embeds another post', () => {
+  for (const [label, invariant, identity, expectedSelector] of [
+    ['chrome X', CompletionInvariantCh, 'twitter:status:222', 'data-testid="tweet"'],
+    ['firefox X', CompletionInvariantFx, 'twitter:status:222', 'data-testid="tweet"'],
+    ['chrome Bluesky', CompletionInvariantCh, 'bluesky:bsky.app/profile/me.test/post/222', 'feedItem-by-'],
+    ['firefox Bluesky', CompletionInvariantFx, 'bluesky:bsky.app/profile/me.test/post/222', 'feedItem-by-'],
+  ]) {
+    const siblingFeed = { innerText: 'outer post\nquoted post\nsibling post' };
+    const owningCard = {
+      innerText: 'outer post body\nquoted post body',
+      parentElement: siblingFeed,
+    };
+    const permalink = {
+      innerText: '2m',
+      parentElement: owningCard,
+      closest(selector) {
+        assert.match(selector, new RegExp(expectedSelector));
+        return owningCard;
+      },
+    };
+    const root = invariant.publicationResourceRecordRoot(
+      permalink,
+      identity,
+      value => String(value || ''),
+    );
+    assert.equal(root, owningCard, `${label}: quoted post permalink discarded the owning card`);
+    assert.notEqual(root, siblingFeed, `${label}: sibling feed container was accepted as the owning card`);
+
+    const reconstructed = Function(`return (${invariant.publicationResourceRecordRoot.toString()});`)();
+    assert.equal(
+      reconstructed(permalink, identity, value => String(value || '')),
+      owningCard,
+      `${label}: publication card selector is not self-contained for page injection`,
+    );
+  }
+
+  for (const [label, rel] of [
+    ['chrome', 'src/chrome/src/agent/agent.js'],
+    ['firefox', 'src/firefox/src/agent/agent.js'],
+  ]) {
+    const source = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    assert.match(source, /const publicationRecordRoot = \$\{publicationResourceRecordRoot\.toString\(\)\}/,
+      `${label}: done probe does not inject the shared publication card selector`);
+    assert.match(source, /const best = publicationRecordRoot\(link, identity, publicationResourceIdentity\) \|\| link/,
+      `${label}: publication records do not use the app-owned card root`);
+  }
+});
+
 test('completion invariant state machine enforces post-action observation with Chrome/Firefox parity', () => {
   assert.equal(
     fs.readFileSync(path.join(ROOT, 'src/chrome/src/agent/completion-invariant.js'), 'utf8'),
@@ -84807,7 +84855,25 @@ test('social publication workflow follows the live X or Bluesky destination and 
     assert.equal(blueskyGuard.siteWorkflow?.adapterName, 'bluesky');
 
     liveUrl = 'https://x.com/compose/post';
-    const genericTabId = tabId + 200;
+    const nonEnglishTabId = tabId + 200;
+    agent.conversations.set(nonEnglishTabId, [
+      { role: 'system', content: 'system' },
+      { role: 'user', content: 'Publícalo en https://x.com/home.' },
+    ]);
+    const nonEnglishGuard = agent._startPlanExecutionGuard(nonEnglishTabId, 'act', {
+      requestKind: 'execute',
+      requiresStateChange: true,
+      requiresSubmission: true,
+      approvedScratchpadText: [
+        '[Approved plan pinned by planner]',
+        '- Publícalo en https://x.com/home: Shipping the workflow kernel today.',
+      ].join('\n'),
+    });
+    assert.equal(await agent._adoptLiveSocialPublishWorkflow(nonEnglishTabId, provider), true);
+    assert.equal(nonEnglishGuard.siteWorkflow?.adapterName, 'twitter',
+      AgentClass.name + ': explicit social destination URL was hidden behind English-only intent words');
+
+    const genericTabId = tabId + 300;
     agent.conversations.set(genericTabId, [
       { role: 'system', content: 'system' },
       { role: 'user', content: 'Submit the approved form.' },
@@ -84883,6 +84949,22 @@ test('X and Bluesky same-route publication accepts only one new permalink with t
         fixture.accountIdentity,
       );
       assert.equal(agent._workflowMetadataFieldKey('Publishing account'), 'account');
+      const firstLongUrl = 'https://github.com/webbrain-one/webbrain/issues/100';
+      const secondLongUrl = 'https://github.com/webbrain-one/webbrain/issues/200';
+      const repeatedDisplayUrl = 'github.com/webbrain-one/webbrain/…';
+      assert.equal(agent._workflowSocialPublishedBodyObserved(
+        {
+          field: 'body',
+          value: `First: ${firstLongUrl}\nSecond: ${secondLongUrl}`,
+        },
+        {
+          text: `First: ${repeatedDisplayUrl}\nSecond: ${repeatedDisplayUrl}`,
+          links: [
+            { href: 'https://t.co/first', text: repeatedDisplayUrl, expandedUrl: firstLongUrl },
+            { href: 'https://t.co/second', text: repeatedDisplayUrl, expandedUrl: secondLongUrl },
+          ],
+        },
+      ), true, AgentClass.name + ': repeated shortened URL labels were not consumed positionally');
       const guard = agent._startPlanExecutionGuard(tabId, 'act', {
         requestKind: 'execute',
         requiresStateChange: true,
