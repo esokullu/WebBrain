@@ -16162,8 +16162,52 @@ const ADAPTERS = [
 
   // ─── Social & Content ─────────────────────────────────────────────────
   {
+    name: 'bluesky',
+    category: 'general',
+    revision: 1,
+    regions: ['global'],
+    jobs: ['publish-post'],
+    workflow: {
+      schema: ADAPTER_WORKFLOW_SCHEMA,
+      jobs: {
+        'publish-post': {
+          description: 'Prepare, publish, and verify a Bluesky post.',
+          template: 'publish',
+          stateChange: true,
+          requiresSubmission: true,
+          requiresLedger: false,
+          stages: ['access_gate', 'fill', 'review', 'commit', 'verify', 'deliver'],
+          successEvidence: ['The reviewed post appears on the intended account with matching text and a stable post URL.'],
+          partialEvidence: ['The verified composer content and exact account, validation, publication, or verification blocker are reported.'],
+        },
+      },
+    },
+    matches: (url) => /^https?:\/\/bsky\.app\//.test(url),
+    notes: `
+- The post composer is a rich text control. Re-read it after filling and verify the complete text, mentions, link card, media, language, and account before publishing.
+- Treat a cleared or closed composer as an intermediate signal only. Report success only after one new bsky.app/profile/<account>/post/<id> link appears and that post card contains the complete reviewed text.`,
+  },
+  {
     name: 'twitter',
     category: 'general',
+    revision: 1,
+    regions: ['global'],
+    jobs: ['publish-post'],
+    workflow: {
+      schema: ADAPTER_WORKFLOW_SCHEMA,
+      jobs: {
+        'publish-post': {
+          description: 'Prepare, publish, and verify an X post.',
+          template: 'publish',
+          stateChange: true,
+          requiresSubmission: true,
+          requiresLedger: false,
+          stages: ['access_gate', 'fill', 'review', 'commit', 'verify', 'deliver'],
+          successEvidence: ['The reviewed post appears on the intended account with matching text and a stable status URL.'],
+          partialEvidence: ['The verified composer content and exact account, validation, publication, or verification blocker are reported.'],
+        },
+      },
+    },
     matches: (url) => /^https?:\/\/(www\.)?(twitter\.com|x\.com)\//.test(url),
     fullPageCapture: { infiniteScroll: isTwitterInfiniteScrollUrl },
     notes: `

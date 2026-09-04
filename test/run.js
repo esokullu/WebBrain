@@ -4502,7 +4502,26 @@ test('matches twitter.com and x.com', () => {
     assert.match(notes, /selector:"\[data-testid=\\"tweetTextarea_0\\"\]"/);
     assert.match(notes, /verified:false/);
     assert.match(notes, /keep the composer open/i);
+    const workflow = getAdapter('https://x.com/compose/post')?.workflow;
+    assert.deepEqual(getAdapter('https://x.com/compose/post')?.jobs, ['publish-post']);
+    assert.deepEqual(validateAdapterWorkflowProfile(getAdapter('https://x.com/compose/post')), { ok: true });
+    assert.equal(workflow?.jobs?.['publish-post']?.template, 'publish');
+    assert.equal(workflow?.jobs?.['publish-post']?.requiresSubmission, true);
   }
+});
+
+test('matches Bluesky and exposes a mirrored publish-post workflow', () => {
+  const chromeAdapter = getActiveAdapter('https://bsky.app/');
+  const firefoxAdapter = getActiveAdapterFx('https://bsky.app/profile/webbrain.one');
+  assert.equal(chromeAdapter?.name, 'bluesky');
+  assert.equal(firefoxAdapter?.name, 'bluesky');
+  assert.deepEqual(validateAdapterWorkflowProfile(chromeAdapter), { ok: true });
+  assert.deepEqual(validateAdapterWorkflowProfileFx(firefoxAdapter), { ok: true });
+  assert.deepEqual(firefoxAdapter?.workflow, chromeAdapter?.workflow);
+  assert.deepEqual(chromeAdapter?.jobs, ['publish-post']);
+  assert.match(chromeAdapter?.notes || '', /new bsky\.app\/profile\/<account>\/post\/<id> link/i);
+  assert.notEqual(getActiveAdapter('https://bsky.app.evil.example/')?.name, 'bluesky');
+  assert.notEqual(getActiveAdapterFx('https://bsky.app.evil.example/')?.name, 'bluesky');
 });
 
 test('matches Weibo desktop and mobile surfaces and includes login and posting guidance', () => {
@@ -7900,6 +7919,8 @@ test('12306 exposes a validated regional workflow profile with browser parity', 
     'producthunt',
     'microsoft-forms',
     'gmail',
+    'bluesky',
+    'twitter',
     'linkedin',
     'youtube',
     'railway-12306',
@@ -84703,6 +84724,254 @@ test('publication workflows classify and bind requested payload fields', async (
   }
 });
 
+test('social publication workflow follows the live X or Bluesky destination and uses approved-plan payload context', async () => {
+  for (const [index, AgentClass] of [AgentCh, AgentFx].entries()) {
+    const agent = new AgentClass({ getActive: () => ({ chat: async () => ({ content: '{}' }) }) });
+    agent.useSiteAdapters = true;
+    agent._persist = () => {};
+    const tabId = 9005 + index;
+    let liveUrl = 'https://x.com/compose/post';
+    agent._currentUrl = async () => liveUrl;
+    agent._currentProgressPageScope = () => liveUrl;
+    agent.conversations.set(tabId, [
+      { role: 'system', content: 'system' },
+      { role: 'user', content: 'and now on to X!' },
+    ]);
+    const priorBlueskyWorkflow = agent._resolvePlannerSiteWorkflow('https://bsky.app/', {
+      request_kind: 'execute',
+      site_job: 'publish-post',
+    });
+    const guard = agent._startPlanExecutionGuard(tabId, 'act', {
+      requestKind: 'execute',
+      requiresStateChange: true,
+      requiresSubmission: true,
+      siteWorkflow: priorBlueskyWorkflow,
+      approvedScratchpadText: [
+        '[Approved plan pinned by planner]',
+        '- Publish this exact post on X: Shipping the workflow kernel today.',
+      ].join('\n'),
+    });
+    let classifierCalls = 0;
+    let classifierContext = null;
+    agent._chatWithCostAllowance = async (_provider, messages) => {
+      classifierCalls++;
+      classifierContext = JSON.parse(messages[1].content).siteContext;
+      return {
+        content: JSON.stringify({
+          mode: 'inactive',
+          allowedActions: [],
+          forbiddenActions: [],
+          targets: [],
+          workflowFields: [{ field: 'body', value: 'Shipping the workflow kernel today.' }],
+          confidence: 0.99,
+          pageScopePolicy: 'page',
+        }),
+      };
+    };
+    const provider = { chat: async () => ({ content: '{}' }) };
+    assert.equal(await agent._adoptLiveSocialPublishWorkflow(tabId, provider), true);
+    assert.equal(guard.siteWorkflow?.adapterName, 'twitter');
+    assert.equal(guard.siteWorkflow?.job?.id, 'publish-post');
+    assert.match(classifierContext?.approvedPlan || '', /Shipping the workflow kernel today/);
+    assert.deepEqual(guard.workflowMetadataRequirements, [
+      { field: 'body', value: 'Shipping the workflow kernel today.' },
+    ]);
+
+    liveUrl = 'https://bsky.app/';
+    assert.equal(await agent._adoptLiveSocialPublishWorkflow(tabId, provider), false);
+    assert.equal(guard.siteWorkflow?.adapterName, 'twitter');
+    assert.equal(classifierCalls, 1, AgentClass.name + ': destination rebind unnecessarily reclassified the same task payload');
+    assert.deepEqual(guard.workflowMetadataRequirements, [
+      { field: 'body', value: 'Shipping the workflow kernel today.' },
+    ]);
+
+    const blueskyTabId = tabId + 100;
+    agent.conversations.set(blueskyTabId, [
+      { role: 'system', content: 'system' },
+      { role: 'user', content: 'Post it on Bluesky.' },
+    ]);
+    const blueskyGuard = agent._startPlanExecutionGuard(blueskyTabId, 'act', {
+      requestKind: 'execute',
+      requiresStateChange: true,
+      requiresSubmission: true,
+      approvedScratchpadText: [
+        '[Approved plan pinned by planner]',
+        '- Publish this exact post on Bluesky: Shipping the workflow kernel today.',
+      ].join('\n'),
+    });
+    assert.equal(await agent._adoptLiveSocialPublishWorkflow(blueskyTabId, provider), true);
+    assert.equal(blueskyGuard.siteWorkflow?.adapterName, 'bluesky');
+
+    liveUrl = 'https://x.com/compose/post';
+    const genericTabId = tabId + 200;
+    agent.conversations.set(genericTabId, [
+      { role: 'system', content: 'system' },
+      { role: 'user', content: 'Submit the approved form.' },
+    ]);
+    const genericGuard = agent._startPlanExecutionGuard(genericTabId, 'act', {
+      requestKind: 'execute',
+      requiresStateChange: true,
+      requiresSubmission: true,
+      approvedScratchpadText: [
+        '[Approved plan pinned by planner]',
+        '- Submit the approved form.',
+      ].join('\n'),
+    });
+    genericGuard.verifiedSubmissionEvidence = true;
+    assert.equal(await agent._adoptLiveSocialPublishWorkflow(genericTabId, provider), false);
+    assert.equal(genericGuard.siteWorkflow, null);
+    assert.equal(genericGuard.verifiedSubmissionEvidence, true);
+  }
+});
+
+test('X and Bluesky same-route publication accepts only one new permalink with the exact reviewed body', () => {
+  const fixtures = [
+    {
+      adapterName: 'twitter',
+      feedUrl: 'https://x.com/home',
+      existingUrl: 'https://twitter.com/webbrain/status/1111111111111111111',
+      publishedUrl: 'https://x.com/webbrain/status/2222222222222222222',
+      otherNewUrl: 'https://x.com/webbrain/status/3333333333333333333',
+      expectedIdentity: 'twitter:status:2222222222222222222',
+      displayedRepoUrl: 'github.com/webbrain-one/…',
+      repoLink: { href: 'https://t.co/abc123', text: 'github.com/webbrain-one/…' },
+    },
+    {
+      adapterName: 'bluesky',
+      feedUrl: 'https://bsky.app/',
+      existingUrl: 'https://bsky.app/profile/webbrain.one/post/3abc',
+      publishedUrl: 'https://bsky.app/profile/webbrain.one/post/4DEF',
+      otherNewUrl: 'https://bsky.app/profile/webbrain.one/post/5ghi',
+      expectedIdentity: 'bluesky:bsky.app/profile/webbrain.one/post/4def',
+      displayedRepoUrl: 'github.com/webbrain-one/webbrain',
+      repoLink: {
+        href: 'https://github.com/webbrain-one/webbrain',
+        text: 'github.com/webbrain-one/webbrain',
+      },
+    },
+  ];
+  const body = [
+    '🎉 Milestone Alert! 🎉',
+    '',
+    'We just passed 1,000 stars and 50 contributors on @GitHub!',
+    '',
+    'Huge thanks to everyone starring, contributing code, testing local models, and sharing feedback. WebBrain wouldn’t be here without you. 🤗',
+    '',
+    '🔗 https://github.com/webbrain-one/webbrain',
+    '#OpenSource #AI #LocalAI',
+  ].join('\n');
+  for (const [buildIndex, AgentClass] of [AgentCh, AgentFx].entries()) {
+    for (const [fixtureIndex, fixture] of fixtures.entries()) {
+      const agent = new AgentClass({});
+      agent.useSiteAdapters = true;
+      const tabId = 9010 + (buildIndex * 10) + fixtureIndex;
+      const workflow = agent._resolvePlannerSiteWorkflow(fixture.feedUrl, {
+        request_kind: 'execute',
+        site_job: 'publish-post',
+      });
+      assert.equal(workflow?.adapterName, fixture.adapterName);
+      const guard = agent._startPlanExecutionGuard(tabId, 'act', {
+        requestKind: 'execute',
+        requiresStateChange: true,
+        requiresSubmission: true,
+        siteWorkflow: workflow,
+      });
+      guard.successfulConsequentialToolCalls = 1;
+      guard.workflowMetadataRequirements = [{ field: 'body', value: body }];
+      guard.workflowMetadataRequirementsResolved = true;
+      agent._beginCompletionInvariant(tabId);
+      agent._recordCompletionToolResult(
+        tabId,
+        'click_ax',
+        { ref_id: 'publish-post' },
+        { success: true, dispatched: true },
+      );
+      agent._recordCompletionSubmitAttempt(
+        tabId,
+        { isSubmit: true, publicationResourceUrls: [fixture.existingUrl] },
+        'click_ax',
+        { ref_id: 'publish-post' },
+        fixture.feedUrl,
+        fixture.feedUrl,
+        { success: true, dispatched: true },
+      );
+      agent._recordCompletionToolResult(tabId, 'read_page', {}, {
+        success: true,
+        url: fixture.feedUrl,
+        content: 'Feed refreshed.',
+      });
+      const submit = agent._completionSubmitStates.get(tabId);
+      assert.equal(agent._completionSubmissionEvidence(
+        tabId,
+        { relevantFormCount: 0, successMessages: [] },
+        fixture.feedUrl,
+      ).verifiedFinalSubmit, false, AgentClass.name + ': same-route feed invented generic submit success');
+
+      const ambiguousPageState = {
+        workflowResourceUrls: [fixture.existingUrl, fixture.publishedUrl, fixture.otherNewUrl],
+        workflowResourceRecords: [
+          { url: fixture.publishedUrl, text: 'WebBrain\n' + body + '\n2m' },
+          { url: fixture.otherNewUrl, text: 'WebBrain\n' + body + '\n1m' },
+        ],
+      };
+      assert.equal(agent._workflowTerminalEvidenceFromDone(
+        tabId,
+        ambiguousPageState,
+        fixture.feedUrl,
+        { submit, verifiedFinalSubmit: false, relevantForms: 0 },
+      ), null, AgentClass.name + ': multiple new ' + fixture.adapterName + ' permalinks were bound ambiguously');
+      assert.equal(submit.workflowBinding?.publishedResourceIdentity, undefined);
+
+      const renderedBody = body.replace('https://github.com/webbrain-one/webbrain', fixture.displayedRepoUrl);
+      const wrongBodyPageState = {
+        workflowResourceUrls: [fixture.existingUrl, fixture.publishedUrl],
+        workflowResourceRecords: [
+          { url: fixture.publishedUrl, text: 'WebBrain\nA different post body.\n2m' },
+        ],
+      };
+      assert.equal(agent._workflowTerminalEvidenceFromDone(
+        tabId,
+        wrongBodyPageState,
+        fixture.feedUrl,
+        { submit, verifiedFinalSubmit: false, relevantForms: 0 },
+      ), null, AgentClass.name + ': wrong-body ' + fixture.adapterName + ' post satisfied publication');
+      assert.equal(submit.workflowBinding?.publishedResourceIdentity, undefined);
+
+      const missingLinkEvidencePageState = {
+        workflowResourceUrls: [fixture.existingUrl, fixture.publishedUrl],
+        workflowResourceRecords: [
+          { url: fixture.publishedUrl, text: 'WebBrain\n' + renderedBody + '\n2m', links: [] },
+        ],
+      };
+      assert.equal(agent._workflowTerminalEvidenceFromDone(
+        tabId,
+        missingLinkEvidencePageState,
+        fixture.feedUrl,
+        { submit, verifiedFinalSubmit: false, relevantForms: 0 },
+      ), null, AgentClass.name + ': shortened URL text passed without card-bound link evidence');
+      assert.equal(submit.workflowBinding?.publishedResourceIdentity, undefined);
+
+      const exactPageState = {
+        workflowResourceUrls: [fixture.existingUrl, fixture.publishedUrl],
+        workflowResourceRecords: [
+          {
+            url: fixture.publishedUrl,
+            text: 'WebBrain\n' + renderedBody + '\n2m',
+            links: [fixture.repoLink],
+          },
+        ],
+      };
+      assert.equal(agent._workflowTerminalEvidenceFromDone(
+        tabId,
+        exactPageState,
+        fixture.feedUrl,
+        { submit, verifiedFinalSubmit: false, relevantForms: 0 },
+      )?.source, 'dispatch_bound_published_resource');
+      assert.equal(submit.workflowBinding?.publishedResourceIdentity, fixture.expectedIdentity);
+    }
+  }
+});
+
 test('YouTube metadata success requires exact app-classified post-save readback', async () => {
   for (const [index, AgentClass] of [AgentCh, AgentFx].entries()) {
     const agent = new AgentClass({ getActive: () => ({ chat: async () => ({ content: '{}' }) }) });
@@ -87741,6 +88010,35 @@ test('required submission evidence needs dispatch plus a post-submit success obs
       relevantFormCount: 0,
       successMessages: ['Successfully submitted'],
     }, 'https://example.com/form').verifiedFinalSubmit, true);
+  }
+});
+
+test('generic submission evidence failure does not claim that a site workflow job was selected', () => {
+  for (const [index, AgentClass] of [AgentCh, AgentFx].entries()) {
+    const tabId = 8965 + index;
+    const agent = new AgentClass({});
+    const guard = agent._startPlanExecutionGuard(tabId, 'act', {
+      requestKind: 'execute',
+      requiresStateChange: true,
+      requiresSubmission: true,
+    });
+    guard.successfulConsequentialToolCalls = 1;
+    guard.evidenceTaskKey = guard.taskKey;
+    const retry = agent._planOnlyTerminalDecision(
+      tabId,
+      'Published.',
+      { viaDone: true, outcome: 'success' },
+    );
+    assert.equal(retry?.retry, true);
+    assert.match(retry?.nudge || '', /no structured site workflow is bound/i);
+    assert.doesNotMatch(retry?.nudge || '', /selected workflow job/i);
+    const failure = agent._planOnlyTerminalDecision(
+      tabId,
+      'Published.',
+      { viaDone: true, outcome: 'success' },
+    );
+    assert.match(failure?.failure || '', /no structured site workflow was bound/i);
+    assert.doesNotMatch(failure?.failure || '', /selected workflow job/i);
   }
 });
 
