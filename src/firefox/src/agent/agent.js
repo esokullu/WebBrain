@@ -1408,8 +1408,13 @@ export class Agent extends LoopDetector {
     const replacementRecordValues = [...(replacementRecords instanceof Map
       ? replacementRecords.values()
       : (replacementRecords ? [replacementRecords] : []))];
+    // Proofs authorize a commit only for the task that verified them. Records
+    // survive run teardown, so without this a later run in the same tab could
+    // authorize a stale replacement it never verified.
+    const activeRunId = this.currentRunId.get(tabId);
     const githubEditorReplacements = replacementRecordValues
       .filter(record => record?.ambiguous !== true
+        && record?.runId === activeRunId
         && !!record?.expectedSha256
         && !!record?.readbackSha256
         && this._normalizeUrl(record.pageUrl || '') === this._normalizeUrl(pageUrl)
@@ -1430,6 +1435,7 @@ export class Agent extends LoopDetector {
     const expectedCommitMessage = this._workflowMetadataValue(commitMessageRequirement?.value);
     const commitMessageVerified = !commitMessageRequirement || replacementRecordValues.some(record => (
       record?.ambiguous !== true
+      && record?.runId === activeRunId
       && !!record?.readbackSha256
       && this._normalizeUrl(record.pageUrl || '') === this._normalizeUrl(pageUrl)
       && /^(?:commit-message-input|commit_message)$/i.test(String(
@@ -17671,6 +17677,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         readbackSha256: readback.valueSha256,
       } : {}),
       verifiedAt: Date.now(),
+      // Bind the proof to the task that verified it: a later run in the same
+      // tab must verify its own writes instead of reusing a prior task's
+      // records, even when the URL and field match.
+      runId: this.currentRunId.get(tabId),
     };
   }
 
@@ -17759,13 +17769,22 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     // the target would unguard a partial or duplicated write. Those cases
     // stay blocked until the document changes.
     if (sameReplacement && !target.ambiguous && debt.key === target.key
-        && (name === 'set_field' || name === 'type_ax')
-        && typeof args.ref_id === 'string') {
+        && (((name === 'set_field' || name === 'type_ax') && typeof args.ref_id === 'string')
+          || (name === 'type_text' && typeof args.selector === 'string' && args.selector.trim()))) {
       let verified = false;
       let readback = null;
       try {
-        readback = await readAxTarget();
-        verified = readback?.success === true && readback.verified === true;
+        if ((name === 'set_field' || name === 'type_ax') && typeof args.ref_id === 'string') {
+          readback = await readAxTarget();
+          verified = readback?.success === true && readback.verified === true;
+        } else if (name === 'type_text' && typeof args.selector === 'string' && args.selector.trim()) {
+          // No CDP on Firefox: fall back to the selector-capable field digest
+          // probe, which carries the same exact-match contract as the AX
+          // readback for clear-before-insert replacements.
+          const digest = await this._textMutationValueDigest(tabId, target, text);
+          verified = digest?.verified === true;
+          readback = digest;
+        }
       } catch { /* an unavailable full readback leaves the write blocked */ }
       if (verified) {
         debts.delete(debt.key);

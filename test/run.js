@@ -74873,6 +74873,110 @@ test('GitHub commit-dialog launcher detection is locale-independent', () => {
   }
 });
 
+test('GitHub replacement proofs are scoped to the verifying run', async () => {
+  for (const [label, AgentClass, resolveJob, tabId] of [
+    ['chrome', AgentCh, resolveAdapterWorkflowJob, 9463],
+    ['firefox', AgentFx, resolveAdapterWorkflowJobFx, 9464],
+  ]) {
+    const agent = new AgentClass({});
+    const pageUrl = 'https://github.com/Example/Repo/edit/main/docs/plan.md';
+    agent._planExecutionGuards.set(tabId, {
+      enabled: true,
+      siteWorkflow: resolveJob(pageUrl, 'edit-file-and-commit'),
+      workflowMetadataRequirements: [],
+      workflowMetadataRequirementsResolved: true,
+    });
+    // A proof verified by a prior task in the same tab: same URL, same field,
+    // live bytes unchanged — but a different run.
+    agent._verifiedTextReplacements.set(tabId, new Map([['ax:doc:ref_editor', {
+      key: 'ax:doc:ref_editor',
+      locatorType: 'ax',
+      refId: 'ref_editor',
+      documentToken: 'doc',
+      pageUrl,
+      ambiguous: false,
+      expectedLength: 4,
+      expectedSha256: await agent._sha256Text('body'),
+      expectedFp: agent._workflowInventoryFingerprint('body'),
+      fieldMeta: { contentEditable: true, ariaLabelledByText: 'Editing file contents' },
+      readbackLength: 4,
+      readbackSha256: await agent._sha256Text('body'),
+      verifiedAt: Date.now(),
+      runId: 'run-one',
+    }]]));
+    agent.currentRunId.set(tabId, 'run-two');
+    assert.equal(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit, undefined,
+      `${label}: prior-run proof authorized a commit for a new task`);
+    agent.currentRunId.set(tabId, 'run-one');
+    assert.ok(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit,
+      `${label}: same-run proof was rejected`);
+    // Records minted by the helper carry the active run token.
+    const record = await agent._verifiedTextReplacementRecord(
+      tabId, agent._textMutationTarget(tabId, 'set_field', { ref_id: 'ref_editor' }), 'body', null,
+    );
+    assert.equal(record.runId, 'run-one', `${label}: replacement record lost its run binding`);
+  }
+});
+
+test('Firefox selector debt recovers on exact digest readback', async () => {
+  const originalChrome = globalThis.chrome;
+  const originalBrowser = globalThis.browser;
+  try {
+    const tabs = {
+      async sendMessage(_tabId, message) {
+        assert.equal(message.action, 'field_value_digest');
+        assert.equal(message.params.selector, '[contenteditable="true"]');
+        assert.equal(message.params.expected, 'changed');
+        return {
+          success: true,
+          verified: true,
+          valueLength: 'changed'.length,
+          valueSha256: 'a'.repeat(64),
+          fieldMeta: { contentEditable: true },
+        };
+      },
+    };
+    globalThis.chrome = { tabs };
+    globalThis.browser = { tabs };
+    const agent = new AgentFx({});
+    const tabId = 9465;
+    agent._lastAxScopes.set(tabId, {
+      documentToken: 'doc-fx-selector',
+      pageUrl: 'https://github.com/example/repo/edit/main/docs/plan.md',
+    });
+    await agent._finalizeTextMutationResult(
+      tabId,
+      'type_text',
+      { selector: '[contenteditable="true"]', text: 'changed', clear: true },
+      { success: false, dispatched: true, verified: false },
+    );
+    assert.equal(agent._uncertainTextMutations.get(tabId)?.size, 1, 'selector debt was not recorded');
+    const recovered = await agent._uncertainTextMutationBlock(
+      tabId, 'type_text', { selector: '[contenteditable="true"]', text: 'changed', clear: true },
+    );
+    assert.equal(recovered?.success, true, 'exact selector readback did not recover the write');
+    assert.equal(recovered?.recoveredUncertainMutation, true);
+    assert.equal(recovered?.noDispatch, true);
+    assert.equal(agent._uncertainTextMutations.has(tabId), false, 'recovered selector debt was retained');
+    // A different selector with the same text stays blocked: no positive identity.
+    await agent._finalizeTextMutationResult(
+      tabId,
+      'type_text',
+      { selector: '[contenteditable="true"]', text: 'changed', clear: true },
+      { success: false, dispatched: true, verified: false },
+    );
+    const blocked = await agent._uncertainTextMutationBlock(
+      tabId, 'type_text', { selector: '[contenteditable="true"].other', text: 'changed', clear: true },
+    );
+    assert.equal(blocked?.repeatBlocked, true, 'cross-selector readback cleared another target debt');
+  } finally {
+    if (originalChrome === undefined) delete globalThis.chrome;
+    else globalThis.chrome = originalChrome;
+    if (originalBrowser === undefined) delete globalThis.browser;
+    else globalThis.browser = originalBrowser;
+  }
+});
+
 test('click_ax rejects stale zero-sized targets before activation', () => {
   for (const [label, rel] of [
     ['chrome', 'src/chrome/src/content/content.js'],

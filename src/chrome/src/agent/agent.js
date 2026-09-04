@@ -1694,8 +1694,13 @@ export class Agent extends LoopDetector {
     const replacementRecordValues = [...(replacementRecords instanceof Map
       ? replacementRecords.values()
       : (replacementRecords ? [replacementRecords] : []))];
+    // Proofs authorize a commit only for the task that verified them. Records
+    // survive run teardown, so without this a later run in the same tab could
+    // authorize a stale replacement it never verified.
+    const activeRunId = this.currentRunId.get(tabId);
     const githubEditorReplacements = replacementRecordValues
       .filter(record => record?.ambiguous !== true
+        && record?.runId === activeRunId
         && !!record?.expectedSha256
         && !!record?.readbackSha256
         && this._normalizeUrl(record.pageUrl || '') === this._normalizeUrl(pageUrl)
@@ -1716,6 +1721,7 @@ export class Agent extends LoopDetector {
     const expectedCommitMessage = this._workflowMetadataValue(commitMessageRequirement?.value);
     const commitMessageVerified = !commitMessageRequirement || replacementRecordValues.some(record => (
       record?.ambiguous !== true
+      && record?.runId === activeRunId
       && !!record?.readbackSha256
       && this._normalizeUrl(record.pageUrl || '') === this._normalizeUrl(pageUrl)
       && /^(?:commit-message-input|commit_message)$/i.test(String(
@@ -20098,6 +20104,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         readbackSha256: readback.valueSha256,
       } : {}),
       verifiedAt: Date.now(),
+      // Bind the proof to the task that verified it: a later run in the same
+      // tab must verify its own writes instead of reusing a prior task's
+      // records, even when the URL and field match.
+      runId: this.currentRunId.get(tabId),
     };
   }
 
