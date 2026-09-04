@@ -2071,21 +2071,43 @@ export class Agent extends LoopDetector {
       // (the page form owns the scope), so resolve the true scope here by
       // content: every re-partition of the same segments is tried, naive cut
       // first, and the first content match on a listed path wins, correcting
-      // the binding in place. Bounded either way; a match off the observed
-      // file list can only delay failure, never fake success.
+      // the binding in place. Re-partitioning applies only when the request
+      // named neither path nor branch (an explicit scope is already exact, so
+      // it keeps the original single-path behavior). Bounded either way.
+      const requirements = Array.isArray(binding?.metadataRequirements)
+        ? binding.metadataRequirements
+        : [];
+      const requestedScopeValue = (field) => {
+        const entry = requirements.find(requirement => requirement?.field === field);
+        return String(this._workflowMetadataValue(entry?.value) || '').replace(/^\/+/, '');
+      };
+      const scopeAmbiguous = !requestedScopeValue('path') && !requestedScopeValue('branch');
       const segments = `${expected.branch}/${expected.path}`.split('/');
       const attempts = [{ branch: expected.branch, path: expected.path }];
-      for (let cut = segments.length - 1; cut >= 1 && attempts.length < 10; cut -= 1) {
-        const branch = segments.slice(0, cut).join('/');
-        const path = segments.slice(cut).join('/');
-        if (branch !== expected.branch || path !== expected.path) {
-          attempts.push({ branch, path });
+      if (scopeAmbiguous) {
+        for (let cut = segments.length - 1; cut >= 1 && attempts.length < 10; cut -= 1) {
+          const branch = segments.slice(0, cut).join('/');
+          const path = segments.slice(cut).join('/');
+          if (branch !== expected.branch || path !== expected.path) {
+            attempts.push({ branch, path });
+          }
         }
       }
       let firstMismatch = null;
       let unattributedMatch = null;
+      let alternatesSkippedForEvidence = false;
       let lastFetchReason = 'raw_file_read_failed';
       for (const attempt of attempts) {
+        const naiveAttempt = attempt.branch === expected.branch && attempt.path === expected.path;
+        // Alternate cuts are only meaningful against the observed changed
+        // file list: accepting one on content alone would bless bytes that
+        // pre-exist at an untouched path. The naive cut keeps its
+        // content-match fallback so ordinary commits verify without forcing
+        // every flow through the commit page.
+        if (!naiveAttempt && commitBlobPaths.size === 0) {
+          alternatesSkippedForEvidence = true;
+          continue;
+        }
         const encodedPath = attempt.path.split('/').map(encodeURIComponent).join('/');
         const rawUrl = `https://github.com/${expected.repository}/raw/${commit.sha}/${encodedPath}`;
         let response = null;
@@ -2144,6 +2166,17 @@ export class Agent extends LoopDetector {
           actualLength: unattributedMatch.text.length,
           expectedSha256: expected.expectedSha256,
           actualSha256: unattributedMatch.actualSha256,
+        };
+      }
+      if (scopeAmbiguous && alternatesSkippedForEvidence) {
+        return {
+          verified: false,
+          reason: 'commit_scope_unproven',
+          repository: commit.repository,
+          commitSha: commit.sha,
+          path: expected.path,
+          expectedLength: expected.expectedLength,
+          expectedSha256: expected.expectedSha256,
         };
       }
       if (firstMismatch) {
@@ -17713,6 +17746,33 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     }
   }
 
+  // Live document check for stale mutation guards. Selector/focused flows
+  // need no AX read, so the cached scope can predate a full navigation and
+  // pin old debt to the new page. The digest probe answers from the live
+  // document on success and failure alike (see the dispatcher scope wrap),
+  // so any token here is current by construction.
+  async _liveTextMutationScope(tabId, name, args = {}) {
+    try {
+      const params = (name === 'set_field' || name === 'type_ax') && typeof args.ref_id === 'string'
+        ? { ref_id: args.ref_id }
+        : name === 'type_text' && typeof args.selector === 'string' && args.selector.trim()
+          ? { selector: args.selector.trim() }
+          : null;
+      if (!params) return null;
+      const response = await browser.tabs.sendMessage(tabId, {
+        target: 'content',
+        action: 'field_value_digest',
+        params,
+      });
+      const documentToken = String(response?.documentToken || '');
+      const pageUrl = String(response?.refScopeUrl || '');
+      if (!documentToken && !pageUrl) return null;
+      return { documentToken, pageUrl };
+    } catch {
+      return null;
+    }
+  }
+
   async _verifiedTextReplacementRecord(tabId, target, text, fieldMeta = null) {
     const workflow = this._planExecutionGuards.get(tabId)?.siteWorkflow;
     const needsCommitProof = workflow?.adapterName === 'github'
@@ -17768,7 +17828,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     if (!['set_field', 'type_ax', 'type_text'].includes(name)) return null;
     const debts = this._uncertainTextMutations?.get(tabId);
     if (!(debts instanceof Map) || debts.size === 0) return null;
-    const target = this._textMutationTarget(tabId, name, args);
+    let target = this._textMutationTarget(tabId, name, args);
     for (const [key, candidate] of debts) {
       if (candidate.documentToken && target.documentToken
           && candidate.documentToken !== target.documentToken) debts.delete(key);
@@ -17865,6 +17925,25 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           expectedSha256,
         };
       }
+    }
+
+    // Last resort before blocking: the cached scope may predate a full
+    // navigation that no AX read ever observed, pinning old debt to the new
+    // page. A genuinely new live token proves the debt's document is gone,
+    // so adopt it (clearing stale debt through the document-change path) and
+    // let the write proceed fresh. A matching token, or an unreachable page,
+    // keeps the block below exactly as before.
+    const liveScope = await this._liveTextMutationScope(tabId, name, args);
+    const cachedScope = this._lastAxScopes.get(tabId) || {};
+    if (liveScope
+        && liveScope.documentToken
+        && liveScope.documentToken !== String(cachedScope.documentToken || '')) {
+      this._rememberAxScope(tabId, liveScope.documentToken, liveScope.pageUrl || cachedScope.pageUrl || '');
+      if (!(this._uncertainTextMutations.get(tabId) instanceof Map)
+          || this._uncertainTextMutations.get(tabId).size === 0) {
+        return null;
+      }
+      target = this._textMutationTarget(tabId, name, args);
     }
 
     return {

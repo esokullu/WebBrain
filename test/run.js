@@ -74503,6 +74503,7 @@ test('GitHub committed-file verification resolves slash-branch scope by content'
   try {
     const naiveUrl = `https://github.com/example/repo/raw/${commitSha}/fix-copy/docs/plan.md`;
     const trueUrl = `https://github.com/example/repo/raw/${commitSha}/docs/plan.md`;
+    const trueBlobUrl = `https://github.com/Example/Repo/blob/${commitSha}/docs/plan.md`;
     const seen = [];
     globalThis.fetch = async (url) => {
       seen.push(url);
@@ -74533,7 +74534,7 @@ test('GitHub committed-file verification resolves slash-branch scope by content'
         metadataRequirements: [],
         preDispatchPublishedResourceIdentities: [],
       };
-      const pageState = { workflowResourceUrls: [commitUrl] };
+      const pageState = { workflowResourceUrls: [commitUrl, trueBlobUrl] };
       const proof = await agent._githubCommittedFileVerification(
         tabId, pageState, commitUrl, { verifiedFinalSubmit: true, submit: { workflowBinding: binding } },
       );
@@ -74606,16 +74607,17 @@ test('GitHub committed-file verification ignores unattributed duplicate bytes', 
   }
 });
 
-test('GitHub committed-file verification accepts listed scope matches', async () => {
+test('GitHub committed-file verification requires file-list evidence for alternate scope', async () => {
   const originalFetch = globalThis.fetch;
   const body = '# Corrected document\n\nOne complete copy.\n';
   const commitSha = '0123456789abcdef0123456789abcdef01234567';
   const commitUrl = `https://github.com/Example/Repo/commit/${commitSha}`;
   const naiveUrl = `https://github.com/example/repo/raw/${commitSha}/fix-copy/docs/plan.md`;
   const trueUrl = `https://github.com/example/repo/raw/${commitSha}/docs/plan.md`;
-  const trueBlobUrl = `https://github.com/Example/Repo/blob/${commitSha}/docs/plan.md`;
   try {
+    const seen = [];
     globalThis.fetch = async (url) => {
+      seen.push(url);
       if (url === trueUrl) {
         return { ok: true, status: 200, headers: { get: () => String(body.length) }, text: async () => body };
       }
@@ -74642,13 +74644,18 @@ test('GitHub committed-file verification accepts listed scope matches', async ()
         metadataRequirements: [],
         preDispatchPublishedResourceIdentities: [],
       };
-      const pageState = { workflowResourceUrls: [commitUrl, trueBlobUrl] };
+      // No changed-file list was observed: the true path must not verify on
+      // content alone, and alternates must not even be fetched.
+      const pageState = { workflowResourceUrls: [commitUrl] };
       const proof = await agent._githubCommittedFileVerification(
         tabId, pageState, commitUrl, { verifiedFinalSubmit: true, submit: { workflowBinding: binding } },
       );
-      assert.equal(proof.verified, true, `${label}: listed scope match was not verified`);
-      assert.equal(binding.githubFileCommit.branch, 'feature/fix-copy');
-      assert.equal(binding.githubFileCommit.path, 'docs/plan.md');
+      assert.equal(proof.verified, false, `${label}: alternate scope verified without file-list evidence`);
+      assert.equal(proof.reason, 'commit_scope_unproven', `${label}: missing scope evidence misreported`);
+      assert.equal(binding.githubFileCommit.branch, 'feature');
+      assert.equal(binding.githubFileCommit.path, 'fix-copy/docs/plan.md');
+      assert.ok(seen.includes(naiveUrl) && !seen.includes(trueUrl),
+        `${label}: evidence-less alternates were probed`);
     }
   } finally {
     globalThis.fetch = originalFetch;
@@ -75190,6 +75197,53 @@ test('verified value with unobserved submission is not mutation debt', async () 
     // And the verified write still mints its replacement proof.
     assert.ok(agent._verifiedTextReplacements.get(tabId)?.has('ax:doc-submit:ref_search'),
       `${label}: verified write lost its replacement proof`);
+  }
+});
+
+test('navigation clears stale text-mutation debt via live document check', async () => {
+  const originalChrome = globalThis.chrome;
+  const originalBrowser = globalThis.browser;
+  try {
+    const tabs = {
+      async sendMessage(_tabId, message) {
+        assert.equal(message.action, 'field_value_digest');
+        // Live page is a new document the cached scope never observed.
+        return { success: false, documentToken: 'doc-new', refScopeUrl: 'https://other.test/page' };
+      },
+    };
+    globalThis.chrome = { tabs };
+    globalThis.browser = { tabs };
+    for (const [label, AgentClass, tabId] of [
+      ['chrome', AgentCh, 9474],
+      ['firefox', AgentFx, 9475],
+    ]) {
+      const agent = new AgentClass({});
+      agent._lastAxScopes.set(tabId, {
+        documentToken: 'doc-old',
+        pageUrl: 'https://example.test/form',
+      });
+      await agent._finalizeTextMutationResult(
+        tabId,
+        'type_text',
+        { selector: '#field', text: 'draft', clear: true },
+        { success: false, dispatched: true, verified: false },
+      );
+      assert.equal(agent._uncertainTextMutations.get(tabId)?.size, 1, `${label}: debt was not recorded`);
+      // No AX read happened after the navigation: the cached scope still
+      // points at the old document, but the live check proves the move.
+      const allowed = await agent._uncertainTextMutationBlock(
+        tabId, 'type_text', { selector: '#other', text: 'fresh' },
+      );
+      assert.equal(allowed, null, `${label}: stale debt blocked a new document`);
+      assert.equal(agent._uncertainTextMutations.has(tabId), false, `${label}: stale debt survived navigation`);
+      assert.equal(agent._lastAxScopes.get(tabId)?.documentToken, 'doc-new',
+        `${label}: live scope was not adopted`);
+    }
+  } finally {
+    if (originalChrome === undefined) delete globalThis.chrome;
+    else globalThis.chrome = originalChrome;
+    if (originalBrowser === undefined) delete globalThis.browser;
+    else globalThis.browser = originalBrowser;
   }
 });
 

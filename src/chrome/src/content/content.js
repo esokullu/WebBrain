@@ -6967,16 +6967,35 @@
       return;
     }
 
+    // Readback probes double as live document-identity oracles: the agent
+    // uses their token to tell a same-document route change (keep text
+    // guards) from a full navigation no AX scope ever observed (drop stale
+    // debt). Attach on every return path, including failures.
+    const withLiveDocumentScope = (value) => {
+      if ((msg.action === 'field_value_digest' || msg.action === 'ax_verify_field_value')
+          && value && typeof value === 'object') {
+        try {
+          if (!value.documentToken) value.documentToken = _axDocumentToken();
+          if (!value.refScopeUrl) value.refScopeUrl = location.href;
+        } catch { /* identity is best-effort; never break the response */ }
+      }
+      return value;
+    };
+
     const result = handler();
     if (result instanceof Promise) {
       // Always settle sendResponse — a rejecting handler (e.g. a throwing
       // DOM API) must not leave the caller's await hanging forever.
-      result.then(sendResponse, (err) => {
-        sendResponse({ success: false, error: `${msg.action} failed: ${err?.message || String(err)}` });
-      });
+      result.then(
+        (value) => sendResponse(withLiveDocumentScope(value)),
+        (err) => sendResponse(withLiveDocumentScope({
+          success: false,
+          error: `${msg.action} failed: ${err?.message || String(err)}`,
+        })),
+      );
       return true; // async
     }
-    sendResponse(result);
+    sendResponse(withLiveDocumentScope(result));
   });
 
   // ─── Tab attention flash ────────────────────────────────────────────
