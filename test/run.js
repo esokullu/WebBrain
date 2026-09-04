@@ -74547,6 +74547,123 @@ test('GitHub committed-file verification resolves slash-branch scope by content'
   }
 });
 
+test('GitHub committed-file verification ignores unattributed duplicate bytes', async () => {
+  const originalFetch = globalThis.fetch;
+  const body = '# Corrected document\n\nOne complete copy.\n';
+  const corrupt = '# Corrected document\n\nPartial write.\n';
+  const commitSha = '0123456789abcdef0123456789abcdef01234567';
+  const commitUrl = `https://github.com/Example/Repo/commit/${commitSha}`;
+  // The naive cut serves the intended bytes (pre-existing duplicate), while
+  // the true file the commit touched carries corrupt content.
+  const naiveUrl = `https://github.com/example/repo/raw/${commitSha}/fix-copy/docs/plan.md`;
+  const trueUrl = `https://github.com/example/repo/raw/${commitSha}/docs/plan.md`;
+  const trueBlobUrl = `https://github.com/Example/Repo/blob/${commitSha}/docs/plan.md`;
+  try {
+    globalThis.fetch = async (url) => {
+      if (url === naiveUrl) {
+        return { ok: true, status: 200, headers: { get: () => String(body.length) }, text: async () => body };
+      }
+      if (url === trueUrl) {
+        return { ok: true, status: 200, headers: { get: () => String(corrupt.length) }, text: async () => corrupt };
+      }
+      return { ok: false, status: 404, headers: { get: () => '0' }, text: async () => 'Not Found' };
+    };
+    for (const [label, AgentClass, tabId] of [
+      ['chrome', AgentCh, 9466],
+      ['firefox', AgentFx, 9467],
+    ]) {
+      const agent = new AgentClass({});
+      agent._planExecutionGuards.set(tabId, {
+        enabled: true,
+        siteWorkflow: { adapterName: 'github', job: { id: 'edit-file-and-commit' } },
+      });
+      const binding = {
+        githubFileCommit: {
+          repository: 'example/repo',
+          branch: 'feature',
+          path: 'fix-copy/docs/plan.md',
+          expectedLength: body.length,
+          expectedSha256: await agent._sha256Text(body),
+          commitMessageVerified: true,
+        },
+        metadataRequirements: [],
+        preDispatchPublishedResourceIdentities: [],
+      };
+      // The observed commit page lists only the true file as changed.
+      const pageState = { workflowResourceUrls: [commitUrl, trueBlobUrl] };
+      const proof = await agent._githubCommittedFileVerification(
+        tabId, pageState, commitUrl, { verifiedFinalSubmit: true, submit: { workflowBinding: binding } },
+      );
+      assert.equal(proof.verified, false, `${label}: duplicate bytes at an untouched path verified a corrupt commit`);
+      assert.equal(proof.reason, 'commit_file_list_mismatch', `${label}: unattributed match misreported`);
+      assert.equal(binding.githubFileCommit.path, 'fix-copy/docs/plan.md',
+        `${label}: binding was rewritten to an unattributed path`);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('GitHub committed-file verification accepts listed scope matches', async () => {
+  const originalFetch = globalThis.fetch;
+  const body = '# Corrected document\n\nOne complete copy.\n';
+  const commitSha = '0123456789abcdef0123456789abcdef01234567';
+  const commitUrl = `https://github.com/Example/Repo/commit/${commitSha}`;
+  const naiveUrl = `https://github.com/example/repo/raw/${commitSha}/fix-copy/docs/plan.md`;
+  const trueUrl = `https://github.com/example/repo/raw/${commitSha}/docs/plan.md`;
+  const trueBlobUrl = `https://github.com/Example/Repo/blob/${commitSha}/docs/plan.md`;
+  try {
+    globalThis.fetch = async (url) => {
+      if (url === trueUrl) {
+        return { ok: true, status: 200, headers: { get: () => String(body.length) }, text: async () => body };
+      }
+      return { ok: false, status: 404, headers: { get: () => '0' }, text: async () => 'Not Found' };
+    };
+    for (const [label, AgentClass, tabId] of [
+      ['chrome', AgentCh, 9468],
+      ['firefox', AgentFx, 9469],
+    ]) {
+      const agent = new AgentClass({});
+      agent._planExecutionGuards.set(tabId, {
+        enabled: true,
+        siteWorkflow: { adapterName: 'github', job: { id: 'edit-file-and-commit' } },
+      });
+      const binding = {
+        githubFileCommit: {
+          repository: 'example/repo',
+          branch: 'feature',
+          path: 'fix-copy/docs/plan.md',
+          expectedLength: body.length,
+          expectedSha256: await agent._sha256Text(body),
+          commitMessageVerified: true,
+        },
+        metadataRequirements: [],
+        preDispatchPublishedResourceIdentities: [],
+      };
+      const pageState = { workflowResourceUrls: [commitUrl, trueBlobUrl] };
+      const proof = await agent._githubCommittedFileVerification(
+        tabId, pageState, commitUrl, { verifiedFinalSubmit: true, submit: { workflowBinding: binding } },
+      );
+      assert.equal(proof.verified, true, `${label}: listed scope match was not verified`);
+      assert.equal(binding.githubFileCommit.branch, 'feature/fix-copy');
+      assert.equal(binding.githubFileCommit.path, 'docs/plan.md');
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('commit page blob links feed verification scope evidence', () => {
+  for (const rel of [
+    'src/chrome/src/agent/agent.js',
+    'src/firefox/src/agent/agent.js',
+  ]) {
+    const source = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    assert.match(source, /blob\\\\\/\[0-9a-f\]\{7,40\}/,
+      `${rel}: page-state harvester misses commit blob links`);
+  }
+});
+
 test('GitHub edit-file workflow verifies the exact committed raw blob', async () => {
   const originalFetch = globalThis.fetch;
   const body = '# Corrected document\n\nOne complete copy.\n';
@@ -74873,7 +74990,7 @@ test('GitHub commit-dialog launcher detection is locale-independent', () => {
   }
 });
 
-test('GitHub replacement proofs are scoped to the verifying run', async () => {
+test('GitHub replacement proofs are scoped to the verifying task', async () => {
   for (const [label, AgentClass, resolveJob, tabId] of [
     ['chrome', AgentCh, resolveAdapterWorkflowJob, 9463],
     ['firefox', AgentFx, resolveAdapterWorkflowJobFx, 9464],
@@ -74887,7 +75004,7 @@ test('GitHub replacement proofs are scoped to the verifying run', async () => {
       workflowMetadataRequirementsResolved: true,
     });
     // A proof verified by a prior task in the same tab: same URL, same field,
-    // live bytes unchanged — but a different run.
+    // live bytes unchanged — but a different task token.
     agent._verifiedTextReplacements.set(tabId, new Map([['ax:doc:ref_editor', {
       key: 'ax:doc:ref_editor',
       locatorType: 'ax',
@@ -74902,19 +75019,32 @@ test('GitHub replacement proofs are scoped to the verifying run', async () => {
       readbackLength: 4,
       readbackSha256: await agent._sha256Text('body'),
       verifiedAt: Date.now(),
-      runId: 'run-one',
+      taskToken: 'task-one',
     }]]));
-    agent.currentRunId.set(tabId, 'run-two');
+    agent._taskTokens.set(tabId, 'task-two');
     assert.equal(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit, undefined,
-      `${label}: prior-run proof authorized a commit for a new task`);
-    agent.currentRunId.set(tabId, 'run-one');
+      `${label}: prior-task proof authorized a commit for a new task`);
+    agent._taskTokens.set(tabId, 'task-one');
     assert.ok(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit,
-      `${label}: same-run proof was rejected`);
-    // Records minted by the helper carry the active run token.
+      `${label}: same-task proof was rejected`);
+    // Records minted by the helper carry the active task token.
     const record = await agent._verifiedTextReplacementRecord(
       tabId, agent._textMutationTarget(tabId, 'set_field', { ref_id: 'ref_editor' }), 'body', null,
     );
-    assert.equal(record.runId, 'run-one', `${label}: replacement record lost its run binding`);
+    assert.equal(record.taskToken, 'task-one', `${label}: replacement record lost its task binding`);
+  }
+});
+
+test('replacement proof task tokens do not depend on tracing', () => {
+  for (const rel of [
+    'src/chrome/src/agent/agent.js',
+    'src/firefox/src/agent/agent.js',
+  ]) {
+    const source = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    assert.match(source, /this\._taskTokens\.set\(tabId, `task_\$\{secureRandomBase36Token\(12\)\}`\)/,
+      `${rel}: task token is not minted per task`);
+    assert.match(source, /this\._taskTokens\.delete\(tabId\)/,
+      `${rel}: task token is never discarded`);
   }
 });
 

@@ -649,6 +649,7 @@ export class Agent extends LoopDetector {
     this.persistTimers = new Map(); // tabId -> debounce handle
     this.abortFlags = new Map(); // tabId -> boolean
     this.currentRunId = new Map(); // tabId -> active trace runId (for recorder hooks)
+    this._taskTokens = new Map(); // tabId -> per-task proof-scoping token, independent of optional tracing
     this._latestWorkflowDrafts = new Map(); // tabId -> sanitized, session-scoped workflow draft
     this.currentCostState = new Map(); // tabId -> active cloud/router cost state
     this.maxSteps = 130; // safety limit for autonomous loops (configurable via settings)
@@ -1697,10 +1698,10 @@ export class Agent extends LoopDetector {
     // Proofs authorize a commit only for the task that verified them. Records
     // survive run teardown, so without this a later run in the same tab could
     // authorize a stale replacement it never verified.
-    const activeRunId = this.currentRunId.get(tabId);
+    const activeTaskToken = this._taskTokens.get(tabId);
     const githubEditorReplacements = replacementRecordValues
       .filter(record => record?.ambiguous !== true
-        && record?.runId === activeRunId
+        && record?.taskToken === activeTaskToken
         && !!record?.expectedSha256
         && !!record?.readbackSha256
         && this._normalizeUrl(record.pageUrl || '') === this._normalizeUrl(pageUrl)
@@ -1721,7 +1722,7 @@ export class Agent extends LoopDetector {
     const expectedCommitMessage = this._workflowMetadataValue(commitMessageRequirement?.value);
     const commitMessageVerified = !commitMessageRequirement || replacementRecordValues.some(record => (
       record?.ambiguous !== true
-      && record?.runId === activeRunId
+      && record?.taskToken === activeTaskToken
       && !!record?.readbackSha256
       && this._normalizeUrl(record.pageUrl || '') === this._normalizeUrl(pageUrl)
       && /^(?:commit-message-input|commit_message)$/i.test(String(
@@ -2321,15 +2322,37 @@ export class Agent extends LoopDetector {
     if (!commit || commit.repository !== expected.repository || !observed.includes(identity)) {
       return { verified: false, reason: 'commit_identity_mismatch' };
     }
+    // Changed-file linkage: on the observed commit page each changed file
+    // links to /blob/<sha>/<path>. A content match at a path the observed
+    // commit never touched proves nothing (identical bytes may pre-exist at
+    // another candidate path), so a match counts only on a listed path — or,
+    // when no file list was observed, on content match alone.
+    const commitBlobPaths = new Set();
+    for (const raw of [
+      pageUrl,
+      ...(Array.isArray(pageState?.workflowResourceUrls) ? pageState.workflowResourceUrls : []),
+    ]) {
+      try {
+        const parsed = new URL(String(raw || ''));
+        if (parsed.hostname.toLowerCase().replace(/^www\./, '') !== 'github.com') continue;
+        const blobMatch = /^\/([^/]+)\/([^/]+)\/blob\/([0-9a-f]{7,40})\/(.+)$/i.exec(parsed.pathname);
+        if (!blobMatch) continue;
+        if (`${blobMatch[1]}/${blobMatch[2]}`.toLowerCase() !== commit.repository) continue;
+        if (blobMatch[3].toLowerCase() !== commit.sha) continue;
+        commitBlobPaths.add(blobMatch[4].split('/').map(segment => {
+          try { return decodeURIComponent(segment); } catch { return segment; }
+        }).join('/'));
+      } catch { /* unparseable entries cannot evidence the file list */ }
+    }
     try {
       // The branch/path cut is ambiguous when the request named neither: a
       // URL like /edit/feature/fix-copy/docs/plan.md may hide a slash branch
       // behind the first segment. The commit itself always lands correctly
       // (the page form owns the scope), so resolve the true scope here by
       // content: every re-partition of the same segments is tried, naive cut
-      // first, and the first whose raw bytes match the expected hash wins,
-      // correcting the binding in place. Bounded and content-addressed, so a
-      // wrong guess can only delay failure, never fake success.
+      // first, and the first content match on a listed path wins, correcting
+      // the binding in place. Bounded either way; a match off the observed
+      // file list can only delay failure, never fake success.
       const segments = `${expected.branch}/${expected.path}`.split('/');
       const attempts = [{ branch: expected.branch, path: expected.path }];
       for (let cut = segments.length - 1; cut >= 1 && attempts.length < 10; cut -= 1) {
@@ -2340,6 +2363,7 @@ export class Agent extends LoopDetector {
         }
       }
       let firstMismatch = null;
+      let unattributedMatch = null;
       let lastFetchReason = 'raw_file_read_failed';
       for (const attempt of attempts) {
         const encodedPath = attempt.path.split('/').map(encodeURIComponent).join('/');
@@ -2364,9 +2388,11 @@ export class Agent extends LoopDetector {
         const text = await response.text();
         if (text.length > 2_000_000) return { verified: false, reason: 'raw_file_too_large' };
         const actualSha256 = await this._sha256Text(text);
-        if (!!actualSha256
-            && text.length === expected.expectedLength
-            && actualSha256 === expected.expectedSha256) {
+        const contentMatches = !!actualSha256
+          && text.length === expected.expectedLength
+          && actualSha256 === expected.expectedSha256;
+        if (contentMatches
+            && (commitBlobPaths.size === 0 || commitBlobPaths.has(attempt.path))) {
           if (attempt.branch !== expected.branch || attempt.path !== expected.path) {
             binding.githubFileCommit = { ...expected, branch: attempt.branch, path: attempt.path };
           }
@@ -2381,7 +2407,24 @@ export class Agent extends LoopDetector {
             actualSha256,
           };
         }
-        if (!firstMismatch) firstMismatch = { text, actualSha256 };
+        if (contentMatches) {
+          if (!unattributedMatch) unattributedMatch = { path: attempt.path, text, actualSha256 };
+        } else if (!firstMismatch) {
+          firstMismatch = { text, actualSha256 };
+        }
+      }
+      if (unattributedMatch) {
+        return {
+          verified: false,
+          reason: 'commit_file_list_mismatch',
+          repository: commit.repository,
+          commitSha: commit.sha,
+          path: unattributedMatch.path,
+          expectedLength: expected.expectedLength,
+          actualLength: unattributedMatch.text.length,
+          expectedSha256: expected.expectedSha256,
+          actualSha256: unattributedMatch.actualSha256,
+        };
       }
       if (firstMismatch) {
         return {
@@ -14718,6 +14761,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       this.pendingVisionStatusTraces.delete(tabId);
       this.pendingVisionSubCallTraces.delete(tabId);
     }
+    // Proof scoping needs a task token even when tracing is disabled (the
+    // default): trace.startRun() returns null then, so currentRunId stays
+    // empty and must not double as the task boundary.
+    this._taskTokens.set(tabId, `task_${secureRandomBase36Token(12)}`);
     return runId;
   }
 
@@ -14761,6 +14808,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       this.currentRunId.delete(tabId);
       this.adapterMatchTraceKeys.delete(runId);
     }
+    this._taskTokens.delete(tabId);
   }
 
   /**
@@ -19974,6 +20022,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     if (!preserveRunGuard) {
       this._runningTabs.delete(tabId);
       this.currentRunId.delete(tabId);
+      this._taskTokens.delete(tabId);
     }
     this._clearRunLoopState(tabId);
   }
@@ -20106,8 +20155,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       verifiedAt: Date.now(),
       // Bind the proof to the task that verified it: a later run in the same
       // tab must verify its own writes instead of reusing a prior task's
-      // records, even when the URL and field match.
-      runId: this.currentRunId.get(tabId),
+      // records, even when the URL and field match. The token is generated
+      // per task independent of optional tracing (currentRunId stays empty
+      // when tracing is disabled).
+      taskToken: this._taskTokens.get(tabId),
     };
   }
 
@@ -27985,7 +28036,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
                   .map(link => {
                     try { return new URL(link.getAttribute('href') || link.href || '', location.href).href; } catch { return ''; }
                   })
-                  .filter(url => /linkedin\\.com\\/(?:feed\\/update|posts)\\/|github\\.com\\/[^/]+\\/[^/]+\\/(?:releases\\/tag\\/|commit\\/[0-9a-f]{7,40})|douyin\\.com\\/video\\/\\d+/i.test(url))
+                  // Blob links pin the changed-file list of an observed commit
+                  // page: raw-byte verification must only accept a path the
+                  // observed commit actually touched.
+                  .filter(url => /linkedin\\.com\\/(?:feed\\/update|posts)\\/|github\\.com\\/[^/]+\\/[^/]+\\/(?:releases\\/tag\\/|commit\\/[0-9a-f]{7,40}|blob\\/[0-9a-f]{7,40}\\/\\S+)|douyin\\.com\\/video\\/\\d+/i.test(url))
                   .slice(0, 200);
                 return {
                   openDialogCount: dialogs.length,
