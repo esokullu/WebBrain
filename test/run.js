@@ -23429,32 +23429,67 @@ test('publication resource records keep the owning social card when it embeds an
     ['firefox Bluesky', CompletionInvariantFx, 'bluesky:bsky.app/profile/me.test/post/222', 'feedItem-by-'],
   ]) {
     const siblingFeed = { innerText: 'outer post\nquoted post\nsibling post' };
-    const owningCard = {
-      innerText: 'outer post body\nquoted post body',
-      parentElement: siblingFeed,
+    // The quoted post lives inside the owning card, so the card boundary alone
+    // does not separate authored text from the embedded post's text.
+    const quotedPermalink = { getAttribute: () => '/other/status/999', href: '/other/status/999' };
+    const quotedCard = {
+      innerText: 'quoted post body',
+      querySelectorAll: () => [quotedPermalink],
+      contains: node => node === quotedPermalink || node === quotedCard,
     };
     const permalink = {
       innerText: '2m',
-      parentElement: owningCard,
+      getAttribute: () => '/me/status/222',
+      href: '/me/status/222',
       closest(selector) {
         assert.match(selector, new RegExp(expectedSelector));
         return owningCard;
       },
     };
-    const root = invariant.publicationResourceRecordRoot(
-      permalink,
-      identity,
-      value => String(value || ''),
-    );
-    assert.equal(root, owningCard, `${label}: quoted post permalink discarded the owning card`);
-    assert.notEqual(root, siblingFeed, `${label}: sibling feed container was accepted as the owning card`);
+    quotedPermalink.parentElement = quotedCard;
+    const owningCard = {
+      innerText: 'outer post body\nquoted post body',
+      parentElement: siblingFeed,
+      querySelectorAll: () => [permalink, quotedPermalink],
+      contains: node => node !== siblingFeed,
+    };
+    permalink.parentElement = owningCard;
+    quotedCard.parentElement = owningCard;
+    const identityOf = value => {
+      const text = String(value || '');
+      if (text.includes('/status/222') || text.includes('/post/222')) return identity;
+      return text ? 'other:' + text : '';
+    };
+    const record = invariant.publicationResourceRecordRoot(permalink, identity, identityOf);
+    assert.equal(record.root, owningCard, `${label}: quoted post permalink discarded the owning card`);
+    assert.notEqual(record.root, siblingFeed, `${label}: sibling feed container was accepted as the owning card`);
+    assert.deepEqual(record.excluded, [quotedCard],
+      `${label}: the embedded post could still satisfy the authored body`);
 
     const reconstructed = Function(`return (${invariant.publicationResourceRecordRoot.toString()});`)();
     assert.equal(
-      reconstructed(permalink, identity, value => String(value || '')),
+      reconstructed(permalink, identity, identityOf).root,
       owningCard,
       `${label}: publication card selector is not self-contained for page injection`,
     );
+
+    // A card with nothing embedded keeps the whole card as authored content.
+    const plainPermalink = {
+      innerText: '2m',
+      getAttribute: () => '/me/status/222',
+      href: '/me/status/222',
+      closest: () => plainCard,
+    };
+    const plainCard = {
+      innerText: 'outer post body',
+      querySelectorAll: () => [plainPermalink],
+      contains: node => node === plainPermalink || node === plainCard,
+    };
+    plainPermalink.parentElement = plainCard;
+    const plainRecord = invariant.publicationResourceRecordRoot(plainPermalink, identity, identityOf);
+    assert.equal(plainRecord.root, plainCard);
+    assert.deepEqual(plainRecord.excluded, [],
+      `${label}: an ordinary post was treated as if it embedded another`);
   }
 
   for (const [label, rel] of [
@@ -23464,8 +23499,14 @@ test('publication resource records keep the owning social card when it embeds an
     const source = fs.readFileSync(path.join(ROOT, rel), 'utf8');
     assert.match(source, /const publicationRecordRoot = \$\{publicationResourceRecordRoot\.toString\(\)\}/,
       `${label}: done probe does not inject the shared publication card selector`);
-    assert.match(source, /const best = publicationRecordRoot\(link, identity, publicationResourceIdentity\) \|\| link/,
+    assert.match(source, /const record = publicationRecordRoot\(link, identity, publicationResourceIdentity\);/,
       `${label}: publication records do not use the app-owned card root`);
+    assert.match(source, /const isEmbedded = node => embedded\.some\(entry => entry === node \|\| entry\.contains\?\.\(node\)\)/,
+      `${label}: the record builder does not exclude embedded posts`);
+    assert.match(source, /\.filter\(candidate => !isEmbedded\(candidate\)\)\.slice\(0, 100\)/,
+      `${label}: an embedded post's links still reach the record`);
+    assert.match(source, /const text = authoredText\(best\)/,
+      `${label}: record text is not restricted to authored content`);
   }
 });
 
@@ -74303,6 +74344,8 @@ test('submit detector source covers submit controls, Enter, set_field, iframes, 
     assert.match(agent, /\^composerPublish\(\?:Btn\|Button\)\$/, `${label}: the Bluesky publish control should be recognized by its app-owned test id`);
     assert.match(agent, /const socialPublishComposerFor = \(candidate\) => \{[\s\S]*textarea,\[contenteditable="true"\],\[role="textbox"\]/, `${label}: a form-less publish control must belong to an open composer`);
     assert.match(agent, /return socialPublishComposerFor\(candidate\)\s*\n\s*\? \{ isSubmit: true, strong: publishTestId \}/, `${label}: only composer-bound social publish controls should count as submits`);
+    assert.match(agent, /if \(testId\) \{\s*\n\s*if \(!publishTestId\) return \{ isSubmit: false, strong: false \};/, `${label}: an app-named control that is not the publish control should be rejected outright`);
+    assert.match(agent, /candidate\.closest\?\.\('nav,\[role="navigation"\],header,\[role="banner"\]'\)/, `${label}: a navigation control that only opens a composer should not count as a publish`);
     assert.match(agent, /\|\| socialPublishComposerFor\(candidate\)/, `${label}: the composer should stand in for the missing form when summarizing the publish`);
     assert.match(agent, /Composer on \$\{action\} \(no enclosing HTML form\)/, `${label}: publish confirmations should summarize a form-less composer`);
     assert.match(agent, /const submitInfo = \(form, reason, pendingEl = null, pendingValue = null, validationSubmitEvidence = 'strong', submitTarget = null\)/, `${label}: submit summaries should carry preflight evidence strength`);
@@ -85159,6 +85202,100 @@ test('X and Bluesky same-route publication accepts only one new permalink with t
   }
 });
 
+test('a thread published with Post all binds the post carrying the reviewed body', () => {
+  // One dispatch can create several permalinks at once. Requiring exactly one
+  // new identity would leave a published thread unverifiable forever and push
+  // the run toward publishing it a second time.
+  const feedUrl = 'https://x.com/home';
+  const existingUrl = 'https://x.com/webbrain/status/1111111111111111111';
+  const rootUrl = 'https://x.com/webbrain/status/2222222222222222222';
+  const continuationUrl = 'https://x.com/webbrain/status/3333333333333333333';
+  const accountIdentity = 'twitter:webbrain';
+  const body = 'Shipping the workflow kernel today.';
+  const continuation = 'And here is why the evidence contract matters.';
+
+  const armed = (agent, tabId) => {
+    const workflow = agent._resolvePlannerSiteWorkflow(feedUrl, {
+      request_kind: 'execute',
+      site_job: 'publish-post',
+    });
+    const guard = agent._startPlanExecutionGuard(tabId, 'act', {
+      requestKind: 'execute',
+      requiresStateChange: true,
+      requiresSubmission: true,
+      siteWorkflow: workflow,
+    });
+    guard.successfulConsequentialToolCalls = 1;
+    guard.workflowMetadataRequirements = [{ field: 'body', value: body }];
+    guard.workflowMetadataRequirementsResolved = true;
+    agent._beginCompletionInvariant(tabId);
+    agent._recordCompletionToolResult(tabId, 'click_ax', { ref_id: 'post-all' }, {
+      success: true, dispatched: true,
+    });
+    agent._recordCompletionSubmitAttempt(
+      tabId,
+      {
+        isSubmit: true,
+        publicationResourceUrls: [existingUrl],
+        publicationAccountIdentity: accountIdentity,
+        publicationAccountIdentityComplete: true,
+      },
+      'click_ax',
+      { ref_id: 'post-all' },
+      feedUrl,
+      feedUrl,
+      { success: true, dispatched: true },
+    );
+    agent._recordCompletionToolResult(tabId, 'read_page', {}, {
+      success: true, url: feedUrl, content: 'Feed refreshed.',
+    });
+    return agent._completionSubmitStates.get(tabId);
+  };
+
+  for (const [index, AgentClass] of [AgentCh, AgentFx].entries()) {
+    const agent = new AgentClass({});
+    agent.useSiteAdapters = true;
+    const tabId = 9210 + index;
+    const submit = armed(agent, tabId);
+
+    const threadPageState = {
+      workflowResourceUrls: [existingUrl, rootUrl, continuationUrl],
+      workflowResourceRecords: [
+        { url: rootUrl, text: 'WebBrain\n' + body + '\n2m', links: [] },
+        { url: continuationUrl, text: 'WebBrain\n' + continuation + '\n2m', links: [] },
+      ],
+    };
+    assert.equal(agent._workflowTerminalEvidenceFromDone(
+      tabId,
+      threadPageState,
+      feedUrl,
+      { submit, verifiedFinalSubmit: false, relevantForms: 0 },
+    )?.source, 'dispatch_bound_published_resource',
+    AgentClass.name + ': a published thread could not produce terminal evidence');
+    assert.equal(submit.workflowBinding?.publishedResourceIdentity, 'twitter:status:2222222222222222222',
+      AgentClass.name + ': the thread bound a post other than the reviewed body');
+
+    // Two new permalinks that both carry the reviewed body stay ambiguous.
+    const ambiguousAgent = new AgentClass({});
+    ambiguousAgent.useSiteAdapters = true;
+    const ambiguousTabId = 9212 + index;
+    const ambiguousSubmit = armed(ambiguousAgent, ambiguousTabId);
+    assert.equal(ambiguousAgent._workflowTerminalEvidenceFromDone(
+      ambiguousTabId,
+      {
+        workflowResourceUrls: [existingUrl, rootUrl, continuationUrl],
+        workflowResourceRecords: [
+          { url: rootUrl, text: 'WebBrain\n' + body + '\n2m', links: [] },
+          { url: continuationUrl, text: 'WebBrain\n' + body + '\n1m', links: [] },
+        ],
+      },
+      feedUrl,
+      { submit: ambiguousSubmit, verifiedFinalSubmit: false, relevantForms: 0 },
+    ), null, AgentClass.name + ': two matching new permalinks were bound ambiguously');
+    assert.equal(ambiguousSubmit.workflowBinding?.publishedResourceIdentity, undefined);
+  }
+});
+
 test('YouTube metadata success requires exact app-classified post-save readback', async () => {
   for (const [index, AgentClass] of [AgentCh, AgentFx].entries()) {
     const agent = new AgentClass({ getActive: () => ({ chat: async () => ({ content: '{}' }) }) });
@@ -86323,7 +86460,10 @@ test('completion page text keeps the line boundaries publication payloads match 
     assert.ok(start >= 0, `${label}: completion page text probe not found`);
     const end = source.indexOf('.slice(0, 20000),', start);
     assert.ok(end > start, `${label}: completion page text probe is unbounded`);
-    const expression = source.slice(start + 'workflowPageText: '.length, end)
+    // The probe is injected through a template literal, so the file text is
+    // one unescaping away from the source the page actually runs. Testing the
+    // file text directly would pass on escapes the template silently eats.
+    const expression = vm.runInNewContext('`' + source.slice(start + 'workflowPageText: '.length, end) + '`')
       .replace("String(document.body?.innerText || '')", 'String(innerText)');
     const normalize = vm.runInNewContext(`(innerText) => (${expression})`);
     const pageText = normalize('Release v9\n\n  Fixed   the parser\nShipped the CLI  \n');
@@ -86343,6 +86483,35 @@ test('completion page text keeps the line boundaries publication payloads match 
       false,
       `${label}: a value absent from the published page was accepted`,
     );
+  }
+});
+
+test('the injected completion probe survives its own template literal', () => {
+  // A lone backslash in the probe is eaten by the template literal that
+  // injects it, and the call site swallows the resulting SyntaxError, so the
+  // probe silently returns nothing and every completion check loses its page
+  // state. Parse what the page actually receives, not what the file contains.
+  for (const [label, rel, invariant] of [
+    ['chrome', 'src/chrome/src/agent/agent.js', CompletionInvariantCh],
+    ['firefox', 'src/firefox/src/agent/agent.js', CompletionInvariantFx],
+  ]) {
+    const source = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    const anchor = source.indexOf('const publicationRecordRoot = ${publicationResourceRecordRoot.toString()};');
+    assert.ok(anchor > 0, `${label}: completion probe not found`);
+    const open = source.lastIndexOf('`', anchor);
+    const close = source.indexOf('`', anchor + 1);
+    assert.ok(open > 0 && close > anchor, `${label}: completion probe template is not delimited`);
+    const raw = source.slice(open + 1, close);
+    const injected = vm.runInNewContext('`' + raw + '`', {
+      classifyCompletionForm: invariant.classifyCompletionForm,
+      publicationResourceRecordRoot: invariant.publicationResourceRecordRoot,
+    });
+    assert.doesNotThrow(
+      () => new vm.Script(`(${injected})`),
+      `${label}: the injected completion probe is not valid JavaScript`,
+    );
+    assert.match(injected, /\/\\r\\n\?\/g/,
+      `${label}: the probe lost the CRLF normalization its line matching needs`);
   }
 });
 

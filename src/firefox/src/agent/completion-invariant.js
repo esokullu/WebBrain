@@ -245,27 +245,70 @@ export function classifyCompletionForm({
 }
 
 /**
- * Pick the smallest app-owned publication card for one resource link.
+ * Pick the smallest app-owned publication card for one resource link, plus the
+ * embedded posts inside it that this post did not author.
  *
  * Social cards may contain another post as a quote/embed, so counting resource
  * permalinks alone cannot distinguish that nested resource from a sibling feed
  * item. Prefer the app's card boundary when it is available, then retain the
- * conservative single-resource ancestry fallback for other sites/markup.
+ * conservative single-resource ancestry fallback for other sites/markup. The
+ * card boundary is wider than the authored content, so the embedded post's
+ * subtree is reported separately: its text and shortened links must not be
+ * able to satisfy the reviewed body on the outer post's behalf.
+ * Returns { root, excluded }.
  * Keep this function self-contained because Agent serializes it into the page.
  */
 export function publicationResourceRecordRoot(link, identity, publicationResourceIdentity) {
-  if (!link || typeof publicationResourceIdentity !== 'function') return link || null;
+  if (!link || typeof publicationResourceIdentity !== 'function') {
+    return { root: link || null, excluded: [] };
+  }
   const value = String(identity || '');
   const cardSelector = value.startsWith('twitter:')
     ? 'article[data-testid="tweet"],[data-testid="tweet"]'
     : value.startsWith('bluesky:')
     ? '[data-testid^="feedItem-by-"],[data-testid^="postThreadItem-by-"]'
     : '';
+  const identityOf = (candidate) => {
+    try {
+      return publicationResourceIdentity(candidate.getAttribute('href') || candidate.href || '') || '';
+    } catch {
+      return '';
+    }
+  };
+  const linksIn = (node) => {
+    try {
+      return Array.from(node.querySelectorAll('a[href]')).slice(0, 200);
+    } catch {
+      return null;
+    }
+  };
+  // The largest subtree around a foreign permalink that this post's own
+  // permalink never reaches into is the embedded post.
+  const embeddedResourcesIn = (card) => {
+    const links = linksIn(card);
+    if (!links) return [];
+    const excluded = [];
+    for (const candidate of links) {
+      const found = identityOf(candidate);
+      if (!found || found === value) continue;
+      if (excluded.some(node => node === candidate || node.contains?.(candidate))) continue;
+      let best = candidate;
+      let node = candidate.parentElement;
+      for (let depth = 0; node && node !== card && depth < 9; depth++, node = node.parentElement) {
+        const inner = linksIn(node);
+        if (!inner || inner.some(entry => identityOf(entry) === value)) break;
+        best = node;
+      }
+      excluded.push(best);
+    }
+    return excluded.slice(0, 8);
+  };
+
   if (cardSelector) {
     try {
       const card = link.closest?.(cardSelector) || null;
       const text = String(card?.innerText || '').trim();
-      if (text && text.length <= 5000) return card;
+      if (text && text.length <= 5000) return { root: card, excluded: embeddedResourcesIn(card) };
     } catch {}
   }
 
@@ -274,18 +317,13 @@ export function publicationResourceRecordRoot(link, identity, publicationResourc
   for (let depth = 0; node && depth < 9; depth++, node = node.parentElement) {
     const text = String(node.innerText || '').trim();
     if (!text || text.length > 5000) continue;
-    let resourceIdentities;
-    try {
-      resourceIdentities = new Set(Array.from(node.querySelectorAll('a[href]'))
-        .map(candidate => publicationResourceIdentity(candidate.getAttribute('href') || candidate.href || ''))
-        .filter(Boolean));
-    } catch {
-      continue;
-    }
+    const candidates = linksIn(node);
+    if (!candidates) continue;
+    const resourceIdentities = new Set(candidates.map(identityOf).filter(Boolean));
     if (resourceIdentities.size > 1) break;
     best = node;
   }
-  return best;
+  return { root: best, excluded: [] };
 }
 
 export function isCompletionActionTool(name, args = {}) {

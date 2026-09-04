@@ -2324,17 +2324,23 @@ export class Agent extends LoopDetector {
         const livePublishStatusObserved = (Array.isArray(pageState?.successMessages)
           ? pageState.successMessages
           : []).some(value => this._completionTextSignalsSuccess(value));
-        const candidateBinding = newlyObserved.length === 1
-          ? { ...binding, publishedResourceIdentity: newlyObserved[0] }
-          : null;
-        const candidatePayloadMatches = !!candidateBinding
-          && this._workflowPublishedResourcePayloadMatch(
-            candidateBinding,
+        // One dispatch can create several permalinks at once — an X thread
+        // published with "Post all" is the ordinary case — so requiring a
+        // single new identity would leave a published thread permanently
+        // unverifiable and invite a duplicate publication. Bind on the payload
+        // instead: exactly one new permalink must carry the reviewed body on
+        // the intended account. Two matches stay ambiguous and fail closed.
+        const matchingCandidates = newlyObserved.slice(0, 12)
+          .map(identity => ({ ...binding, publishedResourceIdentity: identity }))
+          .filter(candidate => this._workflowPublishedResourcePayloadMatch(
+            candidate,
             state,
             pageState,
             pageUrl,
             submit,
-          );
+          ));
+        const candidateBinding = matchingCandidates.length === 1 ? matchingCandidates[0] : null;
+        const candidatePayloadMatches = !!candidateBinding;
         if (candidatePayloadMatches
             && (siteWorkflow.adapterName === 'linkedin'
               ? (submissionEvidence?.verifiedFinalSubmit === true && livePublishStatusObserved)
@@ -16250,12 +16256,24 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       const publishTestId = adapterName === 'twitter'
         ? /^tweetButton(?:Inline)?$/i.test(testId)
         : /^composerPublish(?:Btn|Button)$/i.test(testId);
-      const label = compact(
-        candidate.innerText || candidate.textContent || candidate.getAttribute?.('aria-label') || '',
-        120,
-      ).trim();
-      const publishLabel = /^(?:post|post all|publish|reply)$/i.test(label);
-      if (!publishTestId && !publishLabel) return { isSubmit: false, strong: false };
+      // Both apps label the control that only *opens* a composer "Post" too.
+      // When the app names the control, that name decides: a test id that is
+      // not the publish one is rejected outright rather than rescued by its
+      // label. Label matching is the fallback for an unnamed control only.
+      if (testId) {
+        if (!publishTestId) return { isSubmit: false, strong: false };
+      } else {
+        const label = compact(
+          candidate.innerText || candidate.textContent || candidate.getAttribute?.('aria-label') || '',
+          120,
+        ).trim();
+        if (!/^(?:post|post all|publish|reply)$/i.test(label)) return { isSubmit: false, strong: false };
+        let inNavigation = false;
+        try {
+          inNavigation = !!candidate.closest?.('nav,[role="navigation"],header,[role="banner"]');
+        } catch {}
+        if (inNavigation) return { isSubmit: false, strong: false };
+      }
       // Only a control that belongs to an open composer publishes anything; a
       // timeline "Reply" affordance merely opens one.
       return socialPublishComposerFor(candidate)
@@ -24188,21 +24206,44 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
                 ).values()).slice(0, 200);
                 const workflowResourceRecordMap = new Map();
                 for (const { link, url, identity } of workflowResourceLinks) {
-                  const best = publicationRecordRoot(link, identity, publicationResourceIdentity) || link;
-                  const text = String(best.innerText || '')
-                    .replace(/\r\n?/g, '\n')
-                    .split('\n')
-                    .map(line => line.replace(/[^\S\n]+/g, ' ').trim())
+                  const record = publicationRecordRoot(link, identity, publicationResourceIdentity);
+                  const best = record?.root || link;
+                  const embedded = Array.isArray(record?.excluded) ? record.excluded : [];
+                  const isEmbedded = node => embedded.some(entry => entry === node || entry.contains?.(node));
+                  // innerText cannot be subtracted, so read it from every
+                  // maximal subtree that holds no embedded post. A quote card's
+                  // text never reaches the authored-body matcher this way.
+                  const authoredText = (root) => {
+                    if (!embedded.length) return String(root.innerText || '');
+                    const parts = [];
+                    const walk = (node) => {
+                      if (isEmbedded(node)) return;
+                      if (!embedded.some(entry => node.contains?.(entry))) {
+                        parts.push(String(node.innerText || ''));
+                        return;
+                      }
+                      for (const child of Array.from(node.childNodes || [])) {
+                        if (child.nodeType === 3) parts.push(String(child.nodeValue || ''));
+                        else if (child.nodeType === 1) walk(child);
+                      }
+                    };
+                    walk(root);
+                    return parts.join('\\n');
+                  };
+                  const text = authoredText(best)
+                    .replace(/\\r\\n?/g, '\\n')
+                    .split('\\n')
+                    .map(line => line.replace(/[^\\S\\n]+/g, ' ').trim())
                     .filter(Boolean)
-                    .join('\n')
+                    .join('\\n')
                     .slice(0, 5000);
                   const recordLinks = [
                     ...(best.matches?.('a[href]') ? [best] : []),
                     ...Array.from(best.querySelectorAll?.('a[href]') || []),
-                  ].slice(0, 100).map(candidate => {
+                  ].filter(candidate => !isEmbedded(candidate)).slice(0, 100).map(candidate => {
                     let href = '';
                     try { href = new URL(candidate.getAttribute('href') || candidate.href || '', location.href).href; } catch {}
-                    const compact = value => String(value || '').replace(/\s+/g, ' ').trim().slice(0, 1000);
+                    const compact = value => String(value || '').replace(/\\s+/g, ' ').trim().slice(0, 1000);
                     return {
                       href: compact(href),
                       text: compact(candidate.innerText || candidate.textContent),
@@ -24216,7 +24257,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
                     };
                   }).filter(candidate => candidate.href || candidate.text || candidate.expandedUrl);
                   const links = Array.from(new Map(recordLinks.map(candidate => [
-                    [candidate.href, candidate.text, candidate.title, candidate.ariaLabel, candidate.expandedUrl].join('\u0000'),
+                    [candidate.href, candidate.text, candidate.title, candidate.ariaLabel, candidate.expandedUrl].join('\\u0000'),
                     candidate,
                   ])).values()).slice(0, 24);
                   const prior = workflowResourceRecordMap.get(identity);
@@ -24242,11 +24283,11 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
                   // notes, or body as a whole line, so line boundaries have to
                   // survive here. Only horizontal whitespace collapses.
                   workflowPageText: String(document.body?.innerText || '')
-                    .replace(/\r\n?/g, '\n')
-                    .split('\n')
-                    .map(line => line.replace(/[^\S\n]+/g, ' ').trim())
+                    .replace(/\\r\\n?/g, '\\n')
+                    .split('\\n')
+                    .map(line => line.replace(/[^\\S\\n]+/g, ' ').trim())
                     .filter(Boolean)
-                    .join('\n')
+                    .join('\\n')
                     .slice(0, 20000),
                 };
               })()
