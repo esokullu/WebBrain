@@ -74807,6 +74807,72 @@ test('GitHub edit-file workflow fails closed when submit detection is inconclusi
   }
 });
 
+test('GitHub edit-file workflow blocks compound submit actions on existing bindings', async () => {
+  const editUrl = 'https://github.com/Example/Repo/edit/main/docs/plan.md';
+  for (const [label, AgentClass, tabId] of [
+    ['chrome', AgentCh, 9461],
+    ['firefox', AgentFx, 9462],
+  ]) {
+    const agent = new AgentClass({});
+    agent._planExecutionGuards.set(tabId, {
+      enabled: true,
+      siteWorkflow: { adapterName: 'github', job: { id: 'edit-file-and-commit' } },
+    });
+    agent._currentUrl = async () => editUrl;
+    agent._workflowSubmitBindingForAttempt = () => ({
+      githubFileCommit: {
+        repository: 'example/repo', branch: 'main', path: 'docs/plan.md',
+      },
+    });
+    // A non-mutating final activation may still use the binding.
+    assert.equal(await agent._workflowPreSubmitDispatchBlock(
+      tabId, 'click_ax', { ref_id: 'ref_commit' },
+      { isSubmit: true, validationSubmitEvidence: 'strong' },
+    ), null, `${label}: bound click activation was blocked`);
+    // set_field+submit, Enter, and execute_js can all rewrite the verified
+    // values in the same dispatch, so they must split write and submit even
+    // though a binding exists.
+    const compoundField = await agent._workflowPreSubmitDispatchBlock(
+      tabId, 'set_field', { ref_id: 'ref_editor', text: 'late change', submit: true }, null,
+    );
+    assert.equal(compoundField?.noDispatch, true, `${label}: compound field submission reused stale proofs`);
+    assert.equal(compoundField?.splitWriteRequired, true, `${label}: compound block was not marked`);
+    assert.match(compoundField?.error || '', /non-submit/i, `${label}: compound block misguides recovery`);
+    const compoundEnter = await agent._workflowPreSubmitDispatchBlock(
+      tabId, 'press_keys', { key: 'Enter' }, null,
+    );
+    assert.equal(compoundEnter?.noDispatch, true, `${label}: Enter reused stale proofs`);
+    assert.equal(compoundEnter?.splitWriteRequired, true, `${label}: Enter block was not marked`);
+    const compoundJs = await agent._workflowPreSubmitDispatchBlock(
+      tabId, 'execute_js', { code: 'document.querySelector("form").requestSubmit()' }, null,
+    );
+    assert.equal(compoundJs?.noDispatch, true, `${label}: execute_js reused stale proofs`);
+    assert.equal(compoundJs?.splitWriteRequired, true, `${label}: execute_js block was not marked`);
+    assert.match(compoundJs?.error || '', /javascript/i, `${label}: execute_js block misguides recovery`);
+    const benignJs = await agent._workflowPreSubmitDispatchBlock(
+      tabId, 'execute_js', { code: 'return document.title' }, null,
+    );
+    assert.equal(benignJs?.noDispatch, true, `${label}: benign execute_js bypassed the mutation gate`);
+    assert.equal(benignJs?.splitWriteRequired, true, `${label}: benign execute_js block was not marked`);
+  }
+});
+
+test('GitHub commit-dialog launcher detection is locale-independent', () => {
+  for (const rel of [
+    'src/chrome/src/agent/agent.js',
+    'src/firefox/src/agent/agent.js',
+  ]) {
+    const source = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    assert.match(source,
+      /githubCommitDialogLauncher: githubEditPage[\s\S]*!controlInModal[\s\S]*\|\| controlOpensDialog/,
+      `${rel}: launcher flag lost its locale-independent fallback`);
+    assert.match(source, /data-show-dialog-id/,
+      `${rel}: dialog-trigger attribute probe missing`);
+    assert.match(source, /aria-haspopup/,
+      `${rel}: dialog-trigger ARIA probe missing`);
+  }
+});
+
 test('click_ax rejects stale zero-sized targets before activation', () => {
   for (const [label, rel] of [
     ['chrome', 'src/chrome/src/content/content.js'],

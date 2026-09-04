@@ -1833,6 +1833,27 @@ export class Agent extends LoopDetector {
       && detectedSubmit.validationSubmitEvidence === 'heuristic'
       && !hasCommitMessageField;
     if (reversibleDialogLauncher) return null;
+    // Compound actions can rewrite the verified values in the same dispatch:
+    // execute_js runs arbitrary page code, set_field writes text, and Enter
+    // can both submit and insert. Passing them on pre-mutation proofs would
+    // authorize bytes that were never hashed, so only a non-mutating final
+    // activation may use an existing binding. Anything else must split into
+    // a plain write (verified on its own) followed by a separate click.
+    if (name !== 'click' && name !== 'click_ax' && name !== 'iframe_click') {
+      return {
+        success: false,
+        dispatched: false,
+        noDispatch: true,
+        retryable: true,
+        repeatBlocked: true,
+        workflowJob: 'edit-file-and-commit',
+        recoveryRequired: 'verify_or_restore_field',
+        splitWriteRequired: true,
+        error: name === 'execute_js'
+          ? 'Arbitrary page JavaScript may change the editor or commit message, voiding previously verified proofs. Re-verify the complete values with field reads, then activate the commit control with a separate click; do not bundle mutation and submission.'
+          : 'This action can change field values in the same dispatch as submission, so it cannot use previously verified proofs. Write the field with a non-submit call first, verify the complete value, then activate the commit control with a separate click.',
+      };
+    }
     const pageUrl = await this._currentUrl(tabId);
     await this._refreshGithubTextReplacementProofs(tabId, pageUrl);
     const binding = this._workflowSubmitBindingForAttempt(tabId, pageUrl, {}, detectedSubmit);
@@ -18492,6 +18513,24 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           return false;
         }
       })();
+      // The launcher label is localized, so English text alone cannot
+      // identify it. A dialog-opening affordance is locale-independent: the
+      // launcher reversibly opens the commit dialog instead of submitting.
+      const controlOpensDialog = (() => {
+        try {
+          if (control?.hasAttribute?.('data-show-dialog-id')) return true;
+          const triggerAttrs = [
+            control?.getAttribute?.('aria-haspopup'),
+            control?.getAttribute?.('aria-controls'),
+            control?.getAttribute?.('data-show-dialog-id'),
+            control?.getAttribute?.('data-action'),
+            control?.getAttribute?.('data-target'),
+          ].filter(Boolean).join(' ');
+          return /dialog/i.test(triggerAttrs);
+        } catch {
+          return false;
+        }
+      })();
       return {
         isSubmit: true,
         host,
@@ -18505,7 +18544,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         transactionPageOrderIdsComplete: pageOrders.complete,
         githubCommitDialogLauncher: githubEditPage
           && !controlInModal
-          && /^commit changes(?:\.{3}|…)?$/i.test(controlLabel),
+          && (/^commit changes(?:\.{3}|…)?$/i.test(controlLabel) || controlOpensDialog),
         ...summarizeForm(form, pendingEl, pendingValue),
       };
     };
