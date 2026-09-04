@@ -145,28 +145,31 @@ import { shouldAutoGroupTabs } from '../tab-group-preference.js';
 const DEFAULT_CLOUD_COST_ALLOWANCE_USD = 10;
 const STAGED_SCREENSHOT_REDACTION_MAX_REGIONS = 400;
 // Publication intent, in the languages a task is actually written in. An
-// English-only verb list made a non-English task unable to name its own
+// English-only verb list left a non-English task unable to name its own
 // destination, and a bare platform or feed reference is not intent at all, so
-// this is the single gate both the destination scan and the platform-keyword
-// rules go through. Forms are listed explicitly: "publication" and "public"
-// are not requests to publish anything.
-const SOCIAL_PUBLISH_VERBS = new RegExp([
-  '\\b(?:post|posts|posted|posting|publish|publishes|published|publishing',
-  '|tweet|tweets|tweeted|tweeting|retweet|retweets|skeet|skeets',
-  '|share|shares|shared|sharing)\\b',
-  // Spanish, Portuguese
-  '|\\b(?:publica|public\u00e1|publ\u00edcalo|publ\u00edcala|publicalo|publicala|publicar|publicas|publican',
-  '|publique|publiquen|publiquem|publicando|posta|postar|comparte|compartir|compartilhe|compartilhar)\\b',
-  // French, Italian, German
-  '|\\b(?:publie|publier|publiez|publions|publi\u00e9e?|partage|partager|partagez',
-  '|pubblica|pubblicare|pubblicate|condividi|condividere',
-  '|ver\u00f6ffentliche|ver\u00f6ffentlichen|ver\u00f6ffentlicht|poste|posten|teile|teilen)\\b',
-  // Turkish, Russian
-  '|\\b(?:yay\u0131nla|yay\u0131nlay\u0131n|yay\u0131mla|payla\u015f|payla\u015f\u0131n',
-  '|\u043e\u043f\u0443\u0431\u043b\u0438\u043a\u0443\u0439|\u043e\u043f\u0443\u0431\u043b\u0438\u043a\u043e\u0432\u0430\u0442\u044c|\u043e\u043f\u0443\u0431\u043b\u0438\u043a\u0443\u0439\u0442\u0435|\u043f\u0443\u0431\u043b\u0438\u043a\u0443\u0439|\u043f\u043e\u0434\u0435\u043b\u0438\u0441\u044c)\\b',
-  // Scripts without word boundaries
-  '|\u6295\u7a3f|\u767a\u4fe1|\u30c4\u30a4\u30fc\u30c8|\u53d1\u5e03|\u767c\u5e03|\u53d1\u5e16|\u767c\u5e16|\u53d1\u63a8|\u63a8\u6587|\uac8c\uc2dc|\uc62c\ub824|\uc62c\ub9ac|\u0646\u0634\u0631|\u0627\u0646\u0634\u0631',
-].join(''), 'i');
+// this is the single gate the destination scan and the platform-keyword rules
+// both go through. Forms are listed explicitly: neither "public" nor
+// "publication" is a request to publish anything.
+//
+// The boundaries are Unicode-aware because JavaScript's \b is defined on
+// [A-Za-z0-9_] alone, which places no boundary at all around a Cyrillic word.
+// Scripts that do not space their words get a read-verb exclusion instead,
+// since substring presence there says nothing about who is being asked to do
+// what.
+const SOCIAL_PUBLISH_WORD_EDGE = '\\p{L}\\p{N}_';
+const SOCIAL_PUBLISH_VERBS = new RegExp(
+  `(?<![${SOCIAL_PUBLISH_WORD_EDGE}])(?:post|posts|posted|posting|publish|publishes|published|publishing|tweet|tweets|tweeted|tweeting|retweet|retweets|skeet|skeets|share|shares|shared|sharing|publica|public\u00e1|publ\u00edcalo|publ\u00edcala|publicalo|publicala|publicar|publicas|publican|publique|publiquen|publiquem|publicando|posta|postar|comparte|compartir|compartilhe|compartilhar|publie|publier|publiez|publions|publi\u00e9e|publi\u00e9e|publi\u00e9|partage|partager|partagez|pubblica|pubblicare|pubblicate|condividi|condividere|ver\u00f6ffentliche|ver\u00f6ffentlichen|ver\u00f6ffentlicht|poste|posten|teile|teilen|yay\u0131nla|yay\u0131nlay\u0131n|yay\u0131mla|payla\u015f|payla\u015f\u0131n|\u043e\u043f\u0443\u0431\u043b\u0438\u043a\u0443\u0439|\u043e\u043f\u0443\u0431\u043b\u0438\u043a\u0443\u0439\u0442\u0435|\u043e\u043f\u0443\u0431\u043b\u0438\u043a\u043e\u0432\u0430\u0442\u044c|\u043f\u0443\u0431\u043b\u0438\u043a\u0443\u0439|\u043f\u043e\u0434\u0435\u043b\u0438\u0441\u044c|\u0437\u0430\u043f\u043e\u0441\u0442\u044c)(?![${SOCIAL_PUBLISH_WORD_EDGE}])`
+  + '|(?<!\u9605\u8bfb|\u95b1\u8b80|\u8bfb|\u8b80|\u67e5\u770b|\u6d4f\u89c8|\u700f\u89bd|\u8aad\u3093\u3067|\u8aad\u3080|\u8aad\u307f|\uc77d\uace0|\uc77d\uc5b4|\uc77d\uc740)(?:\u6295\u7a3f\u3059\u308b|\u6295\u7a3f\u3057\u3066|\u6295\u7a3f\u3057|\u6295\u7a3f|\u30c4\u30a4\u30fc\u30c8\u3057\u3066|\u30c4\u30a4\u30fc\u30c8\u3057|\u30dd\u30b9\u30c8\u3057\u3066|\u30dd\u30b9\u30c8\u3057|\u53d1\u5e03|\u767c\u5e03|\u53d1\u5e16|\u767c\u5e16|\u53d1\u63a8|\u767c\u63a8|\u53d1\u9001\u63a8\u6587|\uac8c\uc2dc|\uc62c\ub824|\uc62c\ub9ac|\u0627\u0646\u0634\u0631|\u0646\u0634\u0631)',
+  'iu',
+);
+
+// "On <url>, publish this" names a destination just as plainly as
+// "publish this on <url>", but only when the URL is presented as a place.
+const SOCIAL_PUBLISH_DESTINATION_LEAD = new RegExp(
+  '(?:^|[\\s,;:(\\[\'"])(?:on|onto|to|via|en|\u00e0|au|auf|su|em|na|para|\u0432|\u043d\u0430)\\s+$'
+  + '|[\u3067\u306b\u4e0a]\\s*$',
+  'iu',
+);
 
 const VISION_SUB_CALL_TIMEOUT_MS = 90_000;
 const CONTENT_ACTION_TIMEOUT_MS = 60_000;
@@ -1889,7 +1892,10 @@ export class Agent extends LoopDetector {
     // "!", ";" and ":" are valid path characters, so a URL like
     // https://en.wikipedia.org/wiki/Yahoo! is not punctuated, it just ends
     // that way. Trim only when the page never rendered the raw form.
-    const requestedUrls = (expectedBody.match(/https?:\/\/[^\s<>"']+/gi) || [])
+    // CJK prose runs a sentence delimiter straight into the next clause with
+    // no space, and no amount of trailing trimming can find the end of a URL
+    // that already swallowed the rest of the sentence.
+    const requestedUrls = (expectedBody.match(/https?:\/\/[^\s<>"'\u3002\u3001\uff0c\uff1b\uff1a\uff01\uff1f\u2026\u2025]+/gi) || [])
       .map((rawUrl) => {
         const trimmed = this._workflowTrimUrlPunctuation(rawUrl);
         if (trimmed === rawUrl) return rawUrl;
@@ -12371,7 +12377,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       .filter(Boolean)
       .join(' ');
     const hasPublishIntent = SOCIAL_PUBLISH_VERBS.test(trustedContext);
-    for (const match of trustedContext.matchAll(/https?:\/\/[^\s<>"'`]+/gi)) {
+    for (const match of trustedContext.matchAll(/https?:\/\/[^\s<>"'`\u3002\u3001\uff0c\uff1b\uff1a\uff01\uff1f\u2026\u2025]+/gi)) {
       const url = this._workflowTrimUrlPunctuation(match[0]);
       const destination = this._socialPublishDestinationAdapter(url);
       if (!destination) continue;
@@ -12379,8 +12385,14 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       // so it is a destination only when publication language governs it.
       // A composer route needs no verb: it is a destination by construction,
       // in any language.
+      const before = trustedContext.slice(Math.max(0, match.index - 60), match.index);
+      const after = trustedContext.slice(
+        match.index + match[0].length,
+        match.index + match[0].length + 60,
+      );
       const governed = /\/(?:compose|intent|i\/flow)\//.test(url)
-        || SOCIAL_PUBLISH_VERBS.test(trustedContext.slice(Math.max(0, match.index - 60), match.index));
+        || SOCIAL_PUBLISH_VERBS.test(before)
+        || (SOCIAL_PUBLISH_DESTINATION_LEAD.test(before) && SOCIAL_PUBLISH_VERBS.test(after));
       if (!governed) continue;
       const workflow = resolveAdapterWorkflowJob(url, 'publish-post');
       if (workflow?.job && workflow.adapterName === destination) targets.add(destination);

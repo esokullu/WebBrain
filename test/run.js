@@ -85024,6 +85024,17 @@ test('social publication workflow follows the live X or Bluesky destination and 
         'a composer route needed an English verb'],
       ['Just open https://x.com/compose/post', ['twitter'],
         'a composer route is a destination by construction'],
+      // A destination can lead the command as easily as follow it.
+      ['On https://x.com/home, publish this update', ['twitter'],
+        'a destination that leads the command was discarded'],
+      // JavaScript places no word boundary around a Cyrillic word.
+      ['\u041e\u043f\u0443\u0431\u043b\u0438\u043a\u0443\u0439 \u044d\u0442\u043e \u043d\u0430 https://x.com/home', ['twitter'],
+        'Russian publication intent was not recognized'],
+      // Scripts without spacing need the read verb to win over the noun.
+      ['\u9605\u8bfb\u63a8\u6587 https://x.com/home \u7136\u540e\u628a\u6458\u8981\u63d0\u4ea4\u5230\u8868\u5355', [],
+        'a CJK content noun was read as a publish command'],
+      ['\u9605\u8bfb\u6295\u7a3f https://x.com/home \u7136\u540e\u628a\u6458\u8981\u63d0\u4ea4\u5230\u8868\u5355', [],
+        'a CJK publish word governed by a read verb was read as intent'],
     ]) {
       assert.deepEqual(
         [...agent._trustedSocialPublishTargetAdapters({ taskText })],
@@ -85314,6 +85325,15 @@ test('a requested URL keeps the closing delimiter it opened', () => {
 
     // Sentence delimiters are also valid path characters, so the raw URL wins
     // whenever the page actually rendered it.
+    // CJK prose runs the delimiter straight into the next clause.
+    assert.equal(agent._workflowSocialPublishedBodyObserved(
+      { field: 'body', value: '\u8a73\u3057\u304f\u306fhttps://example.com/path\u3002\u7d9a\u5831\u3067\u3059' },
+      {
+        bodyText: '\u8a73\u3057\u304f\u306fexample.com/path\u3002\u7d9a\u5831\u3067\u3059',
+        links: [{ href: 'https://t.co/z', text: 'example.com/path', expandedUrl: 'https://example.com/path' }],
+      },
+    ), true, AgentClass.name + ': a URL ran into the CJK sentence that followed it');
+
     const yahoo = 'https://en.wikipedia.org/wiki/Yahoo!';
     assert.equal(agent._workflowSocialPublishedBodyObserved(
       { field: 'body', value: `See ${yahoo} now` },
