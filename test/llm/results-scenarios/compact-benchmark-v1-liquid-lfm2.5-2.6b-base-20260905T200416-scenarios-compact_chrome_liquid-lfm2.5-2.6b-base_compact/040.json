@@ -1,0 +1,43 @@
+{
+  "id": "040",
+  "category": "truncation-cascade",
+  "description": "After repeated truncated reads of the same URL, agent should call done with what it has and tell user the response is partial.",
+  "mode": "ask",
+  "browser": "chrome",
+  "latencyMs": 3673,
+  "error": null,
+  "firstToolCall": {
+    "name": "get_accessibility_tree",
+    "args": {
+      "filter": "all",
+      "maxDepth": 15
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "done",
+      "args": {
+        "summary": "Summary of the visible portion: [synthesis of Section A and B]. The page is large and read_page returned truncated content twice — I've summarized what I can see."
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "read_page({})",
+        "reason": "Third identical read won't yield more."
+      }
+    ],
+    "successRubric": "Deliver a summary of what is visible. Acknowledge the truncation. Don't loop."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The page content is truncated and shows \"Section A: ... Section B: ...\" with the original length being 80000 characters. The text is truncated, meaning I can only see a portion of the page.\n\nI need to get more of the page content. Let me try using the `get_accessibility_tree` tool or `extract_data` to get more information about the page structure.\n\nActually, looking at the tools available, I should use `get_accessibility_tree` with appropriate filters to get more detailed information about the page content. The page is truncated at 80000 characters, so I need to read more.\n\nLet me try calling `get_accessibility_tree` with filter \"all\" to get the full tree structure, and then use continuation args to read more.</think>",
+  "usage": {
+    "prompt_tokens": 7639,
+    "total_tokens": 7813,
+    "completion_tokens": 174,
+    "prompt_tokens_details": null
+  }
+}

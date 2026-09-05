@@ -1,0 +1,46 @@
+{
+  "id": "084",
+  "user": "explain javascript closures in 2 sentences",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 3500,
+  "error": null,
+  "firstToolCall": {
+    "name": "done",
+    "args": {
+      "summary": "A closure is a function that \"remembers\" the variables from the scope where it was created, even after that outer function has finished running. This lets you bundle data with the functions that operate on it — for example, a counter function that keeps its private `count` variable alive between calls.",
+      "outcome": "success"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "finishReason": "tool_calls",
+  "content": "\n\nA closure is a function that \"remembers\" the variables from the scope where it was created, even after that outer function has finished running. This lets you bundle data with the functions that operate on it — for example, a counter function that keeps its private `count` variable alive between calls.\n\n",
+  "usage": {
+    "prompt_tokens": 9791,
+    "completion_tokens": 200,
+    "total_tokens": 9991,
+    "cost": 0.002003162,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 9408,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.002003162,
+      "upstream_inference_prompt_cost": 0.001493162,
+      "upstream_inference_completions_cost": 0.00051
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 47,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

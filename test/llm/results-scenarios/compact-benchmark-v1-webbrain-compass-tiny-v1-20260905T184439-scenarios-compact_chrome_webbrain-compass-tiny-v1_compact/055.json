@@ -1,0 +1,37 @@
+{
+  "id": "055",
+  "category": "stale-refid",
+  "description": "List page where new items load on scroll. Old ref_ids point at items now outside the rendered range.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 1963,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "get_accessibility_tree",
+      "args": {
+        "filter": "visible"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click_ax({ref_id:\"ref_60\"})",
+        "reason": "Guessed ref_id beyond what the previous tree showed."
+      }
+    ],
+    "successRubric": "After scrolling, re-read AX tree. ref_ids reflect the current DOM, not a global numbering."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "no_tool",
+  "scoreNote": null,
+  "finishReason": "stop",
+  "content": "The 50th item is not yet visible. I need to scroll down to reach it. The previous scroll was successful, but the 50th item is still not in the accessibility tree. I should scroll further down to reach item 50.</think><|tool_call_start|>[scroll(direction='down', amount=10000)]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9852,
+    "total_tokens": 9918,
+    "completion_tokens": 66,
+    "prompt_tokens_details": null
+  }
+}

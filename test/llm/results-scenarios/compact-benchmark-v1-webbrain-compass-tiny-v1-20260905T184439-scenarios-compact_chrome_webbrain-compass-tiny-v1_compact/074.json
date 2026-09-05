@@ -1,0 +1,37 @@
+{
+  "id": "074",
+  "category": "cross-lingual",
+  "description": "Japanese site, English user. Use the visible kanji label OR the aria-label equivalent.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 1776,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "click",
+      "args": {
+        "text": "ログイン"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click({text:\"Sign in\"})",
+        "reason": "Japanese site — no English \"Sign in\" label."
+      }
+    ],
+    "successRubric": "Use the Japanese label \"ログイン\" (login). Multilingual interfaces require using the visible label."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "no_tool",
+  "scoreNote": null,
+  "finishReason": "stop",
+  "content": "The user is asking to sign in to their account. The current page context shows Amazon.co.jp with a login prompt. I should help them sign in by navigating to the login page and explaining the steps.</think><|tool_call_start|>[click_ax(ref_id='ref_1234567890')]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9763,
+    "total_tokens": 9823,
+    "completion_tokens": 60,
+    "prompt_tokens_details": null
+  }
+}

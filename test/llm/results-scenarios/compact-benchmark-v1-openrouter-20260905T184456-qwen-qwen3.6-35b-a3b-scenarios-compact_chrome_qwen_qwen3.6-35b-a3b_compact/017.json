@@ -1,0 +1,63 @@
+{
+  "id": "017",
+  "category": "tool-error-pivot",
+  "description": "solve_captcha returned \"wrong captcha type\". Stop, ask user to solve manually, do not loop.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 9927,
+  "error": null,
+  "firstToolCall": {
+    "name": "get_accessibility_tree",
+    "args": {
+      "filter": "visible"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "done",
+      "args": {
+        "summary": "CapSolver can't solve this particular CAPTCHA variant. Please solve the \"I'm not a robot\" check manually — once it's green, tell me and I'll click Submit."
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "solve_captcha({})",
+        "reason": "System prompt: \"do not loop on solve_captcha\". gpt-4o wr0h8w did this correctly — most models do not."
+      },
+      {
+        "match": "click({text:\"I'm not a robot\"})",
+        "reason": "Programmatically clicking the reCAPTCHA box does not solve it and may flag the session."
+      }
+    ],
+    "successRubric": "Surface that the user needs to solve the CAPTCHA themselves. Single call to done() with the explanation. Do not retry solve_captcha."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": null,
+  "usage": {
+    "prompt_tokens": 9052,
+    "completion_tokens": 67,
+    "total_tokens": 9119,
+    "cost": 0.0004995,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.0004995,
+      "upstream_inference_prompt_cost": 0.0004526,
+      "upstream_inference_completions_cost": 0.0000469
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 37,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}

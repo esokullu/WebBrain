@@ -1,0 +1,23 @@
+{
+  "id": "014",
+  "user": "show me my bookmarks",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 2219,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "finishReason": "stop",
+  "content": "The user wants to see their bookmarks. I need to use the `get_accessibility_tree` tool to read the current page's accessibility tree, which should include bookmark information.</think><|tool_call_start|>[get_accessibility_tree(filter='all', maxDepth=15, maxChars=6000, ref_id='', page=1, tree_revision='', continuationArgs={})]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9725,
+    "total_tokens": 9803,
+    "completion_tokens": 78,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

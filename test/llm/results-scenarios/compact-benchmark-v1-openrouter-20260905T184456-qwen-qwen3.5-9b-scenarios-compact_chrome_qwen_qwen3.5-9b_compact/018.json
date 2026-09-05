@@ -1,0 +1,52 @@
+{
+  "id": "018",
+  "category": "tool-error-pivot",
+  "description": "type_text warned about \"same field twice in a row\". The right move is to click the correct field first.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 2862,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "get_interactive_elements",
+      "args": {}
+    },
+    "antiPatterns": [
+      {
+        "match": "type_text({text:\"alice@example.com\"})",
+        "reason": "Will land in the same wrong field again."
+      }
+    ],
+    "successRubric": "Find the actual email input via get_interactive_elements or get_accessibility_tree, click it, THEN type. The warning is a signal to re-target, not to repeat."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "empty",
+  "scoreNote": null,
+  "finishReason": "stop",
+  "content": null,
+  "usage": {
+    "prompt_tokens": 9837,
+    "completion_tokens": 67,
+    "total_tokens": 9904,
+    "cost": 0.00099375,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 9504,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.00099375,
+      "upstream_inference_prompt_cost": 0.0009837,
+      "upstream_inference_completions_cost": 0.00001005
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 73,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}

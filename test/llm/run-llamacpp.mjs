@@ -64,6 +64,7 @@ import {
   prepareMessagesForChatTemplate,
   prepareToolsForChatTemplate,
 } from './lib/chat-template-compat.mjs';
+import { extractToolCallFromContent as extractLfm2AwareToolCallFromContent } from './lib/content-tool-call-parser.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const Q_DIR = join(HERE, 'questions');
@@ -392,7 +393,7 @@ async function runOne(id) {
     firstToolCall = { name: tc.function.name, args: parsedArgs };
     toolCallSource = 'tool_calls';
   } else if (msg?.content) {
-    const fallback = extractToolCallFromContent(msg.content);
+    const fallback = extractLfm2AwareToolCallFromContent(msg.content, { tools });
     if (fallback) {
       firstToolCall = fallback;
       toolCallSource = 'content_fallback';

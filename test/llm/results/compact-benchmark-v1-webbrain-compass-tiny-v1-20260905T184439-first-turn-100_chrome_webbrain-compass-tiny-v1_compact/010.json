@@ -1,0 +1,23 @@
+{
+  "id": "010",
+  "user": "go to amazon",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 2177,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "finishReason": "stop",
+  "content": "The user wants me to go to Amazon. I should use the navigate tool to go to Amazon's website.</think><|tool_call_start|>[navigate(url='https://www.amazon.com/')]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9724,
+    "total_tokens": 9763,
+    "completion_tokens": 39,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

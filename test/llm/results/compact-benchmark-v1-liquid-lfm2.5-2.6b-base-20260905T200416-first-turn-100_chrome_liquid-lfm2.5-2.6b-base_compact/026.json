@@ -1,0 +1,28 @@
+{
+  "id": "026",
+  "user": "summarize this page",
+  "mode": "act",
+  "tab": {
+    "url": "https://www.cnn.com/2026/05/world/example-story/index.html",
+    "title": "Example story — CNN"
+  },
+  "latencyMs": 2337,
+  "error": null,
+  "firstToolCall": {
+    "name": "read_page",
+    "args": {
+      "url": "https://www.cnn.com/2026/05/world/example-story/index.html"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "finishReason": "tool_calls",
+  "content": "The user wants me to summarize a CNN page. The URL is https://www.cnn.com/2026/05/world/example-story/index.html with the title \"Example story - CNN\".\n\nI need to read the page first to understand its content before summarizing it. Let me use the read_page tool to get the content of this page.</think>",
+  "usage": {
+    "prompt_tokens": 9740,
+    "total_tokens": 9840,
+    "completion_tokens": 100,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

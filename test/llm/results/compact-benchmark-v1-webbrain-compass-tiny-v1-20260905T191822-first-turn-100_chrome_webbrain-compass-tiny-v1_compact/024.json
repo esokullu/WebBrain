@@ -1,0 +1,28 @@
+{
+  "id": "024",
+  "user": "find tweets about react 19",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 2861,
+  "error": null,
+  "firstToolCall": {
+    "name": "navigate",
+    "args": {
+      "url": "https://twitter.com/search/tweets?q=React+19&sort=relevance"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "finishReason": "tool_calls",
+  "content": "The user wants to find tweets about React 19. I should search Twitter for \"React 19\" to find relevant tweets.</think>",
+  "usage": {
+    "prompt_tokens": 9727,
+    "total_tokens": 9787,
+    "completion_tokens": 60,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

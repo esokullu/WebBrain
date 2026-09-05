@@ -1,0 +1,23 @@
+{
+  "id": "049",
+  "user": "compose an email to alice@example.com",
+  "mode": "act",
+  "tab": {
+    "url": "https://mail.google.com/mail/u/0/#inbox",
+    "title": "Inbox (3) — Gmail"
+  },
+  "latencyMs": 2230,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "finishReason": "stop",
+  "content": "The user wants me to compose an email to alice@example.com. I need to use the compose email tool with the recipient and subject. The subject should be something appropriate like \"Hello from WebBrain\" or \"Your WebBrain task\". The body should be a polite greeting and offer assistance. I should not send the email yet - the user only asked to compose it.</think><|tool_call_start|>[set_field(ref_id='ref_1', text='Hello Alice! I hope you’re having a great day. I’m here to help you with your WebBrain task. What would you like me to do?', clear=True, submit=False)]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 10503,
+    "total_tokens": 10638,
+    "completion_tokens": 135,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

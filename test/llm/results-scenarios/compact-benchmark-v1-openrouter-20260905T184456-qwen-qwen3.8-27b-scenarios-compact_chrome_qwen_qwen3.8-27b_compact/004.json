@@ -1,0 +1,63 @@
+{
+  "id": "004",
+  "category": "loop-bad-url",
+  "description": "Navigation to a non-existent release tag landed on a 404-styled page. Repeating it is the failure.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 1882,
+  "error": null,
+  "firstToolCall": {
+    "name": "navigate",
+    "args": {
+      "url": "https://github.com/acme/widgets/releases"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "navigate",
+      "args": {
+        "url": "https://github.com/acme/widgets/releases"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "navigate({url:\"https://github.com/acme/widgets/releases/tag/v9.9.9\"})",
+        "reason": "Retrying a 404 URL."
+      },
+      {
+        "match": "download_files({urls:[\"https://github.com/acme/widgets/archive/refs/tags/v9.9.9.zip\"]})",
+        "reason": "Forcing a download for a tag that does not exist."
+      }
+    ],
+    "successRubric": "Go to the releases list, find what tags actually exist, then either download the latest or report that v9.9.9 doesn't exist."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": null,
+  "usage": {
+    "prompt_tokens": 10060,
+    "completion_tokens": 66,
+    "total_tokens": 10126,
+    "cost": 0.001719028,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 9408,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.001719028,
+      "upstream_inference_prompt_cost": 0.001550728,
+      "upstream_inference_completions_cost": 0.0001683
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 38,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}

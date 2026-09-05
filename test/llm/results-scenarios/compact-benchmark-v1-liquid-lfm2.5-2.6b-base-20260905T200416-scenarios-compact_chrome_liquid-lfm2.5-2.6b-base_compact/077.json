@@ -1,0 +1,37 @@
+{
+  "id": "077",
+  "category": "cross-lingual",
+  "description": "HN comments in English, user asks in Turkish. Read + respond Turkish.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 2682,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "done",
+      "args": {
+        "summary": "En üstteki yorum yazarın temel önermesine katılmıyor — yazarın X ile Y'yi karıştırdığını ve bu yüzden vardığı sonucun hatalı olduğunu söylüyor."
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "done({summary:\"Top comment disagrees with...\"})",
+        "reason": "User asked in Turkish — answer in Turkish."
+      }
+    ],
+    "successRubric": "Answer in Turkish. Translate gist of English comment."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal_name",
+  "scoreNote": "prose answer credited as done (terminal tool; summary not arg-matched)",
+  "finishReason": "stop",
+  "content": "The user is asking about the top comment on the HN item page. The read_page tool returned the top comment: \"I disagree with the premise. The author conflates X with Y, which leads to...\"\n\nThis is a concise answer to the user's question \"en üstteki yorum ne diyor kısaca\" (what does the top comment say briefly).</think>En üstteki yorum şudur: **\"I disagree with the premise. The author conflates X with Y, which leads to...\"**\n\nKısaca: Yazar X ile Y'ı karıştırıyor ve bu hata sonucunda... (başarıyor).",
+  "usage": {
+    "prompt_tokens": 9787,
+    "total_tokens": 9921,
+    "completion_tokens": 134,
+    "prompt_tokens_details": null
+  }
+}

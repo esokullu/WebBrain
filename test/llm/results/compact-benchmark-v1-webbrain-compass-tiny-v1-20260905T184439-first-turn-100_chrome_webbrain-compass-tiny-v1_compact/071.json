@@ -1,0 +1,23 @@
+{
+  "id": "071",
+  "user": "send it",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 2210,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "finishReason": "stop",
+  "content": "The user wants me to send the current page content. The current page is about:home with title \"New Tab\". I should use the `done` tool to send the page content, but I need to first read the page content.\n\nLet me read the page first to get the content, then I can send it.</think><|tool_call_start|>[get_accessibility_tree(filter='all', maxDepth=10, maxChars=6000, ref_id='', page=1, tree_revision='', continuationArgs={})]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9722,
+    "total_tokens": 9828,
+    "completion_tokens": 106,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

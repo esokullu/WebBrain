@@ -1,0 +1,28 @@
+{
+  "id": "002",
+  "user": "open gmail",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 4103,
+  "error": null,
+  "firstToolCall": {
+    "name": "navigate",
+    "args": {
+      "url": "https://mail.google.com/"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "finishReason": "tool_calls",
+  "content": "The user wants to open Gmail. I need to first understand the current context - the URL is about:home (New Tab) and the title is \"New Tab\". \n\nTo open Gmail, I should navigate to the Gmail URL. The standard Gmail URL is https://mail.google.com/.\n\nLet me use the navigate tool to open Gmail. I'll use the URL parameter with the Gmail address. Since the user didn't specify a particular Gmail address, I should use the default Gmail (which would be the user's own Gmail account).\n\nActually, looking at the navigate tool description, it takes a URL parameter. The standard Gmail URL is https://mail.google.com/.\n\nLet me navigate to Gmail.</think>",
+  "usage": {
+    "prompt_tokens": 9723,
+    "total_tokens": 9892,
+    "completion_tokens": 169,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

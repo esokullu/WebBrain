@@ -1,0 +1,61 @@
+{
+  "id": "046",
+  "category": "counter-polarity",
+  "description": "Reddit title field — 320 chars typed, 300 char limit. Shorten.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 6260,
+  "error": null,
+  "firstToolCall": {
+    "name": "get_accessibility_tree",
+    "args": {
+      "filter": "visible"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "set_field",
+      "args": {
+        "ref_id": "ref_title",
+        "clear": true,
+        "text": "<300-char-or-less title>"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click({text:\"Submit\"})",
+        "reason": "Title is over 300 — will be rejected."
+      }
+    ],
+    "successRubric": "320/300 means over by 20. Shorten title before submitting."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": null,
+  "usage": {
+    "prompt_tokens": 9086,
+    "completion_tokens": 137,
+    "total_tokens": 9223,
+    "cost": 0.0005502,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.0005502,
+      "upstream_inference_prompt_cost": 0.0004543,
+      "upstream_inference_completions_cost": 0.0000959
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 107,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}

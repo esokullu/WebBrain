@@ -1,0 +1,50 @@
+{
+  "id": "043",
+  "category": "counter-polarity",
+  "description": "X counter shows \"0\" — text is exactly at the 280 limit. Safe (but barely).",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 1959,
+  "error": null,
+  "firstToolCall": {
+    "name": "clarify",
+    "args": {
+      "question": "What would you like me to post on X?",
+      "options": [
+        "A short announcement",
+        "A question",
+        "A link",
+        "Something else"
+      ],
+      "reason": "The current draft is empty and I need the content before posting.",
+      "require_explicit_answer": true
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "click",
+      "args": {
+        "text": "Post"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "set_field({ref_id:\"...\", clear:true, text:\"...\"})",
+        "reason": "0 means exactly at limit, which is allowed."
+      }
+    ],
+    "successRubric": "X allows posts at exactly the limit (counter shows 0 chars remaining). Submit."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The user wants me to post a draft on X. The current page context shows an empty draft with a textarea for 280-character content.\n\nI need to ask the user what they want me to post. I should not guess the content.</think>",
+  "usage": {
+    "prompt_tokens": 9788,
+    "total_tokens": 9898,
+    "completion_tokens": 110,
+    "prompt_tokens_details": null
+  }
+}

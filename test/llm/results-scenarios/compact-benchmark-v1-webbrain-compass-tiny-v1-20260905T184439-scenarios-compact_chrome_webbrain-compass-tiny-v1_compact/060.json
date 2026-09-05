@@ -1,0 +1,37 @@
+{
+  "id": "060",
+  "category": "stale-refid",
+  "description": "After a long sequence of unrelated tool calls, used a ref_id from way back. Re-read.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 2379,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "get_accessibility_tree",
+      "args": {
+        "filter": "visible"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click_ax({ref_id:\"ref_12\"})",
+        "reason": "Several unrelated tool calls in between; ref_id likely stale."
+      }
+    ],
+    "successRubric": "After several turns of unrelated work, refresh the tree before relying on an old ref_id."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "no_tool",
+  "scoreNote": null,
+  "finishReason": "stop",
+  "content": "The previous attempt to click the Submit button failed because the ref_id was not found in the current accessibility tree. This could be due to the page being refreshed or the element not being present when the click was attempted.\n\nLet me try again, but this time I'll use the `click` tool with the visible text \"Submit\" instead of relying on the ref_id. This should be more reliable.</think><|tool_call_start|>[click(text='Submit')]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9895,
+    "total_tokens": 9988,
+    "completion_tokens": 93,
+    "prompt_tokens_details": null
+  }
+}

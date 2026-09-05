@@ -1,0 +1,28 @@
+{
+  "id": "054",
+  "user": "download this image",
+  "mode": "act",
+  "tab": {
+    "url": "https://example.com/photo.jpg",
+    "title": "photo.jpg"
+  },
+  "latencyMs": 1752,
+  "error": null,
+  "firstToolCall": {
+    "name": "fetch_url",
+    "args": {
+      "url": "https://example.com/photo.jpg"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "finishReason": "tool_calls",
+  "content": "The user wants me to download the image from the provided URL. I should use the `fetch_url` tool to download the image. The URL is `https://example.com/photo.jpg`.\n\nI'll use `fetch_url` with the URL parameter. I don't need to specify method, headers, body, replayRequestId, offset, or maxChars for this simple download.</think>",
+  "usage": {
+    "prompt_tokens": 9727,
+    "total_tokens": 9823,
+    "completion_tokens": 96,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

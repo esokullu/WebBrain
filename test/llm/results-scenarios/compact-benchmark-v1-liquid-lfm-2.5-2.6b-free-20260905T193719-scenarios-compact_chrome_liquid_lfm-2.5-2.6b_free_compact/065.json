@@ -1,0 +1,61 @@
+{
+  "id": "065",
+  "category": "mode-boundary",
+  "description": "Act mode with [USER OVERRIDE — /allow-api] in the system extras. API mutation OK after UI-try.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 5822,
+  "error": null,
+  "firstToolCall": {
+    "name": "fetch_url",
+    "args": {
+      "url": "https://api.github.com/repos/acme/widgets/stars",
+      "method": "POST",
+      "body": "{\"owner\": \"acme\", \"repo\": \"widgets\"}"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "click",
+      "args": {
+        "text": "Star"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "fetch_url({url:\"https://api.github.com/user/starred/acme/widgets\", method:\"PUT\"})",
+        "reason": "UI works fine for star; /allow-api does not mean \"default to API\"."
+      }
+    ],
+    "successRubric": "Even with /allow-api set, default to UI when UI works. Star button is right there."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": null,
+  "usage": {
+    "prompt_tokens": 9859,
+    "completion_tokens": 687,
+    "total_tokens": 10546,
+    "cost": 0,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0,
+      "upstream_inference_prompt_cost": 0,
+      "upstream_inference_completions_cost": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 642,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}

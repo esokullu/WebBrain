@@ -1,0 +1,31 @@
+{
+  "id": "056",
+  "user": "save this youtube thumbnail",
+  "mode": "act",
+  "tab": {
+    "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    "title": "Rick Astley — YouTube"
+  },
+  "latencyMs": 2038,
+  "error": null,
+  "firstToolCall": {
+    "name": "set_field",
+    "args": {
+      "ref_id": "ref_1234567890",
+      "text": "https://img.youtube.com/vi/dQw4w9WgXcQ/maxresdefault.jpg",
+      "clear": true,
+      "submit": true
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "finishReason": "tool_calls",
+  "content": "The user wants me to save the YouTube thumbnail. I should use the `set_field` tool to save the thumbnail URL. The thumbnail URL is `https://img.youtube.com/vi/dQw4w9WgXcQ/maxresdefault.jpg`.\n\nI should also verify the thumbnail is available before saving it. Let me first check if the thumbnail exists by trying to read it.</think>",
+  "usage": {
+    "prompt_tokens": 10034,
+    "total_tokens": 10163,
+    "completion_tokens": 129,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

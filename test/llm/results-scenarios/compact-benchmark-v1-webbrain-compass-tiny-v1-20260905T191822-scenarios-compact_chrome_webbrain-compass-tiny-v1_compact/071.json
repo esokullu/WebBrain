@@ -1,0 +1,53 @@
+{
+  "id": "071",
+  "category": "cross-lingual",
+  "description": "Turkish user asks in Turkish on a Turkish UI. Recognize the Turkish \"Gönder\" = \"Send\".",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 2303,
+  "error": null,
+  "firstToolCall": {
+    "name": "clarify",
+    "args": {
+      "question": "Ne kadar uzun ve hangi içerikle MastoTurk’e gönderilecek?",
+      "options": [
+        "1-2 cümle",
+        "3-5 cümle",
+        "Daha uzun bir metin"
+      ],
+      "reason": "Gönderi içeriği ve uzunluğundan önce bilgi alın.",
+      "require_explicit_answer": true
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "click",
+      "args": {
+        "text": "Gönder"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click({text:\"Send\"})",
+        "reason": "Turkish UI — button label is \"Gönder\" not \"Send\"."
+      },
+      {
+        "match": "click({text:\"Post\"})",
+        "reason": "Same."
+      }
+    ],
+    "successRubric": "Use the visible Turkish button label \"Gönder\". Don't translate UI labels to English."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The user wants me to submit something to the MastoTurk publishing page. The current page shows \"Yeni Gönderi ... 251 ... Gönder\" which means \"New Submission ... 251 ... Submitted\".\n\nHowever, the user hasn't specified what they want to submit. I need to ask for clarification before submitting anything.</think>",
+  "usage": {
+    "prompt_tokens": 9773,
+    "total_tokens": 9919,
+    "completion_tokens": 146,
+    "prompt_tokens_details": null
+  }
+}

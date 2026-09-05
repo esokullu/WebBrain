@@ -1,0 +1,42 @@
+{
+  "id": "073",
+  "category": "cross-lingual",
+  "description": "Turkish user, English wiki article. Read + answer in Turkish.",
+  "mode": "ask",
+  "browser": "chrome",
+  "latencyMs": 1828,
+  "error": null,
+  "firstToolCall": {
+    "name": "read_page",
+    "args": {
+      "url": "https://en.wikipedia.org/wiki/Closure_(computer_programming)"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "done",
+      "args": {
+        "summary": "Kapanış (closure), bir fonksiyonun tanımlandığı leksik çevre ile birlikte paketlenmiş halidir — yani dış kapsamın değişkenlerine, o kapsam döndükten sonra bile erişebilir."
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "done({summary:\"A closure is a function bundled with...\"})",
+        "reason": "User asked in Turkish — answer in Turkish."
+      }
+    ],
+    "successRubric": "Answer in the user's language. Read English source, translate gist into Turkish."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The user is asking about \"closure\" in the context of computer programming. They want a summary in Turkish (\"kapanış (closure) nedir, bir cümlede özetle\").\n\nI've already read the page and got a brief description: \"A closure is a function bundled with the lexical environment...\"\n\nLet me get more detailed information from the page to provide a comprehensive answer. I should read the full page content.</think>",
+  "usage": {
+    "prompt_tokens": 7616,
+    "total_tokens": 7732,
+    "completion_tokens": 116,
+    "prompt_tokens_details": null
+  }
+}

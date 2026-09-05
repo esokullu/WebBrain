@@ -1,0 +1,59 @@
+{
+  "id": "060",
+  "category": "stale-refid",
+  "description": "After a long sequence of unrelated tool calls, used a ref_id from way back. Re-read.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 1280,
+  "error": null,
+  "firstToolCall": {
+    "name": "get_accessibility_tree",
+    "args": {
+      "filter": "visible"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "get_accessibility_tree",
+      "args": {
+        "filter": "visible"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click_ax({ref_id:\"ref_12\"})",
+        "reason": "Several unrelated tool calls in between; ref_id likely stale."
+      }
+    ],
+    "successRubric": "After several turns of unrelated work, refresh the tree before relying on an old ref_id."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": null,
+  "usage": {
+    "prompt_tokens": 10080,
+    "completion_tokens": 46,
+    "total_tokens": 10126,
+    "cost": 0.001672308,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 9408,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.001672308,
+      "upstream_inference_prompt_cost": 0.001555008,
+      "upstream_inference_completions_cost": 0.0001173
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 15,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}

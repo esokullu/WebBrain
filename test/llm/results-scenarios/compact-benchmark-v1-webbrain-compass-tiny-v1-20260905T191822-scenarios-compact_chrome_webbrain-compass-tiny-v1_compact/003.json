@@ -1,0 +1,42 @@
+{
+  "id": "003",
+  "category": "loop-bad-url",
+  "description": "twitter.com redirected to x.com but the agent did not notice the brand change.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 3713,
+  "error": null,
+  "firstToolCall": {
+    "name": "click_ax",
+    "args": {
+      "ref_id": "ref_1234567890"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "click",
+      "args": {
+        "text": "Search"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "navigate({url:\"https://twitter.com/search?q=react+19\"})",
+        "reason": "Acceptable but slightly worse; we are already on the SPA."
+      }
+    ],
+    "successRubric": "Use the on-page search box. The page title saying \"Home / X\" rather than \"Twitter\" is a tell that the brand is X — don't comment on it. Just search."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The user wants me to search for \"react 19\" on Twitter. I should use the search tool with the query \"react 19\".</think>",
+  "usage": {
+    "prompt_tokens": 9821,
+    "total_tokens": 9869,
+    "completion_tokens": 48,
+    "prompt_tokens_details": null
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "id": "096",
+  "user": "read this page aloud",
+  "mode": "act",
+  "tab": {
+    "url": "https://www.cnn.com/2026/05/world/example-story/index.html",
+    "title": "Example story — CNN"
+  },
+  "latencyMs": 2385,
+  "error": null,
+  "firstToolCall": {
+    "name": "read_page",
+    "args": {
+      "limit": 6000
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "finishReason": "tool_calls",
+  "content": null,
+  "usage": {
+    "prompt_tokens": 9768,
+    "completion_tokens": 56,
+    "total_tokens": 9824,
+    "cost": 0.0009852,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 9504,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.0009852,
+      "upstream_inference_prompt_cost": 0.0009768,
+      "upstream_inference_completions_cost": 0.0000084
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 28,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

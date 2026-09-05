@@ -1,0 +1,32 @@
+{
+  "id": "038",
+  "category": "truncation-cascade",
+  "description": "fetch_url returned a long doc truncated mid-method. Extract names from the visible part and report.",
+  "mode": "ask",
+  "browser": "chrome",
+  "latencyMs": 356,
+  "error": "HTTP 429: {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-min. \",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"20\",\"X-RateLimit-Remaining\":\"0\",\"X-RateLimit-Reset\":\"1788626940000\"},\"limit_source\":\"openrouter_free_tier_per_minute\",\"remedy_hint\":\"Slow down requests to free models, or retry after the per-minute window resets.\",\"provider_name\":null}},\"user_id\":\"user_3AbNCAJijEuArTpJ0g3wyO8p3KK\"}",
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "done",
+      "args": {
+        "summary": "Methods listed in the visible head: getUser, updateUser, deleteUser, listUsers, createUser, createProject, updateProject, listProjects. The response was truncated — there may be more below."
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "fetch_url({url:\"https://example-docs.io/api/methods?page=2\"})",
+        "reason": "Made-up pagination URL."
+      }
+    ],
+    "successRubric": "Surface the partial list with an honest \"truncated\" disclaimer. Don't invent pagination URLs."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "error",
+  "scoreNote": null,
+  "finishReason": null,
+  "content": null,
+  "usage": null
+}

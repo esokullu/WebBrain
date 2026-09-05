@@ -1,0 +1,40 @@
+{
+  "id": "069",
+  "user": "open it",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 3785,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "finishReason": "stop",
+  "content": "I need clarification - what would you like me to open? The current page is the browser's New Tab page (about:home). \n\nAre you asking me to:\n1. Open a specific URL?\n2. Open a link from somewhere?\n3. Open a new tab?\n\nPlease provide the URL or specify what you'd like me to open.",
+  "usage": {
+    "prompt_tokens": 9748,
+    "completion_tokens": 158,
+    "total_tokens": 9906,
+    "cost": 0.0009985,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 9504,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.0009985,
+      "upstream_inference_prompt_cost": 0.0009748,
+      "upstream_inference_completions_cost": 0.0000237
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 79,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

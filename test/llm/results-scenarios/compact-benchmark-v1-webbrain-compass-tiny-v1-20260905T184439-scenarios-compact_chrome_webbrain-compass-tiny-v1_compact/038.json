@@ -1,0 +1,37 @@
+{
+  "id": "038",
+  "category": "truncation-cascade",
+  "description": "fetch_url returned a long doc truncated mid-method. Extract names from the visible part and report.",
+  "mode": "ask",
+  "browser": "chrome",
+  "latencyMs": 2688,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "done",
+      "args": {
+        "summary": "Methods listed in the visible head: getUser, updateUser, deleteUser, listUsers, createUser, createProject, updateProject, listProjects. The response was truncated — there may be more below."
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "fetch_url({url:\"https://example-docs.io/api/methods?page=2\"})",
+        "reason": "Made-up pagination URL."
+      }
+    ],
+    "successRubric": "Surface the partial list with an honest \"truncated\" disclaimer. Don't invent pagination URLs."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal_name",
+  "scoreNote": "prose answer credited as done (terminal tool; summary not arg-matched)",
+  "finishReason": "stop",
+  "content": "The page was truncated, so I don't have the complete list of API methods. I should try to get more of the page content, or use a different approach to retrieve the full list.\n\nLet me try fetching the page again with a larger maxChars limit, or try a different approach.</think><|tool_call_start|>[fetch_url(url='https://example-docs.io/api/methods', timeout=12000)]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 7648,
+    "total_tokens": 7732,
+    "completion_tokens": 84,
+    "prompt_tokens_details": null
+  }
+}

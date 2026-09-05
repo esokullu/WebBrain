@@ -1,0 +1,63 @@
+{
+  "id": "014",
+  "category": "tool-error-pivot",
+  "description": "read_page returned PDF-tab notice. Pivot to read_pdf.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 1886,
+  "error": null,
+  "firstToolCall": {
+    "name": "read_pdf",
+    "args": {
+      "url": "https://arxiv.org/pdf/2401.00001.pdf"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "read_pdf",
+      "args": {
+        "url": "https://arxiv.org/pdf/2401.00001.pdf"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "read_page({})",
+        "reason": "Same tool that just rejected the PDF tab."
+      },
+      {
+        "match": "inspect_viewport({})",
+        "reason": "PDF viewer capture won't produce extractable text."
+      }
+    ],
+    "successRubric": "Use read_pdf with the tab URL. The error message names the right tool — follow it."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": null,
+  "usage": {
+    "prompt_tokens": 9802,
+    "completion_tokens": 100,
+    "total_tokens": 9902,
+    "cost": 0,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 9696,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0,
+      "upstream_inference_prompt_cost": 0,
+      "upstream_inference_completions_cost": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 73,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "id": "012",
+  "category": "tool-error-pivot",
+  "description": "click by text returned ambiguity error. Pivot to a more specific selector or index.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 2398,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "click",
+      "args": {
+        "text": "Add to Cart"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click({text:\"Add\"})",
+        "reason": "Same ambiguous query."
+      },
+      {
+        "match": "click({text:\"Add\", textMatch:\"contains\"})",
+        "reason": "Broader matching makes ambiguity worse, not better."
+      }
+    ],
+    "successRubric": "Use a more specific text (\"Add to Cart\" — the actual Amazon button) OR call get_interactive_elements first and use the index."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "no_tool",
+  "scoreNote": null,
+  "finishReason": "stop",
+  "content": "The click failed because there are multiple elements matching \"Add\". I need to first get the interactive elements to find the specific \"Add to cart\" button. Let me use get_interactive_elements to find the right element.</think><|tool_call_start|>[get_interactive_elements()]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9801,
+    "total_tokens": 9857,
+    "completion_tokens": 56,
+    "prompt_tokens_details": null
+  }
+}

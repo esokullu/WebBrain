@@ -1,0 +1,38 @@
+{
+  "id": "033",
+  "category": "truncation-cascade",
+  "description": "AX tree overflow on listing page. Switch to read_page or a more constrained AX call. Do not raise maxChars.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 2706,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "get_accessibility_tree",
+      "args": {
+        "filter": "visible",
+        "maxDepth": 10
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "get_accessibility_tree({filter:\"all\", maxChars:200000})",
+        "reason": "System prompt explicitly warns against raising maxChars on listings."
+      }
+    ],
+    "successRubric": "Switch to filter:\"visible\" or read_page. Listing pages don't fit in the AX tree under filter:\"all\"."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "no_tool",
+  "scoreNote": null,
+  "finishReason": "stop",
+  "content": "The previous call failed due to a 50000 character limit. I need to try again with a smaller continuation or use the `offset` parameter to get the first 5 items. Let me try with `offset: 0` and `maxChars: 5000` to get the first few items.</think><|tool_call_start|>[get_accessibility_tree(filter='all', maxChars=5000, offset=0)]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9774,
+    "total_tokens": 9859,
+    "completion_tokens": 85,
+    "prompt_tokens_details": null
+  }
+}
