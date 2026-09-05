@@ -1418,6 +1418,15 @@ export class Agent extends LoopDetector {
     // one identity).
     const activeTaskToken = this._taskTokens.get(tabId);
     const activeTaskTokenValid = typeof activeTaskToken === 'string' && activeTaskToken.length > 0;
+    // Editor identity must be GitHub-specific: the file editor exposes an
+    // accessible "Editing file contents" linkage (labelledby text, label, or
+    // wrapping label). A bare contentEditable flag is not enough — any other
+    // contenteditable on the edit route could otherwise mint a commit while
+    // the real editor still holds stale content. Records store the live
+    // digest metadata, so legit flows always carry the linkage.
+    const isGithubFileEditor = (record) => /\bediting\b[\s\S]*\bfile contents\b/i.test(String(
+      record?.fieldMeta?.ariaLabelledByText || record?.fieldMeta?.ariaLabel || record?.fieldMeta?.labelText || '',
+    ));
     const githubEditorReplacements = replacementRecordValues
       .filter(record => record?.ambiguous !== true
         && activeTaskTokenValid
@@ -1425,9 +1434,7 @@ export class Agent extends LoopDetector {
         && !!record?.expectedSha256
         && !!record?.readbackSha256
         && this._normalizeUrl(record.pageUrl || '') === this._normalizeUrl(pageUrl)
-        && (record?.fieldMeta?.contentEditable === true
-          || /contenteditable/i.test(String(record?.key || ''))
-          || /\bediting\b[\s\S]*\bfile contents\b/i.test(String(record?.fieldMeta?.ariaLabelledByText || ''))));
+        && isGithubFileEditor(record));
     const githubEditorPayloads = new Set(githubEditorReplacements
       .map(record => `${record.expectedLength}:${record.expectedSha256}`));
     const verifiedReplacement = githubEditorPayloads.size === 1
@@ -18121,6 +18128,17 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       } catch { /* an unavailable probe cannot prove that this is a different field */ }
       return axReadback;
     };
+    let selectorReadback = null;
+    let selectorReadbackAttempted = false;
+    const readSelectorTarget = async () => {
+      if (selectorReadbackAttempted) return selectorReadback;
+      selectorReadbackAttempted = true;
+      if (!(name === 'type_text' && typeof args.selector === 'string' && args.selector.trim())) return null;
+      try {
+        selectorReadback = await this._textMutationValueDigest(tabId, target);
+      } catch { /* an unavailable probe cannot prove that this is a different field */ }
+      return selectorReadback;
+    };
     let debt = null;
     for (const candidate of debts.values()) {
       if (candidate.ambiguous || target.ambiguous || candidate.key === target.key) {
@@ -18134,6 +18152,20 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         const readback = await readAxTarget();
         if (readback?.success === true
             && this._textMutationFieldsProvenDistinct(candidate.fieldMeta, readback.fieldMeta)) continue;
+      }
+      // Mirror the AX escape hatch for selector pairs: the digest probe can
+      // read the target's live metadata, so a demonstrably different field
+      // (two or more differing identity fields, no shared one) must not be
+      // blocked by another field's debt. The debt is kept — only this
+      // dispatch is allowed — and an unprovable target stays blocked.
+      const distinctSelectors = candidate.locatorType === 'selector'
+        && target.locatorType === 'selector'
+        && typeof candidate.selector === 'string'
+        && typeof target.selector === 'string'
+        && candidate.selector !== target.selector;
+      if (distinctSelectors) {
+        const readback = await readSelectorTarget();
+        if (readback && this._textMutationFieldsProvenDistinct(candidate.fieldMeta, readback.fieldMeta)) continue;
       }
       debt = candidate;
       break;

@@ -74825,7 +74825,7 @@ test('GitHub edit-file workflow verifies the exact committed raw blob', async ()
         documentToken: 'doc',
         pageUrl: editUrl,
         ambiguous: false,
-        fieldMeta: { contentEditable: true },
+        fieldMeta: { contentEditable: true, ariaLabelledByText: 'Editing file contents' },
         expectedLength: duplicate.length,
         expectedSha256: await agent._sha256Text(duplicate),
         readbackLength: duplicate.length,
@@ -75540,6 +75540,128 @@ test('focused proofs revalidate through element-derived locators', async () => {
       await agent._refreshGithubTextReplacementProofs(tabId, pageUrl);
       assert.equal(agent._verifiedTextReplacements.get(tabId)?.get(reRecord.key), undefined,
         `${label}: locator-less proof survived refresh`);
+    }
+  } finally {
+    if (originalChrome === undefined) delete globalThis.chrome;
+    else globalThis.chrome = originalChrome;
+    if (originalBrowser === undefined) delete globalThis.browser;
+    else globalThis.browser = originalBrowser;
+  }
+});
+
+test('commit gate requires editor-specific identity', async () => {
+  for (const [label, AgentClass, resolveJob, tabId] of [
+    ['chrome', AgentCh, resolveAdapterWorkflowJob, 9498],
+    ['firefox', AgentFx, resolveAdapterWorkflowJobFx, 9499],
+  ]) {
+    const agent = new AgentClass({});
+    const pageUrl = 'https://github.com/Example/Repo/edit/main/docs/plan.md';
+    agent._planExecutionGuards.set(tabId, {
+      enabled: true,
+      siteWorkflow: resolveJob(pageUrl, 'edit-file-and-commit'),
+      workflowMetadataRequirements: [],
+      workflowMetadataRequirementsResolved: true,
+    });
+    agent._taskTokens.set(tabId, 'task-identity');
+    const body = '# Doc\n';
+    const bodySha256 = await agent._sha256Text(body);
+    const recordFor = (key, fieldMeta) => ({
+      key,
+      locatorType: 'ax',
+      refId: 'ref_x',
+      documentToken: 'doc',
+      pageUrl,
+      ambiguous: false,
+      expectedLength: body.length,
+      expectedSha256: bodySha256,
+      expectedFp: agent._workflowInventoryFingerprint(body),
+      fieldMeta,
+      readbackLength: body.length,
+      readbackSha256: bodySha256,
+      verifiedAt: Date.now(),
+      taskToken: 'task-identity',
+    });
+    // Linked editor proof authorizes.
+    agent._verifiedTextReplacements.set(tabId, new Map([
+      ['ax:doc:ref_editor', recordFor('ax:doc:ref_editor',
+        { contentEditable: true, ariaLabelledByText: 'Editing file contents' })],
+    ]));
+    assert.ok(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit,
+      `${label}: linked editor proof did not authorize`);
+    // Bare contentEditable with no linkage must not: it could be any other
+    // contenteditable on the edit route.
+    agent._verifiedTextReplacements.set(tabId, new Map([
+      ['ax:doc:ref_other', recordFor('ax:doc:ref_other', { contentEditable: true })],
+    ]));
+    assert.equal(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit, undefined,
+      `${label}: an unlinked contenteditable authorized a commit`);
+    // A contenteditable-looking key alone must not either.
+    agent._verifiedTextReplacements.set(tabId, new Map([
+      ['selector:doc:[contenteditable="true"]', recordFor('selector:doc:[contenteditable="true"]',
+        { contentEditable: true, id: 'comment-box' })],
+    ]));
+    assert.equal(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit, undefined,
+      `${label}: a key-substring contenteditable authorized a commit`);
+  }
+});
+
+test('selector writes to proven-distinct fields bypass unrelated debt', async () => {
+  const originalChrome = globalThis.chrome;
+  const originalBrowser = globalThis.browser;
+  try {
+    const pageUrl = 'https://example.test/form';
+    const fieldMetaA = { id: 'field-a', name: 'field-a', labelText: 'First' };
+    // Demonstrably different field: two differing identity fields, none shared.
+    const fieldMetaB = { id: 'field-b', name: 'field-b', labelText: 'Second' };
+    // Same label: shares one identity field, so not provably distinct.
+    const fieldMetaC = { id: 'field-c', name: 'field-c', labelText: 'First' };
+    for (const [label, AgentClass, tabId, controlTabId] of [
+      ['chrome', AgentCh, 9500, 9502],
+      ['firefox', AgentFx, 9501, 9503],
+    ]) {
+      const agent = new AgentClass({});
+      agent._lastAxScopes.set(tabId, { documentToken: 'doc-multi', pageUrl });
+      const tabs = {
+        async sendMessage(_tabId, message) {
+          const selector = message.params?.selector;
+          if (selector === '#a') {
+            return { success: false, documentToken: 'doc-multi', refScopeUrl: pageUrl };
+          }
+          if (selector === '#b') {
+            return { success: true, valueLength: 3, valueSha256: 'b'.repeat(64), fieldMeta: fieldMetaB };
+          }
+          if (selector === '#c') {
+            return { success: true, valueLength: 3, valueSha256: 'c'.repeat(64), fieldMeta: fieldMetaC };
+          }
+          return { success: false, documentToken: 'doc-multi', refScopeUrl: pageUrl };
+        },
+      };
+      globalThis.chrome = { tabs };
+      globalThis.browser = { tabs };
+      await agent._finalizeTextMutationResult(
+        tabId, 'type_text', { selector: '#a', text: 'alpha', clear: true },
+        { success: false, dispatched: true, verified: false, fieldMeta: fieldMetaA },
+      );
+      assert.equal(agent._uncertainTextMutations.get(tabId)?.size, 1, `${label}: debt was not recorded`);
+      // Provably different field: allowed, and the original debt is kept.
+      const allowed = await agent._uncertainTextMutationBlock(
+        tabId, 'type_text', { selector: '#b', text: 'beta' },
+      );
+      assert.equal(allowed, null, `${label}: distinct selector field stayed blocked by unrelated debt`);
+      assert.equal(agent._uncertainTextMutations.get(tabId)?.size, 1,
+        `${label}: distinct-field dispatch dropped the original debt`);
+      // Shared identity field: fail-closed, still blocked.
+      const control = new AgentClass({});
+      control._lastAxScopes.set(controlTabId, { documentToken: 'doc-multi', pageUrl });
+      await control._finalizeTextMutationResult(
+        controlTabId, 'type_text', { selector: '#a', text: 'alpha', clear: true },
+        { success: false, dispatched: true, verified: false, fieldMeta: fieldMetaA },
+      );
+      const blocked = await control._uncertainTextMutationBlock(
+        controlTabId, 'type_text', { selector: '#c', text: 'gamma' },
+      );
+      assert.equal(blocked?.repeatBlocked, true,
+        `${label}: unprovable selector field escaped the debt guard`);
     }
   } finally {
     if (originalChrome === undefined) delete globalThis.chrome;
