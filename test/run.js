@@ -74289,6 +74289,15 @@ test('an exact same-field readback resolves uncertain replacement without dispat
     const tabs = {
       async sendMessage(_tabId, message) {
         readbacks += 1;
+        // The finalize path refreshes to the live scope before recording
+        // debt; here the live document is unchanged, so no adoption happens.
+        if (message.action === 'field_value_digest') {
+          return {
+            success: false,
+            documentToken: 'doc-readback',
+            refScopeUrl: 'https://github.com/example/repo/edit/main/docs/plan.md',
+          };
+        }
         assert.equal(message.action, 'ax_verify_field_value');
         assert.equal(message.params.expected, 'complete body');
         return { success: true, verified: true };
@@ -74324,7 +74333,9 @@ test('an exact same-field readback resolves uncertain replacement without dispat
         'complete body'.length,
       );
     }
-    assert.equal(readbacks, 2);
+    // One live-scope digest at record time plus one AX readback at recovery,
+    // per build.
+    assert.equal(readbacks, 4);
   } finally {
     if (originalChrome === undefined) delete globalThis.chrome;
     else globalThis.chrome = originalChrome;
@@ -75398,10 +75409,24 @@ test('focused field_value_digest and live scope cover selectorless writes', asyn
   const originalChrome = globalThis.chrome;
   const originalBrowser = globalThis.browser;
   try {
+    // Phase-aware probe: the uncertain write lands while the live page is
+    // still the old document; the retry happens after a full navigation no
+    // AX read ever observed.
+    const liveDoc = { documentToken: 'doc-old', refScopeUrl: 'https://example.test/form' };
+    const tabs = {
+      async sendMessage(_tabId, message) {
+        assert.equal(message.action, 'field_value_digest');
+        return { success: false, documentToken: liveDoc.documentToken, refScopeUrl: liveDoc.refScopeUrl };
+      },
+    };
+    globalThis.chrome = { tabs };
+    globalThis.browser = { tabs };
     for (const [label, AgentClass, tabId] of [
       ['chrome', AgentCh, 9484],
       ['firefox', AgentFx, 9485],
     ]) {
+      liveDoc.documentToken = 'doc-old';
+      liveDoc.refScopeUrl = 'https://example.test/form';
       const agent = new AgentClass({});
       agent._lastAxScopes.set(tabId, { documentToken: 'doc-old', pageUrl: 'https://example.test/form' });
       await agent._finalizeTextMutationResult(
@@ -75410,7 +75435,35 @@ test('focused field_value_digest and live scope cover selectorless writes', asyn
       );
       assert.equal(agent._uncertainTextMutations.get(tabId)?.size, 1, `${label}: debt was not recorded`);
       // Full navigation with no AX read: the cached scope still points at the
-      // old document, but the live probe (empty params for focused) proves it.
+      // old document, but the live probe proves the move.
+      liveDoc.documentToken = 'doc-new';
+      liveDoc.refScopeUrl = 'https://other.test/page';
+      const live = await agent._liveTextMutationScope(tabId, 'type_text', { text: 'fresh' });
+      assert.equal(live?.documentToken, 'doc-new', `${label}: focused live scope returned no token`);
+      const allowed = await agent._uncertainTextMutationBlock(tabId, 'type_text', { text: 'fresh' });
+      assert.equal(allowed, null, `${label}: stale debt blocked a focused write on a new document`);
+      assert.equal(agent._uncertainTextMutations.has(tabId), false, `${label}: stale debt survived navigation`);
+    }
+  } finally {
+    if (originalChrome === undefined) delete globalThis.chrome;
+    else globalThis.chrome = originalChrome;
+    if (originalBrowser === undefined) delete globalThis.browser;
+    else globalThis.browser = originalBrowser;
+  }
+});
+
+test('uncertain write after navigation records live scoped debt', async () => {
+  const originalChrome = globalThis.chrome;
+  const originalBrowser = globalThis.browser;
+  try {
+    for (const [label, AgentClass, tabId] of [
+      ['chrome', AgentCh, 9490],
+      ['firefox', AgentFx, 9491],
+    ]) {
+      const agent = new AgentClass({});
+      // Cached scope predates a full navigation no AX read ever observed;
+      // the live page is already the new document.
+      agent._lastAxScopes.set(tabId, { documentToken: 'doc-old', pageUrl: 'https://example.test/form' });
       const tabs = {
         async sendMessage(_tabId, message) {
           assert.equal(message.action, 'field_value_digest');
@@ -75419,11 +75472,92 @@ test('focused field_value_digest and live scope cover selectorless writes', asyn
       };
       globalThis.chrome = { tabs };
       globalThis.browser = { tabs };
-      const live = await agent._liveTextMutationScope(tabId, 'type_text', { text: 'fresh' });
-      assert.equal(live?.documentToken, 'doc-new', `${label}: focused live scope returned no token`);
-      const allowed = await agent._uncertainTextMutationBlock(tabId, 'type_text', { text: 'fresh' });
-      assert.equal(allowed, null, `${label}: stale debt blocked a focused write on a new document`);
-      assert.equal(agent._uncertainTextMutations.has(tabId), false, `${label}: stale debt survived navigation`);
+      await agent._finalizeTextMutationResult(
+        tabId, 'type_text', { selector: '#field', text: 'hello', clear: true },
+        { success: false, dispatched: true, verified: false },
+      );
+      const keys = [...(agent._uncertainTextMutations.get(tabId)?.keys() || [])];
+      assert.ok(keys.some(key => String(key).includes('doc-new')),
+        `${label}: navigation-first debt kept the stale document token (keys: ${keys})`);
+      assert.ok(!keys.some(key => String(key).includes('doc-old')),
+        `${label}: stale-token debt survived the live refresh`);
+      assert.equal(agent._lastAxScopes.get(tabId)?.documentToken, 'doc-new',
+        `${label}: live scope was not adopted before recording`);
+      // The very next append belongs to the current document, so the live
+      // check must keep the guard instead of clearing it as stale debt.
+      const blocked = await agent._uncertainTextMutationBlock(
+        tabId, 'type_text', { selector: '#field', text: 'hello appended' },
+      );
+      assert.equal(blocked?.repeatBlocked, true,
+        `${label}: append escaped the guard after a navigation-first debt`);
+    }
+  } finally {
+    if (originalChrome === undefined) delete globalThis.chrome;
+    else globalThis.chrome = originalChrome;
+    if (originalBrowser === undefined) delete globalThis.browser;
+    else globalThis.browser = originalBrowser;
+  }
+});
+
+test('first live token bootstraps tokenless debt by URL', async () => {
+  const originalChrome = globalThis.chrome;
+  const originalBrowser = globalThis.browser;
+  try {
+    const oldUrl = 'https://example.test/form';
+    const newUrl = 'https://other.test/page';
+    for (const [label, AgentClass, tabId, controlTabId] of [
+      ['chrome', AgentCh, 9492, 9494],
+      ['firefox', AgentFx, 9493, 9495],
+    ]) {
+      // No scope ever cached. Record-phase probe unreachable; the tabs URL
+      // channel still reports the old page for the debt bootstrap URL.
+      globalThis.chrome = { tabs: { async sendMessage() { return { success: false }; } } };
+      globalThis.browser = globalThis.chrome;
+      const agent = new AgentClass({});
+      agent._currentUrl = async () => oldUrl;
+      await agent._finalizeTextMutationResult(
+        tabId, 'type_text', { selector: '#field', text: 'draft', clear: true },
+        { success: false, dispatched: true, verified: false },
+      );
+      const debt = [...(agent._uncertainTextMutations.get(tabId)?.values() || [])][0];
+      assert.equal(debt?.documentToken, '', `${label}: debt unexpectedly carries a token`);
+      assert.equal(debt?.pageUrl, oldUrl, `${label}: tokenless debt kept no bootstrap URL`);
+      // Full navigation: the first live token plus a new URL drops the
+      // predated debt instead of blocking the unrelated destination.
+      const navTabs = { async sendMessage() {
+        return { success: false, documentToken: 'doc-first', refScopeUrl: newUrl };
+      } };
+      globalThis.chrome = { tabs: navTabs };
+      globalThis.browser = { tabs: navTabs };
+      const allowed = await agent._uncertainTextMutationBlock(
+        tabId, 'type_text', { selector: '#other', text: 'fresh' },
+      );
+      assert.equal(allowed, null, `${label}: predated tokenless debt blocked the new document`);
+      assert.equal(agent._uncertainTextMutations.has(tabId), false,
+        `${label}: predated tokenless debt survived the bootstrap`);
+      assert.equal(agent._lastAxScopes.get(tabId)?.documentToken, 'doc-first',
+        `${label}: first live token was not adopted`);
+      // Same-URL control: the first token on the SAME page keeps the guard.
+      globalThis.chrome = { tabs: { async sendMessage() { return { success: false }; } } };
+      globalThis.browser = globalThis.chrome;
+      const samePage = new AgentClass({});
+      samePage._currentUrl = async () => oldUrl;
+      await samePage._finalizeTextMutationResult(
+        controlTabId, 'type_text', { selector: '#field', text: 'draft', clear: true },
+        { success: false, dispatched: true, verified: false },
+      );
+      const sameTabs = { async sendMessage() {
+        return { success: false, documentToken: 'doc-first', refScopeUrl: oldUrl };
+      } };
+      globalThis.chrome = { tabs: sameTabs };
+      globalThis.browser = { tabs: sameTabs };
+      const blocked = await samePage._uncertainTextMutationBlock(
+        controlTabId, 'type_text', { selector: '#field', text: 'draft appended' },
+      );
+      assert.equal(blocked?.repeatBlocked, true,
+        `${label}: same-page tokenless debt was dropped by the bootstrap`);
+      assert.equal(samePage._uncertainTextMutations.get(controlTabId)?.size, 1,
+        `${label}: same-page tokenless debt was not retained`);
     }
   } finally {
     if (originalChrome === undefined) delete globalThis.chrome;
@@ -75678,11 +75812,15 @@ test('navigation clears stale text-mutation debt via live document check', async
   const originalChrome = globalThis.chrome;
   const originalBrowser = globalThis.browser;
   try {
+    // Phase-aware probe: the debt is recorded while the live page is still
+    // the old document; the retry runs after a full navigation no AX read
+    // ever observed.
+    const liveDoc = { documentToken: 'doc-old', refScopeUrl: 'https://example.test/form' };
     const tabs = {
       async sendMessage(_tabId, message) {
         assert.equal(message.action, 'field_value_digest');
         // Live page is a new document the cached scope never observed.
-        return { success: false, documentToken: 'doc-new', refScopeUrl: 'https://other.test/page' };
+        return { success: false, documentToken: liveDoc.documentToken, refScopeUrl: liveDoc.refScopeUrl };
       },
     };
     globalThis.chrome = { tabs };
@@ -75691,6 +75829,8 @@ test('navigation clears stale text-mutation debt via live document check', async
       ['chrome', AgentCh, 9474],
       ['firefox', AgentFx, 9475],
     ]) {
+      liveDoc.documentToken = 'doc-old';
+      liveDoc.refScopeUrl = 'https://example.test/form';
       const agent = new AgentClass({});
       agent._lastAxScopes.set(tabId, {
         documentToken: 'doc-old',
@@ -75705,6 +75845,8 @@ test('navigation clears stale text-mutation debt via live document check', async
       assert.equal(agent._uncertainTextMutations.get(tabId)?.size, 1, `${label}: debt was not recorded`);
       // No AX read happened after the navigation: the cached scope still
       // points at the old document, but the live check proves the move.
+      liveDoc.documentToken = 'doc-new';
+      liveDoc.refScopeUrl = 'https://other.test/page';
       const allowed = await agent._uncertainTextMutationBlock(
         tabId, 'type_text', { selector: '#other', text: 'fresh' },
       );

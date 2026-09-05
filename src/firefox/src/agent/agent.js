@@ -18183,7 +18183,25 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     if (liveScope
         && liveScope.documentToken
         && liveScope.documentToken !== String(cachedScope.documentToken || '')) {
+      const bootstrappingFirstToken = !cachedScope.documentToken;
       this._rememberAxScope(tabId, liveScope.documentToken, liveScope.pageUrl || cachedScope.pageUrl || '');
+      // First-token bootstrap: debts recorded before any document was
+      // observed carry no token. A tokenless debt whose recorded URL differs
+      // from the live URL provably predates this document (full navigation),
+      // so drop it instead of blocking the unrelated destination. Same-URL
+      // or URL-less debts stay blocked fail-closed — a same-document route
+      // change keeps its readback-only guard.
+      if (bootstrappingFirstToken) {
+        for (const [key, candidate] of debts) {
+          if (!candidate.documentToken
+              && candidate.pageUrl
+              && liveScope.pageUrl
+              && this._normalizeUrl(candidate.pageUrl) !== this._normalizeUrl(liveScope.pageUrl)) {
+            debts.delete(key);
+          }
+        }
+        if (debts.size === 0) this._uncertainTextMutations.delete(tabId);
+      }
       if (!(this._uncertainTextMutations.get(tabId) instanceof Map)
           || this._uncertainTextMutations.get(tabId).size === 0) {
         return null;
@@ -18209,7 +18227,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     if (!['set_field', 'type_ax', 'type_text'].includes(name) || !result || typeof result !== 'object') {
       return result;
     }
-    const target = this._textMutationTarget(tabId, name, args);
+    let target = this._textMutationTarget(tabId, name, args);
     const replacesValue = this._textMutationReplacesValue(name, args);
     const text = typeof args.text === 'string' ? args.text : '';
     const expectedSha256 = await this._sha256Text(text);
@@ -18226,6 +18244,28 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       || (result.success === false && result.verified === false && result.noDispatch !== true)
       || (result.recoveryRequired === 'fresh_tree' && result.noDispatch !== true);
     if (uncertain) {
+      // Navigation-first ordering: a full navigation with no AX read leaves
+      // the cached scope on the old document, so a debt recorded now would
+      // carry a stale token that the next append's live check deletes as
+      // old-document debt — dispatching a possible duplicate of landed text.
+      // Refresh to the live scope before recording (adopting clears
+      // old-document debts/proofs through the document-change path when both
+      // tokens exist), then re-derive the target below.
+      try {
+        const liveScope = await this._liveTextMutationScope(tabId, name, args);
+        if (liveScope && (liveScope.documentToken || liveScope.pageUrl)) {
+          const cachedScope = this._lastAxScopes.get(tabId) || {};
+          if (String(liveScope.documentToken || '') !== String(cachedScope.documentToken || '')
+              || this._normalizeUrl(liveScope.pageUrl || '') !== this._normalizeUrl(cachedScope.pageUrl || '')) {
+            this._rememberAxScope(
+              tabId,
+              liveScope.documentToken || cachedScope.documentToken || '',
+              liveScope.pageUrl || cachedScope.pageUrl || '',
+            );
+            target = this._textMutationTarget(tabId, name, args);
+          }
+        }
+      } catch { /* an unreachable page keeps the cached scope below */ }
       const verifiedReplacements = this._verifiedTextReplacements.get(tabId);
       if (verifiedReplacements instanceof Map) {
         if (target.ambiguous) verifiedReplacements.clear();
@@ -18243,8 +18283,17 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         debts = new Map();
         this._uncertainTextMutations.set(tabId, debts);
       }
+      // Bootstrap URL: when no scope was ever observed (no token and no URL
+      // even after the live refresh above), keep a best-effort live URL on
+      // the debt so the block-time first-token bootstrap can tell a later
+      // full navigation apart from the same page. Empty when unreachable.
+      let debtPageUrl = target.pageUrl;
+      if (!target.documentToken && !debtPageUrl) {
+        try { debtPageUrl = String(await this._currentUrl(tabId) || ''); } catch { debtPageUrl = ''; }
+      }
       debts.set(target.key, {
         ...target,
+        pageUrl: debtPageUrl,
         tool: name,
         replacesValue,
         expectedLength: text.length,
