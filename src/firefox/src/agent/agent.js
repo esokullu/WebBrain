@@ -17890,6 +17890,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       ambiguous: false,
       focusedProof: true,
       focusedKind: kind,
+      // Stable pre-submit revalidation locator (focus moves before submit,
+      // so {focused:true} would digest the wrong field). The edit-file page
+      // owns a single file editor; the commit-message input has a stable id.
+      refreshSelector: kind === 'editor' ? '[contenteditable="true"]' : '#commit-message-input',
     };
   }
 
@@ -17927,14 +17931,40 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     for (const [key, record] of records) {
       if (this._normalizeUrl(record?.pageUrl || '') !== this._normalizeUrl(pageUrl)) continue;
       // Focused proofs are bound at write time to the then-focused field's
-      // live digest (focus stays on the edited field through verification).
-      // Re-digesting via {focused:true} after focus moved (e.g. editor proof
-      // while the commit-message input is focused) would compare the wrong
-      // field and delete a good proof, permanently blocking the documented
-      // click-then-type_text flow. External mutations after the proof are
-      // still caught fail-closed by the byte-exact raw-blob check post-commit,
-      // and any later write to the same focused kind overwrites this record.
-      if (record?.focusedProof === true) continue;
+      // live digest, but focus moves before submit (editor → commit dialog →
+      // commit-message input), so re-digesting via {focused:true} would
+      // compare the wrong field. Revalidate via the stable refreshSelector
+      // captured at mint instead; a mismatch or missing element deletes the
+      // proof fail-closed. The byte-exact raw-blob check post-commit stays as
+      // backstop for the file; the commit message has no post-commit check,
+      // so its stable-id revalidation is the gate.
+      if (record?.focusedProof === true) {
+        const refreshSelector = typeof record.refreshSelector === 'string' && record.refreshSelector.trim()
+          ? record.refreshSelector.trim()
+          : (record.focusedKind === 'editor' ? '[contenteditable="true"]' : '#commit-message-input');
+        let current = null;
+        try {
+          current = await this._textMutationValueDigest(tabId, {
+            locatorType: 'selector', selector: refreshSelector, ambiguous: false,
+          });
+        } catch { current = null; }
+        const kindOk = record.focusedKind === 'editor'
+          ? (current?.fieldMeta?.contentEditable === true
+            || /\bediting\b[\s\S]*\bfile contents\b/i.test(String(
+              current?.fieldMeta?.ariaLabelledByText || current?.fieldMeta?.ariaLabel || '',
+            )))
+          : /^(?:commit-message-input|commit_message)$/i.test(String(
+            current?.fieldMeta?.id || current?.fieldMeta?.name || '',
+          ));
+        if (!current
+            || !record.readbackSha256
+            || !kindOk
+            || current.valueLength !== record.readbackLength
+            || current.valueSha256 !== record.readbackSha256) {
+          records.delete(key);
+        }
+        continue;
+      }
       const githubEditor = record?.fieldMeta?.contentEditable === true
         || /contenteditable/i.test(String(record?.key || key))
         || /\bediting\b[\s\S]*\bfile contents\b/i.test(String(record?.fieldMeta?.ariaLabelledByText || ''));

@@ -75256,30 +75256,52 @@ test('focused editor and commit-message writes authorize a commit', async () => 
   try {
     const body = '# Focused document\n\nOne complete copy.\n';
     const commitMsg = 'Update docs/plan.md';
-    // Digest probe answers for the then-focused field at write time. Focus
-    // stays on the edited field through verification, so {focused:true}
-    // observes the right element here; refresh skips focused proofs because
-    // focus moves before submit.
-    const makeTabs = (agent) => ({
+    // Digest probe answers for the then-focused field at write time (focus
+    // stays on the edited field through verification), and for the stable
+    // refresh selectors pre-submit (focus has moved by then). Mutating the
+    // live values below simulates a user/page edit between proof and submit,
+    // which refresh must catch fail-closed.
+    const makeTabs = (agent, live) => ({
       async sendMessage(_tabId, message) {
         assert.equal(message.action, 'field_value_digest');
         const expected = message.params?.expected;
+        const selector = message.params?.selector;
+        const editorMeta = { contentEditable: true, ariaLabelledByText: 'Editing file contents' };
+        const messageMeta = { id: 'commit-message-input', name: 'commit-message-input' };
+        // Write-time focused mint (focus is still on the edited field).
         if (expected === body) {
           return {
             success: true, verified: true,
-            valueLength: body.length,
-            valueSha256: await agent._sha256Text(body),
-            fieldMeta: { contentEditable: true, ariaLabelledByText: 'Editing file contents' },
+            valueLength: live.body.length,
+            valueSha256: await agent._sha256Text(live.body),
+            fieldMeta: editorMeta,
             documentToken: 'doc-focused', refScopeUrl: 'https://github.com/example/repo/edit/main/docs/plan.md',
           };
         }
         if (expected === commitMsg) {
           return {
             success: true, verified: true,
-            valueLength: commitMsg.length,
-            valueSha256: await agent._sha256Text(commitMsg),
-            fieldMeta: { id: 'commit-message-input', name: 'commit-message-input' },
+            valueLength: live.msg.length,
+            valueSha256: await agent._sha256Text(live.msg),
+            fieldMeta: messageMeta,
             documentToken: 'doc-focused', refScopeUrl: 'https://github.com/example/repo/edit/main/docs/plan.md',
+          };
+        }
+        // Pre-submit stable-selector revalidation (focus has moved).
+        if (selector === '[contenteditable="true"]') {
+          return {
+            success: true,
+            valueLength: live.body.length,
+            valueSha256: await agent._sha256Text(live.body),
+            fieldMeta: editorMeta,
+          };
+        }
+        if (selector === '#commit-message-input') {
+          return {
+            success: true,
+            valueLength: live.msg.length,
+            valueSha256: await agent._sha256Text(live.msg),
+            fieldMeta: messageMeta,
           };
         }
         return { success: false, documentToken: 'doc-focused', refScopeUrl: 'https://github.com/example/repo/edit/main/docs/plan.md' };
@@ -75299,7 +75321,8 @@ test('focused editor and commit-message writes authorize a commit', async () => 
       });
       agent._taskTokens.set(tabId, 'task-focused');
       agent._lastAxScopes.set(tabId, { documentToken: 'doc-focused', pageUrl });
-      const tabs = makeTabs(agent);
+      const live = { body, msg: commitMsg };
+      const tabs = makeTabs(agent, live);
       globalThis.chrome = { tabs };
       globalThis.browser = { tabs };
       // Documented flow: click the editor, then type_text({text, clear:true})
@@ -75326,10 +75349,22 @@ test('focused editor and commit-message writes authorize a commit', async () => 
         `${label}: focused editor and commit-message proofs collided (keys: ${keys})`);
       const binding = agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {});
       assert.ok(binding?.githubFileCommit, `${label}: focused proofs did not authorize a commit`);
-      // Pre-submit refresh (focus now elsewhere) must keep focused proofs.
+      // Pre-submit refresh (focus now elsewhere) must keep focused proofs
+      // via their stable selectors, and must drop them fail-closed when the
+      // live field no longer matches (user/page edited after the proof).
       await agent._refreshGithubTextReplacementProofs(tabId, pageUrl);
       assert.ok(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit,
         `${label}: refresh dropped a focused proof after focus moved`);
+      live.body = `${body}\nExternal edit.\n`;
+      await agent._refreshGithubTextReplacementProofs(tabId, pageUrl);
+      assert.equal(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit, undefined,
+        `${label}: stale focused editor proof authorized a commit after an external edit`);
+      live.body = body;
+      // Re-verify the editor to restore the binding for the append check.
+      await agent._finalizeTextMutationResult(tabId, 'type_text', { text: body, clear: true }, editorResult);
+      await agent._finalizeTextMutationResult(tabId, 'type_text', { text: commitMsg, clear: true }, messageResult);
+      assert.ok(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit,
+        `${label}: re-verified focused proofs did not restore the binding`);
       // Same-kind focused append invalidates only its own kind.
       await agent._finalizeTextMutationResult(tabId, 'type_text', { text: ' typo' }, {
         success: true, verified: true,
