@@ -25,6 +25,7 @@
     "build:docs": "node scripts/build-docs.mjs",
     "build:web:landing": "node web/build/build.mjs",
     "build:web": "npm run build:web:landing && npm run build:blog && npm run build:docs",
+    "preview:web": "node scripts/preview-web.mjs",
     "build:zip": "node scripts/build-zip.mjs",
     "build:zim-xapian": "node scripts/build-zim-xapian.mjs",
     "trace:otlp": "node scripts/trace-to-otlp.mjs",
