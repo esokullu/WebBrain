@@ -75210,6 +75210,194 @@ test('GitHub replacement proofs require a nonempty task token', async () => {
   }
 });
 
+test('trusted continuations reuse the task token for the same task', async () => {
+  for (const [label, AgentClass, tabId] of [
+    ['chrome', AgentCh, 9480],
+    ['firefox', AgentFx, 9481],
+  ]) {
+    const agent = new AgentClass({});
+    agent.conversationIds.set(tabId, 'conv-continue');
+    agent._taskTokens.set(tabId, 'task-original');
+    assert.equal(agent._storeContinuationTaskToken(tabId), true,
+      `${label}: continuation token was not stashed`);
+    agent._taskTokens.delete(tabId);
+    // Trusted continuation of the same conversation reuses the stashed token.
+    assert.equal(agent._takeContinuationTaskToken(tabId), 'task-original',
+      `${label}: trusted continuation lost its task token`);
+    // Single-use: a second take finds nothing.
+    assert.equal(agent._takeContinuationTaskToken(tabId), null,
+      `${label}: continuation token was reusable`);
+    // Conversation mismatch rejects the stash.
+    agent._taskTokens.set(tabId, 'task-other');
+    agent._storeContinuationTaskToken(tabId);
+    agent.conversationIds.set(tabId, 'conv-new');
+    assert.equal(agent._takeContinuationTaskToken(tabId), null,
+      `${label}: continuation token crossed conversations`);
+    agent.conversationIds.set(tabId, 'conv-continue');
+    agent._continuationTaskTokens.delete(tabId);
+  }
+  for (const rel of [
+    'src/chrome/src/agent/agent.js',
+    'src/firefox/src/agent/agent.js',
+  ]) {
+    const source = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    assert.match(source, /trustedContinuation === true/,
+      `${rel}: task token mint lost its trusted-continuation branch`);
+    assert.match(source, /_takeContinuationTaskToken\(tabId\)/,
+      `${rel}: trusted continuation does not restore the stashed task token`);
+    assert.match(source, /_storeContinuationTaskToken\(tabId\)/,
+      `${rel}: run teardown does not stash the task token for continuations`);
+  }
+});
+
+test('focused editor and commit-message writes authorize a commit', async () => {
+  const originalChrome = globalThis.chrome;
+  const originalBrowser = globalThis.browser;
+  try {
+    const body = '# Focused document\n\nOne complete copy.\n';
+    const commitMsg = 'Update docs/plan.md';
+    // Digest probe answers for the then-focused field at write time. Focus
+    // stays on the edited field through verification, so {focused:true}
+    // observes the right element here; refresh skips focused proofs because
+    // focus moves before submit.
+    const makeTabs = (agent) => ({
+      async sendMessage(_tabId, message) {
+        assert.equal(message.action, 'field_value_digest');
+        const expected = message.params?.expected;
+        if (expected === body) {
+          return {
+            success: true, verified: true,
+            valueLength: body.length,
+            valueSha256: await agent._sha256Text(body),
+            fieldMeta: { contentEditable: true, ariaLabelledByText: 'Editing file contents' },
+            documentToken: 'doc-focused', refScopeUrl: 'https://github.com/example/repo/edit/main/docs/plan.md',
+          };
+        }
+        if (expected === commitMsg) {
+          return {
+            success: true, verified: true,
+            valueLength: commitMsg.length,
+            valueSha256: await agent._sha256Text(commitMsg),
+            fieldMeta: { id: 'commit-message-input', name: 'commit-message-input' },
+            documentToken: 'doc-focused', refScopeUrl: 'https://github.com/example/repo/edit/main/docs/plan.md',
+          };
+        }
+        return { success: false, documentToken: 'doc-focused', refScopeUrl: 'https://github.com/example/repo/edit/main/docs/plan.md' };
+      },
+    });
+    for (const [label, AgentClass, resolveJob, tabId] of [
+      ['chrome', AgentCh, resolveAdapterWorkflowJob, 9482],
+      ['firefox', AgentFx, resolveAdapterWorkflowJobFx, 9483],
+    ]) {
+      const agent = new AgentClass({});
+      const pageUrl = 'https://github.com/Example/Repo/edit/main/docs/plan.md';
+      agent._planExecutionGuards.set(tabId, {
+        enabled: true,
+        siteWorkflow: resolveJob(pageUrl, 'edit-file-and-commit'),
+        workflowMetadataRequirements: [{ field: 'commit_message', value: commitMsg }],
+        workflowMetadataRequirementsResolved: true,
+      });
+      agent._taskTokens.set(tabId, 'task-focused');
+      agent._lastAxScopes.set(tabId, { documentToken: 'doc-focused', pageUrl });
+      const tabs = makeTabs(agent);
+      globalThis.chrome = { tabs };
+      globalThis.browser = { tabs };
+      // Documented flow: click the editor, then type_text({text, clear:true})
+      // with no selector. Chrome reports focusedField via CDP; Firefox (and
+      // the content fallback) reports fieldMeta. Both must bind.
+      const editorResult = label === 'chrome'
+        ? { success: true, verified: true, method: 'cdp-insert-focused', focusedField: { tag: 'DIV', type: '', name: '', contentEditable: true } }
+        : { success: true, verified: true, method: 'contenteditable', fieldMeta: { contentEditable: true, ariaLabelledByText: 'Editing file contents' } };
+      await agent._finalizeTextMutationResult(tabId, 'type_text', { text: body, clear: true }, editorResult);
+      const editorKeys = [...(agent._verifiedTextReplacements.get(tabId)?.keys() || [])];
+      assert.ok(editorKeys.some(key => String(key).endsWith(':editor')),
+        `${label}: focused editor write did not mint a distinct editor proof (keys: ${editorKeys})`);
+      const editorRecord = [...agent._verifiedTextReplacements.get(tabId).values()]
+        .find(record => record?.focusedKind === 'editor');
+      assert.equal(editorRecord?.ambiguous, false, `${label}: focused editor proof stayed ambiguous`);
+      assert.ok(editorRecord?.readbackSha256, `${label}: focused editor proof lacks a live readback`);
+      // Commit message via the same focused form coexists on a distinct key.
+      const messageResult = label === 'chrome'
+        ? { success: true, verified: true, method: 'cdp-insert-focused', focusedField: { tag: 'INPUT', type: 'text', name: 'commit-message-input', contentEditable: false } }
+        : { success: true, verified: true, fieldMeta: { id: 'commit-message-input', name: 'commit-message-input' } };
+      await agent._finalizeTextMutationResult(tabId, 'type_text', { text: commitMsg, clear: true }, messageResult);
+      const keys = [...(agent._verifiedTextReplacements.get(tabId)?.keys() || [])];
+      assert.ok(keys.some(key => String(key).endsWith(':editor')) && keys.some(key => String(key).endsWith(':commit-message')),
+        `${label}: focused editor and commit-message proofs collided (keys: ${keys})`);
+      const binding = agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {});
+      assert.ok(binding?.githubFileCommit, `${label}: focused proofs did not authorize a commit`);
+      // Pre-submit refresh (focus now elsewhere) must keep focused proofs.
+      await agent._refreshGithubTextReplacementProofs(tabId, pageUrl);
+      assert.ok(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit,
+        `${label}: refresh dropped a focused proof after focus moved`);
+      // Same-kind focused append invalidates only its own kind.
+      await agent._finalizeTextMutationResult(tabId, 'type_text', { text: ' typo' }, {
+        success: true, verified: true,
+        ...(label === 'chrome'
+          ? { focusedField: { tag: 'DIV', type: '', name: '', contentEditable: true } }
+          : { fieldMeta: { contentEditable: true, ariaLabelledByText: 'Editing file contents' } }),
+      });
+      const afterKeys = [...(agent._verifiedTextReplacements.get(tabId)?.keys() || [])];
+      assert.ok(!afterKeys.some(key => String(key).endsWith(':editor')),
+        `${label}: focused editor append kept a stale editor proof`);
+      assert.ok(afterKeys.some(key => String(key).endsWith(':commit-message')),
+        `${label}: focused editor append cleared the commit-message proof`);
+    }
+  } finally {
+    if (originalChrome === undefined) delete globalThis.chrome;
+    else globalThis.chrome = originalChrome;
+    if (originalBrowser === undefined) delete globalThis.browser;
+    else globalThis.browser = originalBrowser;
+  }
+});
+
+test('focused field_value_digest and live scope cover selectorless writes', async () => {
+  for (const rel of [
+    'src/chrome/src/content/content.js',
+    'src/firefox/src/content/content.js',
+  ]) {
+    const source = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    assert.match(source, /focused === true/,
+      `${rel}: field_value_digest lost its focused-field proof path`);
+  }
+  const originalChrome = globalThis.chrome;
+  const originalBrowser = globalThis.browser;
+  try {
+    for (const [label, AgentClass, tabId] of [
+      ['chrome', AgentCh, 9484],
+      ['firefox', AgentFx, 9485],
+    ]) {
+      const agent = new AgentClass({});
+      agent._lastAxScopes.set(tabId, { documentToken: 'doc-old', pageUrl: 'https://example.test/form' });
+      await agent._finalizeTextMutationResult(
+        tabId, 'type_text', { selector: '#field', text: 'draft', clear: true },
+        { success: false, dispatched: true, verified: false },
+      );
+      assert.equal(agent._uncertainTextMutations.get(tabId)?.size, 1, `${label}: debt was not recorded`);
+      // Full navigation with no AX read: the cached scope still points at the
+      // old document, but the live probe (empty params for focused) proves it.
+      const tabs = {
+        async sendMessage(_tabId, message) {
+          assert.equal(message.action, 'field_value_digest');
+          return { success: false, documentToken: 'doc-new', refScopeUrl: 'https://other.test/page' };
+        },
+      };
+      globalThis.chrome = { tabs };
+      globalThis.browser = { tabs };
+      const live = await agent._liveTextMutationScope(tabId, 'type_text', { text: 'fresh' });
+      assert.equal(live?.documentToken, 'doc-new', `${label}: focused live scope returned no token`);
+      const allowed = await agent._uncertainTextMutationBlock(tabId, 'type_text', { text: 'fresh' });
+      assert.equal(allowed, null, `${label}: stale debt blocked a focused write on a new document`);
+      assert.equal(agent._uncertainTextMutations.has(tabId), false, `${label}: stale debt survived navigation`);
+    }
+  } finally {
+    if (originalChrome === undefined) delete globalThis.chrome;
+    else globalThis.chrome = originalChrome;
+    if (originalBrowser === undefined) delete globalThis.browser;
+    else globalThis.browser = originalBrowser;
+  }
+});
+
 test('Firefox selector debt recovers on exact digest readback', async () => {
   const originalChrome = globalThis.chrome;
   const originalBrowser = globalThis.browser;

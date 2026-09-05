@@ -513,6 +513,7 @@ export class Agent extends LoopDetector {
     this.abortFlags = new Map(); // tabId -> boolean
     this.currentRunId = new Map(); // tabId -> active trace runId
     this._taskTokens = new Map(); // tabId -> per-task proof-scoping token, independent of optional tracing
+    this._continuationTaskTokens = new Map(); // tabId -> stashed task token carried only by trusted continuations
     this._latestWorkflowDrafts = new Map(); // tabId -> sanitized, session-scoped workflow draft
     this.currentCostState = new Map(); // tabId -> active cloud/router cost state
     this.maxSteps = 130; // safety limit for autonomous loops (configurable via settings)
@@ -12552,7 +12553,17 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     // recorder/storage failures that return before tracing starts (and the
     // disabled-by-default untraced path). currentRunId must not double as the
     // task boundary since it stays empty then.
-    this._taskTokens.set(tabId, `task_${secureRandomBase36Token(12)}`);
+    // Trusted continuations (max_steps Continue) reuse the previous task's
+    // token so surviving replacement proofs stay usable for the same task;
+    // independent tasks always mint fresh and discard any stashed token.
+    if (runOptions?.trustedContinuation === true) {
+      const carried = this._takeContinuationTaskToken(tabId);
+      if (carried) this._taskTokens.set(tabId, carried);
+      else this._taskTokens.set(tabId, `task_${secureRandomBase36Token(12)}`);
+    } else {
+      this._continuationTaskTokens.delete(tabId);
+      this._taskTokens.set(tabId, `task_${secureRandomBase36Token(12)}`);
+    }
     const { tabUrl, tabTitle } = this._isStandaloneChatRun(runOptions)
       ? { tabUrl: '', tabTitle: '' }
       : (tabInfo || await this._getTabUrlTitle(tabId));
@@ -12646,6 +12657,12 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       this.currentRunId.delete(tabId);
       this.adapterMatchTraceKeys.delete(runId);
     }
+    // Stash before deleting so an app-owned trusted continuation (Continue
+    // after max_steps) can reuse the same task's proofs. Independent tasks
+    // mint fresh at the next _startTraceRun and discard the stash there, so
+    // a prior task's proofs can never authorize a new task. Single-use and
+    // conversation-bound via _takeContinuationTaskToken.
+    this._storeContinuationTaskToken(tabId);
     this._taskTokens.delete(tabId);
   }
 
@@ -17765,12 +17782,14 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
   }
 
   async _textMutationValueDigest(tabId, target, expected = null) {
-    if (!target || target.ambiguous === true) return null;
+    if (!target || (target.ambiguous === true && target.focusedProof !== true)) return null;
     const params = target.locatorType === 'ax' && typeof target.refId === 'string'
       ? { ref_id: target.refId }
       : target.locatorType === 'selector' && typeof target.selector === 'string'
         ? { selector: target.selector }
-        : null;
+        : target.locatorType === 'focused'
+          ? { focused: true }
+          : null;
     if (!params) return null;
     try {
       const response = await browser.tabs.sendMessage(tabId, {
@@ -17801,14 +17820,18 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
   // pin old debt to the new page. The digest probe answers from the live
   // document on success and failure alike (see the dispatcher scope wrap),
   // so any token here is current by construction.
+  // Focused writes supply neither ref nor selector, so they previously
+  // returned null here and pinned stale debt to the new page after a full
+  // navigation. Probe with empty params instead: the handler still fails
+  // (ref_id or selector required) but the wrapper attaches the live
+  // documentToken/refScopeUrl, which is all this check needs.
   async _liveTextMutationScope(tabId, name, args = {}) {
     try {
       const params = (name === 'set_field' || name === 'type_ax') && typeof args.ref_id === 'string'
         ? { ref_id: args.ref_id }
         : name === 'type_text' && typeof args.selector === 'string' && args.selector.trim()
           ? { selector: args.selector.trim() }
-          : null;
-      if (!params) return null;
+          : {};
       const response = await browser.tabs.sendMessage(tabId, {
         target: 'content',
         action: 'field_value_digest',
@@ -17821,6 +17844,53 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     } catch {
       return null;
     }
+  }
+
+  _focusedGithubFieldKind(meta = null) {
+    if (!meta || typeof meta !== 'object') return '';
+    if (/^(?:commit-message-input|commit_message)$/i.test(String(meta.id || meta.name || ''))) {
+      return 'commit-message';
+    }
+    if (meta.contentEditable === true) return 'editor';
+    if (/\bediting\b[\s\S]*\bfile contents\b/i.test(String(
+      meta.ariaLabelledByText || meta.ariaLabel || meta.labelText || '',
+    ))) return 'editor';
+    return '';
+  }
+
+  _normalizeFocusedFieldMeta(focusedField = null, fallbackMeta = null) {
+    if (focusedField && typeof focusedField === 'object'
+        && (focusedField.tag || focusedField.name || typeof focusedField.contentEditable === 'boolean')) {
+      return {
+        ...(fallbackMeta && typeof fallbackMeta === 'object' ? fallbackMeta : {}),
+        tag: String(focusedField.tag || fallbackMeta?.tag || '').toLowerCase() || null,
+        type: String(focusedField.type || fallbackMeta?.type || '').toLowerCase() || null,
+        name: focusedField.name != null ? String(focusedField.name) : (fallbackMeta?.name ?? null),
+        id: fallbackMeta?.id ?? (focusedField.name != null ? String(focusedField.name) : null),
+        contentEditable: focusedField.contentEditable === true || fallbackMeta?.contentEditable === true,
+        ariaLabel: fallbackMeta?.ariaLabel ?? null,
+        ariaLabelledByText: fallbackMeta?.ariaLabelledByText ?? null,
+        labelText: fallbackMeta?.labelText ?? null,
+        placeholder: fallbackMeta?.placeholder ?? null,
+      };
+    }
+    return fallbackMeta || null;
+  }
+
+  _focusedReplacementTarget(tabId, kind) {
+    const scope = this._lastAxScopes.get(tabId) || {};
+    const documentToken = String(scope.documentToken || '');
+    const pageUrl = String(scope.pageUrl || '');
+    const doc = documentToken || pageUrl || 'document';
+    return {
+      key: `focused:${doc}:${kind}`,
+      locatorType: 'focused',
+      documentToken,
+      pageUrl,
+      ambiguous: false,
+      focusedProof: true,
+      focusedKind: kind,
+    };
   }
 
   async _verifiedTextReplacementRecord(tabId, target, text, fieldMeta = null) {
@@ -17856,6 +17926,15 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     if (!(records instanceof Map)) return;
     for (const [key, record] of records) {
       if (this._normalizeUrl(record?.pageUrl || '') !== this._normalizeUrl(pageUrl)) continue;
+      // Focused proofs are bound at write time to the then-focused field's
+      // live digest (focus stays on the edited field through verification).
+      // Re-digesting via {focused:true} after focus moved (e.g. editor proof
+      // while the commit-message input is focused) would compare the wrong
+      // field and delete a good proof, permanently blocking the documented
+      // click-then-type_text flow. External mutations after the proof are
+      // still caught fail-closed by the byte-exact raw-blob check post-commit,
+      // and any later write to the same focused kind overwrites this record.
+      if (record?.focusedProof === true) continue;
       const githubEditor = record?.fieldMeta?.contentEditable === true
         || /contenteditable/i.test(String(record?.key || key))
         || /\bediting\b[\s\S]*\bfile contents\b/i.test(String(record?.fieldMeta?.ariaLabelledByText || ''));
@@ -18076,13 +18155,54 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         verifiedReplacements = new Map();
         this._verifiedTextReplacements.set(tabId, verifiedReplacements);
       }
-      verifiedReplacements.set(target.key, await this._verifiedTextReplacementRecord(
-        tabId, target, text, result.fieldMeta || null,
+      // Focused writes (documented click-then-type_text({text, clear:true}))
+      // have no selector/AX ref, so the base target is ambiguous and would
+      // otherwise never authorize a commit. When the write verified and its
+      // field identity proves the GitHub editor or commit-message input,
+      // bind it to a distinct non-ambiguous focused proof keyed by kind, so
+      // editor and commit-message proofs coexist instead of colliding on
+      // `focused:<doc>`. The live focused digest at write time (focus is
+      // still on the edited field) supplies the byte-observant readback;
+      // refresh skips focused proofs (focus moves before submit) and the
+      // byte-exact raw-blob check post-commit stays fail-closed.
+      let effectiveTarget = target;
+      let effectiveFieldMeta = result.fieldMeta || null;
+      if (target.ambiguous === true && name === 'type_text') {
+        const normalizedFocusedMeta = this._normalizeFocusedFieldMeta(
+          result.focusedField || null, result.fieldMeta || null,
+        );
+        const focusedKind = this._focusedGithubFieldKind(normalizedFocusedMeta);
+        if ((focusedKind === 'editor' || focusedKind === 'commit-message') && args.clear === true) {
+          effectiveTarget = this._focusedReplacementTarget(tabId, focusedKind);
+          effectiveFieldMeta = normalizedFocusedMeta;
+        }
+      }
+      verifiedReplacements.set(effectiveTarget.key, await this._verifiedTextReplacementRecord(
+        tabId, effectiveTarget, text, effectiveFieldMeta,
       ));
     } else if (result.success === true) {
       const verifiedReplacements = this._verifiedTextReplacements.get(tabId);
       if (verifiedReplacements instanceof Map) {
-        if (target.ambiguous) verifiedReplacements.clear();
+        if (target.ambiguous && name === 'type_text') {
+          const focusedKind = this._focusedGithubFieldKind(this._normalizeFocusedFieldMeta(
+            result.focusedField || null, result.fieldMeta || null,
+          ));
+          if (focusedKind === 'editor' || focusedKind === 'commit-message') {
+            for (const [key, record] of verifiedReplacements) {
+              const recordKind = record?.focusedKind
+                || this._focusedGithubFieldKind(record?.fieldMeta || null)
+                || (/contenteditable/i.test(String(record?.key || key)) ? 'editor' : '');
+              const sameKind = focusedKind === 'editor'
+                ? (recordKind === 'editor' || record?.fieldMeta?.contentEditable === true
+                  || /contenteditable/i.test(String(record?.key || key)))
+                : (/^(?:commit-message-input|commit_message)$/i.test(String(
+                  record?.fieldMeta?.id || record?.fieldMeta?.name || '',
+                )) || recordKind === 'commit-message');
+              if (sameKind) verifiedReplacements.delete(key);
+            }
+          } else verifiedReplacements.clear();
+        }
+        else if (target.ambiguous) verifiedReplacements.clear();
         else verifiedReplacements.delete(target.key);
       }
     }
@@ -18157,6 +18277,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       this._runningTabs.delete(tabId);
       this.currentRunId.delete(tabId);
       this._taskTokens.delete(tabId);
+      this._continuationTaskTokens.delete(tabId);
     }
     this._clearRunLoopState(tabId);
   }
@@ -20733,6 +20854,27 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       ...carried.policy,
       deliverable_locales: [...(carried.policy?.deliverable_locales || [])],
     };
+  }
+
+  _storeContinuationTaskToken(tabId) {
+    const token = this._taskTokens.get(tabId);
+    if (typeof token !== 'string' || !token) {
+      this._continuationTaskTokens.delete(tabId);
+      return false;
+    }
+    this._continuationTaskTokens.set(tabId, {
+      token,
+      conversationId: this.conversationIds.get(tabId) || null,
+    });
+    return true;
+  }
+
+  _takeContinuationTaskToken(tabId) {
+    const carried = this._continuationTaskTokens.get(tabId);
+    this._continuationTaskTokens.delete(tabId);
+    if (!carried || typeof carried.token !== 'string' || !carried.token) return null;
+    if (carried.conversationId !== (this.conversationIds.get(tabId) || null)) return null;
+    return carried.token;
   }
 
   _looksLikeMetaOnlyDoneSummary(content) {

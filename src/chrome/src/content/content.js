@@ -1897,7 +1897,7 @@
       el.dispatchEvent(new Event('change', { bubbles: true }));
       const verified = await verifyValue(el, typedText, params.clear === true, beforeValue);
       if (actionDeadlineExpired()) return deadlineFailure();
-      return { success: true, ...(verified === true ? { verified: true } : {}), method: 'contenteditable', value: el.textContent.slice(0, 100) };
+      return { success: true, ...(verified === true ? { verified: true } : {}), method: 'contenteditable', value: el.textContent.slice(0, 100), fieldMeta: _fieldMeta(el) };
     }
 
     // <select>: match by value, then by visible option text.
@@ -1962,7 +1962,7 @@
     }
     _lastTypeFieldIdent = routeStayedCurrent ? fieldIdent : null;
 
-    return { success: true, ...(verified === true ? { verified: true } : {}), value: (el.value || '').slice(0, 100), ...(typeWarning ? { warning: typeWarning } : {}) };
+    return { success: true, ...(verified === true ? { verified: true } : {}), value: (el.value || '').slice(0, 100), fieldMeta: _fieldMeta(el), ...(typeWarning ? { warning: typeWarning } : {}) };
   }
 
   /**
@@ -6568,7 +6568,7 @@
       },
       'field_value_digest': async () => {
         try {
-          const { ref_id, selector, expected } = msg.params || {};
+          const { ref_id, selector, expected, focused } = msg.params || {};
           let el = null;
           if (typeof ref_id === 'string' && ref_id) {
             if (typeof window.__wb_ax_lookup !== 'function') {
@@ -6591,6 +6591,18 @@
               return null;
             };
             el = queryDeep(document);
+          } else if (focused === true) {
+            // Focused-field proof path for selectorless type_text({text}).
+            // Digests the deep active element so a verified focused write can
+            // bind to live field metadata. Failures still carry the live
+            // documentToken/refScopeUrl via the dispatcher scope wrap, so the
+            // agent's live-scope check can use this as a document oracle.
+            try {
+              let active = document.activeElement;
+              while (active?.shadowRoot?.activeElement) active = active.shadowRoot.activeElement;
+              el = active && active !== document.body && active !== document.documentElement ? active : null;
+            } catch { el = null; }
+            if (!el || !el.isConnected) return { success: false, error: 'no focused editable element' };
           } else {
             return { success: false, error: 'ref_id or selector is required' };
           }
