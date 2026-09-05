@@ -75397,6 +75397,33 @@ test('focused editor and commit-message writes authorize a commit', async () => 
   }
 });
 
+test('bound focused typing preserves contentEditable for commit proofs', () => {
+  // The dispatch-binding focused branch is the normal click-then-type path;
+  // it must forward prepared.contentEditable or the editor proof classifier
+  // below can never fire for it.
+  const source = fs.readFileSync(path.join(ROOT, 'src/chrome/src/agent/agent.js'), 'utf8');
+  const branchStart = source.indexOf("focusedField: {");
+  assert.ok(branchStart >= 0, 'chrome: bound focused branch lost its focusedField');
+  const branch = source.slice(branchStart, branchStart + 400);
+  assert.match(branch, /contentEditable: prepared\.contentEditable === true/,
+    'chrome: bound focused typing drops the editor metadata its proof path requires');
+  for (const [label, AgentClass] of [['chrome', AgentCh], ['firefox', AgentFx]]) {
+    const agent = new AgentClass({});
+    // Exactly what the bound branch returns for GitHub's file editor.
+    assert.equal(agent._focusedGithubFieldKind(agent._normalizeFocusedFieldMeta(
+      { tag: 'DIV', type: '', name: '', contentEditable: true }, null,
+    )), 'editor', `${label}: bound-branch editor metadata misclassified`);
+    // Commit-message input reports its stable id through name.
+    assert.equal(agent._focusedGithubFieldKind(agent._normalizeFocusedFieldMeta(
+      { tag: 'INPUT', type: 'text', name: 'commit-message-input', contentEditable: false }, null,
+    )), 'commit-message', `${label}: bound-branch commit-message metadata misclassified`);
+    // Without contentEditable and without an identity, nothing may bind.
+    assert.equal(agent._focusedGithubFieldKind(agent._normalizeFocusedFieldMeta(
+      { tag: 'DIV', type: '', name: '' }, null,
+    )), '', `${label}: identity-less focused metadata bound a proof`);
+  }
+});
+
 test('focused field_value_digest and live scope cover selectorless writes', async () => {
   for (const rel of [
     'src/chrome/src/content/content.js',

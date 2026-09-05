@@ -31911,6 +31911,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
                 tag: prepared.tag,
                 type: prepared.type,
                 name: prepared.name,
+                contentEditable: prepared.contentEditable === true,
               },
               ...(warning ? { warning } : {}),
             };
