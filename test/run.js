@@ -74746,9 +74746,9 @@ test('GitHub edit-file workflow verifies the exact committed raw blob', async ()
       assert.deepEqual(binding.githubFileCommit.repository, 'example/repo');
       const replacements = agent._verifiedTextReplacements.get(tabId);
       const commitRecord = replacements.get('ax:doc:ref_commit_message');
-      const commitMessageFp = commitRecord.expectedFp;
+      const commitMessageSha256 = commitRecord.expectedSha256;
       agent._currentUrl = async () => editUrl;
-      commitRecord.expectedFp = '00000000';
+      commitRecord.expectedSha256 = '0'.repeat(64);
       assert.equal(agent._workflowSubmitBindingForAttempt(tabId, editUrl, {}).githubFileCommit, undefined,
         `${label}: a mismatched requested commit message received a commit binding`);
       assert.equal(await agent._workflowPreSubmitDispatchBlock(
@@ -74787,7 +74787,7 @@ test('GitHub edit-file workflow verifies the exact committed raw blob', async ()
       );
       assert.equal(blockedSubmit?.noDispatch, true, `${label}: unverified commit metadata reached submission`);
       assert.equal(blockedSubmit?.recoveryRequired, 'verify_or_restore_field');
-      commitRecord.expectedFp = commitMessageFp;
+      commitRecord.expectedSha256 = commitMessageSha256;
       workflowGuard.workflowMetadataRequirementsIncomplete = true;
       workflowGuard.workflowMetadataRequirementsResolved = false;
       assert.equal((await agent._workflowPreSubmitDispatchBlock(
@@ -75430,6 +75430,153 @@ test('focused field_value_digest and live scope cover selectorless writes', asyn
     else globalThis.chrome = originalChrome;
     if (originalBrowser === undefined) delete globalThis.browser;
     else globalThis.browser = originalBrowser;
+  }
+});
+
+test('sync SHA-256 helper matches the async subtle digest', async () => {
+  for (const [label, AgentClass] of [['chrome', AgentCh], ['firefox', AgentFx]]) {
+    const agent = new AgentClass({});
+    // Known vector first, so a broken table fails loudly instead of
+    // self-consistently (sync-vs-sync would hide a wrong constant).
+    assert.equal(agent._sha256TextSync('abc'),
+      'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',
+      `${label}: sync SHA-256 mismatches the 'abc' vector`);
+    for (const text of ['', 'body', 'Update docs/plan.md', 'PSgOcTcQ', '9SHghNQJ', 'héllo wörld ✓', 'x'.repeat(1000)]) {
+      assert.equal(agent._sha256TextSync(text), await agent._sha256Text(text),
+        `${label}: sync/async SHA-256 disagree on ${JSON.stringify(text.slice(0, 20))}`);
+    }
+  }
+});
+
+test('commit message gate compares SHA-256, not FNV-1a', async () => {
+  for (const [label, AgentClass, resolveJob, tabId] of [
+    ['chrome', AgentCh, resolveAdapterWorkflowJob, 9486],
+    ['firefox', AgentFx, resolveAdapterWorkflowJobFx, 9487],
+  ]) {
+    const agent = new AgentClass({});
+    // Premise pin: the review's pair really collides under FNV-1a, so a
+    // fingerprint-only gate would confuse them.
+    assert.equal(agent._workflowInventoryFingerprint('PSgOcTcQ'), agent._workflowInventoryFingerprint('9SHghNQJ'),
+      `${label}: FNV-1a collision premise broken`);
+    assert.notEqual(await agent._sha256Text('PSgOcTcQ'), await agent._sha256Text('9SHghNQJ'),
+      `${label}: SHA-256 collision (essentially impossible)`);
+    const pageUrl = 'https://github.com/Example/Repo/edit/main/docs/plan.md';
+    agent._planExecutionGuards.set(tabId, {
+      enabled: true,
+      siteWorkflow: resolveJob(pageUrl, 'edit-file-and-commit'),
+      workflowMetadataRequirements: [{ field: 'commit_message', value: 'PSgOcTcQ' }],
+      workflowMetadataRequirementsResolved: true,
+    });
+    agent._taskTokens.set(tabId, 'task-sha-msg');
+    const body = '# Doc\n';
+    const editorRecord = {
+      key: 'ax:doc:ref_editor',
+      locatorType: 'ax',
+      refId: 'ref_editor',
+      documentToken: 'doc',
+      pageUrl,
+      ambiguous: false,
+      expectedLength: body.length,
+      expectedSha256: await agent._sha256Text(body),
+      expectedFp: agent._workflowInventoryFingerprint(body),
+      fieldMeta: { contentEditable: true, ariaLabelledByText: 'Editing file contents' },
+      readbackLength: body.length,
+      readbackSha256: await agent._sha256Text(body),
+      verifiedAt: Date.now(),
+      taskToken: 'task-sha-msg',
+    };
+    const messageRecordFor = async (text) => ({
+      key: 'ax:doc:ref_msg',
+      locatorType: 'ax',
+      refId: 'ref_msg',
+      documentToken: 'doc',
+      pageUrl,
+      ambiguous: false,
+      expectedLength: text.length,
+      expectedSha256: await agent._sha256Text(text),
+      expectedFp: agent._workflowInventoryFingerprint(text),
+      fieldMeta: { id: 'commit-message-input', name: 'commit-message-input' },
+      readbackLength: text.length,
+      readbackSha256: await agent._sha256Text(text),
+      verifiedAt: Date.now(),
+      taskToken: 'task-sha-msg',
+    });
+    // Same length, same FNV-1a, different bytes: must not verify.
+    agent._verifiedTextReplacements.set(tabId, new Map([
+      ['ax:doc:ref_editor', editorRecord],
+      ['ax:doc:ref_msg', await messageRecordFor('9SHghNQJ')],
+    ]));
+    assert.equal(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit, undefined,
+      `${label}: an FNV-1a colliding commit message authorized a commit`);
+    // The exact requested message verifies.
+    agent._verifiedTextReplacements.set(tabId, new Map([
+      ['ax:doc:ref_editor', editorRecord],
+      ['ax:doc:ref_msg', await messageRecordFor('PSgOcTcQ')],
+    ]));
+    assert.ok(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit,
+      `${label}: the exact commit message was rejected`);
+  }
+});
+
+test('slash-branch verification derives candidates from changed-file evidence', async () => {
+  const originalFetch = globalThis.fetch;
+  const body = '# Deeply nested document\n\nOne complete copy.\n';
+  const commitSha = '0123456789abcdef0123456789abcdef01234567';
+  const commitUrl = `https://github.com/Example/Repo/commit/${commitSha}`;
+  // Branch feature/fix with a 10-segment path: 12 segments total, so the
+  // true cut (after segment 2) sits beyond the old end-backward 10-attempt
+  // cap and was never fetched even though the commit page lists it.
+  const trueBranch = 'feature/fix';
+  const truePath = 'a/b/c/d/e/f/g/h/i/plan.md';
+  const naiveBranch = 'feature';
+  const naivePath = `fix/${truePath}`;
+  const naiveUrl = `https://github.com/example/repo/raw/${commitSha}/${naivePath.split('/').map(encodeURIComponent).join('/')}`;
+  const trueUrl = `https://github.com/example/repo/raw/${commitSha}/${truePath.split('/').map(encodeURIComponent).join('/')}`;
+  const trueBlobUrl = `https://github.com/Example/Repo/blob/${commitSha}/${truePath}`;
+  try {
+    const seen = [];
+    globalThis.fetch = async (url) => {
+      seen.push(url);
+      if (url === trueUrl) {
+        return { ok: true, status: 200, headers: { get: () => String(body.length) }, text: async () => body };
+      }
+      return { ok: false, status: 404, headers: { get: () => '0' }, text: async () => 'Not Found' };
+    };
+    for (const [label, AgentClass, tabId] of [
+      ['chrome', AgentCh, 9488],
+      ['firefox', AgentFx, 9489],
+    ]) {
+      seen.length = 0;
+      const agent = new AgentClass({});
+      agent._planExecutionGuards.set(tabId, {
+        enabled: true,
+        siteWorkflow: { adapterName: 'github', job: { id: 'edit-file-and-commit' } },
+      });
+      const binding = {
+        githubFileCommit: {
+          repository: 'example/repo',
+          branch: naiveBranch,
+          path: naivePath,
+          expectedLength: body.length,
+          expectedSha256: await agent._sha256Text(body),
+          commitMessageVerified: true,
+        },
+        metadataRequirements: [],
+        preDispatchPublishedResourceIdentities: [],
+      };
+      const pageState = { workflowResourceUrls: [commitUrl, trueBlobUrl] };
+      const proof = await agent._githubCommittedFileVerification(
+        tabId, pageState, commitUrl, { verifiedFinalSubmit: true, submit: { workflowBinding: binding } },
+      );
+      assert.equal(proof.verified, true, `${label}: evidenced deep slash-branch scope was not verified`);
+      assert.equal(proof.path, truePath);
+      assert.equal(binding.githubFileCommit.branch, trueBranch);
+      assert.equal(binding.githubFileCommit.path, truePath);
+      assert.ok(seen.includes(naiveUrl) && seen.includes(trueUrl),
+        `${label}: naive cut and evidenced scope were not both probed`);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
   }
 });
 
