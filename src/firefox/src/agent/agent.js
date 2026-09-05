@@ -17895,6 +17895,11 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         valueSha256: String(response.valueSha256).toLowerCase(),
         verified: response.verified === true,
         fieldMeta: response.fieldMeta || null,
+        // Element-derived revalidation locator (unique, content-checked);
+        // consumed for focused proofs whose focus moves before submit.
+        stableSelector: typeof response.stableSelector === 'string' && response.stableSelector.trim()
+          ? response.stableSelector.trim()
+          : null,
       };
     } catch {
       return null;
@@ -17976,10 +17981,13 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       ambiguous: false,
       focusedProof: true,
       focusedKind: kind,
-      // Stable pre-submit revalidation locator (focus moves before submit,
-      // so {focused:true} would digest the wrong field). The edit-file page
-      // owns a single file editor; the commit-message input has a stable id.
-      refreshSelector: kind === 'editor' ? '[contenteditable="true"]' : '#commit-message-input',
+      // Pre-submit revalidation locator, filled from the write-time live
+      // digest's element-derived stableSelector when the replacement record
+      // is minted. Stays null until then: refresh drops locator-less proofs
+      // fail-closed instead of probing a hard-coded kind selector that may
+      // resolve to a different element (e.g. an aria-labelled textarea
+      // editor is not [contenteditable]).
+      refreshSelector: null,
     };
   }
 
@@ -18001,6 +18009,14 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         readbackLength: readback.valueLength,
         readbackSha256: readback.valueSha256,
       } : {}),
+      // Bind the element-derived revalidation locator for focused proofs so
+      // pre-submit refresh re-reads the verified element itself (uniqueness
+      // already content-checked). Null when the element offered nothing
+      // unique — refresh then drops the proof fail-closed.
+      ...(target?.focusedProof === true ? {
+        refreshSelector: (readback && typeof readback.stableSelector === 'string'
+          && readback.stableSelector.trim()) || null,
+      } : {}),
       verifiedAt: Date.now(),
       // Bind the proof to the task that verified it: a later run in the same
       // tab must verify its own writes instead of reusing a prior task's
@@ -18019,15 +18035,20 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       // Focused proofs are bound at write time to the then-focused field's
       // live digest, but focus moves before submit (editor → commit dialog →
       // commit-message input), so re-digesting via {focused:true} would
-      // compare the wrong field. Revalidate via the stable refreshSelector
-      // captured at mint instead; a mismatch or missing element deletes the
-      // proof fail-closed. The byte-exact raw-blob check post-commit stays as
-      // backstop for the file; the commit message has no post-commit check,
-      // so its stable-id revalidation is the gate.
+      // compare the wrong field. Revalidate via the element-derived
+      // refreshSelector bound at mint (uniqueness content-checked there). A
+      // proof with no locator — or any mismatch, kind drift, or missing
+      // element — is dropped fail-closed: probing a hard-coded kind selector
+      // instead could re-read a different element (an aria-labelled textarea
+      // editor is not [contenteditable]) and bless stale bytes.
       if (record?.focusedProof === true) {
-        const refreshSelector = typeof record.refreshSelector === 'string' && record.refreshSelector.trim()
+        const refreshSelector = typeof record.refreshSelector === 'string'
           ? record.refreshSelector.trim()
-          : (record.focusedKind === 'editor' ? '[contenteditable="true"]' : '#commit-message-input');
+          : '';
+        if (!refreshSelector) {
+          records.delete(key);
+          continue;
+        }
         let current = null;
         try {
           current = await this._textMutationValueDigest(tabId, {

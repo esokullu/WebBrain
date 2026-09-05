@@ -75286,6 +75286,7 @@ test('focused editor and commit-message writes authorize a commit', async () => 
             valueLength: live.body.length,
             valueSha256: await agent._sha256Text(live.body),
             fieldMeta: editorMeta,
+            stableSelector: '[contenteditable="true"]',
             documentToken: 'doc-focused', refScopeUrl: 'https://github.com/example/repo/edit/main/docs/plan.md',
           };
         }
@@ -75295,6 +75296,7 @@ test('focused editor and commit-message writes authorize a commit', async () => 
             valueLength: live.msg.length,
             valueSha256: await agent._sha256Text(live.msg),
             fieldMeta: messageMeta,
+            stableSelector: '#commit-message-input',
             documentToken: 'doc-focused', refScopeUrl: 'https://github.com/example/repo/edit/main/docs/plan.md',
           };
         }
@@ -75305,6 +75307,7 @@ test('focused editor and commit-message writes authorize a commit', async () => 
             valueLength: live.body.length,
             valueSha256: await agent._sha256Text(live.body),
             fieldMeta: editorMeta,
+            stableSelector: '[contenteditable="true"]',
           };
         }
         if (selector === '#commit-message-input') {
@@ -75313,6 +75316,7 @@ test('focused editor and commit-message writes authorize a commit', async () => 
             valueLength: live.msg.length,
             valueSha256: await agent._sha256Text(live.msg),
             fieldMeta: messageMeta,
+            stableSelector: '#commit-message-input',
           };
         }
         return { success: false, documentToken: 'doc-focused', refScopeUrl: 'https://github.com/example/repo/edit/main/docs/plan.md' };
@@ -75421,6 +75425,127 @@ test('bound focused typing preserves contentEditable for commit proofs', () => {
     assert.equal(agent._focusedGithubFieldKind(agent._normalizeFocusedFieldMeta(
       { tag: 'DIV', type: '', name: '' }, null,
     )), '', `${label}: identity-less focused metadata bound a proof`);
+  }
+});
+
+test('focused proofs revalidate through element-derived locators', async () => {
+  for (const rel of [
+    'src/chrome/src/content/content.js',
+    'src/firefox/src/content/content.js',
+  ]) {
+    const source = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    assert.match(source, /function _stableFieldSelector\(el\)/,
+      `${rel}: digest lost its element-derived stable selector`);
+    assert.match(source, /resolvesUniquelyToEl/,
+      `${rel}: stable selector lost its uniqueness check`);
+  }
+  const originalChrome = globalThis.chrome;
+  const originalBrowser = globalThis.browser;
+  try {
+    const body = '# Aria document\n\nOne complete copy.\n';
+    const commitMsg = 'Update docs/plan.md';
+    for (const [label, AgentClass, resolveJob, tabId] of [
+      ['chrome', AgentCh, resolveAdapterWorkflowJob, 9496],
+      ['firefox', AgentFx, resolveAdapterWorkflowJobFx, 9497],
+    ]) {
+      const agent = new AgentClass({});
+      const pageUrl = 'https://github.com/Example/Repo/edit/main/docs/plan.md';
+      agent._planExecutionGuards.set(tabId, {
+        enabled: true,
+        siteWorkflow: resolveJob(pageUrl, 'edit-file-and-commit'),
+        workflowMetadataRequirements: [{ field: 'commit_message', value: commitMsg }],
+        workflowMetadataRequirementsResolved: true,
+      });
+      agent._taskTokens.set(tabId, 'task-aria');
+      agent._lastAxScopes.set(tabId, { documentToken: 'doc-aria', pageUrl });
+      // Textarea-backed editor: classified by accessible label, NOT
+      // contentEditable. The live digest derives a stable locator for the
+      // verified element itself.
+      const ariaEditorMeta = {
+        contentEditable: false, tag: 'textarea', id: 'file-editor',
+        ariaLabelledByText: 'Editing file contents',
+      };
+      const live = { msg: commitMsg };
+      const tabs = {
+        async sendMessage(_tabId, message) {
+          const expected = message.params?.expected;
+          const selector = message.params?.selector;
+          if (expected === body) {
+            return { success: true, verified: true,
+              valueLength: body.length, valueSha256: await agent._sha256Text(body),
+              fieldMeta: ariaEditorMeta, stableSelector: '#file-editor',
+              documentToken: 'doc-aria', refScopeUrl: pageUrl };
+          }
+          if (expected === commitMsg) {
+            return { success: true, verified: true,
+              valueLength: commitMsg.length, valueSha256: await agent._sha256Text(commitMsg),
+              fieldMeta: { id: 'commit-message-input', name: 'commit-message-input' },
+              stableSelector: '#commit-message-input',
+              documentToken: 'doc-aria', refScopeUrl: pageUrl };
+          }
+          if (selector === '#file-editor') {
+            return { success: true,
+              valueLength: body.length, valueSha256: await agent._sha256Text(body),
+              fieldMeta: ariaEditorMeta, stableSelector: '#file-editor' };
+          }
+          if (selector === '#commit-message-input') {
+            return { success: true,
+              valueLength: live.msg.length, valueSha256: await agent._sha256Text(live.msg),
+              fieldMeta: { id: 'commit-message-input', name: 'commit-message-input' },
+              stableSelector: '#commit-message-input' };
+          }
+          return { success: false, documentToken: 'doc-aria', refScopeUrl: pageUrl };
+        },
+      };
+      globalThis.chrome = { tabs };
+      globalThis.browser = { tabs };
+      // Chrome bound-branch shape (prepared metadata + verified fieldMeta);
+      // Firefox/content shape (full fieldMeta). Both must bind the editor
+      // through the accessible label with an element-derived locator.
+      const editorResult = label === 'chrome'
+        ? { success: true, verified: true, method: 'cdp-insert-focused',
+            focusedField: { tag: 'TEXTAREA', type: '', name: 'file-editor', contentEditable: false },
+            fieldMeta: ariaEditorMeta }
+        : { success: true, verified: true, method: 'contenteditable', fieldMeta: ariaEditorMeta };
+      await agent._finalizeTextMutationResult(tabId, 'type_text', { text: body, clear: true }, editorResult);
+      const editorRecord = [...(agent._verifiedTextReplacements.get(tabId)?.values() || [])]
+        .find(record => record?.focusedKind === 'editor');
+      assert.ok(editorRecord, `${label}: aria-labelled editor minted no focused proof`);
+      assert.equal(editorRecord?.refreshSelector, '#file-editor',
+        `${label}: proof kept a hard-coded locator instead of the derived one`);
+      const messageResult = label === 'chrome'
+        ? { success: true, verified: true, method: 'cdp-insert-focused',
+            focusedField: { tag: 'INPUT', type: 'text', name: 'commit-message-input', contentEditable: false } }
+        : { success: true, verified: true, fieldMeta: { id: 'commit-message-input', name: 'commit-message-input' } };
+      await agent._finalizeTextMutationResult(tabId, 'type_text', { text: commitMsg, clear: true }, messageResult);
+      assert.ok(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit,
+        `${label}: element-derived proofs did not authorize a commit`);
+      // Refresh re-reads the derived elements (not [contenteditable]).
+      await agent._refreshGithubTextReplacementProofs(tabId, pageUrl);
+      assert.ok(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit,
+        `${label}: derived-locator refresh dropped a good proof`);
+      // An edit to the real editor drops the proof fail-closed.
+      live.msg = `${commitMsg} (amended)`;
+      await agent._refreshGithubTextReplacementProofs(tabId, pageUrl);
+      assert.equal(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit, undefined,
+        `${label}: stale proof survived an edit to the derived element`);
+      // No unique locator: the proof cannot be revalidated and must not
+      // authorize, rather than probing a hard-coded selector.
+      live.msg = commitMsg;
+      await agent._finalizeTextMutationResult(tabId, 'type_text', { text: body, clear: true }, editorResult);
+      await agent._finalizeTextMutationResult(tabId, 'type_text', { text: commitMsg, clear: true }, messageResult);
+      const reRecord = [...(agent._verifiedTextReplacements.get(tabId)?.values() || [])]
+        .find(record => record?.focusedKind === 'editor');
+      reRecord.refreshSelector = null;
+      await agent._refreshGithubTextReplacementProofs(tabId, pageUrl);
+      assert.equal(agent._verifiedTextReplacements.get(tabId)?.get(reRecord.key), undefined,
+        `${label}: locator-less proof survived refresh`);
+    }
+  } finally {
+    if (originalChrome === undefined) delete globalThis.chrome;
+    else globalThis.chrome = originalChrome;
+    if (originalBrowser === undefined) delete globalThis.browser;
+    else globalThis.browser = originalBrowser;
   }
 });
 

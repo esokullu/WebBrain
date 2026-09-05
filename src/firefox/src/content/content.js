@@ -3350,6 +3350,51 @@
     } catch { return null; }
   }
 
+  // Derive a document-unique selector for a verified field so the agent can
+  // re-digest the SAME element later (e.g. pre-submit proof refresh after
+  // focus moved). Each candidate is accepted only when it resolves back
+  // to exactly this element — never a hard-coded guess that could match a
+  // different field. Returns null when nothing identifies it uniquely.
+  function _stableFieldSelector(el) {
+    try {
+      if (!el || el.nodeType !== 1 || !el.isConnected) return null;
+      const resolvesUniquelyToEl = (selector) => {
+        try {
+          if (!selector) return false;
+          const matches = document.querySelectorAll(selector);
+          return matches.length === 1 && matches[0] === el;
+        } catch { return false; }
+      };
+      const quoted = (value) => String(value ?? '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+      const elId = el.id || null;
+      if (elId) {
+        let selector = null;
+        try {
+          selector = (window.CSS && typeof window.CSS.escape === 'function')
+            ? `#${window.CSS.escape(elId)}`
+            : `#${quoted(elId)}`;
+        } catch { selector = null; }
+        if (selector && resolvesUniquelyToEl(selector)) return selector;
+      }
+      const tag = String(el.tagName || '').toLowerCase();
+      const name = typeof el.getAttribute === 'function' ? el.getAttribute('name') : null;
+      if (tag && name) {
+        const selector = `${tag}[name="${quoted(name)}"]`;
+        if (resolvesUniquelyToEl(selector)) return selector;
+      }
+      const ariaLabel = typeof el.getAttribute === 'function' ? el.getAttribute('aria-label') : null;
+      if (tag && ariaLabel) {
+        const selector = `${tag}[aria-label="${quoted(ariaLabel)}"]`;
+        if (resolvesUniquelyToEl(selector)) return selector;
+      }
+      if (el.isContentEditable) {
+        const selector = '[contenteditable="true"]';
+        if (resolvesUniquelyToEl(selector)) return selector;
+      }
+      return null;
+    } catch { return null; }
+  }
+
   function _richTextToolbarContextForElement(el) {
     try {
       if (!el || !el.isConnected) return { toolbarContext: false, toolbarRegionRef: '', toolbarRegionKey: '' };
@@ -5674,6 +5719,7 @@
             valueLength: value.length,
             valueSha256,
             fieldMeta: _fieldMeta(el),
+            stableSelector: _stableFieldSelector(el),
           };
         } catch (error) {
           return { success: false, error: error && error.message || String(error) };
