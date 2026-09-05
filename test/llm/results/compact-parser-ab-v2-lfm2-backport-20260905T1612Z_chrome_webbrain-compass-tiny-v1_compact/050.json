@@ -1,0 +1,30 @@
+{
+  "id": "050",
+  "user": "reply to this",
+  "mode": "act",
+  "tab": {
+    "url": "https://mail.google.com/mail/u/0/#inbox/abc123",
+    "title": "Invoice from Acme — Gmail"
+  },
+  "latencyMs": 3010,
+  "error": null,
+  "firstToolCall": {
+    "name": "clarify",
+    "args": {
+      "question": "What should I reply to the invoice from Acme? Please provide the recipient’s name, email address, and any specific details you want included in the reply.",
+      "reason": "The invoice details and recipient information are not present in the current context, so I cannot compose or send a meaningful reply.",
+      "require_explicit_answer": true
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "finishReason": "tool_calls",
+  "content": "The user wants me to reply to the invoice from Acme. However, I don't have enough context about what the invoice contains, the sender's name, or the recipient's name. I also don't have the recipient's email address.\n\nI should ask for more information before sending a reply. I can't invent an invoice or send a reply without the necessary details.</think>",
+  "usage": {
+    "prompt_tokens": 10501,
+    "total_tokens": 10650,
+    "completion_tokens": 149,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

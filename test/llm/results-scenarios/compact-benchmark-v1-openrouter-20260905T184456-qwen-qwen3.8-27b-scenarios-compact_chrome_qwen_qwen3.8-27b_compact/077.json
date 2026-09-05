@@ -1,0 +1,60 @@
+{
+  "id": "077",
+  "category": "cross-lingual",
+  "description": "HN comments in English, user asks in Turkish. Read + respond Turkish.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 3350,
+  "error": null,
+  "firstToolCall": {
+    "name": "done",
+    "args": {
+      "summary": "Üstteki yorum kısaca: \"Yazının temel varsayımına katılmıyorum. Yazar X ile Y'yi birbirine karıştırıyor, bu da hatalı bir sonuca yol açıyor.\"",
+      "outcome": "success"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "done",
+      "args": {
+        "summary": "En üstteki yorum yazarın temel önermesine katılmıyor — yazarın X ile Y'yi karıştırdığını ve bu yüzden vardığı sonucun hatalı olduğunu söylüyor."
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "done({summary:\"Top comment disagrees with...\"})",
+        "reason": "User asked in Turkish — answer in Turkish."
+      }
+    ],
+    "successRubric": "Answer in Turkish. Translate gist of English comment."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal_name",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "\n\nÜstteki yorum, yazının temel varsayımına katılmadığını söylüyor: Yazar X ile Y'yi birbirine karıştırıyor ve bu da (sonuç olarak) hatalı bir çıkarıma yol açıyor.\n\n",
+  "usage": {
+    "prompt_tokens": 9866,
+    "completion_tokens": 185,
+    "total_tokens": 10051,
+    "cost": 0.001980962,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 9408,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.001980962,
+      "upstream_inference_prompt_cost": 0.001509212,
+      "upstream_inference_completions_cost": 0.00047175
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 55,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}

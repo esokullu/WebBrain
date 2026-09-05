@@ -1,0 +1,42 @@
+{
+  "id": "045",
+  "category": "counter-polarity",
+  "description": "LinkedIn shows \"1234/3000\" — fits. Submit.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 1862,
+  "error": null,
+  "firstToolCall": {
+    "name": "click",
+    "args": {
+      "text": "Share | LinkedIn"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "click",
+      "args": {
+        "text": "Post"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "set_field({ref_id:\"...\", text:\"...\"})",
+        "reason": "1234 is below the 3000 limit — safe."
+      }
+    ],
+    "successRubric": "LinkedIn ratio format (used/limit). 1234 < 3000 — submit."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal_name",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The user wants me to post the draft on LinkedIn. I need to use the `click` tool to submit the post. The draft appears to be \"Share | LinkedIn\" based on the page context.\n\nLet me use the `click` tool with the text \"Share | LinkedIn\" to post the draft.</think>",
+  "usage": {
+    "prompt_tokens": 9776,
+    "total_tokens": 9855,
+    "completion_tokens": 79,
+    "prompt_tokens_details": null
+  }
+}

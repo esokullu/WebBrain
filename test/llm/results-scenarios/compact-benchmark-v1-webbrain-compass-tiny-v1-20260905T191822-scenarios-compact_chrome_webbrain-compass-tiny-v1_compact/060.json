@@ -1,0 +1,42 @@
+{
+  "id": "060",
+  "category": "stale-refid",
+  "description": "After a long sequence of unrelated tool calls, used a ref_id from way back. Re-read.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 2472,
+  "error": null,
+  "firstToolCall": {
+    "name": "get_accessibility_tree",
+    "args": {
+      "filter": "all"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "get_accessibility_tree",
+      "args": {
+        "filter": "visible"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click_ax({ref_id:\"ref_12\"})",
+        "reason": "Several unrelated tool calls in between; ref_id likely stale."
+      }
+    ],
+    "successRubric": "After several turns of unrelated work, refresh the tree before relying on an old ref_id."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal_name",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The previous attempt to click the Submit button failed because the ref_id was not found in the current accessibility tree. This could be due to the page having changed or the accessibility tree not being up-to-date.\n\nLet me try a different approach:\n1. First, verify the current page state\n2. Then try to find the Submit button again\n3. Finally, attempt to click it\n\nI should also check if there are any other buttons or if the page has changed significantly.</think>",
+  "usage": {
+    "prompt_tokens": 9895,
+    "total_tokens": 10006,
+    "completion_tokens": 111,
+    "prompt_tokens_details": null
+  }
+}

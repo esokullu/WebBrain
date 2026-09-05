@@ -1,0 +1,47 @@
+{
+  "id": "037",
+  "category": "truncation-cascade",
+  "description": "read_page truncated; agent has the headers but the answer is below the fold. Use targeted extraction, not refetch.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 4616,
+  "error": null,
+  "firstToolCall": {
+    "name": "find_text",
+    "args": {
+      "text": "Section 5"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "scroll",
+      "args": {
+        "direction": "down",
+        "amount": 3000
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "read_page({})",
+        "reason": "Re-reading without scrolling won't reveal section 5."
+      },
+      {
+        "match": "fetch_url({url:\"https://www.example.com/long-doc\"})",
+        "reason": "Same URL."
+      }
+    ],
+    "successRubric": "Scroll down to bring section 5 into view, then read_page again. read_page is viewport-aware."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The page content is truncated and I can see the structure. The document has sections 1-4 visible, but section 5 is not shown in the truncated text. The text shows \"_truncated\": true and originalLength of 50000, meaning the full content is not available.\n\nI need to check if there's a way to get more of the document or if I should look at the section 5 specifically. Since the page is truncated, I might not be able to see section 5 directly.\n\nLet me try to find section 5 using find_text or wait_for_element, but first I should understand what's available. The text shows sections 1-4 with content like \"Introduction\", \"Setup\", \"Configuration\", \"Usage\". Section 5 is likely the next major section.\n\nSince the page is truncated, I may need to use a different approach. Let me try to extract data from the page or use find_text to locate section 5.\n\nActually, looking more carefully at the response, the text contains the full structure but is marked as truncated. The originalLength is 50000 characters, which is quite long.\n\nI should try to read the page again with different parameters or try to extract the section 5 content specifically.\n\nLet me try using find_text to search for \"Section 5\" or similar text in the page.</think>",
+  "usage": {
+    "prompt_tokens": 9810,
+    "total_tokens": 10098,
+    "completion_tokens": 288,
+    "prompt_tokens_details": null
+  }
+}

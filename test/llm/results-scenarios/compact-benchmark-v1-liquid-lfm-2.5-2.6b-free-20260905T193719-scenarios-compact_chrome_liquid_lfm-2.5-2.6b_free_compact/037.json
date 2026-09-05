@@ -1,0 +1,64 @@
+{
+  "id": "037",
+  "category": "truncation-cascade",
+  "description": "read_page truncated; agent has the headers but the answer is below the fold. Use targeted extraction, not refetch.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 1455,
+  "error": null,
+  "firstToolCall": {
+    "name": "get_accessibility_tree",
+    "args": {
+      "filter": "visible"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "scroll",
+      "args": {
+        "direction": "down",
+        "amount": 3000
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "read_page({})",
+        "reason": "Re-reading without scrolling won't reveal section 5."
+      },
+      {
+        "match": "fetch_url({url:\"https://www.example.com/long-doc\"})",
+        "reason": "Same URL."
+      }
+    ],
+    "successRubric": "Scroll down to bring section 5 into view, then read_page again. read_page is viewport-aware."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": null,
+  "usage": {
+    "prompt_tokens": 9810,
+    "completion_tokens": 93,
+    "total_tokens": 9903,
+    "cost": 0,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 9696,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0,
+      "upstream_inference_prompt_cost": 0,
+      "upstream_inference_completions_cost": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 80,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}

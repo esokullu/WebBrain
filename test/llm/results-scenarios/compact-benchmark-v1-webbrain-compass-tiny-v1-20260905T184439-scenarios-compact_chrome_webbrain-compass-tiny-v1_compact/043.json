@@ -1,0 +1,37 @@
+{
+  "id": "043",
+  "category": "counter-polarity",
+  "description": "X counter shows \"0\" — text is exactly at the 280 limit. Safe (but barely).",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 2395,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "click",
+      "args": {
+        "text": "Post"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "set_field({ref_id:\"...\", clear:true, text:\"...\"})",
+        "reason": "0 means exactly at limit, which is allowed."
+      }
+    ],
+    "successRubric": "X allows posts at exactly the limit (counter shows 0 chars remaining). Submit."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "no_tool",
+  "scoreNote": null,
+  "finishReason": "stop",
+  "content": "The user wants me to post a draft on X. The current page shows a textarea with \"What is happening? ... 0 ... Post\" - this appears to be the draft content.\n\nHowever, the page is currently empty (no post has been submitted yet). The textarea is there, but the post hasn't been submitted.\n\nI should ask the user what they want me to post, since the current draft text is incomplete and the post hasn't been submitted yet.</think><|tool_call_start|>[done(summary='Please provide the text you want posted, and I will submit it to X.', outcome='failed')]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9788,
+    "total_tokens": 9914,
+    "completion_tokens": 126,
+    "prompt_tokens_details": null
+  }
+}

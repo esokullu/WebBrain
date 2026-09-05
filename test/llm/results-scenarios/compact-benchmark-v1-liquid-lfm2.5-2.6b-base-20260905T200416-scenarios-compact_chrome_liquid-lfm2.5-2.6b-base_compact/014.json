@@ -1,0 +1,41 @@
+{
+  "id": "014",
+  "category": "tool-error-pivot",
+  "description": "read_page returned PDF-tab notice. Pivot to read_pdf.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 3141,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "read_pdf",
+      "args": {
+        "url": "https://arxiv.org/pdf/2401.00001.pdf"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "read_page({})",
+        "reason": "Same tool that just rejected the PDF tab."
+      },
+      {
+        "match": "inspect_viewport({})",
+        "reason": "PDF viewer capture won't produce extractable text."
+      }
+    ],
+    "successRubric": "Use read_pdf with the tab URL. The error message names the right tool — follow it."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "no_tool",
+  "scoreNote": null,
+  "finishReason": "stop",
+  "content": "The read_page tool cannot access PDF files directly because they are treated as privileged pages. I need to use the `read_pdf` tool instead, which fetches the binary and extracts text directly.\n\nLet me try using read_pdf with the URL from the context.</think><|tool_call_start|>[read_pdf(url='https://arxiv.org/pdf/2401.00001.pdf')]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9802,
+    "total_tokens": 9883,
+    "completion_tokens": 81,
+    "prompt_tokens_details": null
+  }
+}

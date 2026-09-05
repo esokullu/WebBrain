@@ -1,0 +1,37 @@
+{
+  "id": "075",
+  "category": "cross-lingual",
+  "description": "Spanish form, English user request, RTL/LTR mix concerns. Should focus the right field.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 2079,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "click",
+      "args": {
+        "index": 0
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click({text:\"Name\"})",
+        "reason": "No field labeled \"Name\" — it's \"Nombre\"."
+      }
+    ],
+    "successRubric": "Map \"name\" → \"Nombre\". Then click the field, then type. Cross-lingual field mapping."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "no_tool",
+  "scoreNote": null,
+  "finishReason": "stop",
+  "content": "The user wants me to put \"alice\" in the name field of the form. I need to use the `click` tool with the index of the name field, which is 0 according to the previous tool result.</think><|tool_call_start|>[click(index=0)]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9789,
+    "total_tokens": 9845,
+    "completion_tokens": 56,
+    "prompt_tokens_details": null
+  }
+}

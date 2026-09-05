@@ -1,0 +1,46 @@
+{
+  "id": "010",
+  "category": "loop-bad-url",
+  "description": "Navigation to a malformed URL (missing scheme + typo) silently became a search. Re-interpret what the user meant.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 2647,
+  "error": null,
+  "firstToolCall": {
+    "name": "navigate",
+    "args": {
+      "url": "https://github.com"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "navigate",
+      "args": {
+        "url": "https://github.com"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "navigate({url:\"githhub.com\"})",
+        "reason": "Same malformed URL."
+      },
+      {
+        "match": "clarify({question:\"...\"})",
+        "reason": "User already confirmed — clarify would be unnecessary friction."
+      }
+    ],
+    "successRubric": "Correct the typo (githhub → github) and navigate. No clarify needed — the previous error message already proposed the fix and the user agreed."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The user is confirming that the previous context was correct. They want me to go to github.com. The previous navigation attempt failed because \"githhub.com\" was missing the scheme. Now I should use the correct URL with https://github.com.</think>",
+  "usage": {
+    "prompt_tokens": 9823,
+    "total_tokens": 9888,
+    "completion_tokens": 65,
+    "prompt_tokens_details": null
+  }
+}

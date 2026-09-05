@@ -1,0 +1,37 @@
+{
+  "id": "077",
+  "category": "cross-lingual",
+  "description": "HN comments in English, user asks in Turkish. Read + respond Turkish.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 2076,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "done",
+      "args": {
+        "summary": "En üstteki yorum yazarın temel önermesine katılmıyor — yazarın X ile Y'yi karıştırdığını ve bu yüzden vardığı sonucun hatalı olduğunu söylüyor."
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "done({summary:\"Top comment disagrees with...\"})",
+        "reason": "User asked in Turkish — answer in Turkish."
+      }
+    ],
+    "successRubric": "Answer in Turkish. Translate gist of English comment."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal_name",
+  "scoreNote": "prose answer credited as done (terminal tool; summary not arg-matched)",
+  "finishReason": "stop",
+  "content": "The user is asking for a brief summary of the top comment on the Hacker News page. The comment says: \"I disagree with the premise. The author conflates X with Y, which leads to...\"\n\nI should provide a concise summary in Turkish, as the conversation is in Turkish.</think>En üst yorum şu şekilde:\n\n> **\"İdealiyle uyuşmam. Yazar X ile Y'yi karıştırmış, bu da...\"**\n\nYorum, bir yazıya X ve Y'yi yanlış eşleştiren ve bu karışıklığın sonuçlarını ele aldığı olduğunu belirtiyor.",
+  "usage": {
+    "prompt_tokens": 9787,
+    "total_tokens": 9914,
+    "completion_tokens": 127,
+    "prompt_tokens_details": null
+  }
+}

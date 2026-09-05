@@ -1,0 +1,54 @@
+{
+  "id": "073",
+  "category": "cross-lingual",
+  "description": "Turkish user, English wiki article. Read + answer in Turkish.",
+  "mode": "ask",
+  "browser": "chrome",
+  "latencyMs": 19366,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "done",
+      "args": {
+        "summary": "Kapanış (closure), bir fonksiyonun tanımlandığı leksik çevre ile birlikte paketlenmiş halidir — yani dış kapsamın değişkenlerine, o kapsam döndükten sonra bile erişebilir."
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "done({summary:\"A closure is a function bundled with...\"})",
+        "reason": "User asked in Turkish — answer in Turkish."
+      }
+    ],
+    "successRubric": "Answer in the user's language. Read English source, translate gist into Turkish."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "empty",
+  "scoreNote": null,
+  "finishReason": "stop",
+  "content": null,
+  "usage": {
+    "prompt_tokens": 7716,
+    "completion_tokens": 38,
+    "total_tokens": 7754,
+    "cost": 0.0007773,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.0007773,
+      "upstream_inference_prompt_cost": 0.0007716,
+      "upstream_inference_completions_cost": 0.0000057
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 38,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}

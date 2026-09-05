@@ -1,0 +1,41 @@
+{
+  "id": "047",
+  "category": "counter-polarity",
+  "description": "SO requires MINIMUM 20 chars in body. Currently 15 — too short. Add more.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 3293,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "clarify",
+      "args": {
+        "question": "Your body is only 15 characters but Stack Overflow requires at least 30. Want me to wait while you expand it, or should I add a generic explanation?"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click({text:\"Post Your Question\"})",
+        "reason": "Will be rejected — body too short."
+      },
+      {
+        "match": "set_field({ref_id:\"...\", text:\"thanks for any help\"})",
+        "reason": "Inventing body content for the user."
+      }
+    ],
+    "successRubric": "Length is below the MIN, not max. Don't submit. Either clarify or report. Definitely don't invent body text."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal_name",
+  "scoreNote": "prose answer credited as clarify (terminal tool; summary not arg-matched)",
+  "finishReason": "stop",
+  "content": "The user wants me to post a question on Stack Overflow. The current page context shows the question is incomplete - it says \"Post Your Question\" but the actual question content is missing.\n\nI need to ask the user what question they want me to post. I should not guess or create a question.</think><|tool_call_start|>[clarify(question='What question would you like me to post on Stack Overflow?', options=[\"Ask about a programming concept\", \"Ask about a Stack Overflow question\", \"Ask about a specific error or issue\"], 'reason': 'The current page context shows the question is incomplete and does not contain the actual question text.', 'require_explicit_answer=True')]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9773,
+    "total_tokens": 9915,
+    "completion_tokens": 142,
+    "prompt_tokens_details": null
+  }
+}

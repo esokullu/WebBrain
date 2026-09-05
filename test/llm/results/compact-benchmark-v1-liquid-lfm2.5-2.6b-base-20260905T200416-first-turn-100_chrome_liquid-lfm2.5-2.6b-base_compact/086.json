@@ -1,0 +1,23 @@
+{
+  "id": "086",
+  "user": "what does CORS stand for",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 3139,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "finishReason": "stop",
+  "content": "The user is asking what CORS stands for. This is a general knowledge question about the acronym CORS. I should provide the answer directly without needing to browse the web, as this is standard terminology.\n\nCORS stands for \"Cross-Origin Resource Sharing\". This is a web security mechanism that allows restricted resources on a web page to be requested from another host.\n\nI can answer this directly without tool calls.</think>CORS stands for **Cross-Origin Resource Sharing**. It's a web security mechanism that allows restricted resources (e.g., images, scripts, styles) from one domain to be requested from another domain. This is commonly used to enable APIs to be called from different origins while maintaining security boundaries.",
+  "usage": {
+    "prompt_tokens": 9726,
+    "total_tokens": 9871,
+    "completion_tokens": 145,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

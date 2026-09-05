@@ -1,0 +1,28 @@
+{
+  "id": "023",
+  "user": "show me vegan lasagna recipes",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 2806,
+  "error": null,
+  "firstToolCall": {
+    "name": "navigate",
+    "args": {
+      "url": "https://www.google.com/search?q=vegan+lasagna+recipes&udmom=0&hl=en&gl=US&ceid=US:en"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "finishReason": "tool_calls",
+  "content": "The user wants vegan lasagna recipes. I should search for this on the current page context. The current page is about:home, but that doesn't seem relevant for finding recipes. I should use the search tool to find vegan lasagna recipes.</think>",
+  "usage": {
+    "prompt_tokens": 9726,
+    "total_tokens": 9826,
+    "completion_tokens": 100,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

@@ -1,0 +1,45 @@
+{
+  "id": "090",
+  "user": "switch to my netflix tab",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 5609,
+  "error": null,
+  "firstToolCall": {
+    "name": "navigate",
+    "args": {
+      "url": "https://www.netflix.com"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "finishReason": "tool_calls",
+  "content": "\n\nI can't switch to or activate other browser tabs — I can only interact with the current tab. However, I can navigate this tab to Netflix for you right now",
+  "usage": {
+    "prompt_tokens": 8994,
+    "completion_tokens": 126,
+    "total_tokens": 9120,
+    "cost": 0.0005379,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.0005379,
+      "upstream_inference_prompt_cost": 0.0004497,
+      "upstream_inference_completions_cost": 0.0000882
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 60,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

@@ -1,0 +1,23 @@
+{
+  "id": "006",
+  "user": "i wanna check netflix",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 3121,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "finishReason": "stop",
+  "content": "The user wants to check Netflix. I should help them navigate to Netflix. Since they're on the New Tab page, I should help them find Netflix. I can use the navigate tool to go to Netflix, or I can help them find it on the current page.\n\nLet me use the navigate tool to go to Netflix.</think><|tool_call_start|>[navigate(url='https://www.netflix.com/')]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9726,
+    "total_tokens": 9809,
+    "completion_tokens": 83,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

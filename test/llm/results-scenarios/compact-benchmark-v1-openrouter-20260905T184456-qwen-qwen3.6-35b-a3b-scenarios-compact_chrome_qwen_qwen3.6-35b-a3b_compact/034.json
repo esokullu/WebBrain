@@ -1,0 +1,63 @@
+{
+  "id": "034",
+  "category": "truncation-cascade",
+  "description": "After getting first page of HN listing, agent tried to paginate without delivering first-page results. Anti-pattern.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 4903,
+  "error": null,
+  "firstToolCall": {
+    "name": "get_accessibility_tree",
+    "args": {
+      "filter": "visible",
+      "maxDepth": 10
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "done",
+      "args": {
+        "summary": "Top 30 HN stories: [list with titles + points + comments from page 1]"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "get_accessibility_tree({filter:\"visible\"})",
+        "reason": "Reading page 2 before delivering page 1 — system prompt says EXTRACT first, paginate second."
+      }
+    ],
+    "successRubric": "Per LISTINGS guidance: deliver page 1's 30 stories now, then optionally continue. Even though we just navigated to p=2, we should back-deliver and stop."
+  },
+  "matchedAntiPattern": {
+    "match": "get_accessibility_tree({filter:\"visible\"})",
+    "reason": "Reading page 2 before delivering page 1 — system prompt says EXTRACT first, paginate second."
+  },
+  "verdict": "anti",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": null,
+  "usage": {
+    "prompt_tokens": 9182,
+    "completion_tokens": 83,
+    "total_tokens": 9265,
+    "cost": 0.0005172,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.0005172,
+      "upstream_inference_prompt_cost": 0.0004591,
+      "upstream_inference_completions_cost": 0.0000581
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 40,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}

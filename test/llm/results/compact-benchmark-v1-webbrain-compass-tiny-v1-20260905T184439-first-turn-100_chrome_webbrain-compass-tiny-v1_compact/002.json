@@ -1,0 +1,23 @@
+{
+  "id": "002",
+  "user": "open gmail",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 3081,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "finishReason": "stop",
+  "content": "The user wants to open Gmail. I need to use the `navigate` tool to open Gmail. The URL for Gmail is `https://mail.google.com/`. I'll use the `navigate` tool with this URL.</think><|tool_call_start|>[navigate(url='https://mail.google.com/', force=False)]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9723,
+    "total_tokens": 9791,
+    "completion_tokens": 68,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

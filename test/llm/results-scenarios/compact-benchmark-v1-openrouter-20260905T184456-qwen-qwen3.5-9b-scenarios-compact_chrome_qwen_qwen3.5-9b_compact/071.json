@@ -1,0 +1,58 @@
+{
+  "id": "071",
+  "category": "cross-lingual",
+  "description": "Turkish user asks in Turkish on a Turkish UI. Recognize the Turkish \"Gönder\" = \"Send\".",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 3272,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "click",
+      "args": {
+        "text": "Gönder"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click({text:\"Send\"})",
+        "reason": "Turkish UI — button label is \"Gönder\" not \"Send\"."
+      },
+      {
+        "match": "click({text:\"Post\"})",
+        "reason": "Same."
+      }
+    ],
+    "successRubric": "Use the visible Turkish button label \"Gönder\". Don't translate UI labels to English."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "empty",
+  "scoreNote": null,
+  "finishReason": "stop",
+  "content": null,
+  "usage": {
+    "prompt_tokens": 9816,
+    "completion_tokens": 102,
+    "total_tokens": 9918,
+    "cost": 0.0009969,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 9504,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.0009969,
+      "upstream_inference_prompt_cost": 0.0009816,
+      "upstream_inference_completions_cost": 0.0000153
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 104,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}

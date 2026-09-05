@@ -1,0 +1,37 @@
+{
+  "id": "073",
+  "category": "cross-lingual",
+  "description": "Turkish user, English wiki article. Read + answer in Turkish.",
+  "mode": "ask",
+  "browser": "chrome",
+  "latencyMs": 1889,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "done",
+      "args": {
+        "summary": "Kapanış (closure), bir fonksiyonun tanımlandığı leksik çevre ile birlikte paketlenmiş halidir — yani dış kapsamın değişkenlerine, o kapsam döndükten sonra bile erişebilir."
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "done({summary:\"A closure is a function bundled with...\"})",
+        "reason": "User asked in Turkish — answer in Turkish."
+      }
+    ],
+    "successRubric": "Answer in the user's language. Read English source, translate gist into Turkish."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal_name",
+  "scoreNote": "prose answer credited as done (terminal tool; summary not arg-matched)",
+  "finishReason": "stop",
+  "content": "The user is asking in Turkish: \"What is a closure, summarized in a sentence?\"\n\nI should answer in Turkish since the question is in Turkish. The Wikipedia page confirms that a closure is a function bundled with the lexical environment.\n\nI'll provide a concise Turkish summary.</think>Bir **closure** (kapsama), bir fonksiyonun, fonksiyonun oluşturulduğu **loksel ortamı** ile paketlenmiş halidir. Yani fonksiyon sadece kodları değil, aynı zamanda fonksiyonun çalıştığı ortamı da içermelidir.",
+  "usage": {
+    "prompt_tokens": 7616,
+    "total_tokens": 7738,
+    "completion_tokens": 122,
+    "prompt_tokens_details": null
+  }
+}

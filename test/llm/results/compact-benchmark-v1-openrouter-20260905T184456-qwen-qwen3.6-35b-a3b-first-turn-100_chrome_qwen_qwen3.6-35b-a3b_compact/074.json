@@ -1,0 +1,50 @@
+{
+  "id": "074",
+  "user": "go back to that other thing",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 8682,
+  "error": null,
+  "firstToolCall": {
+    "name": "clarify",
+    "args": {
+      "options": [
+        "A previous task or page I was working on",
+        "A specific website or URL",
+        "Something else entirely"
+      ],
+      "question": "What would you like me to go back to? I'm currently on a new tab and need more context about \"that other thing.\""
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "finishReason": "tool_calls",
+  "content": null,
+  "usage": {
+    "prompt_tokens": 8994,
+    "completion_tokens": 159,
+    "total_tokens": 9153,
+    "cost": 0.000561,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.000561,
+      "upstream_inference_prompt_cost": 0.0004497,
+      "upstream_inference_completions_cost": 0.0001113
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 70,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

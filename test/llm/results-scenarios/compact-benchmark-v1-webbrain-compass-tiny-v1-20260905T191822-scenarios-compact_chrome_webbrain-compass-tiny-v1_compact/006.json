@@ -1,0 +1,41 @@
+{
+  "id": "006",
+  "category": "loop-bad-url",
+  "description": "After three sequential failures on the same hallucinated URL, the agent must finally give up that URL.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 3217,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "clarify",
+      "args": {
+        "question": "mastodon.turk isn't resolving — I've tried three times. Could you share the actual MastoTurk URL? It's likely mastoturk.org or similar."
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "navigate({url:\"https://mastodon.turk\"})",
+        "reason": "4th retry — exact gpt-4o failure pattern."
+      },
+      {
+        "match": "fetch_url({url:\"https://mastodon.turk\"})",
+        "reason": "Same URL via another tool — still a retry."
+      }
+    ],
+    "successRubric": "After 3 failed attempts on the same URL, abandon it. Clarify with user OR search for the real URL."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal_name",
+  "scoreNote": "prose answer credited as clarify (terminal tool; summary not arg-matched)",
+  "finishReason": "stop",
+  "content": "The user is asking what to do now that the Mastodon server is not found. I should provide helpful options for cross-posting to Mastodon, including alternative Mastodon instances and other social media platforms.</think><|tool_call_start|>[clarify(question='What would you like to do now that the Mastodon server is not found?', options=[\"Try another Mastodon instance\", \"Use another social media platform\", \"Stop the cross-post\"], 'reason='The requested Mastodon server is unavailable, so the cross-post cannot be completed.', 'require_explicit_answer=True']<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9942,
+    "total_tokens": 10060,
+    "completion_tokens": 118,
+    "prompt_tokens_details": null
+  }
+}

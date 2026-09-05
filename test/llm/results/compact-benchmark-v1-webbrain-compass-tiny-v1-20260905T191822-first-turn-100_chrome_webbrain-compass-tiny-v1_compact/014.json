@@ -1,0 +1,30 @@
+{
+  "id": "014",
+  "user": "show me my bookmarks",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 3089,
+  "error": null,
+  "firstToolCall": {
+    "name": "read_page",
+    "args": {
+      "filter": "all",
+      "maxChars": 6000,
+      "continuationArgs": {}
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "finishReason": "tool_calls",
+  "content": "The user wants to see their bookmarks. I need to use the `read_page` tool to read the current page, which should contain the bookmarks. The current page context is \"about:home\" with Title \"New Tab\", but this is just the browser home page context. The actual bookmarks would be on the current page content.\n\nLet me use `read_page` to get the current page content, which should include the bookmarks.</think>",
+  "usage": {
+    "prompt_tokens": 9725,
+    "total_tokens": 9838,
+    "completion_tokens": 113,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

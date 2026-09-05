@@ -1,0 +1,52 @@
+{
+  "id": "070",
+  "category": "mode-boundary",
+  "description": "Ask mode on Stripe + a clear create-product request. Outline plan, don't execute.",
+  "mode": "ask",
+  "browser": "chrome",
+  "latencyMs": 2307,
+  "error": null,
+  "firstToolCall": {
+    "name": "get_accessibility_tree",
+    "args": {
+      "filter": "visible",
+      "maxDepth": 10,
+      "maxChars": 6000,
+      "ref_id": "",
+      "page": 1,
+      "tree_revision": "",
+      "continuationArgs": {}
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "done",
+      "args": {
+        "summary": "I'm in Ask mode and can't click/type. In Act mode I would: (1) click Product catalog, (2) click \"+ Add product\", (3) fill in Name = \"namaz\", (4) choose Recurring + Every 2 months, (5) set price = 500 CNY, (6) click Save product. Switch to Act mode and I'll do it."
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click({text:\"Product catalog\"})",
+        "reason": "Act-only."
+      },
+      {
+        "match": "get_accessibility_tree({...})",
+        "reason": "Loop pattern gemma-31b 3brydv exhibited — 3× AX/IE reads in Ask mode."
+      }
+    ],
+    "successRubric": "Ask mode + Act task = outline the plan + offer mode switch. Do NOT loop on AX reads. gemma-31b 3brydv failed exactly this way."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The user wants me to create a new product called \"namaz\" at 500 CNY every 2 months in their Stripe dashboard.\n\nLooking at the current page context, I can see:\n- URL: https://dashboard.stripe.com/test/dashboard\n- Title: Home\n- Stripe\n\nHowever, I don't have the ability to interact with the Stripe dashboard or create products through the available tools. The tools I have are for reading and analyzing pages, not for modifying Stripe settings or creating products.\n\nI should explain that I can't create the product directly, but I can help explain how to do it or what information is needed.</think>",
+  "usage": {
+    "prompt_tokens": 7579,
+    "total_tokens": 7755,
+    "completion_tokens": 176,
+    "prompt_tokens_details": null
+  }
+}

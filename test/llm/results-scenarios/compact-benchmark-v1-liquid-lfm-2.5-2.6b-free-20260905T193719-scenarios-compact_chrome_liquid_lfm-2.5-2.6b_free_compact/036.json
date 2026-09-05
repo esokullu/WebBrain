@@ -1,0 +1,65 @@
+{
+  "id": "036",
+  "category": "truncation-cascade",
+  "description": "Listing page items captured; deliver via done rather than paginate.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 1949,
+  "error": null,
+  "firstToolCall": {
+    "name": "read_page",
+    "args": {
+      "includeChrome": false,
+      "limit": 500,
+      "offset": 0,
+      "continuationArgs": {
+        "filter": "all",
+        "maxDepth": 10
+      }
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "done",
+      "args": {
+        "summary": "3 wireless earbuds under $100: Acme Mini ($34) — link, Acme Buds ($49) — link, Acme Lite ($59) — link."
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "navigate({url:\"https://www.amazon.com/s?k=earbuds&p=2\"})",
+        "reason": "Paginating before delivering the 3 already-visible matches."
+      }
+    ],
+    "successRubric": "We already have at least 3 sub-$100 results on this page. Deliver them via done(). The user asked for 3, not 30."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": null,
+  "usage": {
+    "prompt_tokens": 9827,
+    "completion_tokens": 167,
+    "total_tokens": 9994,
+    "cost": 0,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 9696,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0,
+      "upstream_inference_prompt_cost": 0,
+      "upstream_inference_completions_cost": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 130,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}

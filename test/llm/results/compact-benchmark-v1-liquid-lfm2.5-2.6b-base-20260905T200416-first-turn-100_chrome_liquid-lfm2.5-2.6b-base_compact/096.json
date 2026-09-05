@@ -1,0 +1,28 @@
+{
+  "id": "096",
+  "user": "read this page aloud",
+  "mode": "act",
+  "tab": {
+    "url": "https://www.cnn.com/2026/05/world/example-story/index.html",
+    "title": "Example story — CNN"
+  },
+  "latencyMs": 2695,
+  "error": null,
+  "firstToolCall": {
+    "name": "read_page",
+    "args": {
+      "url": "https://www.cnn.com/2026/05/world/example-story/index.html"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "finishReason": "tool_calls",
+  "content": "The user wants me to read the page aloud. The URL is https://www.cnn.com/2026/05/world/example-story/index.html with the title \"Example story - CNN\".\n\nI should use the read_page tool to read this page and then provide the content to the user. Since they want me to \"read this page aloud\", I'll read the content from the page.\n\nLet me first call read_page to get the content of the page.</think>",
+  "usage": {
+    "prompt_tokens": 9741,
+    "total_tokens": 9864,
+    "completion_tokens": 123,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

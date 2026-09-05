@@ -1,0 +1,23 @@
+{
+  "id": "082",
+  "user": "whats the capital of france",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 1831,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "finishReason": "stop",
+  "content": "The user is asking about the capital of France. This is a straightforward factual question that I can answer directly without needing to browse the web.</think>The capital of France is **Paris**.",
+  "usage": {
+    "prompt_tokens": 9726,
+    "total_tokens": 9765,
+    "completion_tokens": 39,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

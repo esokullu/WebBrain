@@ -1,0 +1,46 @@
+{
+  "id": "054",
+  "category": "stale-refid",
+  "description": "Page re-rendered after a JS event; ref_ids invalidated.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 2043,
+  "error": null,
+  "firstToolCall": {
+    "name": "click_ax",
+    "args": {
+      "ref_id": "ref_15"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "get_accessibility_tree",
+      "args": {
+        "filter": "visible"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click_ax({ref_id:\"ref_22\"})",
+        "reason": "Tree invalidated after the size click triggered a re-render."
+      },
+      {
+        "match": "click_ax({ref_id:\"ref_23\"})",
+        "reason": "Adjacent guess."
+      }
+    ],
+    "successRubric": "After clicks that may re-render (variant selection on product pages), re-read AX tree before subsequent ref_id-based actions."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The \"Add to Cart\" button was not found in the current accessibility tree. This could mean the page has changed or the button is not yet present. I should wait for the button to appear before trying to click it.</think>",
+  "usage": {
+    "prompt_tokens": 9863,
+    "total_tokens": 9924,
+    "completion_tokens": 61,
+    "prompt_tokens_details": null
+  }
+}

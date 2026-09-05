@@ -1,0 +1,50 @@
+{
+  "id": "015",
+  "category": "tool-error-pivot",
+  "description": "get_accessibility_tree(filter:\"all\") overflowed maxChars on a listing page. Switch filter, not increase the limit.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 4342,
+  "error": null,
+  "firstToolCall": {
+    "name": "get_accessibility_tree",
+    "args": {
+      "filter": "visible",
+      "maxDepth": 3,
+      "maxChars": 6000,
+      "limit": 5
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "get_accessibility_tree",
+      "args": {
+        "filter": "visible",
+        "maxDepth": 10
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "get_accessibility_tree({filter:\"all\", maxChars:200000})",
+        "reason": "Raising maxChars is the failure called out in the system prompt — switch tool/filter instead."
+      },
+      {
+        "match": "get_accessibility_tree({filter:\"all\"})",
+        "reason": "Identical retry."
+      }
+    ],
+    "successRubric": "Switch to filter:\"visible\" or read_page or extract_data. Do not raise maxChars. The system prompt specifically warns against the latter."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal_name",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The previous attempt to read the accessibility tree failed due to a character limit. I need to try again with a more appropriate filter. The page is https://amazon.com/s?k=earbuds, and I need the first 5 results with prices.\n\nLet me try with `filter: visible` and a reasonable `maxDepth`. I should also set `maxChars` to something reasonable like 6000, and `limit` to 5.\n\nActually, looking at the error, the issue was that the output exceeded 50000 characters. The accessibility tree might be large. I should try with a smaller maxChars and maxDepth.\n\nLet me try:\n- filter: visible\n- maxDepth: 3\n- maxChars: 6000\n- limit: 5\n\nThis should give me the first 5 results with prices.</think>",
+  "usage": {
+    "prompt_tokens": 9789,
+    "total_tokens": 9989,
+    "completion_tokens": 200,
+    "prompt_tokens_details": null
+  }
+}

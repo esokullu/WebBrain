@@ -1,0 +1,56 @@
+{
+  "id": "044",
+  "category": "counter-polarity",
+  "description": "X counter shows \"-5\" — over by 5. Shorten before posting.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 2465,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "set_field",
+      "args": {
+        "ref_id": "ref_textarea",
+        "clear": true,
+        "text": "<shortened text>"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click({text:\"Post\"})",
+        "reason": "Will be rejected — text is 5 over."
+      }
+    ],
+    "successRubric": "Negative on X's counter = over by N chars. Shorten before submit."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "empty",
+  "scoreNote": null,
+  "finishReason": "stop",
+  "content": null,
+  "usage": {
+    "prompt_tokens": 9830,
+    "completion_tokens": 76,
+    "total_tokens": 9906,
+    "cost": 0.0009944,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 9504,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.0009944,
+      "upstream_inference_prompt_cost": 0.000983,
+      "upstream_inference_completions_cost": 0.0000114
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 83,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}

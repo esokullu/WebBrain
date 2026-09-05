@@ -1,0 +1,26 @@
+{
+  "id": "050",
+  "user": "reply to this",
+  "mode": "act",
+  "tab": {
+    "url": "https://mail.google.com/mail/u/0/#inbox/abc123",
+    "title": "Invoice from Acme — Gmail"
+  },
+  "latencyMs": 3589,
+  "error": null,
+  "firstToolCall": {
+    "name": "get_accessibility_tree",
+    "args": {}
+  },
+  "toolCallSource": "tool_calls",
+  "finishReason": "tool_calls",
+  "content": "The user wants me to reply to the email titled \"Invoice from Acme\" in Gmail. However, the current page context only shows the email header and title, not the email body content. I need to read the email body before I can draft a response.\n\nLet me read the email body first.</think>",
+  "usage": {
+    "prompt_tokens": 10501,
+    "total_tokens": 10573,
+    "completion_tokens": 72,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

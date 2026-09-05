@@ -1,0 +1,45 @@
+{
+  "id": "009",
+  "user": "open chatgpt in a new tab",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 5383,
+  "error": null,
+  "firstToolCall": {
+    "name": "navigate",
+    "args": {
+      "url": "https://chatgpt.com"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "finishReason": "tool_calls",
+  "content": "\n\nI can't create or open new tabs, but I can navigate this current tab to ChatGPT for you. Let me do that now",
+  "usage": {
+    "prompt_tokens": 8996,
+    "completion_tokens": 138,
+    "total_tokens": 9134,
+    "cost": 0.0005464,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.0005464,
+      "upstream_inference_prompt_cost": 0.0004498,
+      "upstream_inference_completions_cost": 0.0000966
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 76,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

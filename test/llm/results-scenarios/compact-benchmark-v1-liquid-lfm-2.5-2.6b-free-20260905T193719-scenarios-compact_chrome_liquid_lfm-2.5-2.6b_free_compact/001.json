@@ -1,0 +1,63 @@
+{
+  "id": "001",
+  "category": "loop-bad-url",
+  "description": "Hallucinated URL (mastodon.turk) resolved to an error page. The agent must re-evaluate, not retry.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 2367,
+  "error": null,
+  "firstToolCall": {
+    "name": "navigate",
+    "args": {
+      "url": "https://mastodon.turk/"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "clarify",
+      "args": {
+        "question": "I navigated to mastodon.turk but the page title is \"Server not found\" — that doesn't look like a real Mastodon instance. Is the URL actually mastoturk.org, or something else?"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "navigate({url:\"https://mastodon.turk\"})",
+        "reason": "Retrying the exact same broken URL — the failure mode observed in gpt-4o trace 9ckqpf."
+      },
+      {
+        "match": "fetch_url({url:\"https://mastodon.turk\"})",
+        "reason": "Same URL via a different tool — still a retry."
+      }
+    ],
+    "successRubric": "Must recognize \"Server not found\" title means the URL is dead. Acceptable: clarify with user, search for real URL, OR try ONE plausible variant like mastoturk.org. Anti-pattern: any retry of mastodon.turk through any tool."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": null,
+  "usage": {
+    "prompt_tokens": 9855,
+    "completion_tokens": 110,
+    "total_tokens": 9965,
+    "cost": 0,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 9696,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0,
+      "upstream_inference_prompt_cost": 0,
+      "upstream_inference_completions_cost": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 91,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}
