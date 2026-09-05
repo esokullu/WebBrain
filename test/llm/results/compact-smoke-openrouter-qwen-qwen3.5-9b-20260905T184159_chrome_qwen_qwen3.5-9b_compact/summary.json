@@ -1,0 +1,23 @@
+{
+  "runTag": "compact-smoke-openrouter-qwen-qwen3.5-9b-20260905T184159",
+  "model": "qwen/qwen3.5-9b",
+  "browser": "chrome",
+  "base": "https://openrouter.ai/api/v1",
+  "saveRequest": false,
+  "tier": "compact",
+  "modeOverride": null,
+  "chatTemplateCompat": "off",
+  "structuredToolsSent": true,
+  "reasoningEffort": null,
+  "freeze": null,
+  "cases": 5,
+  "totalLatencyMs": 12247,
+  "errors": 0,
+  "withToolCall": 4,
+  "withToolCallFromContent": 0,
+  "byTool": {
+    "navigate": 1,
+    "get_accessibility_tree": 3,
+    "(no_tool_call)": 1
+  }
+}

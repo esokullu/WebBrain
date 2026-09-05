@@ -1,0 +1,51 @@
+{
+  "id": "089",
+  "user": "open youtube, twitter, and gmail in new tabs",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 11247,
+  "error": null,
+  "firstToolCall": {
+    "name": "clarify",
+    "args": {
+      "question": "I can't open new tabs — I can only control the current tab. Which site should I open here first (I can then navigate to the others one at a time)?",
+      "options": [
+        "YouTube",
+        "Twitter",
+        "Gmail"
+      ],
+      "reason": "My tools can't create or switch browser tabs, so I need to know which of the three to load in the current tab."
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "finishReason": "tool_calls",
+  "content": null,
+  "usage": {
+    "prompt_tokens": 9794,
+    "completion_tokens": 751,
+    "total_tokens": 10545,
+    "cost": 0.003408854,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 9408,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.003408854,
+      "upstream_inference_prompt_cost": 0.001493804,
+      "upstream_inference_completions_cost": 0.00191505
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 749,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

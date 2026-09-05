@@ -1,0 +1,46 @@
+{
+  "id": "016",
+  "category": "tool-error-pivot",
+  "description": "click landed on a SELECT element. The error tells us to use type_text. Don't click again.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 2709,
+  "error": null,
+  "firstToolCall": {
+    "name": "type_text",
+    "args": {
+      "text": "Premium"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "type_text",
+      "args": {
+        "text": "Premium"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click({text:\"Premium\"})",
+        "reason": "Will hit the SELECT again — error message explicitly forbids this."
+      },
+      {
+        "match": "click({x:_,y:_})",
+        "reason": "Coord click on a SELECT triggers the native popup we can't control."
+      }
+    ],
+    "successRubric": "Use type_text with the option name — the SELECT is already focused per the error. Do not click again."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The page is a signup form with a dropdown for the plan. The available options are Free, Pro, and Premium. The user wants me to pick \"Premium\" as the plan.\n\nThe previous attempt to click \"Premium\" failed because the select dropdown cannot be controlled by clicking - it opens a native OS popup.\n\nThe correct approach is to use `type_text` to change the value in the select dropdown, then `click` to select it.\n\nLet me try again with `type_text` first.</think>",
+  "usage": {
+    "prompt_tokens": 9829,
+    "total_tokens": 9950,
+    "completion_tokens": 121,
+    "prompt_tokens_details": null
+  }
+}

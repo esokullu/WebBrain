@@ -1,0 +1,40 @@
+{
+  "id": "098",
+  "user": "compare these two products",
+  "mode": "act",
+  "tab": {
+    "url": "https://www.amazon.com/dp/B0EXAMPLE",
+    "title": "Acme Earbuds — Amazon"
+  },
+  "latencyMs": 4510,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "finishReason": "stop",
+  "content": "\n\nI can see we're currently on the Amazon page for **Acme Earbuds**. To compare it with another product, I need to know which second product you'd like me to compare it with.\n\nCould you provide:\n1. The name or link of the second product, or\n2. Its Amazon ASIN (product ID)?\n\nOnce you give me that, I'll pull up both product pages and give you a detailed comparison.",
+  "usage": {
+    "prompt_tokens": 9117,
+    "completion_tokens": 238,
+    "total_tokens": 9355,
+    "cost": 0.00062245,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.00062245,
+      "upstream_inference_prompt_cost": 0.00045585,
+      "upstream_inference_completions_cost": 0.0001666
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 144,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

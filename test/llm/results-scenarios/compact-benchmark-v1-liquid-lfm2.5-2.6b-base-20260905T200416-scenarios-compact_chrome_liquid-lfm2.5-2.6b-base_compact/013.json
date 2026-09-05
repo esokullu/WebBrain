@@ -1,0 +1,46 @@
+{
+  "id": "013",
+  "category": "tool-error-pivot",
+  "description": "click returned overlay-blocked. Dismiss the overlay, don't force the click.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 4782,
+  "error": null,
+  "firstToolCall": {
+    "name": "get_accessibility_tree",
+    "args": {
+      "filter": "all"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "press_keys",
+      "args": {
+        "key": "Escape"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click({text:\"Add to Cart\"})",
+        "reason": "Will hit the overlay again."
+      },
+      {
+        "match": "click({x:_,y:_})",
+        "reason": "Force-clicking with coords hits the overlay per the error message."
+      }
+    ],
+    "successRubric": "Dismiss the overlay first — Escape, click the close button, or complete the modal. THEN retry the cart click."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The click was blocked because there's an overlay covering the target. I need to try a different approach - perhaps using a different selector or trying to dismiss the overlay first.\n\nLet me try using the `click_ax` tool with a ref_id, but I don't have a ref_id yet. I need to first get the accessibility tree to find the ref_id for the \"Add to Cart\" button.\n\nActually, looking at the error more carefully - it says \"Click blocked: an overlay is covering the target.\" This suggests there's a modal or overlay that's preventing the click.\n\nLet me try a different approach - maybe I can use `press_keys` with the \"Enter\" key or try to find the actual element through the accessibility tree.\n\nFirst, let me try to get the accessibility tree to understand what's happening.</think>",
+  "usage": {
+    "prompt_tokens": 9811,
+    "total_tokens": 9996,
+    "completion_tokens": 185,
+    "prompt_tokens_details": null
+  }
+}

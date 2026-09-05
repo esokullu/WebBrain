@@ -1,0 +1,47 @@
+{
+  "id": "015",
+  "category": "tool-error-pivot",
+  "description": "get_accessibility_tree(filter:\"all\") overflowed maxChars on a listing page. Switch filter, not increase the limit.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 4392,
+  "error": null,
+  "firstToolCall": {
+    "name": "fetch_url",
+    "args": {
+      "url": "https://amazon.com/s?k=earbuds"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "get_accessibility_tree",
+      "args": {
+        "filter": "visible",
+        "maxDepth": 10
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "get_accessibility_tree({filter:\"all\", maxChars:200000})",
+        "reason": "Raising maxChars is the failure called out in the system prompt — switch tool/filter instead."
+      },
+      {
+        "match": "get_accessibility_tree({filter:\"all\"})",
+        "reason": "Identical retry."
+      }
+    ],
+    "successRubric": "Switch to filter:\"visible\" or read_page or extract_data. Do not raise maxChars. The system prompt specifically warns against the latter."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The get_accessibility_tree call failed due to the output being too large. Let me try a different approach - I should use the search functionality on Amazon. However, I don't have a direct search tool for Amazon URLs.\n\nLooking at the available tools, I can:\n1. Use `get_accessibility_tree` with filter=\"visible\" to get a more manageable response\n2. Use `fetch_url` to get the content of the Amazon search page\n\nThe URL provided is https://amazon.com/s?k=earbuds - this is a search results page.\n\nLet me try fetching the URL directly to see what results are available. The `fetch_url` tool should be able to retrieve the page content.</think>",
+  "usage": {
+    "prompt_tokens": 9789,
+    "total_tokens": 9957,
+    "completion_tokens": 168,
+    "prompt_tokens_details": null
+  }
+}

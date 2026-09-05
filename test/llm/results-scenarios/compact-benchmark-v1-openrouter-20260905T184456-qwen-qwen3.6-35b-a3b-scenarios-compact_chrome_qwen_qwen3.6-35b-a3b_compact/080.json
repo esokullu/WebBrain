@@ -1,0 +1,59 @@
+{
+  "id": "080",
+  "category": "cross-lingual",
+  "description": "Mixed: English UI, but user types Arabic content. Should set field with the Arabic text as-is.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 6112,
+  "error": null,
+  "firstToolCall": {
+    "name": "click",
+    "args": {
+      "index": 0
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "click",
+      "args": {
+        "index": 0
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "type_text({text:\"Please deliver after 5pm\"})",
+        "reason": "Translating user content to English without permission."
+      }
+    ],
+    "successRubric": "Preserve the Arabic text verbatim — never translate user-provided content to English without instruction."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "\n\nI'll fill in the shipping notes field with the Arabic delivery",
+  "usage": {
+    "prompt_tokens": 9053,
+    "completion_tokens": 108,
+    "total_tokens": 9161,
+    "cost": 0.00052825,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.00052825,
+      "upstream_inference_prompt_cost": 0.00045265,
+      "upstream_inference_completions_cost": 0.0000756
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 66,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}

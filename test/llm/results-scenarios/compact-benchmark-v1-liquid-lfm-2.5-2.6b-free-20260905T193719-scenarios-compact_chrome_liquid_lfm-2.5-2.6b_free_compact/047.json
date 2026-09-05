@@ -1,0 +1,63 @@
+{
+  "id": "047",
+  "category": "counter-polarity",
+  "description": "SO requires MINIMUM 20 chars in body. Currently 15 — too short. Add more.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 2423,
+  "error": null,
+  "firstToolCall": {
+    "name": "get_accessibility_tree",
+    "args": {
+      "filter": "visible"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "clarify",
+      "args": {
+        "question": "Your body is only 15 characters but Stack Overflow requires at least 30. Want me to wait while you expand it, or should I add a generic explanation?"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click({text:\"Post Your Question\"})",
+        "reason": "Will be rejected — body too short."
+      },
+      {
+        "match": "set_field({ref_id:\"...\", text:\"thanks for any help\"})",
+        "reason": "Inventing body content for the user."
+      }
+    ],
+    "successRubric": "Length is below the MIN, not max. Don't submit. Either clarify or report. Definitely don't invent body text."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": null,
+  "usage": {
+    "prompt_tokens": 9773,
+    "completion_tokens": 344,
+    "total_tokens": 10117,
+    "cost": 0,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 9696,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0,
+      "upstream_inference_prompt_cost": 0,
+      "upstream_inference_completions_cost": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 331,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}

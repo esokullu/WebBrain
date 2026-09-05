@@ -1,0 +1,43 @@
+{
+  "id": "080",
+  "category": "cross-lingual",
+  "description": "Mixed: English UI, but user types Arabic content. Should set field with the Arabic text as-is.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 3854,
+  "error": null,
+  "firstToolCall": {
+    "name": "set_field",
+    "args": {
+      "ref_id": "0",
+      "text": "يرجى التسليم بعد الساعة 5 مساءً"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "click",
+      "args": {
+        "index": 0
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "type_text({text:\"Please deliver after 5pm\"})",
+        "reason": "Translating user content to English without permission."
+      }
+    ],
+    "successRubric": "Preserve the Arabic text verbatim — never translate user-provided content to English without instruction."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The user wants to add a shipping note to the checkout page. I can see there's a textarea with the tag \"textarea\" and text \"Shipping notes\". This is likely where I need to add the shipping note \"يرجى التسليم بعد الساعة 5 مساءً\" (Please deliver after 5 PM).\n\nLet me use the set_field tool to update the textarea with the combined shipping note. The ref_id would be \"0\" based on the interactive elements result, and the text should be the shipping note.\n\nActually, looking more carefully at the get_interactive_elements result, it shows:\n- index: 0\n- tag: \"textarea\"\n- text: \"Shipping notes\"\n\nSo I need to update this textarea with the new shipping note. I'll use set_field with ref_id \"0\" and the new text.\n\nThe new text should be: \"يرجى التسليم بعد الساعة 5 مساءً\"\n\nLet me make this call.</think>",
+  "usage": {
+    "prompt_tokens": 9774,
+    "total_tokens": 10001,
+    "completion_tokens": 227,
+    "prompt_tokens_details": null
+  }
+}

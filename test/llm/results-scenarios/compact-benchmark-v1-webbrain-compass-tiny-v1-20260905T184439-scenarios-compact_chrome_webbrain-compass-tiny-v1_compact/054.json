@@ -1,0 +1,41 @@
+{
+  "id": "054",
+  "category": "stale-refid",
+  "description": "Page re-rendered after a JS event; ref_ids invalidated.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 2382,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "get_accessibility_tree",
+      "args": {
+        "filter": "visible"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click_ax({ref_id:\"ref_22\"})",
+        "reason": "Tree invalidated after the size click triggered a re-render."
+      },
+      {
+        "match": "click_ax({ref_id:\"ref_23\"})",
+        "reason": "Adjacent guess."
+      }
+    ],
+    "successRubric": "After clicks that may re-render (variant selection on product pages), re-read AX tree before subsequent ref_id-based actions."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "no_tool",
+  "scoreNote": null,
+  "finishReason": "stop",
+  "content": "The \"Add to Cart\" button is no longer in the accessibility tree, which means it was removed or the page state changed. I should try clicking the \"Size: Large\" button again to see if it's still available, and then try the Add to Cart button again.</think><|tool_call_start|>[click_ax(ref_id='ref_15')]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9863,
+    "total_tokens": 9935,
+    "completion_tokens": 72,
+    "prompt_tokens_details": null
+  }
+}

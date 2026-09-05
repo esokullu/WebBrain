@@ -1,0 +1,28 @@
+{
+  "id": "001",
+  "user": "go to firefox extensions management pagr",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 1687,
+  "error": null,
+  "firstToolCall": {
+    "name": "navigate",
+    "args": {
+      "url": "about:extensions"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "finishReason": "tool_calls",
+  "content": "The user wants to go to Firefox extensions management page. The current page is about:home. I need to navigate to the Firefox extensions management page.\n\nThe URL should be: about:extensions\n\nLet me navigate to that page.</think>",
+  "usage": {
+    "prompt_tokens": 9728,
+    "total_tokens": 9790,
+    "completion_tokens": 62,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

@@ -1,0 +1,23 @@
+{
+  "id": "022",
+  "user": "find noise cancelling headphones under 200 dollars",
+  "mode": "act",
+  "tab": {
+    "url": "https://www.amazon.com/",
+    "title": "Amazon.com"
+  },
+  "latencyMs": 2335,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "finishReason": "stop",
+  "content": "The user wants me to find noise-cancelling headphones under $200 on Amazon. I should search for this product category and filter by price. Let me use the search functionality on Amazon.</think><|tool_call_start|>[click_ax(ref_id='ref_1234567890')]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9843,
+    "total_tokens": 9901,
+    "completion_tokens": 58,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

@@ -1,0 +1,30 @@
+{
+  "id": "081",
+  "user": "send a thank-you email to everyone in my contacts",
+  "mode": "act",
+  "tab": {
+    "url": "https://mail.google.com/mail/u/0/#inbox",
+    "title": "Inbox (3) — Gmail"
+  },
+  "latencyMs": 3052,
+  "error": null,
+  "firstToolCall": {
+    "name": "get_accessibility_tree",
+    "args": {
+      "filter": "all",
+      "maxDepth": 15,
+      "continuationArgs": {}
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "finishReason": "tool_calls",
+  "content": "The user wants me to send a thank-you email to everyone in their contacts. This is a multi-step task that requires:\n\n1. First, reading the contacts list\n2. Then, sending a thank-you email to each contact\n\nHowever, I don't have access to the contacts list yet. I need to first read the contacts to know who to email.\n\nLet me start by reading the contacts.</think>",
+  "usage": {
+    "prompt_tokens": 10505,
+    "total_tokens": 10610,
+    "completion_tokens": 105,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

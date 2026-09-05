@@ -1,0 +1,70 @@
+{
+  "id": "006",
+  "category": "loop-bad-url",
+  "description": "After three sequential failures on the same hallucinated URL, the agent must finally give up that URL.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 6805,
+  "error": null,
+  "firstToolCall": {
+    "name": "clarify",
+    "args": {
+      "options": [
+        "mastodon.turk (corrected spelling)",
+        "mastodon.tr (Turkey instance)",
+        "mastodon.technology",
+        "Another instance?"
+      ],
+      "question": "The domain \"mastodon.turk\" doesn't exist (DNS lookup failed). What's the correct Mastodon instance URL for \"mastoturk\"?",
+      "reason": "The user wants to cross-post to \"mastoturk\" but the domain they provided doesn't resolve. I need the correct URL to proceed."
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "clarify",
+      "args": {
+        "question": "mastodon.turk isn't resolving — I've tried three times. Could you share the actual MastoTurk URL? It's likely mastoturk.org or similar."
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "navigate({url:\"https://mastodon.turk\"})",
+        "reason": "4th retry — exact gpt-4o failure pattern."
+      },
+      {
+        "match": "fetch_url({url:\"https://mastodon.turk\"})",
+        "reason": "Same URL via another tool — still a retry."
+      }
+    ],
+    "successRubric": "After 3 failed attempts on the same URL, abandon it. Clarify with user OR search for the real URL."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal_name",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": null,
+  "usage": {
+    "prompt_tokens": 9261,
+    "completion_tokens": 261,
+    "total_tokens": 9522,
+    "cost": 0.00064575,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.00064575,
+      "upstream_inference_prompt_cost": 0.00046305,
+      "upstream_inference_completions_cost": 0.0001827
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 122,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}

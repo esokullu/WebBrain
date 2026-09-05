@@ -1,0 +1,42 @@
+{
+  "id": "005",
+  "category": "loop-bad-url",
+  "description": "Guessed documentation URL based on tool name failed. Should search docs index, not guess again.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 3853,
+  "error": null,
+  "firstToolCall": {
+    "name": "navigate",
+    "args": {
+      "url": "https://docs.example-tool.io/api/reference/example-tool"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "navigate",
+      "args": {
+        "url": "https://docs.example-tool.io/"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "navigate({url:\"https://docs.example-tool.io/api/v1\"})",
+        "reason": "Guess-and-check on docs path is a loop pattern."
+      }
+    ],
+    "successRubric": "Go to the docs root and let the site's nav lead to the API reference. Acceptable: web search for \"example-tool api reference\"."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal_name",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The navigation to the API docs failed with a 404. Let me try a different approach - maybe the API reference is at a different URL. Let me try the main documentation site first to find the API reference for \"example-tool\".\n\nActually, looking at the URL pattern, the user mentioned \"about:home\" as the current page context, but that was superseded by the URL \"https://docs.example-tool.io/404\".\n\nLet me try to find the API reference by searching for \"example-tool\" in the documentation. I could use the `find_text` tool to search for \"example-tool\" on the current page, or I could try to navigate to a different URL.\n\nActually, the most direct approach would be to try the API reference URL again with a different path, or to search for the specific reference.\n\nLet me try navigating to a more general API documentation page first, or try the example-tool specific API endpoint.\n\nI'll try: https://docs.example-tool.io/api/reference/example-tool\n\nOr perhaps the API is at a different location. Let me try a broader search first.</think>",
+  "usage": {
+    "prompt_tokens": 9841,
+    "total_tokens": 10096,
+    "completion_tokens": 255,
+    "prompt_tokens_details": null
+  }
+}

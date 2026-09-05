@@ -1,0 +1,34 @@
+{
+  "id": "012",
+  "user": "show my browser history",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 2676,
+  "error": null,
+  "firstToolCall": {
+    "name": "get_accessibility_tree",
+    "args": {
+      "filter": "all",
+      "maxDepth": 15,
+      "maxChars": 6000,
+      "ref_id": "",
+      "page": 1,
+      "tree_revision": "",
+      "continuationArgs": {}
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "finishReason": "tool_calls",
+  "content": "The user wants to see their browser history. I need to use the `get_accessibility_tree` tool with `filter=\"all\"` to read the entire page content, which should include the browser history.</think>",
+  "usage": {
+    "prompt_tokens": 9724,
+    "total_tokens": 9806,
+    "completion_tokens": 82,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

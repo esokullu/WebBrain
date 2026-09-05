@@ -1,0 +1,24 @@
+{
+  "runTag": "compact-parser-ab-v2-lfm2-backport-20260905T1612Z",
+  "model": "webbrain-compass-tiny-v1",
+  "browser": "chrome",
+  "base": "http://127.0.0.1:8326/v1",
+  "saveRequest": false,
+  "tier": "compact",
+  "modeOverride": null,
+  "chatTemplateCompat": "off",
+  "structuredToolsSent": true,
+  "reasoningEffort": null,
+  "freeze": null,
+  "cases": 5,
+  "totalLatencyMs": 7418,
+  "errors": 0,
+  "withToolCall": 5,
+  "withToolCallFromContent": 0,
+  "byTool": {
+    "click_ax": 1,
+    "navigate": 1,
+    "clarify": 2,
+    "get_accessibility_tree": 1
+  }
+}

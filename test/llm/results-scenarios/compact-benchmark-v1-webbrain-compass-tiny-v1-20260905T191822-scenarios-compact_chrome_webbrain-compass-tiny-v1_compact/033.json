@@ -1,0 +1,44 @@
+{
+  "id": "033",
+  "category": "truncation-cascade",
+  "description": "AX tree overflow on listing page. Switch to read_page or a more constrained AX call. Do not raise maxChars.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 4270,
+  "error": null,
+  "firstToolCall": {
+    "name": "get_accessibility_tree",
+    "args": {
+      "filter": "all",
+      "maxChars": 4000
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "get_accessibility_tree",
+      "args": {
+        "filter": "visible",
+        "maxDepth": 10
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "get_accessibility_tree({filter:\"all\", maxChars:200000})",
+        "reason": "System prompt explicitly warns against raising maxChars on listings."
+      }
+    ],
+    "successRubric": "Switch to filter:\"visible\" or read_page. Listing pages don't fit in the AX tree under filter:\"all\"."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal_name",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The previous call failed due to a 50000 character limit. I need to use a more targeted approach. Let me try with a smaller continuation or use the `offset` parameter to start from the top. Actually, the error says \"Output exceeds 50000 character limit\" - this is likely the `read_page` tool's limit.\n\nLet me try with `maxChars` set to a reasonable number like 4000, or use `offset` to start from the beginning. Actually, the `read_page` tool has `maxChars` parameter. Let me try with a smaller maxChars.\n\nBut wait - the error says \"Output exceeds 50000 character limit\" - this is the default limit for `read_page`. I should set `maxChars` to something reasonable like 4000.\n\nActually, looking more carefully at the error: `\"success\":false,\"error\":\"Output exceeds 50000 character limit.\"` - this is from the `get_accessibility_tree` tool, not `read_page`. The `get_accessibility_tree` tool has its own maxChars parameter.\n\nLet me try again with `maxChars` set to 4000.</think>",
+  "usage": {
+    "prompt_tokens": 9774,
+    "total_tokens": 10028,
+    "completion_tokens": 254,
+    "prompt_tokens_details": null
+  }
+}

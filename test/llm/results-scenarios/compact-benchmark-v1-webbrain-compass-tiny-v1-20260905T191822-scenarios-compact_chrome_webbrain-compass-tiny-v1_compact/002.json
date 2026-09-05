@@ -1,0 +1,47 @@
+{
+  "id": "002",
+  "category": "loop-bad-url",
+  "description": "Auto-completed AMO URL hit a 404. Should pivot rather than retry.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 4116,
+  "error": null,
+  "firstToolCall": {
+    "name": "done",
+    "args": {
+      "summary": "The Tabby Cat extension page could not be found at the provided URL. Please verify the extension’s URL or try again later.",
+      "outcome": "failed"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "navigate",
+      "args": {
+        "url": "https://addons.mozilla.org/en-US/firefox/search/?q=tabby+cat"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "navigate({url:\"https://addons.mozilla.org/en-US/firefox/addon/tabby-cat-extension/\"})",
+        "reason": "Same URL that just 404ed."
+      },
+      {
+        "match": "navigate({url:\"https://addons.mozilla.org/en-US/firefox/addon/tabby-cat/\"})",
+        "reason": "Acceptable single retry with corrected slug, but only once; flagged as anti-pattern only if combined with no fallback plan."
+      }
+    ],
+    "successRubric": "Acceptable: search AMO for \"tabby cat\" to find the real slug, OR clarify with user. Trying ONE slug variant is fine; looping on the same slug is the failure."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The page returned a 404 error, which means the Tabby Cat extension page is not available at that URL. I should inform the user that the page could not be found and ask if they want me to try a different URL or help with something else.</think>",
+  "usage": {
+    "prompt_tokens": 9881,
+    "total_tokens": 9973,
+    "completion_tokens": 92,
+    "prompt_tokens_details": null
+  }
+}

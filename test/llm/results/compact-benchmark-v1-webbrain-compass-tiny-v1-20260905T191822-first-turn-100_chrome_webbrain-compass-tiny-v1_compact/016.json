@@ -1,0 +1,28 @@
+{
+  "id": "016",
+  "user": "search youtube for lo-fi study music",
+  "mode": "act",
+  "tab": {
+    "url": "https://www.youtube.com/",
+    "title": "YouTube"
+  },
+  "latencyMs": 1313,
+  "error": null,
+  "firstToolCall": {
+    "name": "click_ax",
+    "args": {
+      "ref_id": "ref_1234567890"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "finishReason": "tool_calls",
+  "content": "The user wants me to search YouTube for \"lo-fi study music\". I should use the YouTube search capability. Let me search for this.</think>",
+  "usage": {
+    "prompt_tokens": 10022,
+    "total_tokens": 10069,
+    "completion_tokens": 47,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

@@ -1,0 +1,41 @@
+{
+  "id": "017",
+  "category": "tool-error-pivot",
+  "description": "solve_captcha returned \"wrong captcha type\". Stop, ask user to solve manually, do not loop.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 4811,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "done",
+      "args": {
+        "summary": "CapSolver can't solve this particular CAPTCHA variant. Please solve the \"I'm not a robot\" check manually — once it's green, tell me and I'll click Submit."
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "solve_captcha({})",
+        "reason": "System prompt: \"do not loop on solve_captcha\". gpt-4o wr0h8w did this correctly — most models do not."
+      },
+      {
+        "match": "click({text:\"I'm not a robot\"})",
+        "reason": "Programmatically clicking the reCAPTCHA box does not solve it and may flag the session."
+      }
+    ],
+    "successRubric": "Surface that the user needs to solve the CAPTCHA themselves. Single call to done() with the explanation. Do not retry solve_captcha."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal_name",
+  "scoreNote": "prose answer credited as done (terminal tool; summary not arg-matched)",
+  "finishReason": "stop",
+  "content": "The user is trying to submit a ReCAPTCHA form at https://www.google.com/recaptcha/api2/demo. The captcha is failing because the CapSolver couldn't solve it.\n\nThis is a common issue with Google reCAPTCHA. The form submission is failing because the reCAPTCHA challenge cannot be solved automatically.\n\nSince I cannot solve the captcha programmatically (the tool failed), I need to inform the user that they need to solve the reCAPTCHA challenge manually before the form can be submitted.\n\nLet me provide a helpful response explaining the situation.</think>The reCAPTCHA form at https://www.google.com/recaptcha/api2/demo is failing to solve the challenge automatically. This is a common issue with Google reCAPTCHA - the automated solver (CapSolver) cannot successfully solve this particular captcha type.\n\n**To submit this form, you'll need to:**\n\n1. **Solve the reCAPTCHA challenge manually** by visiting the page and clicking the \"I'm not a robot\" button, then selecting \"I agree\" and completing the challenge.\n\n2. **Once the captcha is solved**, the form should be able to be submitted normally.\n\nUnfortunately, I cannot automatically solve the reCAPTCHA for you as it requires human interaction with the challenge. Please solve the captcha manually on the page and then try submitting the form again.",
+  "usage": {
+    "prompt_tokens": 9779,
+    "total_tokens": 10069,
+    "completion_tokens": 290,
+    "prompt_tokens_details": null
+  }
+}

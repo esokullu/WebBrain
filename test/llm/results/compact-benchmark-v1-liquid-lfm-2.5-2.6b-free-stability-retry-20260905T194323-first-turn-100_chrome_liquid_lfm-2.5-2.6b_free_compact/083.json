@@ -1,0 +1,40 @@
+{
+  "id": "083",
+  "user": "what time is it in tokyo right now",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 4495,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "finishReason": "stop",
+  "content": "The current time in Tokyo is based on **Japan Standard Time (JST)**, which is **UTC+9**. \n\nSince I don't have a real-time clock tool to get the exact minute-by-minute time, I can tell you that Tokyo is always ahead of other major cities by 9 hours compared to Coordinated Universal Time (UTC). For example, if it's 12:00 PM (noon) in New York (UTC-4 during daylight saving), it would be 9:00 PM in Tokyo.\n\nTo get the precise current time right now, you can check a world clock service or your device's clock set to Tokyo time. Would you like me to look up a specific time zone conversion or help with anything else related to Tokyo time?",
+  "usage": {
+    "prompt_tokens": 9730,
+    "completion_tokens": 819,
+    "total_tokens": 10549,
+    "cost": 0,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 9712,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0,
+      "upstream_inference_prompt_cost": 0,
+      "upstream_inference_completions_cost": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 663,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

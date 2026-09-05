@@ -1,0 +1,37 @@
+{
+  "id": "080",
+  "category": "cross-lingual",
+  "description": "Mixed: English UI, but user types Arabic content. Should set field with the Arabic text as-is.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 3437,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "click",
+      "args": {
+        "index": 0
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "type_text({text:\"Please deliver after 5pm\"})",
+        "reason": "Translating user content to English without permission."
+      }
+    ],
+    "successRubric": "Preserve the Arabic text verbatim — never translate user-provided content to English without instruction."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "no_tool",
+  "scoreNote": null,
+  "finishReason": "stop",
+  "content": "The user wants to add a shipping note to the checkout page. The note is in Arabic: \"يرجى التسليم بعد الساعة 5 مساءً\" (Please deliver after 5 PM).\n\nI need to find the shipping notes field and update it. The previous tool call showed that there is a textarea with tag \"textarea\" and text \"Shipping notes\". This is likely the field I need to update.\n\nI should use the `set_field` tool to update the shipping notes textarea. The required parameters are `ref_id` and `text`. The `ref_id` should be the textarea's ref_id, which is likely `ref_0` based on the previous result.\n\nLet me try to update the shipping notes with the Arabic text.</think><|tool_call_start|>[set_field(ref_id='ref_0', text='يرجى التسليم بعد الساعة 5 مساءً')]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9774,
+    "total_tokens": 9958,
+    "completion_tokens": 184,
+    "prompt_tokens_details": null
+  }
+}

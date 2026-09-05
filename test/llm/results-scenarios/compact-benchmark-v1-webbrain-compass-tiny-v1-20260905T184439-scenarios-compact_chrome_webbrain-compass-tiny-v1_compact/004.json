@@ -1,0 +1,41 @@
+{
+  "id": "004",
+  "category": "loop-bad-url",
+  "description": "Navigation to a non-existent release tag landed on a 404-styled page. Repeating it is the failure.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 6351,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "navigate",
+      "args": {
+        "url": "https://github.com/acme/widgets/releases"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "navigate({url:\"https://github.com/acme/widgets/releases/tag/v9.9.9\"})",
+        "reason": "Retrying a 404 URL."
+      },
+      {
+        "match": "download_files({urls:[\"https://github.com/acme/widgets/archive/refs/tags/v9.9.9.zip\"]})",
+        "reason": "Forcing a download for a tag that does not exist."
+      }
+    ],
+    "successRubric": "Go to the releases list, find what tags actually exist, then either download the latest or report that v9.9.9 doesn't exist."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "no_tool",
+  "scoreNote": null,
+  "finishReason": "stop",
+  "content": "The user is asking me to download the v9.9.9 source zip from GitHub. I've already opened the release page, but the release page itself doesn't contain the download link - it's a GitHub Pages site that doesn't have a Pages site configured.\n\nThe actual source code is available at: https://github.com/acme/widgets/blob/main/src/widgets/widgets.js\n\nBut the user specifically asked for the v9.9.9 source zip. I should try to download it from the GitHub release page.\n\nLet me try using the `fetch_url` tool to download the source zip from the GitHub release page. The release page is at https://github.com/acme/widgets/releases/tag/v9.9.9\n\nThe source zip is typically available at:\nhttps://github.com/acme/widgets/releases/download/v9.9.9/widgets-v9.9.9.zip\n\nLet me try to fetch this URL.</think><|tool_call_start|>[fetch_url(url='https://github.com/acme/widgets/releases/download/v9.9.9/widgets-v9.9.9.zip')]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9992,
+    "total_tokens": 10235,
+    "completion_tokens": 243,
+    "prompt_tokens_details": null
+  }
+}

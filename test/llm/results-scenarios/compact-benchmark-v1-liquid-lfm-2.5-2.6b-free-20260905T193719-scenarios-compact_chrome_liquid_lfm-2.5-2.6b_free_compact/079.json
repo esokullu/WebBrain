@@ -1,0 +1,36 @@
+{
+  "id": "079",
+  "category": "cross-lingual",
+  "description": "French form, English instructions including mixed English+French data.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 260,
+  "error": "HTTP 429: {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-min. \",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"20\",\"X-RateLimit-Remaining\":\"0\",\"X-RateLimit-Reset\":\"1788626400000\"},\"limit_source\":\"openrouter_free_tier_per_minute\",\"remedy_hint\":\"Slow down requests to free models, or retry after the per-minute window resets.\",\"provider_name\":null}},\"user_id\":\"user_3AbNCAJijEuArTpJ0g3wyO8p3KK\"}",
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "click",
+      "args": {
+        "index": 0
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "type_text({text:\"Marie Dupont\"})",
+        "reason": "No field focused yet; type would land in wrong field."
+      },
+      {
+        "match": "click({text:\"Name\"})",
+        "reason": "Field is labeled \"Nom complet\" not \"Name\"."
+      }
+    ],
+    "successRubric": "Click name field first (by index), then type. Use the French label \"Envoyer\" for final submit."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "error",
+  "scoreNote": null,
+  "finishReason": null,
+  "content": null,
+  "usage": null
+}

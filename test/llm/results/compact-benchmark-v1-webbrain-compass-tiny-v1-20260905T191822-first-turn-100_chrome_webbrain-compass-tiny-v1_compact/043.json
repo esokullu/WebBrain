@@ -1,0 +1,28 @@
+{
+  "id": "043",
+  "user": "open a pull request",
+  "mode": "act",
+  "tab": {
+    "url": "https://github.com/esokullu/webbrain",
+    "title": "esokullu/webbrain — GitHub"
+  },
+  "latencyMs": 1652,
+  "error": null,
+  "firstToolCall": {
+    "name": "click",
+    "args": {
+      "text": "Create pull request"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "finishReason": "tool_calls",
+  "content": "The user wants me to open a pull request. I need to first navigate to the repository's pull requests page and then create a new pull request.\n\nLet me start by navigating to the pull requests page.</think>",
+  "usage": {
+    "prompt_tokens": 10272,
+    "total_tokens": 10326,
+    "completion_tokens": 54,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

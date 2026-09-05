@@ -1,0 +1,46 @@
+{
+  "id": "004",
+  "category": "loop-bad-url",
+  "description": "Navigation to a non-existent release tag landed on a 404-styled page. Repeating it is the failure.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 4098,
+  "error": null,
+  "firstToolCall": {
+    "name": "read_page",
+    "args": {
+      "url": "https://github.com/acme/widgets/releases"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "navigate",
+      "args": {
+        "url": "https://github.com/acme/widgets/releases"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "navigate({url:\"https://github.com/acme/widgets/releases/tag/v9.9.9\"})",
+        "reason": "Retrying a 404 URL."
+      },
+      {
+        "match": "download_files({urls:[\"https://github.com/acme/widgets/archive/refs/tags/v9.9.9.zip\"]})",
+        "reason": "Forcing a download for a tag that does not exist."
+      }
+    ],
+    "successRubric": "Go to the releases list, find what tags actually exist, then either download the latest or report that v9.9.9 doesn't exist."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The release page is showing \"Page not found — there isn't a GitHub Pages site here.\" This is strange because the release tag v9.9.9 should exist. Let me try a different approach - maybe the release URL format is different, or I need to check the releases index first.\n\nLet me try fetching the releases index page to see what's available.</think>",
+  "usage": {
+    "prompt_tokens": 9992,
+    "total_tokens": 10090,
+    "completion_tokens": 98,
+    "prompt_tokens_details": null
+  }
+}

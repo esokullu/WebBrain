@@ -1,0 +1,42 @@
+{
+  "id": "005",
+  "category": "loop-bad-url",
+  "description": "Guessed documentation URL based on tool name failed. Should search docs index, not guess again.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 4665,
+  "error": null,
+  "firstToolCall": {
+    "name": "navigate",
+    "args": {
+      "url": "https://example-tool.io/api"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "navigate",
+      "args": {
+        "url": "https://docs.example-tool.io/"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "navigate({url:\"https://docs.example-tool.io/api/v1\"})",
+        "reason": "Guess-and-check on docs path is a loop pattern."
+      }
+    ],
+    "successRubric": "Go to the docs root and let the site's nav lead to the API reference. Acceptable: web search for \"example-tool api reference\"."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal_name",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The previous attempt to navigate to the API reference failed with a 404. This could be because:\n\n1. The API documentation URL is different\n2. The site is not accessible\n3. The URL structure is different\n\nLet me try a different approach. I'll try to access the API reference using a different URL pattern, or try to find the API documentation through a different method.\n\nActually, looking at the available tools, I can use `fetch_url` to try to access the API documentation. But first, let me try a different URL.\n\nThe previous URL was `https://docs.example-tool.io/api` which returned a 404.\n\nLet me try:\n- `https://example-tool.io/api`\n- `https://docs.example-tool.io/reference`\n- `https://example-tool.io/docs/api`\n\nI'll try the most likely URL first: `https://example-tool.io/api`</think>",
+  "usage": {
+    "prompt_tokens": 9841,
+    "total_tokens": 10045,
+    "completion_tokens": 204,
+    "prompt_tokens_details": null
+  }
+}

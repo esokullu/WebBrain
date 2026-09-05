@@ -6,9 +6,9 @@ sortOrder: -281
 date: 2026-09-05
 readTime: 6 min read
 description: >
-  WebBrain Compass Tiny v1 is a private 2.6B WebBrain Compact-model preview. In our first routing suite it ties Qwen3.6-35B-A3B on tool-name conformity, improves the same local LFM2.5 base model by eight routing outcomes, and keeps the model small enough for edge-oriented deployment.
+  WebBrain Compass Tiny v1 is a private 2.6B WebBrain Compact-model preview. In our first routing suite it ties Qwen3.6-35B-A3B on tool-name conformity, improves the same local LFM2.5 base model by four routing outcomes, and keeps the model small enough for edge-oriented deployment.
 excerpt: >
-  A 2.6B model is not a 35B general-reasoning replacement. But in the narrow, production-shaped WebBrain Compact routing loop, Compass Tiny v1 reaches the same tool-name conformity as Qwen3.6-35B-A3B and improves its matched local base model by eight routing outcomes.
+  A 2.6B model is not a 35B general-reasoning replacement. But in the narrow, production-shaped WebBrain Compact routing loop, Compass Tiny v1 reaches the same tool-name conformity as Qwen3.6-35B-A3B and improves its matched local base model by four routing outcomes.
 titleTag: >
   Introducing WebBrain Compass Tiny v1 - WebBrain Blog
 ogTitle: >
@@ -30,7 +30,7 @@ keywords:
 author: Emre Sokullu
 authorUrl: https://emresokullu.com
 lede: >
-  **WebBrain Compass Tiny v1 is our first edge-sized model built specifically for the Compact browser-tool loop.** It is not a claim that 2.6B parameters equal a 35B model at general reasoning. It is evidence that a focused, grounded routing policy can make a small model useful inside a real browser agent: in this first suite, Compass ties Qwen3.6-35B-A3B on the expected tool name and improves the matched local LFM2.5-2.6B base model by eight routing outcomes. Qwen3.8-27B remains the quality leader when its cost and footprint fit the deployment.
+  **WebBrain Compass Tiny v1 is our first edge-sized model built specifically for the Compact browser-tool loop.** It is not a claim that 2.6B parameters equal a 35B model at general reasoning. It is evidence that a focused, grounded routing policy can make a small model useful inside a real browser agent: in this first suite, Compass ties Qwen3.6-35B-A3B on the expected tool name and improves the matched local LFM2.5-2.6B base model by four routing outcomes. Qwen3.8-27B remains the quality leader when its cost and footprint fit the deployment.
 ---
 
 ## The short version
@@ -61,16 +61,16 @@ The exact reference is a Sonnet-authored canonical next action. It is a regressi
 | Qwen3.8-27B | 27B | **99 / 100** | **17** | 39 |
 | Qwen3.6-35B-A3B | 35B A3B | 89 / 100 | 15 | **42** |
 | **WebBrain Compass Tiny v1** | **2.6B** | **81 / 100** | 4 | **42** |
-| LFM2.5-2.6B base (local) | 2.6B | 80 / 100 | 4 | 34 |
+| LFM2.5-2.6B base (local) | 2.6B | 80 / 100 | 4 | 38 |
 | Qwen3.5-9B | 9B | 84 / 100 | 2 | 12 |
 
-Compass therefore does not beat the 35B model on the strict reference. It **matches it on tool-name routing** in this Compact suite. It also exceeds the 9B Qwen result by 30 expected-tool-name outcomes and the matched local LFM base model by eight. Those are promising results for a model intended to live near the edge of the product, where size, VRAM, latency, and controllability matter as much as raw general capability.
+Compass therefore does not beat the 35B model on the strict reference. It **matches it on tool-name routing** in this Compact suite. It also exceeds the 9B Qwen result by 30 expected-tool-name outcomes and the matched local LFM base model by four. Those are promising results for a model intended to live near the edge of the product, where size, VRAM, latency, and controllability matter as much as raw general capability.
 
 ## The controlled base-model comparison
 
 The base-model row is the comparison we care about most. We served the pinned `LiquidAI/LFM2.5-2.6B` base revision locally through the same vLLM version, LFM2 parser, tokenizer, BF16 precision, 32K context window, Compact prompt, tools, and benchmark harness used for Compass.
 
-The base model produced 80 first-turn structured calls, four exact-reference scenario actions, and 34 expected-tool-name outcomes. Compass produced 81, four, and **42** respectively. In this deliberately narrow measurement, the fine-tune does not change the exact-reference count, but it adds **eight** expected Compact routing outcomes.
+The base model produced 80 first-turn structured calls, four exact-reference scenario actions, and 38 expected-tool-name outcomes. Compass produced 81, four, and **42** respectively. In this deliberately narrow measurement, the fine-tune does not change the exact-reference count, but it adds **four** expected Compact routing outcomes.
 
 That is a useful, bounded result: Compass is not claiming a broad general-intelligence jump over its base. It is demonstrating that WebBrain-specific training can move the next-action routing policy in the desired direction without making the model larger.
 
@@ -88,7 +88,7 @@ We also exercised the public `liquid/lfm-2.5-2.6b:free` route on OpenRouter as a
 
 ## What happens next
 
-This is the beginning of the evaluation, not the end of it. We are adding more browser surfaces, longer trajectories, tool-result recovery, calibrated escalation behavior, and broader multilingual cases. We also want to measure locally hosted base LFM under the same serving stack before publishing a fine-tune-versus-base headline.
+This is the beginning of the evaluation, not the end of it. We are adding more browser surfaces, longer trajectories, tool-result recovery, calibrated escalation behavior, and broader multilingual cases. The first locally hosted base-LFM comparison now gives us a controlled fine-tune baseline; the next work is to broaden it.
 
 The working roadmap includes Compass **v1.1** and eventually **v2**, with more data, more targeted evaluations, and clearer release artifacts. We hope that work turns this private preview into a useful open-weights option for teams that want WebBrain-native Compact behavior without making a large cloud model the only route for every action.
 

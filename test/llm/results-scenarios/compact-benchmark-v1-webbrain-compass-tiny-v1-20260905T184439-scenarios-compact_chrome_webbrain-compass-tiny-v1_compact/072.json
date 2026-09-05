@@ -1,0 +1,37 @@
+{
+  "id": "072",
+  "category": "cross-lingual",
+  "description": "German UI, English user request. Use the German button label.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 1440,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "click",
+      "args": {
+        "text": "Search"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click({text:\"Google Suche\"})",
+        "reason": "Acceptable too, but the search-input pattern works with the visible search field, not a button."
+      }
+    ],
+    "successRubric": "Focus the search input (an input has aria-label \"Search\" or similar — click(text) on inputs is supported per click tool docs), type query. The German labels Suche/Suchen also work."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "no_tool",
+  "scoreNote": null,
+  "finishReason": "stop",
+  "content": "The user wants to search for Berlin weather on Google. I need to use the search tool to perform this search.</think><|tool_call_start|>[click_ax(ref_id='https://www.google.de/')]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9762,
+    "total_tokens": 9804,
+    "completion_tokens": 42,
+    "prompt_tokens_details": null
+  }
+}

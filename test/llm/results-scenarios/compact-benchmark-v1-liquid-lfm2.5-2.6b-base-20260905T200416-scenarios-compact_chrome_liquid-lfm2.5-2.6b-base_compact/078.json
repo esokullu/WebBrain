@@ -1,0 +1,42 @@
+{
+  "id": "078",
+  "category": "cross-lingual",
+  "description": "Korean UI, English request. Korean label needed.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 1900,
+  "error": null,
+  "firstToolCall": {
+    "name": "click_ax",
+    "args": {
+      "ref_id": "0"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "click",
+      "args": {
+        "index": 0
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click({text:\"Login\"})",
+        "reason": "No English \"Login\" on this page."
+      }
+    ],
+    "successRubric": "Map login → 로그인. Then click by index since the label is in Korean script."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The user wants me to click the login button on the page. From the get_interactive_elements result, I can see there's a button with text \"로그인\" (Login) at index 0.\n\nI should use the click_ax tool to click on this button by its ref_id. The ref_id appears to be \"0\" based on the index.\n\nLet me click the login button using click_ax with ref_id \"0\".</think>",
+  "usage": {
+    "prompt_tokens": 9775,
+    "total_tokens": 9880,
+    "completion_tokens": 105,
+    "prompt_tokens_details": null
+  }
+}

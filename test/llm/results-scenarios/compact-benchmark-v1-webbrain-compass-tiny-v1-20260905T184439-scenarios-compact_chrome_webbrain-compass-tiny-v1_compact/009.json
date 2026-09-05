@@ -1,0 +1,37 @@
+{
+  "id": "009",
+  "category": "loop-bad-url",
+  "description": "Tenant URL but no auth/permission — refresh or retry won't help.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 3509,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "done",
+      "args": {
+        "summary": "The Notion workspace at my-tenant.notion.site is saying \"You don't have access\". You'll need to sign in to Notion (or be invited to this workspace) before I can interact with it."
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "navigate({url:\"https://my-tenant.notion.site/\"})",
+        "reason": "Refreshing won't produce a different result."
+      }
+    ],
+    "successRubric": "Report the access wall to the user, do not loop."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal_name",
+  "scoreNote": "prose answer credited as done (terminal tool; summary not arg-matched)",
+  "finishReason": "stop",
+  "content": "The user is asking to open their Notion workspace at my-tenant, but they don't have access. I should explain that they need to sign in with their Notion account and possibly grant access to the workspace.</think><|tool_call_start|>[clarify(question='You don’t have access to the workspace. Please sign in with your Notion account and grant access to the workspace.', options=[\"Sign in with Notion and grant access\", \"I don’t have Notion access\"], reason='The workspace is not accessible without a Notion account and proper authorization.', require_explicit_answer=True)]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9841,
+    "total_tokens": 9967,
+    "completion_tokens": 126,
+    "prompt_tokens_details": null
+  }
+}
