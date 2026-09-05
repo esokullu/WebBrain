@@ -1,0 +1,31 @@
+{
+  "runTag": "compact-benchmark-v1-openrouter-20260905T184456-qwen-qwen3.8-27b-first-turn-100",
+  "model": "qwen/qwen3.8-27b",
+  "browser": "chrome",
+  "base": "https://openrouter.ai/api/v1",
+  "saveRequest": false,
+  "tier": "compact",
+  "modeOverride": null,
+  "chatTemplateCompat": "off",
+  "structuredToolsSent": true,
+  "reasoningEffort": null,
+  "freeze": null,
+  "cases": 100,
+  "totalLatencyMs": 113212,
+  "errors": 0,
+  "withToolCall": 99,
+  "withToolCallFromContent": 0,
+  "byTool": {
+    "navigate": 25,
+    "get_accessibility_tree": 54,
+    "read_page": 4,
+    "extract_data": 2,
+    "scroll": 1,
+    "get_selection": 1,
+    "done": 7,
+    "progress_read": 1,
+    "clarify": 3,
+    "fetch_url": 1,
+    "(no_tool_call)": 1
+  }
+}

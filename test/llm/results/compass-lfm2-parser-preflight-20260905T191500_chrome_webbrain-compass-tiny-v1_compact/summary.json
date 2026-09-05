@@ -1,0 +1,21 @@
+{
+  "runTag": "compass-lfm2-parser-preflight-20260905T191500",
+  "model": "webbrain-compass-tiny-v1",
+  "browser": "chrome",
+  "base": "http://127.0.0.1:8325/v1",
+  "saveRequest": false,
+  "tier": "compact",
+  "modeOverride": null,
+  "chatTemplateCompat": "off",
+  "structuredToolsSent": true,
+  "reasoningEffort": null,
+  "freeze": null,
+  "cases": 1,
+  "totalLatencyMs": 1694,
+  "errors": 0,
+  "withToolCall": 1,
+  "withToolCallFromContent": 0,
+  "byTool": {
+    "navigate": 1
+  }
+}

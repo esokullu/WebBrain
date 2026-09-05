@@ -1,0 +1,23 @@
+{
+  "id": "069",
+  "user": "open it",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 1660,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "finishReason": "stop",
+  "content": "The user wants me to open the New Tab page. I should use the navigate tool to open about:home.</think><|tool_call_start|>[navigate(url='about:home', force=False)]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9722,
+    "total_tokens": 9761,
+    "completion_tokens": 39,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

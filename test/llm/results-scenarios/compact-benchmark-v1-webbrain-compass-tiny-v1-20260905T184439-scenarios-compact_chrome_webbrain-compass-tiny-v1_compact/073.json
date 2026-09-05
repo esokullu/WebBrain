@@ -1,0 +1,37 @@
+{
+  "id": "073",
+  "category": "cross-lingual",
+  "description": "Turkish user, English wiki article. Read + answer in Turkish.",
+  "mode": "ask",
+  "browser": "chrome",
+  "latencyMs": 2271,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "done",
+      "args": {
+        "summary": "Kapanış (closure), bir fonksiyonun tanımlandığı leksik çevre ile birlikte paketlenmiş halidir — yani dış kapsamın değişkenlerine, o kapsam döndükten sonra bile erişebilir."
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "done({summary:\"A closure is a function bundled with...\"})",
+        "reason": "User asked in Turkish — answer in Turkish."
+      }
+    ],
+    "successRubric": "Answer in the user's language. Read English source, translate gist into Turkish."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal_name",
+  "scoreNote": "prose answer credited as done (terminal tool; summary not arg-matched)",
+  "finishReason": "stop",
+  "content": "The user is asking in Turkish: \"Kapanış (closure) nedir, bir cümlede özetle\" which means \"What is a closure (kapanış), summarized in one sentence?\"\n\nI should provide a concise Turkish explanation of what a closure is.</think><|tool_call_start|>[done(summary='Bir **kapanış (closure)**, bir fonksiyonun, fonksiyonun oluşturulduğu **loksel ortam** ile birleşik halidir.')]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 7616,
+    "total_tokens": 7719,
+    "completion_tokens": 103,
+    "prompt_tokens_details": null
+  }
+}

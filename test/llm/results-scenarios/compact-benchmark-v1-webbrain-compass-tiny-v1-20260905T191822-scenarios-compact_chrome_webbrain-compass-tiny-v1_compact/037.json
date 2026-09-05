@@ -1,0 +1,47 @@
+{
+  "id": "037",
+  "category": "truncation-cascade",
+  "description": "read_page truncated; agent has the headers but the answer is below the fold. Use targeted extraction, not refetch.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 2230,
+  "error": null,
+  "firstToolCall": {
+    "name": "read_page",
+    "args": {
+      "limit": 6000
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "scroll",
+      "args": {
+        "direction": "down",
+        "amount": 3000
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "read_page({})",
+        "reason": "Re-reading without scrolling won't reveal section 5."
+      },
+      {
+        "match": "fetch_url({url:\"https://www.example.com/long-doc\"})",
+        "reason": "Same URL."
+      }
+    ],
+    "successRubric": "Scroll down to bring section 5 into view, then read_page again. read_page is viewport-aware."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The user is asking about section 5 of the long documentation. The page was truncated, so I need to check if section 5 is available. The text shows sections 1 through 4, but section 5 is not visible in the truncated response.\n\nI should try to read more of the page or check if section 5 exists. Since the page was truncated, I might need to request more content or check the page structure.\n\nLet me try reading the page again with a larger limit to see if section 5 is available.</think>",
+  "usage": {
+    "prompt_tokens": 9810,
+    "total_tokens": 9931,
+    "completion_tokens": 121,
+    "prompt_tokens_details": null
+  }
+}

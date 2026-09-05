@@ -1,0 +1,42 @@
+{
+  "id": "058",
+  "category": "stale-refid",
+  "description": "Used a ref_id from a filtered tree on an unfiltered turn (or vice versa).",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 2352,
+  "error": null,
+  "firstToolCall": {
+    "name": "click",
+    "args": {
+      "text": "Second"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "click_ax",
+      "args": {
+        "ref_id": "ref_7"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click_ax({ref_id:\"ref_5\"})",
+        "reason": "ref_5 was from the filtered tree; we last requested filter:\"all\"."
+      }
+    ],
+    "successRubric": "Use the ref_id from the MOST RECENT tree call. Different filters produce different ref_id allocations."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The previous attempt to click the second button failed because the reference ID `ref_5` was not found in the current accessibility tree. The page content shows two buttons: \"First\" and \"Second\". The accessibility tree should have these buttons, but the reference IDs might be different or the tree might not be up-to-date.\n\nLet me try a different approach. I'll use the `click` tool with the visible text \"Second\" instead of relying on the reference ID. This should work if the text is present and selectable.</think>",
+  "usage": {
+    "prompt_tokens": 9862,
+    "total_tokens": 9981,
+    "completion_tokens": 119,
+    "prompt_tokens_details": null
+  }
+}

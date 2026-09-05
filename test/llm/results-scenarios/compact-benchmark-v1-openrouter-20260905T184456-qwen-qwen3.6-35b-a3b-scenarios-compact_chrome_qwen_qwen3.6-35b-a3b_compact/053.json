@@ -1,0 +1,59 @@
+{
+  "id": "053",
+  "category": "stale-refid",
+  "description": "A dialog opened after a click; ref_ids from before the dialog are stale within the dialog scope.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 5018,
+  "error": null,
+  "firstToolCall": {
+    "name": "get_accessibility_tree",
+    "args": {
+      "filter": "visible"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "get_accessibility_tree",
+      "args": {
+        "filter": "visible"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "type_ax({ref_id:\"ref_30\", text:\"hi alice\"})",
+        "reason": "Compose dialog opened; previous tree didn't include it. Re-read."
+      }
+    ],
+    "successRubric": "After opening a dialog/modal, re-read AX tree. The compose dialog has its own ref_id space."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": null,
+  "usage": {
+    "prompt_tokens": 9190,
+    "completion_tokens": 75,
+    "total_tokens": 9265,
+    "cost": 0.000512,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.000512,
+      "upstream_inference_prompt_cost": 0.0004595,
+      "upstream_inference_completions_cost": 0.0000525
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 45,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}

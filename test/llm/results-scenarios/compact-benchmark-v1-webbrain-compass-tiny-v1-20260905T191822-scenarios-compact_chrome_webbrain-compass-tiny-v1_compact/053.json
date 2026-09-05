@@ -1,0 +1,43 @@
+{
+  "id": "053",
+  "category": "stale-refid",
+  "description": "A dialog opened after a click; ref_ids from before the dialog are stale within the dialog scope.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 3006,
+  "error": null,
+  "firstToolCall": {
+    "name": "type_text",
+    "args": {
+      "selector": "text",
+      "text": "hi alice"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "get_accessibility_tree",
+      "args": {
+        "filter": "visible"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "type_ax({ref_id:\"ref_30\", text:\"hi alice\"})",
+        "reason": "Compose dialog opened; previous tree didn't include it. Re-read."
+      }
+    ],
+    "successRubric": "After opening a dialog/modal, re-read AX tree. The compose dialog has its own ref_id space."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The compose window was opened, but the text field wasn't found in the accessibility tree. Let me try a different approach - use the text field directly with the text parameter, or try clicking the text field first.\n\nActually, looking at the error, the text field with ref_id ref_30 wasn't found. The compose window was opened successfully, but the text field might not be immediately available in the accessibility tree.\n\nLet me try using the text field with the text parameter, which should work even if the ref_id isn't immediately available.</think>",
+  "usage": {
+    "prompt_tokens": 9859,
+    "total_tokens": 9987,
+    "completion_tokens": 128,
+    "prompt_tokens_details": null
+  }
+}

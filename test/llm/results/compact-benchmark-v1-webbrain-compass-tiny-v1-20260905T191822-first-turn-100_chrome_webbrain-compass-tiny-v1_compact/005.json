@@ -1,0 +1,33 @@
+{
+  "id": "005",
+  "user": "show me my downloads",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 3228,
+  "error": null,
+  "firstToolCall": {
+    "name": "read_page",
+    "args": {
+      "filter": "all",
+      "maxChars": 6000,
+      "ref_id": "",
+      "page": 1,
+      "tree_revision": "",
+      "continuationArgs": {}
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "finishReason": "tool_calls",
+  "content": "The user wants to see their downloads. I need to use the `read_page` tool to read the current page, which should show the downloads section.</think>",
+  "usage": {
+    "prompt_tokens": 9725,
+    "total_tokens": 9793,
+    "completion_tokens": 68,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

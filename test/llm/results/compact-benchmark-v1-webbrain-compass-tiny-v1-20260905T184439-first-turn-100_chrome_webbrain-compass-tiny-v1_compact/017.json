@@ -1,0 +1,23 @@
+{
+  "id": "017",
+  "user": "google \"best coffee shop in seattle\"",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 2379,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "finishReason": "stop",
+  "content": "The user wants me to search Google for \"best coffee shop in seattle\". I should use the search tool to perform this search.</think><|tool_call_start|>[click_ax(ref_id='ref_1234567890')]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9729,
+    "total_tokens": 9775,
+    "completion_tokens": 46,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

@@ -1,0 +1,59 @@
+{
+  "id": "039",
+  "category": "truncation-cascade",
+  "description": "After a wikitext API fetch was truncated, the agent tried another endpoint and that also truncated. The answer was already in the first response. Synthesize, do not refetch.",
+  "mode": "ask",
+  "browser": "chrome",
+  "latencyMs": 20264,
+  "error": null,
+  "firstToolCall": {
+    "name": "fetch_url",
+    "args": {
+      "url": "https://en.wikipedia.org/w/api.php?action=query&titles=Alan_Turing&prop=extracts&format=json&exintro=1"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "done",
+      "args": {
+        "summary": "1950 — Turing published \"Computing Machinery and Intelligence\" in the journal Mind, which introduced what we now call the Turing test."
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "fetch_url({url:\"https://en.m.wikipedia.org/...\"})",
+        "reason": "Third sequential fetch — same pattern xiaomi-mimo trace estx7b exhibited."
+      }
+    ],
+    "successRubric": "The first fetch already contained the year (1950) and the paper title. Two more fetches won't add anything. Call done."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": null,
+  "usage": {
+    "prompt_tokens": 7896,
+    "completion_tokens": 80,
+    "total_tokens": 7976,
+    "cost": 0.0008016,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.0008016,
+      "upstream_inference_prompt_cost": 0.0007896,
+      "upstream_inference_completions_cost": 0.000012
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 35,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "id": "014",
+  "category": "tool-error-pivot",
+  "description": "read_page returned PDF-tab notice. Pivot to read_pdf.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 2934,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "read_pdf",
+      "args": {
+        "url": "https://arxiv.org/pdf/2401.00001.pdf"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "read_page({})",
+        "reason": "Same tool that just rejected the PDF tab."
+      },
+      {
+        "match": "inspect_viewport({})",
+        "reason": "PDF viewer capture won't produce extractable text."
+      }
+    ],
+    "successRubric": "Use read_pdf with the tab URL. The error message names the right tool — follow it."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "no_tool",
+  "scoreNote": null,
+  "finishReason": "stop",
+  "content": "The PDF viewer is privileged and I can't read it. Let me try the read_pdf tool instead.</think><|tool_call_start|>[read_pdf()]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9802,
+    "total_tokens": 9833,
+    "completion_tokens": 31,
+    "prompt_tokens_details": null
+  }
+}

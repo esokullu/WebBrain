@@ -1,0 +1,43 @@
+{
+  "id": "055",
+  "category": "stale-refid",
+  "description": "List page where new items load on scroll. Old ref_ids point at items now outside the rendered range.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 2340,
+  "error": null,
+  "firstToolCall": {
+    "name": "scroll",
+    "args": {
+      "direction": "down",
+      "amount": 1000
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "get_accessibility_tree",
+      "args": {
+        "filter": "visible"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click_ax({ref_id:\"ref_60\"})",
+        "reason": "Guessed ref_id beyond what the previous tree showed."
+      }
+    ],
+    "successRubric": "After scrolling, re-read AX tree. ref_ids reflect the current DOM, not a global numbering."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The ref_id ref_60 is not found in the current accessibility tree. The page only shows items 1-20 initially, and after scrolling, I need to find the 50th item.\n\nLet me first get a better view of the page content and find the 50th item. The accessibility tree shows items 1-20, but there might be more items further down.\n\nI should scroll more and check the accessibility tree again to find the 50th item.</think>",
+  "usage": {
+    "prompt_tokens": 9852,
+    "total_tokens": 9965,
+    "completion_tokens": 113,
+    "prompt_tokens_details": null
+  }
+}

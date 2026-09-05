@@ -1,0 +1,64 @@
+{
+  "id": "057",
+  "category": "stale-refid",
+  "description": "Model guessed ref_id #38 from training-data memory. Both: don't guess; AND per github adapter, ref_38 on the release page goes to \"Pull requests\".",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 3449,
+  "error": null,
+  "firstToolCall": {
+    "name": "read_page",
+    "args": {
+      "url": "https://github.com/acme/widgets/releases/new",
+      "includeChrome": false
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "clarify",
+      "args": {
+        "question": "I clicked the wrong element — I guessed ref_id 38 and it navigated to Pull requests instead of publishing the release. I'll go back to the release page and click \"Publish release\" by text this time. OK?"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click_ax({ref_id:\"ref_38\"})",
+        "reason": "Repeating the exact mistake. The github adapter warns about this."
+      },
+      {
+        "match": "click({text:\"Publish release\"})",
+        "reason": "Acceptable forward move, but only after navigating back. Currently we are on /pulls."
+      }
+    ],
+    "successRubric": "Acknowledge the wrong navigation, navigate back to /releases/new, and click \"Publish release\" by text. The github adapter specifically warns against guessing ref_38."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": null,
+  "usage": {
+    "prompt_tokens": 9850,
+    "completion_tokens": 379,
+    "total_tokens": 10229,
+    "cost": 0,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 9712,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0,
+      "upstream_inference_prompt_cost": 0,
+      "upstream_inference_completions_cost": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 350,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}

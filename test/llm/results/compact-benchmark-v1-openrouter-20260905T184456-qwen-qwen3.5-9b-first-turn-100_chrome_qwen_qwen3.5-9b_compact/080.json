@@ -1,0 +1,40 @@
+{
+  "id": "080",
+  "user": "close all my tabs except this one",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 4742,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "finishReason": "stop",
+  "content": "I don't have the ability to close browser tabs. This is a browser-level operation that requires user interaction or browser-specific commands that aren't available to me.\n\nYou'll need to close the tabs manually by:\n- Right-clicking each tab and selecting \"Close tab\"\n- Or using the keyboard shortcut Ctrl+W (Windows/Linux) or Cmd+W (Mac) for each tab\n\nThe current tab you're on will remain open.",
+  "usage": {
+    "prompt_tokens": 9753,
+    "completion_tokens": 251,
+    "total_tokens": 10004,
+    "cost": 0.00101295,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 9504,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.00101295,
+      "upstream_inference_prompt_cost": 0.0009753,
+      "upstream_inference_completions_cost": 0.00003765
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 191,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

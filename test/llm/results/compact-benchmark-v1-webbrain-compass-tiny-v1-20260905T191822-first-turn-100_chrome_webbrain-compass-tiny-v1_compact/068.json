@@ -1,0 +1,28 @@
+{
+  "id": "068",
+  "user": "click that",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 1554,
+  "error": null,
+  "firstToolCall": {
+    "name": "click",
+    "args": {
+      "text": "New Tab"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "finishReason": "tool_calls",
+  "content": "The user wants me to click the New Tab button on the current page. The current page context shows \"about:home\" with Title \"New Tab\". I should use the click tool with the visible text \"New Tab\".</think>",
+  "usage": {
+    "prompt_tokens": 9722,
+    "total_tokens": 9779,
+    "completion_tokens": 57,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

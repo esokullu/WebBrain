@@ -1,0 +1,42 @@
+{
+  "id": "052",
+  "category": "stale-refid",
+  "description": "Page navigated between AX read and click. Re-read tree.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 3313,
+  "error": null,
+  "firstToolCall": {
+    "name": "click",
+    "args": {
+      "text": "Sign in"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "get_accessibility_tree",
+      "args": {
+        "filter": "visible"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click_ax({ref_id:\"ref_8\"})",
+        "reason": "Old tree was for the repo page; we're now on /login. Re-read."
+      }
+    ],
+    "successRubric": "After a click that navigated, the entire ref_id space resets. Re-read."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The previous attempt to click the login button failed because the reference ID was not found in the current accessibility tree. This could be due to the page state changing or the accessibility tree not being updated.\n\nLet me try clicking the \"Sign in\" button again, but this time with a different approach. I'll use the `click` tool with the visible text \"Sign in\" instead of relying on the reference ID.\n\nActually, looking at the previous successful navigation, the page was navigated to https://github.com/login. The issue might be that the accessibility tree is not being read correctly.\n\nLet me try a different approach: use the `click` tool with the visible text \"Sign in\" and see if that works.</think>",
+  "usage": {
+    "prompt_tokens": 9858,
+    "total_tokens": 10016,
+    "completion_tokens": 158,
+    "prompt_tokens_details": null
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "id": "036",
+  "user": "submit",
+  "mode": "act",
+  "tab": {
+    "url": "https://forms.example.com/contact",
+    "title": "Contact form"
+  },
+  "latencyMs": 2494,
+  "error": null,
+  "firstToolCall": {
+    "name": "get_accessibility_tree",
+    "args": {
+      "filter": "all"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "finishReason": "tool_calls",
+  "content": "The user wants to submit a form at https://forms.example.com/contact. Let me first check what's on the page to understand the form structure and what needs to be submitted.\n\nI should use the get_accessibility_tree tool to see the form elements and their structure.</think>",
+  "usage": {
+    "prompt_tokens": 9725,
+    "total_tokens": 9793,
+    "completion_tokens": 68,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

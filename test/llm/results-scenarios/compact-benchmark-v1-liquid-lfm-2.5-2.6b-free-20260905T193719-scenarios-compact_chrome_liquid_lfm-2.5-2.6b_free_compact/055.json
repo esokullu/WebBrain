@@ -1,0 +1,32 @@
+{
+  "id": "055",
+  "category": "stale-refid",
+  "description": "List page where new items load on scroll. Old ref_ids point at items now outside the rendered range.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 311,
+  "error": "HTTP 429: {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-min. \",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"20\",\"X-RateLimit-Remaining\":\"0\",\"X-RateLimit-Reset\":\"1788626340000\"},\"limit_source\":\"openrouter_free_tier_per_minute\",\"remedy_hint\":\"Slow down requests to free models, or retry after the per-minute window resets.\",\"provider_name\":null}},\"user_id\":\"user_3AbNCAJijEuArTpJ0g3wyO8p3KK\"}",
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "get_accessibility_tree",
+      "args": {
+        "filter": "visible"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click_ax({ref_id:\"ref_60\"})",
+        "reason": "Guessed ref_id beyond what the previous tree showed."
+      }
+    ],
+    "successRubric": "After scrolling, re-read AX tree. ref_ids reflect the current DOM, not a global numbering."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "error",
+  "scoreNote": null,
+  "finishReason": null,
+  "content": null,
+  "usage": null
+}

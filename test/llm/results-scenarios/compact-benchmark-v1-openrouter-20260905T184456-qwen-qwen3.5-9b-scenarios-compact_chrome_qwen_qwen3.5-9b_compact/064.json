@@ -1,0 +1,57 @@
+{
+  "id": "064",
+  "category": "mode-boundary",
+  "description": "Act + simple question. Act allows read; no need to be ceremonious.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 3310,
+  "error": null,
+  "firstToolCall": {
+    "name": "read_page",
+    "args": {
+      "limit": 6000
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "read_page",
+      "args": {}
+    },
+    "antiPatterns": [
+      {
+        "match": "clarify({question:\"...\"})",
+        "reason": "Clear request, no ambiguity."
+      }
+    ],
+    "successRubric": "Read the page and call done with a summary. Don't over-think."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal_name",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": null,
+  "usage": {
+    "prompt_tokens": 9766,
+    "completion_tokens": 119,
+    "total_tokens": 9885,
+    "cost": 0.00099445,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 9504,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.00099445,
+      "upstream_inference_prompt_cost": 0.0009766,
+      "upstream_inference_completions_cost": 0.00001785
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 87,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "id": "077",
+  "category": "cross-lingual",
+  "description": "HN comments in English, user asks in Turkish. Read + respond Turkish.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 1557,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "done",
+      "args": {
+        "summary": "En üstteki yorum yazarın temel önermesine katılmıyor — yazarın X ile Y'yi karıştırdığını ve bu yüzden vardığı sonucun hatalı olduğunu söylüyor."
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "done({summary:\"Top comment disagrees with...\"})",
+        "reason": "User asked in Turkish — answer in Turkish."
+      }
+    ],
+    "successRubric": "Answer in Turkish. Translate gist of English comment."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal_name",
+  "scoreNote": "prose answer credited as done (terminal tool; summary not arg-matched)",
+  "finishReason": "stop",
+  "content": "En üstteki yorum şöyle diyor:\n\n**\"İçten bir varsayıma karşı çıkarım. Yazar X'ı Y ile karıştırıyor, bu da ...'**\n\nYani topluluğunun başlığı olan yorum, postın temel iddiasına karşılık gelip, yazının X ve Y'yi yanlış birleştirdiğini savunuyor.",
+  "usage": {
+    "prompt_tokens": 9787,
+    "completion_tokens": 208,
+    "total_tokens": 9995,
+    "cost": 0,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 9712,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0,
+      "upstream_inference_prompt_cost": 0,
+      "upstream_inference_completions_cost": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 125,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}

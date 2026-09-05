@@ -1,0 +1,37 @@
+{
+  "id": "008",
+  "category": "loop-bad-url",
+  "description": "Subreddit is private; Reddit redirected to login. Don't retry the sub URL.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 3500,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "done",
+      "args": {
+        "summary": "r/private-sub appears to be private or requires login — Reddit redirected me to the sign-in page. Sign in (or check the sub name) and try again."
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "navigate({url:\"https://www.reddit.com/r/private-sub\"})",
+        "reason": "Will redirect to login again."
+      }
+    ],
+    "successRubric": "Recognize the private-sub redirect, report it to the user. Don't fight the auth wall."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal_name",
+  "scoreNote": "prose answer credited as done (terminal tool; summary not arg-matched)",
+  "finishReason": "stop",
+  "content": "The user wants to see posts in r/private-sub. I've navigated to the Reddit login page, but I need to actually view the subreddit's posts. The navigation was successful, but I need to actually read the page content to find the posts.\n\nLet me use the `read_page` tool to get the content of the Reddit page.</think><|tool_call_start|>[read_page(filter='all', maxChars=6000, continuationArgs={})]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9879,
+    "total_tokens": 9973,
+    "completion_tokens": 94,
+    "prompt_tokens_details": null
+  }
+}

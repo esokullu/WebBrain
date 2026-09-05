@@ -1,0 +1,41 @@
+{
+  "id": "013",
+  "category": "tool-error-pivot",
+  "description": "click returned overlay-blocked. Dismiss the overlay, don't force the click.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 3143,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "press_keys",
+      "args": {
+        "key": "Escape"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click({text:\"Add to Cart\"})",
+        "reason": "Will hit the overlay again."
+      },
+      {
+        "match": "click({x:_,y:_})",
+        "reason": "Force-clicking with coords hits the overlay per the error message."
+      }
+    ],
+    "successRubric": "Dismiss the overlay first — Escape, click the close button, or complete the modal. THEN retry the cart click."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "no_tool",
+  "scoreNote": null,
+  "finishReason": "stop",
+  "content": "The click was blocked by an overlay. I need to dismiss the overlay first. The error message suggests using Escape, closing the button, or completing the modal. Since this is a browser interaction, I should try pressing Escape to dismiss the overlay.</think><|tool_call_start|>[press_keys(key='Escape')]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9811,
+    "total_tokens": 9878,
+    "completion_tokens": 67,
+    "prompt_tokens_details": null
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "id": "044",
+  "category": "counter-polarity",
+  "description": "X counter shows \"-5\" — over by 5. Shorten before posting.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 3371,
+  "error": null,
+  "firstToolCall": {
+    "name": "set_field",
+    "args": {
+      "ref_id": "ref_1",
+      "text": "What is happening? ... -5 ... Post",
+      "clear": true
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "set_field",
+      "args": {
+        "ref_id": "ref_textarea",
+        "clear": true,
+        "text": "<shortened text>"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click({text:\"Post\"})",
+        "reason": "Will be rejected — text is 5 over."
+      }
+    ],
+    "successRubric": "Negative on X's counter = over by N chars. Shorten before submit."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal_name",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The user wants me to post the draft they provided. The draft is:\n\n\"What is happening? ... -5 ... Post\"\n\nI need to use the `set_field` tool to fill in the form field with this text. The field is a textarea, so I should use `set_field` with `text` and `clear` set to true.\n\nLet me use `set_field` with:\n- ref_id: \"ref_1\" (the textarea input)\n- text: \"What is happening? ... -5 ... Post\"\n- clear: true\n- submit: false (we're just filling it in)\n\nActually, looking at the tool definition, `set_field` is for filling a form field. The `ref_id` should be the input element's ref_id.\n\nFrom the page context, the textarea has `ref_id: \"ref_1\"`.\n\nLet me use `set_field` with these parameters.</think>",
+  "usage": {
+    "prompt_tokens": 9788,
+    "total_tokens": 10007,
+    "completion_tokens": 219,
+    "prompt_tokens_details": null
+  }
+}

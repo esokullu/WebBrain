@@ -1,0 +1,54 @@
+{
+  "id": "059",
+  "category": "stale-refid",
+  "description": "Click pretended to \"verify\" using a stale ref_id, error spelled out the reason. Re-read.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 2413,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "get_accessibility_tree",
+      "args": {
+        "filter": "visible"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "set_field({ref_id:\"ref_19\", text:\"555-1234\"})",
+        "reason": "Hallucinated ref_id; verify_form doesn't return refs."
+      }
+    ],
+    "successRubric": "Inferred ref_ids don't work. Call get_accessibility_tree to get real refs, then set_field on the empty phone field."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "empty",
+  "scoreNote": null,
+  "finishReason": "stop",
+  "content": null,
+  "usage": {
+    "prompt_tokens": 9909,
+    "completion_tokens": 45,
+    "total_tokens": 9954,
+    "cost": 0.00099765,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 9504,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.00099765,
+      "upstream_inference_prompt_cost": 0.0009909,
+      "upstream_inference_completions_cost": 0.00000675
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 46,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}

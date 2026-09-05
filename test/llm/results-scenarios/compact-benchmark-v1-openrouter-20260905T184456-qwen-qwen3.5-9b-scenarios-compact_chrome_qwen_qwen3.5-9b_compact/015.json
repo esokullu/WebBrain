@@ -1,0 +1,59 @@
+{
+  "id": "015",
+  "category": "tool-error-pivot",
+  "description": "get_accessibility_tree(filter:\"all\") overflowed maxChars on a listing page. Switch filter, not increase the limit.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 2314,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "get_accessibility_tree",
+      "args": {
+        "filter": "visible",
+        "maxDepth": 10
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "get_accessibility_tree({filter:\"all\", maxChars:200000})",
+        "reason": "Raising maxChars is the failure called out in the system prompt — switch tool/filter instead."
+      },
+      {
+        "match": "get_accessibility_tree({filter:\"all\"})",
+        "reason": "Identical retry."
+      }
+    ],
+    "successRubric": "Switch to filter:\"visible\" or read_page or extract_data. Do not raise maxChars. The system prompt specifically warns against the latter."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "empty",
+  "scoreNote": null,
+  "finishReason": "stop",
+  "content": null,
+  "usage": {
+    "prompt_tokens": 9841,
+    "completion_tokens": 49,
+    "total_tokens": 9890,
+    "cost": 0.00099145,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 9504,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.00099145,
+      "upstream_inference_prompt_cost": 0.0009841,
+      "upstream_inference_completions_cost": 0.00000735
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 51,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "id": "040",
+  "category": "truncation-cascade",
+  "description": "After repeated truncated reads of the same URL, agent should call done with what it has and tell user the response is partial.",
+  "mode": "ask",
+  "browser": "chrome",
+  "latencyMs": 2286,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "done",
+      "args": {
+        "summary": "Summary of the visible portion: [synthesis of Section A and B]. The page is large and read_page returned truncated content twice — I've summarized what I can see."
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "read_page({})",
+        "reason": "Third identical read won't yield more."
+      }
+    ],
+    "successRubric": "Deliver a summary of what is visible. Acknowledge the truncation. Don't loop."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal_name",
+  "scoreNote": "prose answer credited as done (terminal tool; summary not arg-matched)",
+  "finishReason": "stop",
+  "content": "The page is truncated and only shows \"Section A: ... Section B: ...\" with a length of 80,000 characters. The page content is not accessible in the current context. I should inform the user that the page content is not available for summarization.</think>The page content is not available for summarization. Please provide the page text or enable the page content.",
+  "usage": {
+    "prompt_tokens": 7639,
+    "total_tokens": 7716,
+    "completion_tokens": 77,
+    "prompt_tokens_details": null
+  }
+}

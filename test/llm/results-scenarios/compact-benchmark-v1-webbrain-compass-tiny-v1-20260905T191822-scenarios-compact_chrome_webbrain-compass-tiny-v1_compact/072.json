@@ -1,0 +1,42 @@
+{
+  "id": "072",
+  "category": "cross-lingual",
+  "description": "German UI, English user request. Use the German button label.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 1744,
+  "error": null,
+  "firstToolCall": {
+    "name": "click_ax",
+    "args": {
+      "ref_id": "ref_1234567890"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "click",
+      "args": {
+        "text": "Search"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click({text:\"Google Suche\"})",
+        "reason": "Acceptable too, but the search-input pattern works with the visible search field, not a button."
+      }
+    ],
+    "successRubric": "Focus the search input (an input has aria-label \"Search\" or similar — click(text) on inputs is supported per click tool docs), type query. The German labels Suche/Suchen also work."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The user wants to search for \"berlin weather\" on Google. I need to use the `click_ax` tool to click the Google search button, then `type_text` to enter \"berlin weather\", and finally `click_ax` to submit the search.\n\nLet me start by clicking the Google search button.</think>",
+  "usage": {
+    "prompt_tokens": 9762,
+    "total_tokens": 9847,
+    "completion_tokens": 85,
+    "prompt_tokens_details": null
+  }
+}

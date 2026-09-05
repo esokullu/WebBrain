@@ -1,0 +1,23 @@
+{
+  "id": "050",
+  "user": "reply to this",
+  "mode": "act",
+  "tab": {
+    "url": "https://mail.google.com/mail/u/0/#inbox/abc123",
+    "title": "Invoice from Acme — Gmail"
+  },
+  "latencyMs": 4015,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "finishReason": "stop",
+  "content": "The user wants me to reply to the invoice from Acme. However, I don't have enough context about the invoice details, the sender, or what the user wants me to do.\n\nI should ask for more information before replying.</think><|tool_call_start|>[clarify(question='What would you like me to do with the invoice from Acme?', options=[\"Reply with a payment confirmation\", \"Reply with a request for more details\", \"Save the invoice for later\", \"Do nothing\"], reason='The requested action is not specified in the current context.', require_explicit_answer=True)]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 10501,
+    "total_tokens": 10622,
+    "completion_tokens": 121,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

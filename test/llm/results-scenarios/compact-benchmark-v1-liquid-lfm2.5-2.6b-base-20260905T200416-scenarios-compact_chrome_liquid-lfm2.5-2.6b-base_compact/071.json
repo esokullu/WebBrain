@@ -1,0 +1,46 @@
+{
+  "id": "071",
+  "category": "cross-lingual",
+  "description": "Turkish user asks in Turkish on a Turkish UI. Recognize the Turkish \"Gönder\" = \"Send\".",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 12608,
+  "error": null,
+  "firstToolCall": {
+    "name": "click",
+    "args": {
+      "selector": "button"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "click",
+      "args": {
+        "text": "Gönder"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click({text:\"Send\"})",
+        "reason": "Turkish UI — button label is \"Gönder\" not \"Send\"."
+      },
+      {
+        "match": "click({text:\"Post\"})",
+        "reason": "Same."
+      }
+    ],
+    "successRubric": "Use the visible Turkish button label \"Gönder\". Don't translate UI labels to English."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal_name",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The user is asking me to \"gönder bunu\" which is Turkish for \"send this\". They want me to send the content from the page https://mastoturk.org/publish.\n\nLooking at the page content, it says \"Yeni Gönderi ... 251 ... Gönder\" which translates to \"New Submission ... 251 ... Send\".\n\nThe user wants me to send this content. I should use the `click` or `type` tools to send this information. Since it's a submission that needs to be sent, I should probably click on a submit button or type the content.\n\nLet me first check if there's a submit button or if I need to click somewhere. The page content is very brief: \"Yeni Gönderi ... 251 ... Gönder\"\n\nThis seems like a test page or a minimal example. The user wants me to \"send\" this content. I should try to click a submit button or perform the action.\n\nLet me try using the `click` tool with a selector that might find a submit button. But first, I should see if there are any interactive elements on the page.\n\nActually, looking more carefully at the tool results, the page content is very minimal. It might be that this is a test scenario where I need to simply acknowledge and send the content.\n\nThe user said \"gönder bunu\" which means \"send this\". I should take the content from the page and send it somewhere. But where? The page is about \"New Submission\" and \"Send\".\n\nPerhaps I should click a submit button or perform the action that the page is set up for. Let me try using the `click` tool with a generic selector or see if there's a way to submit.\n\nActually, looking at the available tools, I have `click` which can click by ref_id, CSS selector, index, or coordinates. I also have `type` which can type into a field.\n\nSince the page content is \"Yeni Gönderi ... 251 ... Gönder\" (New Submission... 251... Send), it seems like the user wants me to send this submission.\n\nI should try to click a submit button. But I don't have a specific ref_id for a submit button. Let me try using a CSS selector like \"button\" or \"submit\" to find and click it.\n\nActually, I should first try to understand the page better. The read_page tool returned very limited text. Maybe the page has more content that wasn't captured, or maybe this is a minimal test page.\n\nGiven the user's instruction \"gönder bunu\" (send this), I should attempt to send the content. The most logical action would be to click a submit button or perform the submission action.\n\nLet me try using the `click` tool with a selector for a submit button. I'll try \"button\" as a selector first, or \"submit\" if that works.\n\nActually, looking at the tool description for `click_ax`, it says \"click by ref_id from get_accessibility_tree or CSS-pixel x/y inside the pane\". So I need a ref_id or CSS coordinates.\n\nFor `click` (without ax), it says \"Click by visible text, (4 ways to use it): (1) CSS selector, (2) visible text, (3) element index from get_interactive_elements, (4) x/y coordinates.\"\n\nSo I can use `click` with a CSS selector. Let me try \"button\" or \"submit\" as the selector.\n\nBut first, I should check if there are any interactive elements on the page. The `get_accessibility_tree` tool would give me that information.\n\nActually, I already have the page content from `read_page`. The text is \"Yeni Gönderi ... 251 ... Gönder\". This suggests there might be a submission form with a number (251) and a send action.\n\nGiven the context, I should try to click a submit button or perform the action. Let me try using the `click` tool with a selector that might find the submit button.\n\nI'll try \"button\" first as a CSS selector. If that doesn't work, I might need to try other approaches.\n\nActually, I realize I should be more careful. The page content is very minimal, and I don't have explicit information about what buttons are on the page. \n\nOne approach is to try clicking a common submit button selector. If it fails, I can try other approaches.\n\nLet me try using the `click` tool with selector \"button\" to see if it can find and click a submit button.</think>",
+  "usage": {
+    "prompt_tokens": 9773,
+    "total_tokens": 10727,
+    "completion_tokens": 954,
+    "prompt_tokens_details": null
+  }
+}

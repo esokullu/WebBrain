@@ -1,0 +1,21 @@
+{
+  "runTag": "compact-benchmark-v1-webbrain-compass-tiny-v1-20260905T184439-first-turn-100",
+  "model": "webbrain-compass-tiny-v1",
+  "browser": "chrome",
+  "base": "http://127.0.0.1:8325/v1",
+  "saveRequest": false,
+  "tier": "compact",
+  "modeOverride": null,
+  "chatTemplateCompat": "off",
+  "structuredToolsSent": true,
+  "reasoningEffort": null,
+  "freeze": null,
+  "cases": 100,
+  "totalLatencyMs": 141868,
+  "errors": 0,
+  "withToolCall": 0,
+  "withToolCallFromContent": 0,
+  "byTool": {
+    "(no_tool_call)": 100
+  }
+}
