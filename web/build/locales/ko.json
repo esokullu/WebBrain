@@ -335,6 +335,7 @@
   "social.mastodon_label": "Mastodon의 WebBrain",
   "social.bluesky_label": "Bluesky의 WebBrain",
   "social.discord_label": "Discord의 WebBrain",
+  "social.huggingface_label": "Hugging Face의 WebBrain",
   "footer.copyright_html": "© 2026 WebBrain. <a href=\"https://emresokullu.com\" target=\"_blank\">Emre Sokullu</a>와 <a href=\"https://github.com/webbrain-one/webbrain/graphs/contributors\" target=\"_blank\">기여자</a>들이 만들었습니다.",
   "footer.link_github": "GitHub",
   "footer.link_privacy": "개인정보 처리방침",
