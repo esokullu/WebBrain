@@ -153,15 +153,26 @@ const STAGED_SCREENSHOT_REDACTION_MAX_REGIONS = 400;
 //
 // The boundaries are Unicode-aware because JavaScript's \b is defined on
 // [A-Za-z0-9_] alone, which places no boundary at all around a Cyrillic word.
-// Scripts that do not space their words get a read-verb exclusion instead,
-// since substring presence there says nothing about who is being asked to do
-// what.
-const SOCIAL_PUBLISH_WORD_EDGE = '\\p{L}\\p{N}_';
+// Scripts that do not space their words carry no boundaries either, so their
+// forms are matched as substrings and the read-verb rule below is what keeps
+// them honest.
+const SOCIAL_WORD_EDGE = '\\p{L}\\p{N}_';
 const SOCIAL_PUBLISH_VERBS = new RegExp(
-  `(?<![${SOCIAL_PUBLISH_WORD_EDGE}])(?:post|posts|posted|posting|publish|publishes|published|publishing|tweet|tweets|tweeted|tweeting|retweet|retweets|skeet|skeets|share|shares|shared|sharing|publica|public\u00e1|publ\u00edcalo|publ\u00edcala|publicalo|publicala|publicar|publicas|publican|publique|publiquen|publiquem|publicando|posta|postar|comparte|compartir|compartilhe|compartilhar|publie|publier|publiez|publions|publi\u00e9e|publi\u00e9e|publi\u00e9|partage|partager|partagez|pubblica|pubblicare|pubblicate|condividi|condividere|ver\u00f6ffentliche|ver\u00f6ffentlichen|ver\u00f6ffentlicht|poste|posten|teile|teilen|yay\u0131nla|yay\u0131nlay\u0131n|yay\u0131mla|payla\u015f|payla\u015f\u0131n|\u043e\u043f\u0443\u0431\u043b\u0438\u043a\u0443\u0439|\u043e\u043f\u0443\u0431\u043b\u0438\u043a\u0443\u0439\u0442\u0435|\u043e\u043f\u0443\u0431\u043b\u0438\u043a\u043e\u0432\u0430\u0442\u044c|\u043f\u0443\u0431\u043b\u0438\u043a\u0443\u0439|\u043f\u043e\u0434\u0435\u043b\u0438\u0441\u044c|\u0437\u0430\u043f\u043e\u0441\u0442\u044c)(?![${SOCIAL_PUBLISH_WORD_EDGE}])`
-  + '|(?<!\u9605\u8bfb|\u95b1\u8b80|\u8bfb|\u8b80|\u67e5\u770b|\u6d4f\u89c8|\u700f\u89bd|\u8aad\u3093\u3067|\u8aad\u3080|\u8aad\u307f|\uc77d\uace0|\uc77d\uc5b4|\uc77d\uc740)(?:\u6295\u7a3f\u3059\u308b|\u6295\u7a3f\u3057\u3066|\u6295\u7a3f\u3057|\u6295\u7a3f|\u30c4\u30a4\u30fc\u30c8\u3057\u3066|\u30c4\u30a4\u30fc\u30c8\u3057|\u30dd\u30b9\u30c8\u3057\u3066|\u30dd\u30b9\u30c8\u3057|\u53d1\u5e03|\u767c\u5e03|\u53d1\u5e16|\u767c\u5e16|\u53d1\u63a8|\u767c\u63a8|\u53d1\u9001\u63a8\u6587|\uac8c\uc2dc|\uc62c\ub824|\uc62c\ub9ac|\u0627\u0646\u0634\u0631|\u0646\u0634\u0631)',
+  `(?<![${SOCIAL_WORD_EDGE}])(?:post|posts|posted|posting|publish|publishes|published|publishing|tweet|tweets|tweeted|tweeting|retweet|retweets|skeet|skeets|share|shares|shared|sharing|publica|public\u00e1|publ\u00edcalo|publ\u00edcala|publicalo|publicala|publicar|publicas|publican|publique|publiquen|publiquem|publicando|posta|postar|comparte|compartir|compartilhe|compartilhar|publie|publier|publiez|publions|publi\u00e9e|publi\u00e9e|publi\u00e9|partage|partager|partagez|pubblica|pubblicare|pubblicate|condividi|condividere|ver\u00f6ffentliche|ver\u00f6ffentlichen|ver\u00f6ffentlicht|poste|posten|teile|teilen|yay\u0131nla|yay\u0131nlay\u0131n|yay\u0131mla|payla\u015f|payla\u015f\u0131n|\u043e\u043f\u0443\u0431\u043b\u0438\u043a\u0443\u0439|\u043e\u043f\u0443\u0431\u043b\u0438\u043a\u0443\u0439\u0442\u0435|\u043e\u043f\u0443\u0431\u043b\u0438\u043a\u043e\u0432\u0430\u0442\u044c|\u043f\u0443\u0431\u043b\u0438\u043a\u0443\u0439|\u043f\u043e\u0434\u0435\u043b\u0438\u0441\u044c|\u0437\u0430\u043f\u043e\u0441\u0442\u044c)(?![${SOCIAL_WORD_EDGE}])`
+  + '|\u6295\u7a3f\u3059\u308b|\u6295\u7a3f\u3057\u3066|\u6295\u7a3f\u3057|\u6295\u7a3f|\u30c4\u30a4\u30fc\u30c8\u3057\u3066|\u30c4\u30a4\u30fc\u30c8\u3057|\u30dd\u30b9\u30c8\u3057\u3066|\u30dd\u30b9\u30c8\u3057|\u53d1\u5e03|\u767c\u5e03|\u53d1\u5e16|\u767c\u5e16|\u53d1\u63a8|\u767c\u63a8|\u53d1\u9001\u63a8\u6587|\uac8c\uc2dc|\uc62c\ub824|\uc62c\ub9ac|\u0627\u0646\u0634\u0631|\u0646\u0634\u0631',
   'iu',
 );
+
+// "post", "posts" and "tweet" are nouns as often as commands, in every
+// language on that list. What separates "read posts on <feed>" from "post
+// this on <feed>" is not the word but the clause: a publish word that a read
+// verb already governs is naming content, not asking for a publication.
+const SOCIAL_READ_VERBS = new RegExp(
+  `(?<![${SOCIAL_WORD_EDGE}])(?:read|reads|reading|open|opens|opening|view|views|viewing|check|checks|checking|browse|browses|browsing|scan|scans|scanning|skim|skims|skimming|summarise|summarize|summarises|summarizes|summarising|summarizing|review|reviews|reviewing|fetch|fetches|fetching|extract|extracts|extracting|collect|collects|collecting|gather|gathers|gathering|monitor|monitors|monitoring|watch|watches|watching|analyse|analyze|analyses|analyzes|analysing|analyzing|lee|leer|revisa|revisar|consulta|consultar|lis|lire|lisez|consulte|consulter|lesen|lies|pr\u00fcfe|pr\u00fcfen|leggi|leggere|oku|okuyun|incele|inceleyin|\u0447\u0438\u0442\u0430\u0439|\u043f\u0440\u043e\u0447\u0438\u0442\u0430\u0439|\u043f\u0440\u043e\u0447\u0442\u0438|\u043f\u0440\u043e\u0441\u043c\u043e\u0442\u0440\u0438|\u043f\u043e\u0441\u043c\u043e\u0442\u0440\u0438)(?![${SOCIAL_WORD_EDGE}])`
+  + '|\u9605\u8bfb|\u95b1\u8b80|\u8bfb|\u8b80|\u67e5\u770b|\u6d4f\u89c8|\u700f\u89bd|\u8aad\u3093\u3067|\u8aad\u3080|\u8aad\u307f|\uc77d\uace0|\uc77d\uc5b4|\uc77d\uc740',
+  'iu',
+);
+const SOCIAL_CLAUSE_BREAK = new RegExp('[.!?;:,\\n]|(?<![\\p{L}\\p{N}_])(?:and|then|but|or|after|before|y|luego|puis|et|ensuite|und|dann|poi|sonra|ve|затем|и)(?![\\p{L}\\p{N}_])|然后|然後|接着|そして|それから|、|。', 'iu');
 
 // "On <url>, publish this" names a destination just as plainly as
 // "publish this on <url>", but only when the URL is presented as a place.
@@ -12343,6 +12354,17 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     return url;
   }
 
+  // Publication language only counts as a command when nothing in its own
+  // clause is asking to read. "Read posts on <feed>" and "阅读推文 <feed>" name
+  // content; "read the summary and publish it on <feed>" asks for a post in a
+  // clause of its own.
+  _socialPublicationCommandIn(text) {
+    return String(text || '').split(SOCIAL_CLAUSE_BREAK).some((clause) => {
+      const publish = clause ? clause.match(SOCIAL_PUBLISH_VERBS) : null;
+      return !!publish && !SOCIAL_READ_VERBS.test(clause.slice(0, publish.index));
+    });
+  }
+
   _socialPublishDestinationAdapter(rawUrl) {
     let parsed;
     try {
@@ -12376,7 +12398,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       .map(value => String(value || '').trim())
       .filter(Boolean)
       .join(' ');
-    const hasPublishIntent = SOCIAL_PUBLISH_VERBS.test(trustedContext);
+    const hasPublishIntent = this._socialPublicationCommandIn(trustedContext);
     for (const match of trustedContext.matchAll(/https?:\/\/[^\s<>"'`\u3002\u3001\uff0c\uff1b\uff1a\uff01\uff1f\u2026\u2025]+/gi)) {
       const url = this._workflowTrimUrlPunctuation(match[0]);
       const destination = this._socialPublishDestinationAdapter(url);
@@ -12391,8 +12413,8 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         match.index + match[0].length + 60,
       );
       const governed = /\/(?:compose|intent|i\/flow)\//.test(url)
-        || SOCIAL_PUBLISH_VERBS.test(before)
-        || (SOCIAL_PUBLISH_DESTINATION_LEAD.test(before) && SOCIAL_PUBLISH_VERBS.test(after));
+        || this._socialPublicationCommandIn(before)
+        || (SOCIAL_PUBLISH_DESTINATION_LEAD.test(before) && this._socialPublicationCommandIn(after));
       if (!governed) continue;
       const workflow = resolveAdapterWorkflowJob(url, 'publish-post');
       if (workflow?.job && workflow.adapterName === destination) targets.add(destination);
@@ -12403,10 +12425,14 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     // publish verb and X without ever asking for a post. The verb has to
     // govern the platform through a destination preposition for this to be a
     // publication target.
-    const publishesTo = (platform) => new RegExp(
-      `\\b(?:post|publish|share|tweet|skeet)\\b[^.!?\\n]{0,60}?\\b(?:to|on|onto|in|at|via)\\s+(?:the\\s+)?${platform}\\b`,
-      'i',
-    ).test(trustedContext);
+    const publishesTo = (platform) => {
+      const pattern = new RegExp(
+        `\\b(?:post|publish|share|tweet|skeet)\\b[^.!?\\n]{0,60}?\\b(?:to|on|onto|in|at|via)\\s+(?:the\\s+)?${platform}\\b`,
+        'i',
+      );
+      return trustedContext.split(SOCIAL_CLAUSE_BREAK)
+        .some(clause => !!clause && pattern.test(clause) && this._socialPublicationCommandIn(clause));
+    };
     if (publishesTo('(?:bluesky|bsky(?:\\.app)?)')) targets.add('bluesky');
     if (publishesTo('(?:x|x\\.com|twitter(?:\\.com)?)')
         // "tweet this" names its own destination.

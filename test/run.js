@@ -85035,6 +85035,15 @@ test('social publication workflow follows the live X or Bluesky destination and 
         'a CJK content noun was read as a publish command'],
       ['\u9605\u8bfb\u6295\u7a3f https://x.com/home \u7136\u540e\u628a\u6458\u8981\u63d0\u4ea4\u5230\u8868\u5355', [],
         'a CJK publish word governed by a read verb was read as intent'],
+      // "post" and "posts" are nouns as often as commands. The clause decides.
+      ['Read posts on https://x.com/home, then submit a summary in the survey', [],
+        'the noun "posts" was read as a publish command'],
+      ['Read the post on https://x.com/home and submit a summary in the survey', [],
+        'a read verb governing "post" did not disqualify it'],
+      ['Check the latest posts on https://x.com/home then fill the form', [],
+        'a read verb further from the noun did not disqualify it'],
+      ['Read the summary and publish it on https://x.com/home', ['twitter'],
+        'a publish command in its own clause was lost to an earlier read verb'],
     ]) {
       assert.deepEqual(
         [...agent._trustedSocialPublishTargetAdapters({ taskText })],
