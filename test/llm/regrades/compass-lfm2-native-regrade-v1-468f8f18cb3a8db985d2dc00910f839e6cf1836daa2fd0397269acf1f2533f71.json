@@ -1,0 +1,56 @@
+{
+  "schema": "webbrain-compass-lfm2-native-regrade-v1",
+  "createdAt": "2026-09-05T16:24:24.483716Z",
+  "regraderSha256": "00364a695dae638b9630b406515c033b9d5bd772797a8bd3d7c82d0120d40f4c",
+  "inputs": {
+    "firstTurnDirectory": "/mnt/g/esoku/Documents/webbrain2/test/llm/results/compact-benchmark-v1-webbrain-compass-tiny-v1-20260905T184439-first-turn-100_chrome_webbrain-compass-tiny-v1_compact",
+    "firstTurnSummarySha256": "18f3c798f5a6693cb368dd99178da7a0ad809f02875a344aea8473d02564131b",
+    "scenarioDirectory": "/mnt/g/esoku/Documents/webbrain2/test/llm/results-scenarios/compact-benchmark-v1-webbrain-compass-tiny-v1-20260905T184439-scenarios-compact_chrome_webbrain-compass-tiny-v1_compact",
+    "scenarioSummarySha256": "6747c4d4bb3e839b4ee599763dd562043ace9441155911ead88e2220d9b2cc4e"
+  },
+  "parser": {
+    "format": "LFM2 native pythonic wrappers",
+    "startToken": "<|tool_call_start|>",
+    "endToken": "<|tool_call_end|>",
+    "execution": "AST parse and literal evaluation only; no eval"
+  },
+  "coverage": {
+    "firstTurnRows": 100,
+    "scenarioRows": 100,
+    "parseCounts": {
+      "first_turn_native_parsed": 81,
+      "first_turn_unparsed": 19,
+      "scenarios_native_parsed": 72,
+      "scenarios_skipped": 11,
+      "scenarios_unparsed": 17
+    },
+    "malformedNativeCallIds": [
+      "first-turn:029",
+      "first-turn:037",
+      "first-turn:060",
+      "first-turn:074",
+      "first-turn:075",
+      "first-turn:098",
+      "first-turn:099",
+      "scenario:006",
+      "scenario:017",
+      "scenario:049",
+      "scenario:096"
+    ]
+  },
+  "firstTurnVerdicts": {
+    "ideal": 5,
+    "ideal_name": 17,
+    "no_tool": 19,
+    "other": 59
+  },
+  "scenarioVerdicts": {
+    "anti": 1,
+    "ideal": 5,
+    "ideal_name": 42,
+    "no_tool": 3,
+    "other": 38,
+    "skipped": 11
+  },
+  "contentSha256": "468f8f18cb3a8db985d2dc00910f839e6cf1836daa2fd0397269acf1f2533f71"
+}
