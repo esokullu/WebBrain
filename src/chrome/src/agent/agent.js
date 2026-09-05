@@ -2448,7 +2448,11 @@ export class Agent extends LoopDetector {
     if (!intended || !published || intended === published) return false;
     const isDid = value => /^bluesky:did:/i.test(String(value || ''));
     if (isDid(intended) === isDid(published)) return false;
+    // Links the author wrote in the post body are content, not proof of who
+    // wrote the post. A wrong-account post that literally links to the
+    // requested DID would otherwise certify itself as an alias.
     const cardAccounts = new Set((Array.isArray(record?.links) ? record.links : [])
+      .filter(link => !link?.authored)
       .flatMap(link => [link?.href, link?.expandedUrl])
       .map(value => this._workflowSocialPublicationAccountIdentity(siteWorkflow, value))
       .filter(value => !!value && isDid(value) !== isDid(published)));
@@ -14624,14 +14628,26 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     // posts on X, then share the findings in the survey" mentions both a
     // publish verb and X without ever asking for a post. The verb has to
     // govern the platform through a destination preposition for this to be a
-    // publication target.
+    // publication target. Verbs and prepositions are the same multilingual
+    // sets the URL scan uses, so "Publícalo en X" counts while English-only
+    // matching would leave it unbound.
     const publishesTo = (platform) => {
-      const pattern = new RegExp(
-        `\\b(?:post|publish|share|tweet|skeet)\\b[^.!?\\n]{0,60}?\\b(?:to|on|onto|in|at|via)\\s+(?:the\\s+)?${platform}\\b`,
-        'i',
+      const platformPattern = new RegExp(
+        `(?<![${SOCIAL_WORD_EDGE}])(?:on|onto|to|via|in|at|en|sur|sobre|\u00e0|au|auf|su|em|na|para|\u0432|\u043d\u0430|\u5230)(?![${SOCIAL_WORD_EDGE}])\\s+(?:the\\s+)?${platform}(?![${SOCIAL_WORD_EDGE}])`,
+        'iu',
       );
-      return trustedContext.split(SOCIAL_CLAUSE_BREAK)
-        .some(clause => !!clause && pattern.test(clause) && this._socialPublicationCommandIn(clause));
+      const verbPattern = new RegExp(SOCIAL_PUBLISH_VERBS.source, 'giu');
+      return trustedContext.split(SOCIAL_CLAUSE_BREAK).some((clause) => {
+        if (!clause) return false;
+        for (const verb of clause.matchAll(verbPattern)) {
+          const verbIndex = verb.index ?? 0;
+          if (SOCIAL_READ_VERBS.test(clause.slice(0, verbIndex))) continue;
+          const afterVerb = clause.slice(verbIndex, verbIndex + (verb[0]?.length ?? 0) + 60);
+          platformPattern.lastIndex = 0;
+          if (platformPattern.test(afterVerb)) return true;
+        }
+        return false;
+      });
     };
     if (publishesTo('(?:bluesky|bsky(?:\\.app)?)')) targets.add('bluesky');
     if (publishesTo('(?:x|x\\.com|twitter(?:\\.com)?)')
@@ -27931,7 +27947,11 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
                   ].filter(candidate => !isEmbedded(candidate)).slice(0, 100).map(candidate => {
                     let href = '';
                     try { href = new URL(candidate.getAttribute('href') || candidate.href || '', location.href).href; } catch {}
-                    const compact = value => String(value || '').replace(/\\s+/g, ' ').trim().slice(0, 1000);
+                    const compact = value => String(value || '').replace(/\s+/g, ' ').trim().slice(0, 1000);
+                    let inAuthoredBody = false;
+                    try {
+                      inAuthoredBody = authoredNodes.some(node => node === candidate || node.contains?.(candidate));
+                    } catch {}
                     return {
                       href: compact(href),
                       text: compact(candidate.innerText || candidate.textContent),
@@ -27942,10 +27962,11 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
                         || candidate.getAttribute('data-full-url')
                         || candidate.getAttribute('data-url'),
                       ),
+                      ...(inAuthoredBody ? { authored: true } : {}),
                     };
                   }).filter(candidate => candidate.href || candidate.text || candidate.expandedUrl);
                   const links = Array.from(new Map(recordLinks.map(candidate => [
-                    [candidate.href, candidate.text, candidate.title, candidate.ariaLabel, candidate.expandedUrl].join('\\u0000'),
+                    [candidate.href, candidate.text, candidate.title, candidate.ariaLabel, candidate.expandedUrl, candidate.authored ? '1' : ''].join('\u0000'),
                     candidate,
                   ])).values()).slice(0, 24);
                   const prior = workflowResourceRecordMap.get(identity);

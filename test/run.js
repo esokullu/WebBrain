@@ -85044,6 +85044,13 @@ test('social publication workflow follows the live X or Bluesky destination and 
         'a read verb further from the noun did not disqualify it'],
       ['Read the summary and publish it on https://x.com/home', ['twitter'],
         'a publish command in its own clause was lost to an earlier read verb'],
+      // Bare platforms use the same multilingual verbs as URLs, not English-only.
+      ['Publícalo en X', ['twitter'],
+        'a Spanish bare platform destination was missed'],
+      ['Publicar en Bluesky', ['bluesky'],
+        'a Spanish bare Bluesky destination was missed'],
+      ['Publiez ceci sur Bluesky', ['bluesky'],
+        'a French bare platform destination was missed'],
     ]) {
       assert.deepEqual(
         [...agent._trustedSocialPublishTargetAdapters({ taskText })],
@@ -85448,6 +85455,31 @@ test('a Bluesky DID and handle name one account only on the card that proves it'
       handle,
       cardWithDid,
     ), false, AgentClass.name + ': a different handle was accepted as an alias');
+
+    // A link the author wrote in the post body is content, not proof of who
+    // wrote the post. A wrong-account post linking to the requested DID must
+    // not certify itself.
+    assert.equal(agent._workflowSocialAccountAliasProven(
+      workflow,
+      did,
+      'bluesky:attacker.one',
+      {
+        url: 'https://bsky.app/profile/attacker.one/post/9xyz',
+        links: [{ href: 'https://bsky.app/profile/did:plc:abc123', authored: true }],
+      },
+    ), false, AgentClass.name + ': a body link to the intended DID was accepted as alias proof');
+    assert.equal(agent._workflowSocialAccountAliasProven(
+      workflow,
+      did,
+      'bluesky:attacker.one',
+      {
+        url: 'https://bsky.app/profile/attacker.one/post/9xyz',
+        links: [
+          { href: 'https://bsky.app/profile/attacker.one' },
+          { href: 'https://bsky.app/profile/did:plc:abc123', authored: true },
+        ],
+      },
+    ), false, AgentClass.name + ': an authored DID link bridged two unrelated accounts');
     assert.equal(
       agent._workflowSocialAccountAliasProven(
         agent._resolvePlannerSiteWorkflow('https://x.com/home', {
