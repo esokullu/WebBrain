@@ -335,6 +335,7 @@
   "social.mastodon_label": "WebBrain у Mastodon",
   "social.bluesky_label": "WebBrain у Bluesky",
   "social.discord_label": "WebBrain у Discord",
+  "social.huggingface_label": "WebBrain у Hugging Face",
   "footer.copyright_html": "© 2026 WebBrain. Створено <a href=\"https://emresokullu.com\" target=\"_blank\">Emre Sokullu</a> та <a href=\"https://github.com/webbrain-one/webbrain/graphs/contributors\" target=\"_blank\">учасниками</a>.",
   "footer.link_github": "GitHub",
   "footer.link_privacy": "Політика конфіденційності",

@@ -335,6 +335,7 @@
   "social.mastodon_label": "WebBrain auf Mastodon",
   "social.bluesky_label": "WebBrain auf Bluesky",
   "social.discord_label": "WebBrain auf Discord",
+  "social.huggingface_label": "WebBrain auf Hugging Face",
   "footer.copyright_html": "© 2026 WebBrain. Gebaut von <a href=\"https://emresokullu.com\" target=\"_blank\">Emre Sokullu</a> und <a href=\"https://github.com/webbrain-one/webbrain/graphs/contributors\" target=\"_blank\">Mitwirkenden</a>.",
   "footer.link_github": "GitHub",
   "footer.link_privacy": "Datenschutzrichtlinie",

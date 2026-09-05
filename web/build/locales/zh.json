@@ -335,6 +335,7 @@
   "social.mastodon_label": "Mastodon 上的 WebBrain",
   "social.bluesky_label": "Bluesky 上的 WebBrain",
   "social.discord_label": "Discord 上的 WebBrain",
+  "social.huggingface_label": "Hugging Face 上的 WebBrain",
   "footer.copyright_html": "© 2026 WebBrain。由 <a href=\"https://emresokullu.com\" target=\"_blank\">Emre Sokullu</a> 与<a href=\"https://github.com/webbrain-one/webbrain/graphs/contributors\" target=\"_blank\">贡献者</a>共同构建。",
   "footer.link_github": "GitHub",
   "footer.link_privacy": "隐私政策",
