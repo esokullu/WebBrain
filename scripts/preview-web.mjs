@@ -23,7 +23,8 @@
 
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
-import { readFile, stat } from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
+import { stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { exec } from 'node:child_process';
@@ -130,24 +131,98 @@ async function resolveFile(requestPath) {
   return null;
 }
 
+function formatUrlHost(host) {
+  if (host === '0.0.0.0' || host === '::') return 'localhost';
+  if (host.includes(':') && !host.startsWith('[')) return `[${host}]`;
+  return host;
+}
+
 function startServer(host, port, strictPort) {
+  const urlHost = formatUrlHost(host);
   const server = createServer(async (req, res) => {
     try {
-      const url = new URL(req.url || '/', `http://${host}:${port}`);
+      const url = new URL(req.url || '/', `http://${urlHost}:${port}`);
       const file = await resolveFile(url.pathname);
       if (!file) {
         res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
         res.end('404 Not Found');
         return;
       }
-      const body = await readFile(file);
       const mime = MIME_TYPES[path.extname(file).toLowerCase()] || 'application/octet-stream';
+      const total = (await stat(file)).size;
+      const range = req.headers.range;
+      if (range) {
+        const m = /^bytes=(\d*)-(\d*)$/.exec(range.trim());
+        if (m) {
+          let start = m[1] === '' ? null : Number(m[1]);
+          let end = m[2] === '' ? null : Number(m[2]);
+          if (start === null && end !== null) {
+            // Suffix range: last N bytes.
+            if (end === 0) {
+              res.writeHead(416, {
+                'Content-Range': `bytes */${total}`,
+                'Accept-Ranges': 'bytes',
+              });
+              res.end();
+              return;
+            }
+            start = Math.max(0, total - end);
+            end = total - 1;
+          } else if (start !== null && end === null) {
+            end = total - 1;
+          }
+          if (
+            start === null || end === null ||
+            !Number.isInteger(start) || !Number.isInteger(end) ||
+            start < 0 || end < start || start >= total
+          ) {
+            res.writeHead(416, {
+              'Content-Range': `bytes */${total}`,
+              'Accept-Ranges': 'bytes',
+            });
+            res.end();
+            return;
+          }
+          if (end >= total) end = total - 1;
+          res.writeHead(206, {
+            'Content-Type': mime,
+            'Cache-Control': 'no-store',
+            'Accept-Ranges': 'bytes',
+            'Content-Range': `bytes ${start}-${end}/${total}`,
+            'Content-Length': end - start + 1,
+          });
+          if (req.method === 'HEAD') {
+            res.end();
+            return;
+          }
+          createReadStream(file, { start, end })
+            .on('error', (err) => {
+              console.error('Stream error:', err.message);
+              if (!res.headersSent) res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
+              res.end('500 Internal Server Error');
+            })
+            .pipe(res);
+          return;
+        }
+        // Malformed Range header: fall through to full response.
+      }
       res.writeHead(200, {
         'Content-Type': mime,
         'Cache-Control': 'no-store',
-        'Content-Length': body.length,
+        'Accept-Ranges': 'bytes',
+        'Content-Length': total,
       });
-      res.end(body);
+      if (req.method === 'HEAD') {
+        res.end();
+        return;
+      }
+      createReadStream(file)
+        .on('error', (err) => {
+          console.error('Stream error:', err.message);
+          if (!res.headersSent) res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
+          res.end('500 Internal Server Error');
+        })
+        .pipe(res);
     } catch (err) {
       console.error('Request error:', err.message);
       if (!res.headersSent) res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
@@ -188,7 +263,7 @@ async function main() {
     console.log('Skipping build (--no-build). Serving existing web/ output.');
   }
   const { server, port } = await startServer(opts.host, opts.port, opts.strictPort);
-  const url = `http://${opts.host === '0.0.0.0' ? 'localhost' : opts.host}:${port}/`;
+  const url = `http://${formatUrlHost(opts.host)}:${port}/`;
   console.log(`\nServing ${path.relative(REPO_ROOT, WEB_DIR)}/ at ${url}`);
   console.log('Localized homes: /es/ /fr/ /tr/ /zh/ /ru/ /uk/ /ar/ /ja/ /ko/ /id/ /th/ /ms/ /tl/ /he/ /hi/ /pt/ /vi/ /bn/ /fa/ /nl/ /de/');
   console.log('Press Ctrl+C to stop.');

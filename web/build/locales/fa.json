@@ -335,6 +335,7 @@
   "social.mastodon_label": "WebBrain در Mastodon",
   "social.bluesky_label": "WebBrain در Bluesky",
   "social.discord_label": "WebBrain در Discord",
+  "social.huggingface_label": "WebBrain در Hugging Face",
   "footer.copyright_html": "© 2026 WebBrain. ساخته شده توسط <a href=\"https://emresokullu.com\" target=\"_blank\">امره سوکولو</a> و <a href=\"https://github.com/webbrain-one/webbrain/graphs/contributors\" target=\"_blank\">مشارکت‌کنندگان</a>.",
   "footer.link_github": "GitHub",
   "footer.link_privacy": "سیاست حفظ حریم خصوصی",
