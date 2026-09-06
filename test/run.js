@@ -86194,6 +86194,32 @@ test('social publication workflow follows the live X or Bluesky destination and 
         'retweet that was wrongly treated as a publish destination'],
       ['retweet it', [],
         'retweet it was wrongly treated as a publish destination'],
+      ['Do not post this on X; submit it in the survey', [],
+        'negated publication command was wrongly treated as a publish destination'],
+      ['Never publish to Bluesky', [],
+        'negated Bluesky publication command was wrongly treated as a publish destination'],
+      ["Don't tweet this", [],
+        'negated tweet-this command was wrongly treated as a publish destination'],
+      ['Do not post on https://x.com/home; fill the survey instead', [],
+        'negated URL publication command was wrongly treated as a publish destination'],
+      ['You must not post on X', [],
+        'negated must-not command was wrongly treated as a publish destination'],
+      ['No publicar esto en X; envíalo en la encuesta', [],
+        'Spanish negated publication command was wrongly treated as a publish destination'],
+      ['Nicht auf X posten', [],
+        'German negated publication command was wrongly treated as a publish destination'],
+      ['Ne pas publier sur X', [],
+        'French negated publication command was wrongly treated as a publish destination'],
+      ['不要在X上发布这条消息', [],
+        'Chinese negated publication command was wrongly treated as a publish destination'],
+      ['Xに投稿しないでください', [],
+        'Japanese post-negated publication command was wrongly treated as a publish destination'],
+      ['Xに投稿してはいけない', [],
+        'Japanese post-negated command with してはいけない was wrongly treated as a publish destination'],
+      ['X에 게시하지 마세요', [],
+        'Korean post-negated publication command was wrongly treated as a publish destination'],
+      ['Post this on X with no attachments', ['twitter'],
+        'post with no-attachments phrase was wrongly rejected'],
     ]) {
       assert.deepEqual(
         [...agent._trustedSocialPublishTargetAdapters({ taskText })],
@@ -86587,6 +86613,104 @@ test('X and Bluesky same-route publication accepts only one new permalink with t
         fixture.feedUrl,
         submit,
       ), true, AgentClass.name + ': post with matching specific attachment was rejected');
+
+      const pageStateWithTwoImages = {
+        ...exactPageState,
+        workflowResourceRecords: [
+          {
+            ...exactPageState.workflowResourceRecords[0],
+            attachments: [
+              { type: 'image', src: 'https://pbs.twimg.com/media/xyz1.jpg', alt: 'screenshot 1' },
+              { type: 'image', src: 'https://pbs.twimg.com/media/xyz2.jpg', alt: 'screenshot 2' },
+            ],
+          },
+        ],
+      };
+
+      assert.equal(agent._workflowPublishedResourcePayloadMatch(
+        {
+          ...submit.workflowBinding,
+          metadataRequirements: [
+            ...submit.workflowBinding.metadataRequirements,
+            { field: 'attachment', value: 'an image' },
+          ],
+          publishedResourceIdentity: fixture.expectedIdentity,
+          preDispatchPublicationAccountIdentity: fixture.accountIdentity,
+          preDispatchPublicationAccountIdentityComplete: true,
+        },
+        guard,
+        pageStateWithImage,
+        fixture.feedUrl,
+        submit,
+      ), true, AgentClass.name + ': generic attachment phrase "an image" was rejected');
+
+      assert.equal(agent._workflowPublishedResourcePayloadMatch(
+        {
+          ...submit.workflowBinding,
+          metadataRequirements: [
+            ...submit.workflowBinding.metadataRequirements,
+            { field: 'attachment', value: 'two images' },
+          ],
+          publishedResourceIdentity: fixture.expectedIdentity,
+          preDispatchPublicationAccountIdentity: fixture.accountIdentity,
+          preDispatchPublicationAccountIdentityComplete: true,
+        },
+        guard,
+        pageStateWithImage,
+        fixture.feedUrl,
+        submit,
+      ), false, AgentClass.name + ': single attachment satisfied requirement for two images');
+
+      assert.equal(agent._workflowPublishedResourcePayloadMatch(
+        {
+          ...submit.workflowBinding,
+          metadataRequirements: [
+            ...submit.workflowBinding.metadataRequirements,
+            { field: 'attachment', value: 'two images' },
+          ],
+          publishedResourceIdentity: fixture.expectedIdentity,
+          preDispatchPublicationAccountIdentity: fixture.accountIdentity,
+          preDispatchPublicationAccountIdentityComplete: true,
+        },
+        guard,
+        pageStateWithTwoImages,
+        fixture.feedUrl,
+        submit,
+      ), true, AgentClass.name + ': requirement for two images was rejected when two were published');
+
+      assert.equal(agent._workflowPublishedResourcePayloadMatch(
+        {
+          ...submit.workflowBinding,
+          metadataRequirements: [
+            ...submit.workflowBinding.metadataRequirements,
+            { field: 'attachment', value: 'an image of quarterly-chart.png' },
+          ],
+          publishedResourceIdentity: fixture.expectedIdentity,
+          preDispatchPublicationAccountIdentity: fixture.accountIdentity,
+          preDispatchPublicationAccountIdentityComplete: true,
+        },
+        guard,
+        pageStateWithSpecificImage,
+        fixture.feedUrl,
+        submit,
+      ), true, AgentClass.name + ': specific attachment phrase with generic wrapper was rejected');
+
+      assert.equal(agent._workflowPublishedResourcePayloadMatch(
+        {
+          ...submit.workflowBinding,
+          metadataRequirements: [
+            ...submit.workflowBinding.metadataRequirements,
+            { field: 'attachment', value: 'an image of quarterly-chart.png' },
+          ],
+          publishedResourceIdentity: fixture.expectedIdentity,
+          preDispatchPublicationAccountIdentity: fixture.accountIdentity,
+          preDispatchPublicationAccountIdentityComplete: true,
+        },
+        guard,
+        pageStateWithImage,
+        fixture.feedUrl,
+        submit,
+      ), false, AgentClass.name + ': wrong asset satisfied specific attachment phrase with generic wrapper');
 
       if (fixture.adapterName === 'twitter') {
         const longBody1 = 'A'.repeat(10500) + ' first suffix';

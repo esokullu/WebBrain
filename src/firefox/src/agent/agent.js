@@ -177,6 +177,16 @@ const SOCIAL_NOUN_LIKE_PUBLISH = new RegExp(
   '^(?:posts?|tweets?|skeets?|publica[c\u00e7][i\u00ed]?[o\u00f3]n(?:es)?|publica[c\u00e7][a\u00e3]o|publica[c\u00e7][o\u00f5]es|publication|publications|\u6295\u7a3f|\u63a8\u6587)$',
   'iu',
 );
+const SOCIAL_NEGATION = new RegExp(
+  `(?<![${SOCIAL_WORD_EDGE}])(?:not|never|don't|dont|do\\s+not|cannot|can't|cant|shouldn't|shouldnt|should\\s+not|mustn't|mustnt|must\\s+not|won't|wont|will\\s+not|avoid|refrain|stop|prevent|prohibit|no(?=\\s+(?!attachments?|photos?|images?|pictures?|videos?|files?|media|delays?|doubt|worries|hashtags?|tags?|links?|urls?\\b))|ne|pas|ne\\s+pas|nunca|jamás|jamais|nicht|nie|kein|keine|non|mai|não|nao|hayır|asla|sakın|yapmayın|yapma|не|никогда|нет)(?![${SOCIAL_WORD_EDGE}])`
+  + '|不要|别|不能|不可|不得|不用|请勿|勿|严禁|禁止|决不|绝不|決して'
+  + '|하지\\s*마|하지\\s*마세요|금지',
+  'iu',
+);
+const SOCIAL_POST_NEGATION = new RegExp(
+  `^(?:\\s*(?:nothing|nowhere|none)|しないで|してはいけない|してはならない|はいけない|はならない|はだめ|はいけません|はなりません|すんな|するな|禁止|ないで|\\s*(?:하지\\s*마|하지\\s*마세요|하지\\s*않|금지))`,
+  'iu',
+);
 const SOCIAL_CLAUSE_BREAK = new RegExp('[.!?;:,\\n]|(?<![\\p{L}\\p{N}_])(?:and|then|but|or|after|before|y|luego|puis|et|ensuite|und|dann|poi|sonra|ve|затем|и)(?![\\p{L}\\p{N}_])|然后|然後|接着|そして|それから|、|。', 'iu');
 
 // "On <url>, publish this" names a destination just as plainly as
@@ -2001,6 +2011,64 @@ export class Agent extends LoopDetector {
     );
   }
 
+  _cleanSpecificAttachmentTarget(value) {
+    let target = String(value || '').trim().toLowerCase();
+    target = target
+      .replace(/^https?:\/\/[^\s]+/i, '')
+      .replace(/\b(?:two|three|four|five|six|seven|eight|nine|ten|\d+)\s+(?:images?|photos?|pictures?|videos?|attachments?|files?)\s+(?:of|named|called|with name)\s+/i, '')
+      .replace(/\b(?:an?|the)\s+(?:image|photo|picture|video|attachment|file)\s+(?:of|named|called|with name)\s+/i, '')
+      .replace(/\b(?:images?|photos?|pictures?|videos?|attachments?|files?)\s+(?:of|named|called|with name)\s+/i, '')
+      .trim();
+    return target;
+  }
+
+  _parseWorkflowAttachmentRequirement(value) {
+    const text = String(value || '').trim().toLowerCase();
+    if (!text) return { isGeneric: true, expectedCount: 1, wantsImage: false, wantsVideo: false, normalized: '' };
+
+    const wantsVideo = /\b(?:video|videos|mp4|mov|webm|mkv|clip|clips|recording|recordings|vidéo|vidéos)\b|(?:動画|视频|影片|видео)/i.test(text);
+    const wantsImage = /\b(?:image|images|photo|photos|picture|pictures|pic|pics|png|jpg|jpeg|gif|webp|foto|fotos|bild|bilder|imagen(?:es)?|imágenes)\b|(?:画像|写真|图片|照片|圖片|изображение|фото)/i.test(text);
+
+    let expectedCount = 1;
+    const countMatch = text.match(/\b(\d+)\b/)
+      || text.match(/\b(one|two|three|four|five|six|seven|eight|nine|ten|single|multiple|both|un|une|deux|trois|quatre|cinq|uno|una|unos|unas|dos|tres|cuatro|cinco|due|tre|quattro|cinque|ein|eine|einen|einer|zwei|drei|vier|fünf|um|uma|dois|duas|três|quatro|один|одна|одно|два|две|три|четыре|пять)\b/i)
+      || text.match(/([一二两三四五六七八九十])/);
+
+    if (countMatch) {
+      const word = countMatch[1].toLowerCase();
+      const wordToNum = {
+        one: 1, single: 1, un: 1, une: 1, uno: 1, una: 1, ein: 1, eine: 1, einen: 1, einer: 1, um: 1, uma: 1,
+        '一': 1, один: 1, одна: 1, одно: 1,
+        two: 2, both: 2, dos: 2, due: 2, deux: 2, zwei: 2, dois: 2, duas: 2, '两': 2, '二': 2, два: 2, две: 2,
+        three: 3, tres: 3, tre: 3, trois: 3, drei: 3, 'três': 3, '三': 3, три: 3,
+        four: 4, cuatro: 4, quattro: 4, quatre: 4, vier: 4, quatro: 4, '四': 4, четыре: 4,
+        five: 5, cinco: 5, cinque: 5, cinq: 5, 'fünf': 5, '五': 5, пять: 5,
+        six: 6, '六': 6, seven: 7, '七': 7, eight: 8, '八': 8, nine: 9, '九': 9, ten: 10, '十': 10,
+        multiple: 2,
+      };
+      if (/^\d+$/.test(word)) {
+        expectedCount = parseInt(word, 10);
+      } else if (wordToNum[word]) {
+        expectedCount = wordToNum[word];
+      }
+    }
+
+    const stripped = text
+      .replace(/^(?:true|yes|attached)\b/i, '')
+      .replace(/\b(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|single|multiple|both|un|une|deux|trois|quatre|cinq|uno|una|unos|unas|dos|tres|cuatro|cinco|due|tre|quattro|cinque|ein|eine|einen|einer|zwei|drei|vier|fünf|um|uma|dois|duas|três|quatro|один|одна|одно|два|две|три|четыре|пять)\b/gi, '')
+      .replace(/\b(?:a|an|the|of|in|with|some|any|de|du|des|el|la|los|las|der|die|das|di|il|lo|gli|le|o|os|as|do|da|dos|das)\b/gi, '')
+      .replace(/\b(?:image|images|photo|photos|picture|pictures|pic|pics|video|videos|clip|clips|recording|recordings|media|attachment|attachments|file|files|graphic|graphics)\b/gi, '')
+      .replace(/\b(?:imagen(?:es)?|imágenes|foto|fotos|vidéo|vidéos|bild(?:er)?|fichier|fichiers|archivo|archivos|datei(?:en)?|allegat[oi]|anexo|anexos)\b/gi, '')
+      .replace(/\b(?:вложени[яе]|фотографи[ия]|изображени[яе]|видео)\b/gi, '')
+      .replace(/[一二两三四五六七八九十]/g, '')
+      .replace(/(?:添付|画像|写真|動画|メディア|已上传|附件|图片|照片|视频|媒体|枚|つの|本|张|條|条|个|個|장|개|の)/gu, '')
+      .replace(/[\s\-_,.:;!?/\\()]+/g, '');
+
+    const isGeneric = stripped.length === 0;
+
+    return { isGeneric, expectedCount, wantsImage, wantsVideo, normalized: text };
+  }
+
   _workflowSocialPublishedAttachmentObserved(requirement, record) {
     const rawAttachments = Array.isArray(record?.attachments)
       ? record.attachments
@@ -2009,47 +2077,48 @@ export class Agent extends LoopDetector {
     const want = this._workflowMetadataValue(requirement?.value);
     if (!want) return true;
 
-    const normalized = want.toLowerCase();
-    const isGeneric = /^(?:true|yes|1|attached|attachment|attachments|media|image|images|photo|photos|picture|pictures|video|videos|file|files)$/i.test(normalized)
-      || /^(?:添付|画像|写真|動画|メディア|已上传|附件|图片|照片|视频|媒体)$/u.test(normalized);
-
-    const wantsVideo = /\b(?:video|mp4|mov|webm|mkv|clip|recording)\b|(?:動画|视频|影片|видео)/i.test(normalized);
-    const wantsImage = /\b(?:image|images|photo|photos|picture|pictures|pic|pics|png|jpg|jpeg|gif|webp)\b|(?:画像|写真|图片|照片|圖片|изображение|фото)/i.test(normalized);
-
+    const parsed = this._parseWorkflowAttachmentRequirement(want);
     const attachmentType = att => (typeof att === 'string' ? att : att?.type || att?.kind || '');
 
-    if (wantsVideo) {
-      const hasVideo = rawAttachments.some(att => {
-        const type = attachmentType(att);
-        if (type === 'video') return true;
-        const src = String(att?.src || att?.url || '');
-        return /\.(?:mp4|mov|webm|mkv)(?:[?#]|$)/i.test(src);
-      });
-      if (!hasVideo && !wantsImage) return false;
+    const isVideoAttachment = (att) => {
+      const type = attachmentType(att);
+      if (type === 'video' || type === 'animated_gif') return true;
+      const src = String(att?.src || att?.url || '');
+      return /\.(?:mp4|mov|webm|mkv)(?:[?#]|$)/i.test(src);
+    };
+
+    const isImageAttachment = (att) => {
+      const type = attachmentType(att);
+      if (type === 'image' || type === 'photo') return true;
+      const src = String(att?.src || att?.url || '');
+      return !isVideoAttachment(att);
+    };
+
+    let matchingAttachments = rawAttachments;
+    if (parsed.wantsVideo && !parsed.wantsImage) {
+      matchingAttachments = rawAttachments.filter(isVideoAttachment);
+    } else if (parsed.wantsImage && !parsed.wantsVideo) {
+      matchingAttachments = rawAttachments.filter(isImageAttachment);
     }
 
-    if (wantsImage && !wantsVideo) {
-      const hasImage = rawAttachments.some(att => {
-        const type = attachmentType(att);
-        if (type === 'image' || type === 'photo') return true;
-        const src = String(att?.src || att?.url || '');
-        return !/\.(?:mp4|mov|webm|mkv)(?:[?#]|$)/i.test(src);
-      });
-      if (!hasImage) return false;
+    if (matchingAttachments.length < parsed.expectedCount) {
+      return false;
     }
 
-    if (isGeneric) return true;
+    if (parsed.isGeneric) {
+      return true;
+    }
 
-    const matchesSpecific = rawAttachments.some(att => {
+    const specificTarget = this._cleanSpecificAttachmentTarget(parsed.normalized);
+    const matchesSpecific = matchingAttachments.some(att => {
       const src = String(att?.src || att?.url || '').toLowerCase();
       const alt = String(att?.alt || att?.name || '').toLowerCase();
       const text = String(att?.text || '').toLowerCase();
-      return src.includes(normalized) || alt.includes(normalized) || text.includes(normalized);
+      return src.includes(parsed.normalized) || alt.includes(parsed.normalized) || text.includes(parsed.normalized)
+        || (specificTarget && (src.includes(specificTarget) || alt.includes(specificTarget) || text.includes(specificTarget)));
     });
 
-    if (matchesSpecific) return true;
-
-    return false;
+    return matchesSpecific;
   }
 
   _workflowGithubReleaseIdentityParts(identity) {
@@ -12561,16 +12630,19 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
   }
 
   // Publication language only counts as a command when nothing in its own
-  // clause is asking to read. "Read posts on <feed>" and "阅读推文 <feed>" name
-  // content; "read the summary and publish it on <feed>" asks for a post in a
-  // clause of its own.
+  // clause is asking to read or forbidding publication. "Read posts on <feed>"
+  // and "阅读推文 <feed>" name content; "do not post this on <feed>" forbids
+  // publication; "read the summary and publish it on <feed>" asks for a post in
+  // a clause of its own.
   _socialPublicationCommandIn(text) {
     return String(text || '').split(SOCIAL_CLAUSE_BREAK).some((clause) => {
       const publish = clause ? clause.match(SOCIAL_PUBLISH_VERBS) : null;
       if (!publish) return false;
       const before = clause.slice(0, publish.index);
       if (SOCIAL_READ_VERBS.test(before)) return false;
+      if (SOCIAL_NEGATION.test(before)) return false;
       const after = clause.slice(publish.index + publish[0].length);
+      if (SOCIAL_POST_NEGATION.test(after)) return false;
       if (SOCIAL_NOUN_LIKE_PUBLISH.test(publish[0]) && SOCIAL_READ_VERBS.test(after)) return false;
       return true;
     });
@@ -12623,6 +12695,8 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         match.index + match[0].length,
         match.index + match[0].length + 60,
       );
+      const clauseBefore = before.split(SOCIAL_CLAUSE_BREAK).pop() || '';
+      if (SOCIAL_NEGATION.test(clauseBefore)) continue;
       const governed = /\/(?:compose|intent|i\/flow)\//.test(url)
         || this._socialPublicationCommandIn(before)
         || (SOCIAL_PUBLISH_DESTINATION_LEAD.test(before) && this._socialPublicationCommandIn(after));
@@ -12652,9 +12726,12 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         if (!clause) return false;
         for (const verb of clause.matchAll(verbPattern)) {
           const verbIndex = verb.index ?? 0;
-          if (SOCIAL_READ_VERBS.test(clause.slice(0, verbIndex))) continue;
+          const beforeVerbClause = clause.slice(0, verbIndex);
+          if (SOCIAL_READ_VERBS.test(beforeVerbClause)) continue;
+          if (SOCIAL_NEGATION.test(beforeVerbClause)) continue;
           const verbWord = verb[0] || '';
           const afterVerbText = clause.slice(verbIndex + verbWord.length);
+          if (SOCIAL_POST_NEGATION.test(afterVerbText)) continue;
           if (SOCIAL_NOUN_LIKE_PUBLISH.test(verbWord) && SOCIAL_READ_VERBS.test(afterVerbText)) continue;
           const afterVerb = clause.slice(verbIndex, verbIndex + verbWord.length + 60);
           const beforeVerb = clause.slice(Math.max(0, verbIndex - 60), verbIndex);
@@ -12663,7 +12740,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           if (clauseIdx > 0) {
             const prevClause = clauses[clauseIdx - 1];
             platformPattern.lastIndex = 0;
-            if (platformPattern.test(prevClause) && !SOCIAL_READ_VERBS.test(prevClause)) {
+            if (platformPattern.test(prevClause) && !SOCIAL_READ_VERBS.test(prevClause) && !SOCIAL_NEGATION.test(prevClause)) {
               return true;
             }
           }
@@ -12671,10 +12748,19 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         return false;
       });
     };
+    const tweetsThis = String(trustedContext || '').split(SOCIAL_CLAUSE_BREAK).some((clause) => {
+      const match = clause.match(/\btweet\s+(?:this|that|it|the\s+following)\b/i);
+      if (!match) return false;
+      const before = clause.slice(0, match.index);
+      if (SOCIAL_READ_VERBS.test(before) || SOCIAL_NEGATION.test(before)) return false;
+      const after = clause.slice(match.index + match[0].length);
+      if (SOCIAL_POST_NEGATION.test(after)) return false;
+      return true;
+    });
     if (publishesTo('(?:bluesky|bsky(?:\\.app)?)')) targets.add('bluesky');
     if (publishesTo('(?:x|x\\.com|twitter(?:\\.com)?)')
         // "tweet this" names its own destination.
-        || /\btweet\s+(?:this|that|it|the\s+following)\b/i.test(trustedContext)) {
+        || tweetsThis) {
       targets.add('twitter');
     }
     return targets;
