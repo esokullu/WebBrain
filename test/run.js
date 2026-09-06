@@ -4981,6 +4981,35 @@ test('direct-message recipient guard uses structured intent and exact active ide
       true,
       'affirmative phrase "Forward Alice to To" must authorize To for Alice',
     );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'To: Alice; actually BCC: Alice', 'Alice', 'to'),
+      false,
+      'conflicting role phrase "To: Alice; actually BCC: Alice" must not authorize To for Alice',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'To: Alice; actually BCC: Alice', 'Alice', 'bcc'),
+      false,
+      'conflicting role phrase "To: Alice; actually BCC: Alice" must not authorize BCC for Alice',
+    );
+    assert.deepEqual(
+      helper.resolveClarifiedRecipients(
+        [
+          { identity: 'alice@example.com', role: 'to', aliases: ['alice@example.com', 'Alice'] },
+        ],
+        {
+          target_kind: 'named',
+          recipients: [
+            { identity: 'alice@example.com', role: 'bcc' },
+          ],
+        },
+        null,
+        'To: Alice; actually BCC: Alice',
+      ),
+      [
+        { identity: 'alice@example.com', role: 'bcc' },
+      ],
+      'conflicting role mention "To: Alice; actually BCC: Alice" must reject rebinding and preserve prior BCC role',
+    );
     assert.deepEqual(
       helper.resolveClarifiedRecipients(
         [
