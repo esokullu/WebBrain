@@ -42,7 +42,7 @@ import {
   workflowControlLabelIsRequested,
   workflowRequiredRowsAreProcessed,
 } from './adapter-workflow-evidence.js';
-import { answerNamesAllObservedRecipients, answerNamesIdentity, messageTargetMatchesObservedIdentities, normalizeMessageTarget, normalizeRecipientIdentity } from './message-recipient-guard.js';
+import { answerNamesAllObservedRecipients, answerNamesIdentity, messageTargetMatchesObservedIdentities, normalizeMessageTarget, normalizeRecipientAnswer, normalizeRecipientIdentity } from './message-recipient-guard.js';
 import {
   fetchUrl,
   executeHttpSkillTool,
@@ -15712,7 +15712,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     } else if (clarifyContext && !this._isRecipientClarification(clarifyContext, 'message_recipient', observed)) {
       return false;
     }
-    const normalizedAnswer = normalizeRecipientIdentity(answer);
+    const normalizedAnswer = normalizeRecipientAnswer(answer);
     if (!normalizedAnswer) return false;
     if (!answerNamesAllObservedRecipients(normalizedAnswer, observed)) return false;
     const target = normalizeMessageTarget({ target_kind: 'named', recipients: observed });

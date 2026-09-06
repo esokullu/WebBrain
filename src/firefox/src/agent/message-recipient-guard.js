@@ -50,6 +50,20 @@ export function normalizeRecipientIdentity(value) {
   }
 }
 
+export function normalizeRecipientAnswer(value) {
+  const text = String(value ?? '')
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/[\u200b-\u200d\ufeff]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!text) return '';
+  try {
+    return text.normalize('NFKC').toLocaleLowerCase();
+  } catch {
+    return text.toLowerCase();
+  }
+}
+
 export function recipientMatchesObservedIdentity(recipient, observedIdentity) {
   const expected = normalizeRecipientIdentity(recipient);
   const observed = normalizeRecipientIdentity(observedIdentity);
@@ -94,7 +108,7 @@ export function getWordBoundaries(text) {
  * or as an exact full-string match for short identities (< 3 chars).
  */
 export function findCandidateAnswerSpans(normalizedAnswer, normalizedIdentity) {
-  const answer = normalizeRecipientIdentity(normalizedAnswer);
+  const answer = normalizeRecipientAnswer(normalizedAnswer);
   const identity = normalizeRecipientIdentity(normalizedIdentity);
   if (!identity || !answer) return [];
   if (identity.length < 3) {
@@ -141,7 +155,7 @@ export function answerNamesIdentity(normalizedAnswer, normalizedIdentity) {
  * required for each observed recipient identity.
  */
 export function answerNamesAllObservedRecipients(normalizedAnswer, observedCandidates) {
-  const answer = normalizeRecipientIdentity(normalizedAnswer);
+  const answer = normalizeRecipientAnswer(normalizedAnswer);
   if (!answer || !Array.isArray(observedCandidates) || observedCandidates.length === 0) {
     return false;
   }

@@ -4669,6 +4669,17 @@ test('direct-message recipient guard uses structured intent and exact active ide
       'user@example.co and user@example.co.uk',
       [{ identity: 'user@example.co' }, { identity: 'user@example.co.uk' }],
     ), true, 'distinct mentions for both domain variants must succeed');
+    const twelveCandidates = Array.from({ length: 12 }, (_, i) => ({
+      identity: `colleague-user-${i + 1}@enterprise-company-domain.com`,
+      role: i === 0 ? 'to' : 'cc',
+    }));
+    const twelveAnswer = `Please reply all to: ${twelveCandidates.map(c => c.identity).join(', ')}`;
+    assert.ok(twelveAnswer.length > 240, 'reply all answer must exceed 240 chars to test truncation avoidance');
+    assert.equal(
+      helper.answerNamesAllObservedRecipients(twelveAnswer, twelveCandidates),
+      true,
+      'long multi-recipient reply all answer (>240 chars) must match all candidates without truncation',
+    );
     assert.equal(helper.messageTargetMatchesObservedIdentities(
       { target_kind: 'named', recipients: ['迷你世界皓宸'] },
       ['迷你世界皓宸'],
@@ -5273,6 +5284,23 @@ test('direct-message recipient guard uses structured intent and exact active ide
       }),
       true,
       `${label}: natural Chinese clarification question/answer was rejected`,
+    );
+
+    // Multi-recipient Reply-all answer exceeding 240 characters.
+    const twelveAgentCandidates = Array.from({ length: 12 }, (_, i) => ({
+      identity: `colleague-user-${i + 1}@enterprise-company-domain.com`,
+      role: i === 0 ? 'to' : 'cc',
+    }));
+    const twelveAgentAnswer = `Send to: ${twelveAgentCandidates.map(c => c.identity).join(', ')}`;
+    assert.ok(twelveAgentAnswer.length > 240);
+    agent._planExecutionGuards.set(tabId, clarifyGuardState(twelveAgentCandidates));
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, twelveAgentAnswer, 'user', {
+        question: 'Who should receive this reply?',
+        purpose: 'message_recipient',
+      }),
+      true,
+      `${label}: multi-recipient reply-all answer exceeding 240 chars was rejected`,
     );
 
     // Recipient-change clarification check: when a target was already set, an explicit
