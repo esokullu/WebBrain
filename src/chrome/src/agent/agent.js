@@ -17654,16 +17654,60 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
   }
 
   _chatWorkflowView(advanced) {
+    const sourceMessages = Array.isArray(advanced.newMessages)
+      ? advanced.newMessages.slice(-20)
+      : [];
+    let newMessages = sourceMessages.map(message => ({
+      id: String(message?.id || '').slice(0, 80),
+      direction: String(message?.direction || 'unknown').slice(0, 20),
+      text: String(message?.text || ''),
+      ...(message?.author ? { author: String(message.author).slice(0, 80) } : {}),
+      ...(message?.timestamp ? { timestamp: String(message.timestamp).slice(0, 40) } : {}),
+    }));
+    // Keep the model-facing delta below the normal 8k tool-result envelope.
+    // Drop oldest entries first, then trim one oversized message and mark it.
+    while (JSON.stringify(newMessages).length > 5000 && newMessages.length > 1) newMessages.shift();
+    if (JSON.stringify(newMessages).length > 5000 && newMessages.length === 1) {
+      const message = newMessages[0];
+      const excess = JSON.stringify(newMessages).length - 5000;
+      message.text = message.text.slice(0, Math.max(0, message.text.length - excess - 32));
+      message.truncated = true;
+    }
+    const events = (Array.isArray(advanced.events) ? advanced.events : []).map(event => (
+      Array.isArray(event?.messages)
+        ? { ...event, messages: event.messages.slice(-20).map(id => String(id).slice(0, 80)) }
+        : event
+    ));
     return {
       schema: advanced.session.schema,
       state: advanced.session.state,
       threadKey: advanced.snapshot.threadKey,
       nextAction: advanced.nextAction,
-      events: advanced.events,
-      newMessages: advanced.newMessages,
+      events,
+      newMessages,
       pendingOutbound: !!advanced.session.pendingOutbound,
       userInput: advanced.session.userInput,
       resolutionEvidence: advanced.snapshot.resolutionEvidence,
+    };
+  }
+
+  _chatObservationResult(observation, advanced) {
+    const source = observation && typeof observation === 'object' ? observation : {};
+    return {
+      success: source.success === true,
+      ...(source.schema ? { schema: source.schema } : {}),
+      ...(source.observedAt ? { observedAt: source.observedAt } : {}),
+      ...(source.url ? { url: source.url } : {}),
+      ...(source.conversationId ? { conversationId: source.conversationId } : {}),
+      ...(source.conversationIdentity ? { conversationIdentity: source.conversationIdentity } : {}),
+      threadKey: advanced.snapshot.threadKey,
+      composer: {
+        available: source.composer?.available === true,
+        ...(source.composer?.ref ? { ref: source.composer.ref } : {}),
+        ...(source.composer?.sendRef ? { sendRef: source.composer.sendRef } : {}),
+        empty: source.composer?.empty === true,
+      },
+      chatWorkflow: this._chatWorkflowView(advanced),
     };
   }
 
@@ -17679,17 +17723,34 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     }
   }
 
-  async _observeChatWorkflow(tabId) {
+  async _observeChatWorkflow(tabId, args = {}) {
     const observation = await this._readChatObservation(tabId);
     if (observation?.success !== true) return observation;
-    const prior = this.chatSessions.get(tabId) || createChatSession();
+    let prior = this.chatSessions.get(tabId) || createChatSession();
+    const rebindThreadKey = String(args.rebind_thread_key || args.rebindThreadKey || '').trim();
+    if (rebindThreadKey) {
+      if (prior.stopReason !== 'thread_changed' || prior.pendingOutbound) {
+        return {
+          success: false,
+          noDispatch: true,
+          reason: 'thread_rebind_not_allowed',
+          error: 'Chat thread rebind requires a prior thread_changed pause with no pending outbound send.',
+        };
+      }
+      if (rebindThreadKey !== observation.threadKey) {
+        return {
+          success: false,
+          noDispatch: true,
+          reason: 'thread_rebind_mismatch',
+          error: 'Chat thread rebind was rejected because the requested key does not match the current observation.',
+        };
+      }
+      prior = createChatSession({ threadKey: observation.threadKey });
+    }
     const advanced = advanceChatSession(prior, observation);
     this.chatSessions.set(tabId, advanced.session);
     this._persist(tabId);
-    return {
-      ...observation,
-      chatWorkflow: this._chatWorkflowView(advanced),
-    };
+    return this._chatObservationResult(observation, advanced);
   }
 
   async _sendChatWorkflow(tabId, args = {}, onUpdate = null, executionContext = null) {
@@ -17737,6 +17798,35 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       };
     }
 
+    const sendContext = executionContext && typeof executionContext === 'object'
+      ? { ...executionContext }
+      : {};
+    let recipientBlock = null;
+    try {
+      recipientBlock = await this._messageRecipientGuardBlock(
+        tabId,
+        'set_field',
+        { ref_id: composerRef, submit: true },
+        before.url || '',
+        sendContext,
+      );
+    } catch (error) {
+      recipientBlock = {
+        success: false,
+        noDispatch: true,
+        dispatched: false,
+        messageRecipientGuard: true,
+        reasonCode: 'message_send_classification_inconclusive',
+        error: `Chat send blocked because recipient verification failed before dispatch: ${error?.message || String(error)}`,
+      };
+    }
+    if (recipientBlock) {
+      return {
+        ...recipientBlock,
+        chatWorkflow: workflow(),
+      };
+    }
+
     const pending = markChatSendPending(observed.session, decision);
     this.chatSessions.set(tabId, pending);
     const pendingPersisted = await this._persistNow(tabId);
@@ -17763,7 +17853,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         text: decision.text,
         clear: true,
         submit: true,
-      }, onUpdate, executionContext);
+      }, onUpdate, sendContext);
     } catch (error) {
       dispatch = {
         success: false,
@@ -17776,6 +17866,13 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     const after = await this._readChatObservation(tabId);
     if (after?.success !== true) {
       return {
+        ...this._chatObservationResult(after, {
+          session: pending,
+          snapshot: after,
+          events: [],
+          newMessages: [],
+          nextAction: 'observe',
+        }),
         success: false,
         sent: false,
         dispatched: dispatch?.dispatched === true,
@@ -17784,27 +17881,19 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         messageKey: decision.messageKey,
         error: 'Chat send was not independently verified after dispatch. Observe the conversation before retrying.',
         dispatch,
-        chatWorkflow: {
-          schema: pending.schema,
-          state: pending.state,
-          threadKey: pending.threadKey,
-          nextAction: 'observe',
-          events: [],
-          newMessages: [],
-          pendingOutbound: true,
-          userInput: pending.userInput,
-          resolutionEvidence: pending.resolutionEvidence,
-        },
       };
     }
     const verifiedState = advanceChatSession(pending, after);
     this.chatSessions.set(tabId, verifiedState.session);
     this._persist(tabId);
-    const outgoingVerified = verifiedState.newMessages.some(message => (
-      message.direction === 'outgoing' && message.text === decision.text
+    const previouslySeenIds = new Set(observed.session.seenMessageIds);
+    const outgoingVerified = verifiedState.snapshot.messages.some(message => (
+      message.direction === 'outgoing'
+        && message.text === decision.text
+        && !previouslySeenIds.has(message.id)
     )) && verifiedState.session.pendingOutbound === null;
     return {
-      ...after,
+      ...this._chatObservationResult(after, verifiedState),
       success: outgoingVerified,
       sent: outgoingVerified,
       dispatched: dispatch?.dispatched === true || dispatch?.success === true,
@@ -25974,7 +26063,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     if (name === 'done_json') {
       return handleDoneJson(this.cloudRunContexts.get(tabId), args);
     }
-    if (name === 'chat_observe') return this._observeChatWorkflow(tabId);
+    if (name === 'chat_observe') return this._observeChatWorkflow(tabId, args);
     if (name === 'chat_send') return this._sendChatWorkflow(tabId, args, onUpdate, dispatchContext);
     if (name === 'beep') {
       const watch = this.scheduledRunPolicies.get(tabId)?.watch;

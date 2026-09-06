@@ -2,8 +2,8 @@
  * Read-only observation of the active support conversation.
  *
  * The DOM is an untrusted data source. This module deliberately returns
- * message text only as data and only treats app-owned semantic attributes as
- * workflow controls or safety evidence.
+ * message text only as data and only treats bounded semantic attributes as
+ * workflow metadata; page attributes never self-authorize completion evidence.
  * Keep the Firefox copy byte-identical.
  */
 
@@ -38,6 +38,15 @@
     'data-recipient',
     'data-chat-recipient',
     'data-recipient-id',
+  ];
+  const CHAT_ROOT_SELECTORS = [
+    '[data-chat-root]',
+    '[data-conversation-root]',
+    '[role="log"]',
+  ];
+  const CHAT_TRANSCRIPT_SELECTORS = [
+    '[role="log"]',
+    '[aria-live]',
   ];
 
   const compact = (value, max = 240) => String(value ?? '')
@@ -129,33 +138,29 @@
     return attributePresent && !normalized ? true : null;
   };
 
-  const readBooleanSemantic = (root, names) => {
-    const nodes = [root, ...queryMany(root, names.map(name => `[${name}]`))];
-    for (const node of nodes) {
-      for (const name of names) {
-        if (!node?.hasAttribute?.(name)) continue;
-        const result = booleanValue(node.getAttribute(name), true);
-        if (result !== null) return result;
-      }
+  const activeRoot = (composer) => {
+    if (!composer) return null;
+    const chain = parentChain(composer);
+    const explicit = chain.find(node => THREAD_ID_ATTRIBUTES.some(name => attribute(node, name))
+      || CHAT_ROOT_SELECTORS.some(selector => {
+        try { return node.matches?.(selector); } catch { return false; }
+      }));
+    if (explicit) return explicit;
+
+    // A generic main/body fallback is unsafe: search, checkout, and article
+    // pages all expose editable fields and list items. Accept an inferred root
+    // only when it contains a separate semantic transcript region with at
+    // least one message-shaped descendant.
+    for (const node of chain) {
+      if (node === document.body || node === document.documentElement) continue;
+      const transcript = queryMany(node, CHAT_TRANSCRIPT_SELECTORS)
+        .find(candidate => candidate !== node
+          && visible(candidate)
+          && !contains(candidate, composer)
+          && queryMany(candidate, MESSAGE_SELECTORS.slice(0, 12)).some(item => visible(item)));
+      if (transcript) return node;
     }
     return null;
-  };
-
-  const activeRoot = (composer) => {
-    const chain = parentChain(composer);
-    const semantic = chain.find(node => THREAD_ID_ATTRIBUTES.some(name => attribute(node, name))
-      || ['main', 'data-chat-root', 'data-conversation-root'].some(name => {
-        if (name.startsWith('data-')) return node.hasAttribute?.(name);
-        return String(node.tagName || '').toLowerCase() === name;
-      }));
-    if (semantic) return semantic;
-    try {
-      return document.querySelector('main,[role="main"],[data-chat-root],[data-conversation-root]')
-        || document.body
-        || document.documentElement;
-    } catch {
-      return document.body || document.documentElement;
-    }
   };
 
   const markerFor = (composer, root) => {
@@ -336,18 +341,6 @@
     return null;
   };
 
-  const resolutionEvidenceFor = (root) => {
-    const names = {
-      refund: ['data-webbrain-refund-verified'],
-      autoRenewal: ['data-webbrain-auto-renewal-verified'],
-      caseNumber: ['data-webbrain-case-number-verified'],
-    };
-    return Object.fromEntries(Object.entries(names).map(([key, attributes]) => [
-      key,
-      readBooleanSemantic(root, attributes),
-    ]));
-  };
-
   const resolveComposer = (probe, params) => {
     const ref = compact(probe?.composerRef || params.composerRef, 240);
     if (ref && typeof window.__wb_ax_lookup === 'function') {
@@ -368,6 +361,16 @@
       const probe = params.probe && typeof params.probe === 'object' ? params.probe : {};
       const { node: composer, ref: composerRef } = resolveComposer(probe, params);
       const root = activeRoot(composer);
+      if (!composer || !root) {
+        return {
+          success: false,
+          schema: SCHEMA,
+          reason: 'chat_root_unverified',
+          error: !composer
+            ? 'The active page does not expose a verified chat composer.'
+            : 'The active editable is not inside a semantic chat root; no conversation was observed.',
+        };
+      }
       const marker = markerFor(composer, root);
       const conversationIdentity = identityFor(composer, root, probe);
       const conversationId = marker?.value || '';
@@ -381,10 +384,6 @@
       const composerValue = composer
         ? ('value' in composer ? composer.value : (composer.innerText || composer.textContent || ''))
         : '';
-      const agentConnected = readBooleanSemantic(root, [
-        'data-webbrain-agent-connected',
-        'data-agent-connected',
-      ]);
       return {
         success: true,
         schema: SCHEMA,
@@ -399,9 +398,14 @@
           ...(composerRef ? { ref: composerRef } : {}),
           empty: normalizeText(composerValue).length === 0,
         },
-        agentConnected,
+        // A page-controlled marker is not proof that a human or virtual agent
+        // is connected. Site adapters may provide trusted evidence separately.
+        agentConnected: null,
         userInput: userInputFor(root),
-        resolutionEvidence: resolutionEvidenceFor(root),
+        // Do not let page-controlled data attributes self-authorize a refund,
+        // renewal change, or case number. The kernel accepts trusted evidence
+        // from a future site adapter, but generic DOM observation supplies none.
+        resolutionEvidence: { refund: null, autoRenewal: null, caseNumber: null },
         probe: {
           success: probe.success !== false,
           ...(probe.error ? { error: compact(probe.error, 300) } : {}),

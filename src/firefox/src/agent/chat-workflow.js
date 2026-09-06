@@ -52,6 +52,7 @@ const DIRECTION_SET = new Set(CHAT_MESSAGE_DIRECTIONS);
 const EVENT_SET = new Set(CHAT_EVENT_TYPES);
 const USER_INPUT_REASON_SET = new Set(CHAT_USER_INPUT_REASONS);
 const MAX_MESSAGES = 200;
+const MAX_NEW_MESSAGES = 20;
 const MAX_MESSAGE_TEXT = 4_000;
 const MAX_ID = 240;
 // A dispatch that never produced a visible bubble must not block the same text
@@ -214,6 +215,7 @@ function emptySession(now = Date.now()) {
     resolutionEvidence: { refund: null, autoRenewal: null, caseNumber: null },
     lastObservedAt: new Date(now).toISOString(),
     userInput: null,
+    pausedState: null,
     stopReason: '',
   };
 }
@@ -240,6 +242,9 @@ export function normalizeChatSession(value, now = Date.now()) {
         key: bounded(source.pendingOutbound.key, MAX_ID),
         text: normalizeChatText(source.pendingOutbound.text),
         threadKey: bounded(source.pendingOutbound.threadKey, MAX_ID),
+        ...(bounded(source.pendingOutbound.replyAnchor, MAX_ID)
+          ? { replyAnchor: bounded(source.pendingOutbound.replyAnchor, MAX_ID) }
+          : {}),
         attemptedAt: bounded(source.pendingOutbound.attemptedAt, 80),
       }
     : null;
@@ -255,12 +260,33 @@ export function normalizeChatSession(value, now = Date.now()) {
     resolutionEvidence: evidence,
     lastObservedAt: bounded(source.lastObservedAt, 80) || new Date(now).toISOString(),
     userInput: normalizeUserInput(source.userInput),
+    pausedState: STATE_SET.has(source.pausedState) && source.pausedState !== 'needs_user_input'
+      ? source.pausedState
+      : null,
     stopReason: bounded(source.stopReason, 120),
   };
 }
 
-function messageKey(threadKey, text) {
+function legacyMessageKey(threadKey, text) {
   return `chatout_${hashText(`${bounded(threadKey)}\u001f${canonicalChatText(text)}`)}`;
+}
+
+function messageKey(threadKey, text, replyAnchor = 'chat_start') {
+  return `chatout_${hashText(`${bounded(threadKey)}\u001f${bounded(replyAnchor, MAX_ID)}\u001f${canonicalChatText(text)}`)}`;
+}
+
+function outgoingMessageKeys(snapshot) {
+  const keys = new Set();
+  let replyAnchor = 'chat_start';
+  for (const message of snapshot.messages) {
+    if (message.direction === 'incoming') replyAnchor = message.id;
+    if (message.direction === 'outgoing') keys.add(messageKey(snapshot.threadKey, message.text, replyAnchor));
+  }
+  return keys;
+}
+
+function latestIncomingId(snapshot) {
+  return [...snapshot.messages].reverse().find(message => message.direction === 'incoming')?.id || 'chat_start';
 }
 
 function evidenceComplete(evidence) {
@@ -271,7 +297,11 @@ export function transitionChatState(state, event) {
   const current = STATE_SET.has(state) ? state : 'waiting_for_transfer';
   const type = EVENT_SET.has(event?.type) ? event.type : 'observation_only';
   if (type === 'user_input_required' || type === 'thread_changed') return 'needs_user_input';
-  if (type === 'user_input_cleared' && current === 'needs_user_input') return 'waiting_for_transfer';
+  if (type === 'user_input_cleared' && current === 'needs_user_input') {
+    return STATE_SET.has(event?.resumeState) && event.resumeState !== 'needs_user_input'
+      ? event.resumeState
+      : 'waiting_for_transfer';
+  }
   if (type === 'resolution_verified') return 'issue_resolved';
   if (current === 'stopped' || current === 'issue_resolved') return current;
   if (type === 'counterparty_replied') return 'counterparty_replied';
@@ -304,20 +334,20 @@ export function advanceChatSession(value, rawSnapshot, now = Date.now()) {
   const newIncoming = newMessages.filter(message => message.direction === 'incoming');
   const newOutgoing = newMessages.filter(message => message.direction === 'outgoing');
   const outgoingKeys = new Set(session.sentMessageKeys);
-  for (const message of newOutgoing) outgoingKeys.add(messageKey(snapshot.threadKey, message.text));
+  for (const key of outgoingMessageKeys(snapshot)) outgoingKeys.add(key);
 
   if (snapshot.userInput?.required) {
     events.push({ type: 'user_input_required', ...snapshot.userInput });
   } else {
     if (session.state === 'needs_user_input' && session.stopReason !== 'thread_changed') {
-      events.push({ type: 'user_input_cleared' });
+      events.push({ type: 'user_input_cleared', resumeState: session.pausedState });
     }
     if (evidenceComplete(snapshot.resolutionEvidence)) {
       events.push({ type: 'resolution_verified', evidence: snapshot.resolutionEvidence });
     } else if (newIncoming.length) {
-      events.push({ type: 'counterparty_replied', messages: newIncoming.map(message => message.id) });
+      events.push({ type: 'counterparty_replied', messages: newIncoming.slice(-MAX_NEW_MESSAGES).map(message => message.id) });
     } else if (newOutgoing.length) {
-      events.push({ type: 'outgoing_verified', messages: newOutgoing.map(message => message.id) });
+      events.push({ type: 'outgoing_verified', messages: newOutgoing.slice(-MAX_NEW_MESSAGES).map(message => message.id) });
     } else if (snapshot.agentConnected === true && session.state === 'waiting_for_transfer') {
       events.push({ type: 'agent_connected' });
     } else if (events.length === 0) {
@@ -327,8 +357,15 @@ export function advanceChatSession(value, rawSnapshot, now = Date.now()) {
 
   let nextState = session.state;
   for (const event of events) nextState = transitionChatState(nextState, event);
+  const visibleOutgoingKeys = outgoingMessageKeys(snapshot);
   const matchedPending = session.pendingOutbound
-    && newOutgoing.some(message => messageKey(snapshot.threadKey, message.text) === session.pendingOutbound.key);
+    && (visibleOutgoingKeys.has(session.pendingOutbound.key)
+      || (!session.pendingOutbound.replyAnchor
+        && session.pendingOutbound.key === legacyMessageKey(snapshot.threadKey, session.pendingOutbound.text)));
+  const clearUserInput = events.some(event => event.type === 'user_input_cleared');
+  const pauseState = session.state === 'needs_user_input'
+    ? session.pausedState
+    : session.state;
   session = {
     ...session,
     state: nextState,
@@ -340,20 +377,24 @@ export function advanceChatSession(value, rawSnapshot, now = Date.now()) {
     resolutionEvidence: snapshot.resolutionEvidence,
     lastObservedAt: snapshot.observedAt,
     userInput: snapshot.userInput,
+    pausedState: snapshot.userInput?.required
+      ? pauseState
+      : (clearUserInput ? null : session.pausedState),
     stopReason: snapshot.userInput?.required
       ? snapshot.userInput.reason
-      : (events.some(event => event.type === 'user_input_cleared') ? '' : session.stopReason),
+      : (clearUserInput ? '' : session.stopReason),
   };
+  const resumedReply = clearUserInput && session.state === 'counterparty_replied';
   const nextAction = session.userInput?.required
     ? 'pause_for_user'
     : session.state === 'issue_resolved'
       ? 'stop'
-      : newIncoming.length
+      : (newIncoming.length || resumedReply)
         ? 'reply'
         : session.state === 'waiting_for_transfer'
           ? 'schedule_resume'
           : 'observe';
-  return { session, snapshot, events, newMessages, nextAction };
+  return { session, snapshot, events, newMessages: newMessages.slice(-MAX_NEW_MESSAGES), nextAction };
 }
 
 export function decideChatSend(value, rawSnapshot, text, now = Date.now()) {
@@ -376,15 +417,33 @@ export function decideChatSend(value, rawSnapshot, text, now = Date.now()) {
   if (snapshot.composer.available !== true) {
     return { ok: false, reason: 'composer_unavailable', error: 'The active conversation composer is not available.' };
   }
-  const key = messageKey(snapshot.threadKey, body);
+  const replyAnchor = latestIncomingId(snapshot);
+  const key = messageKey(snapshot.threadKey, body, replyAnchor);
+  const legacyKey = legacyMessageKey(snapshot.threadKey, body);
+  const latestIncomingIndex = snapshot.messages.map(message => message.direction).lastIndexOf('incoming');
+  const sameReplyAlreadyVisible = snapshot.messages.some((message, index) => (
+    index > latestIncomingIndex
+      && message.direction === 'outgoing'
+      && canonicalChatText(message.text) === canonicalChatText(body)
+  ));
   if (session.sentMessageKeys.includes(key)
-      || snapshot.messages.some(message => message.direction === 'outgoing' && messageKey(snapshot.threadKey, message.text) === key)) {
+      || sameReplyAlreadyVisible) {
     return { ok: false, duplicate: true, reason: 'already_sent', messageKey: key, error: 'This exact message is already visible as an outgoing message in this conversation.' };
   }
-  if (session.pendingOutbound?.key === key && !pendingOutboundExpired(session.pendingOutbound, now)) {
+  if (session.pendingOutbound
+      && (session.pendingOutbound.key === key
+        || (!session.pendingOutbound.replyAnchor && session.pendingOutbound.key === legacyKey))
+      && !pendingOutboundExpired(session.pendingOutbound, now)) {
     return { ok: false, duplicate: true, pending: true, reason: 'send_pending', messageKey: key, error: 'This exact message is already pending verification; observe the conversation before retrying.' };
   }
-  return { ok: true, messageKey: key, threadKey: snapshot.threadKey, text: body, attemptedAt: new Date(now).toISOString() };
+  return {
+    ok: true,
+    messageKey: key,
+    replyAnchor,
+    threadKey: snapshot.threadKey,
+    text: body,
+    attemptedAt: new Date(now).toISOString(),
+  };
 }
 
 export function markChatSendPending(value, decision, now = Date.now()) {
@@ -396,6 +455,9 @@ export function markChatSendPending(value, decision, now = Date.now()) {
       key: bounded(decision.messageKey, MAX_ID),
       text: normalizeChatText(decision.text),
       threadKey: bounded(decision.threadKey, MAX_ID),
+      ...(bounded(decision.replyAnchor, MAX_ID)
+        ? { replyAnchor: bounded(decision.replyAnchor, MAX_ID) }
+        : {}),
       attemptedAt: bounded(decision.attemptedAt, 80) || new Date(now).toISOString(),
     },
   };

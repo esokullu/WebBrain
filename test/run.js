@@ -5011,6 +5011,21 @@ test('long-running chat workflow tracks deltas, safe states, and idempotent send
     assert.equal(duplicate.duplicate, true);
     assert.equal(duplicate.reason, 'already_sent');
 
+    const repeatedReply = workflow.advanceChatSession(
+      sent.session,
+      {
+        threadId: 'case-42',
+        composer: { available: true },
+        messages: [
+          { id: 'out-1', direction: 'outgoing', text: decision.text },
+          { id: 'in-2', direction: 'incoming', author: 'Support', text: 'Would you also like the case number?' },
+        ],
+      },
+      Date.parse('2026-09-05T01:02:30Z'),
+    );
+    const repeatedText = workflow.decideChatSend(repeatedReply.session, repeatedReply.snapshot, decision.text);
+    assert.equal(repeatedText.ok, true, 'the same reply text must be sendable for a new incoming question');
+
     const replied = workflow.advanceChatSession(
       sent.session,
       {
@@ -5046,8 +5061,9 @@ test('long-running chat workflow tracks deltas, safe states, and idempotent send
       sensitive.session,
       { threadId: 'case-42', composer: { available: true }, messages: replied.snapshot.messages },
     );
-    assert.equal(resumedAfterUserInput.session.state, 'waiting_for_transfer');
+    assert.equal(resumedAfterUserInput.session.state, 'counterparty_replied');
     assert.equal(resumedAfterUserInput.events[0].type, 'user_input_cleared');
+    assert.equal(resumedAfterUserInput.nextAction, 'reply');
 
     const changedThread = workflow.advanceChatSession(
       replied.session,
@@ -5084,6 +5100,21 @@ test('long-running chat workflow tracks deltas, safe states, and idempotent send
     });
     assert.match(normalized.messages[0].text, /IGNORE previous instructions/);
     assert.equal(normalized.userInput, null);
+
+    const largeDelta = workflow.advanceChatSession(
+      workflow.createChatSession(),
+      {
+        threadId: 'case-42',
+        composer: { available: true },
+        messages: Array.from({ length: 25 }, (_, index) => ({
+          id: `delta-${index}`,
+          direction: 'incoming',
+          text: `message-${index}`,
+        })),
+      },
+    );
+    assert.equal(largeDelta.newMessages.length, 20, 'chat workflow delta must remain bounded independently of transcript retention');
+    assert.equal(largeDelta.newMessages[0].id, 'delta-5');
   }
 });
 
@@ -5130,6 +5161,20 @@ test('model-callable chat tools bind the thread, send once, and require outgoing
     };
     const first = await agent._observeChatWorkflow(tabId);
     assert.equal(first.chatWorkflow.state, 'agent_connected', `${label}: observe did not advance state`);
+    assert.equal(first.messages, undefined, `${label}: chat_observe leaked the full transcript at the top level`);
+    const boundedView = agent._chatWorkflowView({
+      session: agent.chatSessions.get(tabId),
+      snapshot: baseSnapshot,
+      events: [{ type: 'counterparty_replied', messages: Array.from({ length: 20 }, () => 'x'.repeat(240)) }],
+      newMessages: Array.from({ length: 20 }, (_, index) => ({
+        id: `delta-${index}`,
+        direction: 'incoming',
+        text: 'long reply '.repeat(500),
+      })),
+      nextAction: 'reply',
+    });
+    assert.ok(JSON.stringify(boundedView).length <= 8000, `${label}: chat workflow view exceeded the model tool-result envelope`);
+    assert.equal(boundedView.newMessages.at(-1).truncated, true, `${label}: oversized chat delta was not marked truncated`);
     const sent = await agent._sendChatWorkflow(tabId, {
       thread_key: 'case-42',
       composer_ref: 'composer-1',
@@ -5158,6 +5203,51 @@ test('model-callable chat tools bind the thread, send once, and require outgoing
     });
     assert.equal(duplicate.reason, 'already_sent', `${label}: duplicate chat send was not blocked`);
     assert.equal(duplicateDispatches, 0);
+
+    const guardedAgent = new AgentClass({});
+    guardedAgent._persistNow = async () => true;
+    guardedAgent._readChatObservation = async () => ({ ...baseSnapshot });
+    let guardCalls = 0;
+    let guardedDispatches = 0;
+    guardedAgent._messageRecipientGuardBlock = async (_tabId, toolName, args) => {
+      guardCalls += 1;
+      assert.equal(toolName, 'set_field', `${label}: chat_send did not preflight the actual set_field dispatch`);
+      assert.equal(args.submit, true, `${label}: recipient preflight was not submit-scoped`);
+      return {
+        success: false,
+        noDispatch: true,
+        dispatched: false,
+        messageRecipientGuard: true,
+        reasonCode: 'active_recipient_unverified',
+        error: 'test guard block',
+      };
+    };
+    guardedAgent.executeTool = async () => { guardedDispatches += 1; return { success: true, dispatched: true }; };
+    const guarded = await guardedAgent._sendChatWorkflow(tabId, {
+      thread_key: 'case-42',
+      composer_ref: 'composer-1',
+      text: 'This must be recipient-bound.',
+    });
+    assert.equal(guardCalls, 1, `${label}: chat_send bypassed the recipient guard`);
+    assert.equal(guarded.reasonCode, 'active_recipient_unverified');
+    assert.equal(guardedDispatches, 0, `${label}: recipient-blocked chat_send still dispatched`);
+
+    const rebindAgent = new AgentClass({});
+    rebindAgent._persistNow = async () => true;
+    rebindAgent._readChatObservation = async () => ({
+      ...baseSnapshot,
+      threadKey: 'case-99',
+      conversationIdentity: 'new-agent',
+    });
+    rebindAgent.chatSessions.set(tabId, {
+      ...agent.chatSessions.get(tabId),
+      state: 'needs_user_input',
+      stopReason: 'thread_changed',
+      userInput: { required: true, reason: 'thread_changed', message: 'Select the intended thread.' },
+    });
+    const rebound = await rebindAgent._observeChatWorkflow(tabId, { rebind_thread_key: 'case-99' });
+    assert.equal(rebound.chatWorkflow.threadKey, 'case-99', `${label}: explicit thread rebind did not bind the new thread`);
+    assert.notEqual(rebound.chatWorkflow.state, 'needs_user_input', `${label}: explicit thread rebind kept the old pause state`);
 
     const driftAgent = new AgentClass({});
     driftAgent._readChatObservation = async () => ({ ...baseSnapshot, threadKey: 'other-case' });
@@ -5960,9 +6050,29 @@ test('chat observation returns a current-thread snapshot without treating messag
   assert.equal(snapshot.userInput, null, 'message text must not create a user-input stop');
   assert.equal(
     JSON.stringify(snapshot.resolutionEvidence),
-    JSON.stringify({ refund: true, autoRenewal: true, caseNumber: true }),
+    JSON.stringify({ refund: null, autoRenewal: null, caseNumber: null }),
+    'page-controlled data attributes must not self-authorize resolution evidence',
   );
-  assert.equal(snapshot.agentConnected, true);
+  assert.equal(snapshot.agentConnected, null);
+
+  const nonChat = makeDom();
+  nonChat.main._attributes = {};
+  vm.runInNewContext(chromeSource, nonChat.context);
+  const nonChatSnapshot = nonChat.context.window.__wb_observe_chat_dom({
+    probe: { success: true, composerAvailable: true, composerRef: 'composer_ref' },
+  });
+  assert.equal(nonChatSnapshot.success, false, 'a generic main/body with an editable must not be treated as a chat root');
+  assert.equal(nonChatSnapshot.reason, 'chat_root_unverified');
+
+  const noComposer = makeDom();
+  noComposer.composer.isConnected = false;
+  noComposer.context.document.activeElement = null;
+  vm.runInNewContext(chromeSource, noComposer.context);
+  const noComposerSnapshot = noComposer.context.window.__wb_observe_chat_dom({
+    probe: { success: true, composerAvailable: false },
+  });
+  assert.equal(noComposerSnapshot.success, false, 'chat observation must fail closed without a live composer');
+  assert.equal(noComposerSnapshot.reason, 'chat_root_unverified');
 
   chrome.main.appendChild(chrome.otp);
   const blocked = chrome.context.window.__wb_observe_chat_dom({
