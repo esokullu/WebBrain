@@ -42,7 +42,7 @@ import {
   workflowControlLabelIsRequested,
   workflowRequiredRowsAreProcessed,
 } from './adapter-workflow-evidence.js';
-import { messageTargetMatchesObservedIdentities, normalizeMessageTarget } from './message-recipient-guard.js';
+import { answerNamesIdentity, messageTargetMatchesObservedIdentities, normalizeMessageTarget, normalizeRecipientIdentity } from './message-recipient-guard.js';
 import {
   fetchUrl,
   executeHttpSkillTool,
@@ -15511,6 +15511,17 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       ...(target?.target_kind === 'named' ? { expectedRecipients: target.recipients } : {}),
     });
     if (probe?.success === true && probe?.conclusive === true && probe.messageSend === false) return null;
+    // A plan that declares neither submission nor state change cannot legitimately
+    // dispatch a message, so an unclassifiable click under it is a read rather than
+    // a send. Fail open for those instead of blocking every control the classifier
+    // cannot resolve. A conclusive send stays blocked: a read-only plan still may
+    // not deliver a message without recipient authorization.
+    const explicitlyReadOnly = guard?.requiresSubmission === false
+      && guard?.requiresStateChange === false;
+    const conclusiveMessageSend = probe?.success === true
+      && probe?.conclusive === true
+      && probe.messageSend === true;
+    if (explicitlyReadOnly && !conclusiveMessageSend) return null;
     // Gmail reply editors can be collapsed when planning begins. Allow only a
     // content-verified Reply/Reply all/Forward control to open the editor;
     // every other unresolved click remains blocked. Recipient authorization
@@ -15577,6 +15588,19 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       return null;
     }
 
+    // Retain what the page actually showed. The block below tells the model to
+    // ask the user who the message is for, and that answer has to be matched
+    // against real observed identities rather than model-authored option text.
+    if (guard) {
+      const observedRecipientCandidates = this._messageRecipientCandidates(probe);
+      guard.observedRecipientCandidates = observedRecipientCandidates.length
+        ? observedRecipientCandidates
+        : null;
+      // Offered to the next clarify only. The model chooses what it asks, so a
+      // pending authorization must not survive into an unrelated question.
+      guard.pendingRecipientAuthorization = observedRecipientCandidates.length > 0;
+    }
+
     return {
       success: false,
       blocked: true,
@@ -15592,6 +15616,44 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           ? 'Message send blocked: the active conversation does not exactly match the recipient authorized by the user. Select the intended conversation, re-read its visible header, then retry the send action.'
           : 'Message send blocked: the current task has no structured recipient authorization. Ask the user to name the recipient or explicitly authorize the currently open conversation before retrying.',
     };
+  }
+
+  /**
+   * Bind a user's clarify answer to a recipient the content probe observed.
+   *
+   * Clarify options are authored by the model, so an answer string on its own
+   * can never authorize a send: an injected model could offer, and then
+   * "receive", approval for any identity it liked. Authorization is therefore
+   * the intersection of what the user picked and what the page actually shows.
+   * The bound target is always an observed candidate, never the answer text,
+   * and an answer matching no candidate or more than one authorizes nothing.
+   */
+  _bindClarifiedMessageRecipient(tabId, answer) {
+    const guard = this._planExecutionGuards.get(tabId);
+    if (!guard) return false;
+    // Read and clear together. The consent the guard staged belongs to exactly
+    // one clarify, the one its own error told the model to ask; every later
+    // question is a different question and must not inherit it. Clearing on
+    // the failing paths too keeps a non-matching answer from leaving consent
+    // parked for some unrelated answer to pick up.
+    const pending = guard.pendingRecipientAuthorization === true;
+    const observed = Array.isArray(guard.observedRecipientCandidates)
+      ? guard.observedRecipientCandidates
+      : [];
+    guard.pendingRecipientAuthorization = false;
+    guard.observedRecipientCandidates = null;
+    if (!pending || observed.length === 0) return false;
+    const normalizedAnswer = normalizeRecipientIdentity(answer);
+    if (!normalizedAnswer) return false;
+    const matched = observed.filter(candidate => answerNamesIdentity(
+      normalizedAnswer,
+      normalizeRecipientIdentity(candidate?.identity),
+    ));
+    if (matched.length !== 1) return false;
+    const target = normalizeMessageTarget({ target_kind: 'named', recipients: matched });
+    if (!target) return false;
+    guard.messaging = target;
+    return true;
   }
 
   _fallbackSubmitConfirmationInfo(host, tool, reason, summary = '') {
@@ -22887,6 +22949,15 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       const answer = String(response?.answer || '').trim();
       const source = response?.source || 'user';
       const authorized = await this._recordClarificationAuthorization(tabId, source);
+      // A blocked recipient guard instructs the model to ask the user who the
+      // message is for. Bind a real human answer back to the guard so that
+      // instruction can succeed; without this the user authorizes, the guard
+      // never sees it, and the run loops until it exhausts its step budget.
+      // A timed-out or auto-selected answer is not a confirmation and binds
+      // nothing, matching how research escalation treats those sources below.
+      if (answer && source !== 'timeout' && source !== 'auto') {
+        this._bindClarifiedMessageRecipient(tabId, answer);
+      }
       const explicitResearchApproval = isResearchEscalation
         && source !== 'timeout'
         && source !== 'auto'

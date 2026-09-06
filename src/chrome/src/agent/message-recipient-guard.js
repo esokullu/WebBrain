@@ -56,6 +56,31 @@ export function recipientMatchesObservedIdentity(recipient, observedIdentity) {
   return !!expected && observed === expected;
 }
 
+const IDENTITY_WORD_CHAR = /[\p{L}\p{N}]/u;
+
+/**
+ * Does the user's answer actually name this identity, rather than merely
+ * containing its letters?
+ *
+ * A bare substring test authorizes on accidents: the observed display name
+ * "Ann" is inside "I cannot decide". Requiring the match to sit against a
+ * non-alphanumeric neighbour or a string edge keeps an incidental fragment
+ * from standing in for the user naming someone. Scripts written without word
+ * separators fall back to exact equality, which fails closed rather than
+ * guessing where a name ends.
+ */
+export function answerNamesIdentity(normalizedAnswer, normalizedIdentity) {
+  const answer = String(normalizedAnswer || '');
+  const identity = String(normalizedIdentity || '');
+  if (identity.length < 3 || !answer) return false;
+  for (let at = answer.indexOf(identity); at >= 0; at = answer.indexOf(identity, at + 1)) {
+    const before = at > 0 ? answer[at - 1] : '';
+    const after = answer[at + identity.length] || '';
+    if (!IDENTITY_WORD_CHAR.test(before) && !IDENTITY_WORD_CHAR.test(after)) return true;
+  }
+  return false;
+}
+
 export function messageTargetMatchesObservedIdentities(target, candidates) {
   const normalizedTarget = normalizeMessageTarget(target);
   const recipients = new Map();

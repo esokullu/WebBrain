@@ -4955,6 +4955,134 @@ test('direct-message recipient guard uses structured intent and exact active ide
       assert.equal(unsafe?.noDispatch, true, `${label}: ${unsafeTool} bypassed recipient verification`);
       assert.equal(unsafe?.reasonCode, 'recipient_unverifiable_dispatch_path');
     }
+
+    // A plan declaring neither submission nor state change cannot legitimately
+    // send, so an unclassifiable click under it is a read. Blocking those made
+    // a draft-only Gmail task unable to operate the thread it was reading.
+    agent._planExecutionGuards.set(tabId, {
+      messaging: null, requiresSubmission: false, requiresStateChange: false,
+    });
+    probe = { success: true, conclusive: false, messageSend: null, identityCandidates: [] };
+    assert.equal(
+      await agent._messageRecipientGuardBlock(
+        tabId,
+        'click_ax',
+        { ref_id: 'ref_expand_all' },
+        'https://mail.google.com/mail/u/0/#inbox/thread-1',
+        {},
+      ),
+      null,
+      `${label}: read-only plan still blocked an unclassifiable thread click`,
+    );
+
+    // The same read-only plan must still not deliver an actual message.
+    probe = {
+      success: true,
+      conclusive: true,
+      composerAvailable: true,
+      messageSend: true,
+      messageBody: 'Hello Alice',
+      messageBodyBaselineCount: 0,
+      identityCandidates: ['alice@example.com'],
+      strongIdentityCandidates: ['alice@example.com'],
+      messageRecipientDispatchBinding: { token: `read-only-send-${label}` },
+    };
+    const readOnlySend = await agent._messageRecipientGuardBlock(
+      tabId,
+      'click_ax',
+      { ref_id: 'ref_send' },
+      'https://mail.google.com/mail/u/0/#inbox/thread-1',
+      {},
+    );
+    assert.equal(readOnlySend?.blocked, true,
+      `${label}: read-only plan dispatched a conclusive message send`);
+    assert.equal(readOnlySend?.reasonCode, 'authorized_recipient_missing');
+
+    // The block tells the model to ask the user who the message is for, so the
+    // answer has to be able to reach the guard. It binds to a page-observed
+    // identity, never to the model-authored option text.
+    assert.deepEqual(
+      agent._planExecutionGuards.get(tabId)?.observedRecipientCandidates,
+      [{ identity: 'alice@example.com', role: 'to' }],
+      `${label}: blocked guard did not retain page-observed recipient candidates`,
+    );
+    assert.equal(agent._planExecutionGuards.get(tabId)?.pendingRecipientAuthorization, true,
+      `${label}: blocked guard did not stage consent for the clarify it asks for`);
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'Reply to Alice (alice@example.com)'),
+      true,
+      `${label}: a user answer naming an observed identity did not authorize it`,
+    );
+    assert.deepEqual(agent._planExecutionGuards.get(tabId)?.messaging, {
+      target_kind: 'named', recipients: [{ identity: 'alice@example.com', role: 'to' }],
+    }, `${label}: clarify authorization did not reach the recipient guard`);
+
+    const clarifyGuardState = candidates => ({
+      messaging: null,
+      requiresSubmission: true,
+      requiresStateChange: true,
+      pendingRecipientAuthorization: true,
+      observedRecipientCandidates: candidates,
+    });
+    const aliceOnly = () => clarifyGuardState([{ identity: 'alice@example.com', role: 'to' }]);
+
+    agent._planExecutionGuards.set(tabId, aliceOnly());
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'Send it to mallory@evil.example'),
+      false,
+      `${label}: a recipient absent from the page was authorized by answer text alone`,
+    );
+    assert.equal(agent._planExecutionGuards.get(tabId)?.messaging, null);
+    // A failed match must consume the staged consent, not park it for whatever
+    // unrelated answer arrives next.
+    assert.equal(agent._planExecutionGuards.get(tabId)?.observedRecipientCandidates, null,
+      `${label}: a non-matching answer left recipient consent pending`);
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'alice@example.com'),
+      false,
+      `${label}: a later clarify inherited consent staged for an earlier one`,
+    );
+
+    agent._planExecutionGuards.set(tabId, clarifyGuardState([
+      { identity: 'alice@example.com', role: 'to' },
+      { identity: 'bob@example.com', role: 'to' },
+    ]));
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'alice@example.com and bob@example.com'),
+      false,
+      `${label}: an ambiguous answer authorized a recipient`,
+    );
+    assert.equal(agent._planExecutionGuards.get(tabId)?.messaging, null);
+
+    // Consent is staged for exactly one clarify. Without that scope, an answer
+    // to an unrelated question that merely mentions someone on the page would
+    // authorize sending to them.
+    agent._planExecutionGuards.set(tabId, {
+      messaging: null,
+      requiresSubmission: true,
+      requiresStateChange: true,
+      observedRecipientCandidates: [{ identity: 'alice@example.com', role: 'to' }],
+    });
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'The one from alice@example.com'),
+      false,
+      `${label}: an unstaged clarify answer authorized a send target`,
+    );
+
+    // A display name's letters turning up inside an ordinary word is not the
+    // user naming that person.
+    agent._planExecutionGuards.set(tabId, clarifyGuardState([{ identity: 'Ann', role: 'to' }]));
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'I cannot decide'),
+      false,
+      `${label}: an incidental letter fragment authorized a recipient`,
+    );
+    agent._planExecutionGuards.set(tabId, clarifyGuardState([{ identity: 'Ann', role: 'to' }]));
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'Send it to Ann, please'),
+      true,
+      `${label}: a short identity the user actually named was rejected`,
+    );
   }
 });
 
@@ -9111,6 +9239,29 @@ test('whole-thread reads require deterministic terminal page coverage in both br
     assert.equal(gmailState.expansionConfirmed, true, `${label}: fresh Collapse all evidence was not recorded`);
     assert.equal(runtime.readCompletenessBlock(gmailState), null, `${label}: expanded, fully paged trusted Gmail thread remained blocked`);
 
+    // A single-message thread exposes neither Expand all nor Collapse all, so
+    // Gmail reports 'not_applicable'. Treating that as "not checked yet" left
+    // done() permanently blocked on a thread that was already fully read.
+    let singleMessageState = runtime.createReadCompletenessState(`${label}-gmail-single-message`, true, true, 'gmail');
+    const singleMessageArgs = {
+      filter: 'all', maxDepth: 15, maxChars: 12000, ref_id: gmailRootRef, page: 1,
+    };
+    singleMessageState = runtime.recordReadCompleteness(singleMessageState, 'get_accessibility_tree', singleMessageArgs, {
+      pageContent: 'main\n listitem "Chaitanya Surneddi <yourchaitu@gmail.com>"',
+      page: 1,
+      totalChars: 1200,
+      hasMore: false,
+      truncated: false,
+      continuationArgs: null,
+      conversationRootRefId: gmailRootRef,
+      conversationExpansionState: 'not_applicable',
+      treeRevision: gmailRevisionA,
+    });
+    assert.equal(singleMessageState.expansionConfirmed, true, `${label}: a thread with nothing to expand was treated as unverified`);
+    assert.equal(singleMessageState.complete, true, `${label}: single-message Gmail thread never reached complete coverage`);
+    assert.equal(runtime.readCompletenessBlock(singleMessageState, 6000, { mode: 'act' }), null, `${label}: single-message Gmail thread stayed blocked behind an Expand all that does not exist`);
+    assert.equal(runtime.readCompletenessLimitation(singleMessageState, 'ask'), null, `${label}: Ask reported a collapsed-thread limitation with nothing collapsed`);
+
     // Reproduce the Gmail trace where the model carried a document/subtree
     // revision into page 1. Page 1 is a fresh snapshot boundary, so that stale
     // revision must not keep the accepted page ledger permanently empty.
@@ -10190,6 +10341,50 @@ test('trace UI: unknown kinds render a placeholder instead of the generic note v
   }
 });
 
+test('Gmail expansion detection separates nothing-to-expand from not-yet-checked', () => {
+  for (const prefix of ['src/chrome', 'src/firefox']) {
+    const source = fs.readFileSync(path.join(ROOT, prefix, 'src/content/accessibility-tree.js'), 'utf8');
+    const start = source.indexOf('function gmailConversationExpansionControlState(');
+    const end = source.indexOf('function findGmailConversationExpandAll(', start);
+    assert.ok(start >= 0 && end > start, `${prefix}: expansion detection should remain independently testable`);
+
+    const control = (name, attributes = {}) => ({
+      getAttribute: key => attributes[key] || '',
+      closest: () => null,
+      __name: name,
+    });
+    const rootWith = controls => ({ querySelectorAll: () => controls });
+
+    const build = ({ route = true, visible = () => true } = {}) => {
+      const factory = new Function(
+        'isGmailConversationRoute', 'isVisible', 'getAccessibleName',
+        `${source.slice(start, end)}\nreturn detectGmailConversationExpansionState;`,
+      );
+      return factory(() => route, visible, el => el?.__name || '');
+    };
+
+    const detect = build();
+    // A single-message thread exposes neither control. That is proof there is
+    // nothing collapsed, not an unfinished check.
+    assert.equal(detect(rootWith([control('Reply'), control('Print all')])), 'not_applicable',
+      `${prefix}: a thread with no expansion control did not report not_applicable`);
+    assert.equal(detect(rootWith([control('Expand all')])), 'collapsed',
+      `${prefix}: a collapsed thread was misreported`);
+    assert.equal(detect(rootWith([control('Collapse all')])), 'expanded',
+      `${prefix}: an expanded thread was misreported`);
+    assert.equal(detect(rootWith([control('x', { jsname: 'tRarif' })])), 'collapsed',
+      `${prefix}: localized collapsed markup was misreported`);
+
+    // Off a conversation route, or when the scan itself throws, the detector
+    // must stay silent rather than claim there is nothing to expand.
+    assert.equal(build({ route: false })(rootWith([])), null,
+      `${prefix}: expansion state was reported outside a conversation route`);
+    const throwing = build({ visible: () => { throw new Error('detached'); } });
+    assert.equal(throwing(rootWith([control('Reply')])), null,
+      `${prefix}: an aborted scan reported nothing-to-expand`);
+  }
+});
+
 test('accessibility-tree schema and prompts preserve exact whole-document continuations', () => {
   const chromeSource = fs.readFileSync(path.join(ROOT, 'src/chrome/src/content/accessibility-tree.js'), 'utf8');
   const firefoxSource = fs.readFileSync(path.join(ROOT, 'src/firefox/src/content/accessibility-tree.js'), 'utf8');
@@ -10208,6 +10403,7 @@ test('accessibility-tree schema and prompts preserve exact whole-document contin
   assert.match(chromeSource, /conversationExpansionState/, 'Gmail expansion evidence is not returned as structured metadata');
   assert.match(chromeSource, /function gmailConversationExpansionControlState\(control\) \{[\s\S]*?jsname === 'xvWlrc'[\s\S]*?jsname === 'tRarif'[\s\S]*?name === 'Collapse all'[\s\S]*?name === 'Expand all'/, 'Gmail expansion detection still depends exclusively on English labels');
   assert.match(chromeSource, /closest\('\[role="listitem"\],\[role="article"\],\.adn,\.ads'\)/, 'message-body controls can spoof Gmail expansion evidence');
+  assert.match(chromeSource, /return scanned \? 'not_applicable' : null;/, 'Gmail expansion detection cannot report a thread with nothing to expand');
 
   for (const [label, getTools, prompt] of [
     ['chrome', getToolsForModeCh, SYSTEM_PROMPT_ASK_CH],

@@ -1285,6 +1285,7 @@
   function detectGmailConversationExpansionState(conversationRoot) {
     if (!isGmailConversationRoute() || !conversationRoot) return null;
     let collapsed = false;
+    let scanned = false;
     try {
       for (const control of conversationRoot.querySelectorAll('button,[role="button"]')) {
         if (!isVisible(control)) continue;
@@ -1296,8 +1297,15 @@
         if (state === 'expanded') return state;
         if (state === 'collapsed') collapsed = true;
       }
+      scanned = true;
     } catch (e) {}
-    return collapsed ? 'collapsed' : null;
+    if (collapsed) return 'collapsed';
+    // A thread with a single message exposes neither Expand all nor Collapse
+    // all. Report that as its own state so the read-completeness guard can tell
+    // "nothing to expand" apart from "not checked yet"; conflating the two left
+    // `done` permanently blocked on threads that were already fully readable.
+    // Only a scan that ran to completion may report it.
+    return scanned ? 'not_applicable' : null;
   }
 
   function findGmailConversationExpandAll(conversationRoot) {
