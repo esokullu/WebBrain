@@ -77525,6 +77525,38 @@ test('first live token bootstraps tokenless debt by URL', async () => {
   }
 });
 
+test('clearConversation preserves document-scoped mutation debt', async () => {
+  for (const [label, AgentClass, tabId] of [
+    ['chrome', AgentCh, 9524],
+    ['firefox', AgentFx, 9525],
+  ]) {
+    const agent = new AgentClass({});
+    agent._lastAxScopes.set(tabId, { documentToken: 'doc-conv', pageUrl: 'https://example.test/form' });
+    await agent._finalizeTextMutationResult(
+      tabId, 'type_text', { selector: '#field', text: 'maybe landed', clear: true },
+      { success: false, dispatched: true, verified: false },
+    );
+    assert.equal(agent._uncertainTextMutations.get(tabId)?.size, 1, `${label}: debt was not recorded`);
+    // A verified proof stands in for task-scoped state that must not cross.
+    agent._verifiedTextReplacements.set(tabId, new Map([['k', { pageUrl: 'https://example.test/form' }]]));
+    agent.clearConversation(tabId);
+    assert.equal(agent._uncertainTextMutations.get(tabId)?.size, 1,
+      `${label}: conversation clear dropped the document guard`);
+    assert.equal(agent._verifiedTextReplacements.has(tabId), false,
+      `${label}: task-scoped proofs survived the conversation clear`);
+    // The next run on the unchanged document stays guarded.
+    const blocked = await agent._uncertainTextMutationBlock(
+      tabId, 'type_text', { selector: '#field', text: 'maybe landed appended' },
+    );
+    assert.equal(blocked?.repeatBlocked, true,
+      `${label}: post-clear retry escaped the retained guard`);
+    // Tab removal still drops everything.
+    agent._cleanupTab(tabId);
+    assert.equal(agent._uncertainTextMutations.has(tabId), false,
+      `${label}: tab removal kept mutation debt`);
+  }
+});
+
 test('sync SHA-256 helper matches the async subtle digest', async () => {
   for (const [label, AgentClass] of [['chrome', AgentCh], ['firefox', AgentFx]]) {
     const agent = new AgentClass({});

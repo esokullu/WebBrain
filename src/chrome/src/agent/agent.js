@@ -20542,9 +20542,16 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     this._isPdfTabCache.delete(tabId);
     this._lastTypeFieldIdent?.delete(tabId);
     this._lastTypeFieldEpoch?.delete(tabId);
-    this._uncertainTextMutations.delete(tabId);
+    // A conversation clear preserves the run guard while the document (and
+    // possibly landed text) is unchanged: document-scoped mutation debt and
+    // its recent-document backlog survive, or the next run could duplicate
+    // landed text with a blind retry. Proofs stay task-scoped and are
+    // discarded with the run; tab removal drops everything.
+    if (!preserveRunGuard) {
+      this._uncertainTextMutations.delete(tabId);
+      this._recentTextMutationDocuments.delete(tabId);
+    }
     this._verifiedTextReplacements.delete(tabId);
-    this._recentTextMutationDocuments.delete(tabId);
     this._lastCdpClickIdent?.delete(tabId);
     this._lastClickProgress?.delete(tabId);
     this._clickAxCdpFallbacks?.delete(tabId);
