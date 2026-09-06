@@ -299,6 +299,27 @@ export function clarificationAuthorizesRecipientRole(clarifyContext, answer, can
     return negationRe.test(str);
   }
 
+  function prefixHasNegation(fullPrefix, prefix) {
+    if (hasNegation(prefix)) return true;
+    if (!fullPrefix) return false;
+    const boundaryRe = /[;\n\r|]|(?:\b(?:but|however|yet|instead\s+of|rather\s+than|whereas|while|whilst)\b)|(?:而不是|而非)/gi;
+    let lastBoundary = 0;
+    let m;
+    while ((m = boundaryRe.exec(fullPrefix)) !== null) {
+      lastBoundary = m.index + m[0].length;
+    }
+    const segment = fullPrefix.slice(lastBoundary);
+    const parts = segment.split(/[,，]/);
+    let relevantStart = 0;
+    for (let i = 0; i < parts.length - 1; i++) {
+      if (roleWordsRe.test(parts[i])) {
+        relevantStart = parts.slice(0, i + 1).join(',').length + 1;
+      }
+    }
+    const relevantPrefix = segment.slice(relevantStart);
+    return hasNegation(relevantPrefix);
+  }
+
   function isPrecededByNegatedCoordGroup(fullPrefix) {
     const coordTrailingRe = /(?:[,;，；和]|(?:\s+(?:\b(?:and|or)\b|以及|与|及)\s*))\s*$/i;
     if (!coordTrailingRe.test(fullPrefix)) return false;
@@ -358,14 +379,14 @@ export function clarificationAuthorizesRecipientRole(clarifyContext, answer, can
           const fullPrefix = answerText.slice(0, span.start);
 
           if (prefixPatterns[roleToCheck].test(prefix)) {
-            if (!hasNegation(prefix)) {
+            if (!prefixHasNegation(fullPrefix, prefix)) {
               return true;
             }
           }
 
           const suffixMatch = suffix.match(suffixPatterns[roleToCheck]);
           if (suffixMatch) {
-            if (!hasNegation(prefix) && !hasNegation(suffixMatch[0]) && !isPrecededByNegatedCoordGroup(fullPrefix)) {
+            if (!prefixHasNegation(fullPrefix, prefix) && !hasNegation(suffixMatch[0]) && !isPrecededByNegatedCoordGroup(fullPrefix)) {
               return true;
             }
           }
@@ -377,7 +398,7 @@ export function clarificationAuthorizesRecipientRole(clarifyContext, answer, can
             const intervening = fullSuffix.slice(0, coordMatch.index + coordMatch[0].length - coordMatch[1].length);
             const rolePart = coordMatch[1];
             if (!roleWordsRe.test(intervening) && suffixPatterns[roleToCheck].test(rolePart)) {
-              if (!hasNegation(prefix) && !hasNegation(intervening) && !hasNegation(rolePart) && !isPrecededByNegatedCoordGroup(fullPrefix)) {
+              if (!prefixHasNegation(fullPrefix, prefix) && !hasNegation(intervening) && !hasNegation(rolePart) && !isPrecededByNegatedCoordGroup(fullPrefix)) {
                 return true;
               }
             }
@@ -390,7 +411,7 @@ export function clarificationAuthorizesRecipientRole(clarifyContext, answer, can
             const intervening = prefixCoordMatch[0].slice(roleLeader.length);
             if (!roleWordsRe.test(intervening) && prefixPatterns[roleToCheck].test(roleLeader)) {
               const beforeLeader = fullPrefix.slice(0, fullPrefix.length - prefixCoordMatch[0].length);
-              if (!hasNegation(beforeLeader) && !hasNegation(roleLeader) && !hasNegation(intervening)) {
+              if (!prefixHasNegation(beforeLeader, beforeLeader) && !hasNegation(roleLeader) && !hasNegation(intervening)) {
                 return true;
               }
             }

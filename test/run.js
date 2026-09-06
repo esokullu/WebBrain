@@ -4991,6 +4991,11 @@ test('direct-message recipient guard uses structured intent and exact active ide
       false,
       'conflicting role phrase "To: Alice; actually BCC: Alice" must not authorize BCC for Alice',
     );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Do not, under any circumstances, put Alice in To', 'Alice', 'to'),
+      false,
+      'emphasized denial across commas "Do not, under any circumstances, put Alice in To" must not authorize To for Alice',
+    );
     assert.deepEqual(
       helper.resolveClarifiedRecipients(
         [
