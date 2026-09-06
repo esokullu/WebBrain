@@ -299,7 +299,7 @@ export function clarificationAuthorizesRecipientRole(clarifyContext, answer, can
     return negationRe.test(str);
   }
 
-  function prefixHasNegation(fullPrefix, prefix) {
+  function prefixHasNegation(fullPrefix, prefix, roleToCheck = null) {
     if (hasNegation(prefix)) return true;
     if (!fullPrefix) return false;
     const boundaryRe = /[;\n\r|]|(?:\b(?:but|however|yet|instead\s+of|rather\s+than|whereas|while|whilst)\b)|(?:而不是|而非)/gi;
@@ -311,9 +311,30 @@ export function clarificationAuthorizesRecipientRole(clarifyContext, answer, can
     const segment = fullPrefix.slice(lastBoundary);
     const parts = segment.split(/[,，]/);
     let relevantStart = 0;
+    const generalRecipientRe = /\b(?:anyone|anybody|any\s+one|no\s*one|nobody|someone|somebody|people|persons?|users?|recipients?|contacts?|others?|everyone|everybody|either|neither|all|any|team|group|members?)\b|谁|任何人|大家|所有人|团队|群组|成员/i;
+    const continuationRe = /^\s*(?:\b(?:especially|particularly|including|specifically|mainly|even|let\s+alone|much\s+less|not\s+to\s+mention)\b|尤其是|特别[是地]?|包括|更不用说|更别提)/i;
+
     for (let i = 0; i < parts.length - 1; i++) {
-      if (roleWordsRe.test(parts[i])) {
-        relevantStart = parts.slice(0, i + 1).join(',').length + 1;
+      const part = parts[i];
+      const partHasNeg = hasNegation(part);
+      const partHasRole = roleWordsRe.test(part);
+
+      if (partHasRole) {
+        if (!partHasNeg) {
+          relevantStart = parts.slice(0, i + 1).join(',').length + 1;
+        } else {
+          if (roleToCheck && !snippetHasExplicitRole(part, roleToCheck)) {
+            relevantStart = parts.slice(0, i + 1).join(',').length + 1;
+          } else {
+            const remainingPrefix = parts.slice(i + 1).join(',');
+            const namesOtherRecipient = candidateAliases.length > 0
+              && !candidateAliases.some(alias => answerNamesIdentity(part, alias))
+              && !generalRecipientRe.test(part);
+            if (namesOtherRecipient && !continuationRe.test(remainingPrefix)) {
+              relevantStart = parts.slice(0, i + 1).join(',').length + 1;
+            }
+          }
+        }
       }
     }
     const relevantPrefix = segment.slice(relevantStart);
@@ -379,14 +400,14 @@ export function clarificationAuthorizesRecipientRole(clarifyContext, answer, can
           const fullPrefix = answerText.slice(0, span.start);
 
           if (prefixPatterns[roleToCheck].test(prefix)) {
-            if (!prefixHasNegation(fullPrefix, prefix)) {
+            if (!prefixHasNegation(fullPrefix, prefix, roleToCheck)) {
               return true;
             }
           }
 
           const suffixMatch = suffix.match(suffixPatterns[roleToCheck]);
           if (suffixMatch) {
-            if (!prefixHasNegation(fullPrefix, prefix) && !hasNegation(suffixMatch[0]) && !isPrecededByNegatedCoordGroup(fullPrefix)) {
+            if (!prefixHasNegation(fullPrefix, prefix, roleToCheck) && !hasNegation(suffixMatch[0]) && !isPrecededByNegatedCoordGroup(fullPrefix)) {
               return true;
             }
           }
@@ -398,7 +419,7 @@ export function clarificationAuthorizesRecipientRole(clarifyContext, answer, can
             const intervening = fullSuffix.slice(0, coordMatch.index + coordMatch[0].length - coordMatch[1].length);
             const rolePart = coordMatch[1];
             if (!roleWordsRe.test(intervening) && suffixPatterns[roleToCheck].test(rolePart)) {
-              if (!prefixHasNegation(fullPrefix, prefix) && !hasNegation(intervening) && !hasNegation(rolePart) && !isPrecededByNegatedCoordGroup(fullPrefix)) {
+              if (!prefixHasNegation(fullPrefix, prefix, roleToCheck) && !hasNegation(intervening) && !hasNegation(rolePart) && !isPrecededByNegatedCoordGroup(fullPrefix)) {
                 return true;
               }
             }
@@ -411,7 +432,7 @@ export function clarificationAuthorizesRecipientRole(clarifyContext, answer, can
             const intervening = prefixCoordMatch[0].slice(roleLeader.length);
             if (!roleWordsRe.test(intervening) && prefixPatterns[roleToCheck].test(roleLeader)) {
               const beforeLeader = fullPrefix.slice(0, fullPrefix.length - prefixCoordMatch[0].length);
-              if (!prefixHasNegation(beforeLeader, beforeLeader) && !hasNegation(roleLeader) && !hasNegation(intervening)) {
+              if (!prefixHasNegation(beforeLeader, beforeLeader, roleToCheck) && !hasNegation(roleLeader) && !hasNegation(intervening)) {
                 return true;
               }
             }

@@ -4996,6 +4996,31 @@ test('direct-message recipient guard uses structured intent and exact active ide
       false,
       'emphasized denial across commas "Do not, under any circumstances, put Alice in To" must not authorize To for Alice',
     );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Do not put anyone in To, especially Alice in To', 'Alice', 'to'),
+      false,
+      'comma following negated role phrase "Do not put anyone in To, especially Alice in To" must retain negation',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Do not put anyone in To, including Alice in To', 'Alice', 'to'),
+      false,
+      'comma following negated role phrase "Do not put anyone in To, including Alice in To" must retain negation',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Do not put anyone in CC, especially Alice in To', 'Alice', 'to'),
+      true,
+      'denial of CC must not negate affirmative role in To',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Do not put Bob in To, Alice in To', 'Alice', 'to'),
+      true,
+      'denial naming a different recipient must not negate Alice in To',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Do not put Bob in To, put Alice in To', 'Alice', 'to'),
+      true,
+      'denial naming Bob followed by affirmative verb must authorize Alice in To',
+    );
     assert.deepEqual(
       helper.resolveClarifiedRecipients(
         [
@@ -5426,10 +5451,45 @@ test('direct-message recipient guard uses structured intent and exact active ide
     );
     assert.equal(agent._planExecutionGuards.get(tabId)?.messaging, null);
 
+    // A plan without messaging authorization (e.g. submitting a LinkedIn application)
+    // must never stage recipient consent even when requiresSubmission and requiresStateChange
+    // are true: a recipient clarify must not authorize sending when the plan never requested it.
+    agent._planExecutionGuards.set(tabId, {
+      messaging: null,
+      requiresSubmission: true,
+      requiresStateChange: true,
+    });
+    const unrelatedSubmissionSendBlock = await agent._messageRecipientGuardBlock(
+      tabId,
+      'click_ax',
+      { ref_id: 'ref_send' },
+      'https://mail.google.com/mail/u/0/#inbox/thread-1',
+      {},
+    );
+    assert.equal(unrelatedSubmissionSendBlock?.blocked, true);
+    assert.equal(unrelatedSubmissionSendBlock?.reasonCode, 'authorized_recipient_missing');
+    assert.equal(
+      agent._planExecutionGuards.get(tabId)?.observedRecipientCandidates,
+      null,
+      `${label}: plan without messaging authorization staged recipient candidates`,
+    );
+    assert.equal(
+      agent._planExecutionGuards.get(tabId)?.pendingRecipientAuthorization,
+      false,
+      `${label}: plan without messaging authorization staged pendingRecipientAuthorization`,
+    );
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'Reply to Alice (alice@example.com)'),
+      false,
+      `${label}: clarify answer elevated an unrelated plan into an authorized sender`,
+    );
+    assert.equal(agent._planExecutionGuards.get(tabId)?.messaging, null);
+
     // A messaging-authorized plan does stage consent for the clarify it asks for,
     // and binds to the page-observed candidate rather than model-authored option text.
     agent._planExecutionGuards.set(tabId, {
-      messaging: null,
+      messaging: { target_kind: 'active_conversation', recipients: [] },
+      messagingConversationScope: 'thread-authorized',
       requiresSubmission: true,
       requiresStateChange: true,
     });
@@ -5458,7 +5518,7 @@ test('direct-message recipient guard uses structured intent and exact active ide
     }, `${label}: clarify authorization did not reach the recipient guard`);
 
     const clarifyGuardState = candidates => ({
-      messaging: null,
+      messaging: { target_kind: 'active_conversation', recipients: [] },
       requiresSubmission: true,
       requiresStateChange: true,
       pendingRecipientAuthorization: true,
@@ -5472,7 +5532,9 @@ test('direct-message recipient guard uses structured intent and exact active ide
       false,
       `${label}: a recipient absent from the page was authorized by answer text alone`,
     );
-    assert.equal(agent._planExecutionGuards.get(tabId)?.messaging, null);
+    assert.deepEqual(agent._planExecutionGuards.get(tabId)?.messaging, {
+      target_kind: 'active_conversation', recipients: [],
+    });
     // A failed match must consume the staged consent, not park it for whatever
     // unrelated answer arrives next.
     assert.equal(agent._planExecutionGuards.get(tabId)?.observedRecipientCandidates, null,
@@ -5545,13 +5607,15 @@ test('direct-message recipient guard uses structured intent and exact active ide
       false,
       `${label}: an incomplete recipient subset authorized a send target`,
     );
-    assert.equal(agent._planExecutionGuards.get(tabId)?.messaging, null);
+    assert.deepEqual(agent._planExecutionGuards.get(tabId)?.messaging, {
+      target_kind: 'active_conversation', recipients: [],
+    });
 
     // Consent is staged for exactly one clarify. Without that scope, an answer
     // to an unrelated question that merely mentions someone on the page would
     // authorize sending to them.
     agent._planExecutionGuards.set(tabId, {
-      messaging: null,
+      messaging: { target_kind: 'active_conversation', recipients: [] },
       requiresSubmission: true,
       requiresStateChange: true,
       observedRecipientCandidates: [{ identity: 'alice@example.com', role: 'to' }],
