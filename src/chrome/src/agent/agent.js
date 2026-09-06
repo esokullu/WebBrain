@@ -20933,6 +20933,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         if (!current
             || !record.readbackSha256
             || !kindOk
+            || this._textMutationFieldsProvenDistinct(record.fieldMeta, current.fieldMeta)
             || current.valueLength !== record.readbackLength
             || current.valueSha256 !== record.readbackSha256) {
           records.delete(key);
@@ -20947,8 +20948,20 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       ));
       if (!githubEditor && !commitMessage) continue;
       const current = await this._textMutationValueDigest(tabId, record);
+      // Revalidate against the CURRENT element, not the stale record: a DOM
+      // rerender or insertion can repoint the locator at a different field
+      // that still holds the expected bytes while the real editor changed.
+      // The live metadata must still prove the editor/commit-message kind,
+      // and must not be proven distinct from the stored metadata — otherwise
+      // the proof is dropped fail-closed instead of authorizing the commit.
+      const currentEditor = this._isGithubFileEditorRecord({ fieldMeta: current?.fieldMeta });
+      const currentMessage = /^(?:commit-message-input|commit_message)$/i.test(String(
+        current?.fieldMeta?.id || current?.fieldMeta?.name || '',
+      ));
       if (!current
           || !record.readbackSha256
+          || (!currentEditor && !currentMessage)
+          || this._textMutationFieldsProvenDistinct(record.fieldMeta, current.fieldMeta)
           || current.valueLength !== record.readbackLength
           || current.valueSha256 !== record.readbackSha256) {
         records.delete(key);

@@ -76996,6 +76996,85 @@ test('refresh revalidates label-identified editor proofs', async () => {
   }
 });
 
+test('refresh drops proofs whose locator repoints after rerender', async () => {
+  const originalChrome = globalThis.chrome;
+  const originalBrowser = globalThis.browser;
+  try {
+    const pageUrl = 'https://github.com/Example/Repo/edit/main/docs/plan.md';
+    const body = '# Rerender document\n\nOne complete copy.\n';
+    for (const [label, AgentClass, tabId] of [
+      ['chrome', AgentCh, 9522],
+      ['firefox', AgentFx, 9523],
+    ]) {
+      const agent = new AgentClass({});
+      const storedMeta = {
+        tag: 'div', contentEditable: true, id: 'file-editor', name: 'editor',
+        labelText: 'Editing file contents', ariaLabelledByText: 'Editing file contents',
+      };
+      // The locator repoints at a different field holding the same bytes
+      // while the real editor changed: provably distinct live metadata.
+      const live = {
+        text: body,
+        meta: { ...storedMeta },
+      };
+      const tabs = {
+        async sendMessage(_tabId, message) {
+          assert.equal(message.action, 'field_value_digest');
+          assert.equal(message.params?.ref_id, 'ref_editor');
+          return { success: true,
+            valueLength: live.text.length,
+            valueSha256: await agent._sha256Text(live.text),
+            fieldMeta: { ...live.meta } };
+        },
+      };
+      globalThis.chrome = { tabs };
+      globalThis.browser = { tabs };
+      const mint = async () => {
+        const sha = await agent._sha256Text(body);
+        agent._verifiedTextReplacements.set(tabId, new Map([['ax:doc:ref_editor', {
+          key: 'ax:doc:ref_editor',
+          locatorType: 'ax',
+          refId: 'ref_editor',
+          documentToken: 'doc',
+          pageUrl,
+          ambiguous: false,
+          expectedLength: body.length,
+          expectedSha256: sha,
+          expectedFp: agent._workflowInventoryFingerprint(body),
+          fieldMeta: { ...storedMeta },
+          readbackLength: body.length,
+          readbackSha256: sha,
+          verifiedAt: Date.now(),
+          taskToken: 'task-rerender',
+        }]]));
+        agent._taskTokens.set(tabId, 'task-rerender');
+      };
+      // Unchanged element and bytes: kept.
+      await mint();
+      await agent._refreshGithubTextReplacementProofs(tabId, pageUrl);
+      assert.ok(agent._verifiedTextReplacements.get(tabId)?.has('ax:doc:ref_editor'),
+        `${label}: matching proof was dropped`);
+      // Same bytes on a provably different element: dropped even though the
+      // digest matches, or the stale proof could authorize a changed editor.
+      live.meta = { tag: 'div', contentEditable: true, id: 'comment-box', name: 'comment', labelText: 'Add a comment' };
+      await agent._refreshGithubTextReplacementProofs(tabId, pageUrl);
+      assert.ok(!agent._verifiedTextReplacements.get(tabId)?.has('ax:doc:ref_editor'),
+        `${label}: repointed proof survived on matching bytes`);
+      // Same bytes on an unlinked editable: kind drift alone drops it.
+      await mint();
+      live.meta = { tag: 'div', contentEditable: true, id: 'plain' };
+      await agent._refreshGithubTextReplacementProofs(tabId, pageUrl);
+      assert.ok(!agent._verifiedTextReplacements.get(tabId)?.has('ax:doc:ref_editor'),
+        `${label}: kind-drifted proof survived on matching bytes`);
+    }
+  } finally {
+    if (originalChrome === undefined) delete globalThis.chrome;
+    else globalThis.chrome = originalChrome;
+    if (originalBrowser === undefined) delete globalThis.browser;
+    else globalThis.browser = originalBrowser;
+  }
+});
+
 test('minted proofs carry the live digest scope', async () => {
   const originalChrome = globalThis.chrome;
   const originalBrowser = globalThis.browser;
