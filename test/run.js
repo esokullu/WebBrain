@@ -4956,24 +4956,24 @@ test('direct-message recipient guard uses structured intent and exact active ide
       assert.equal(unsafe?.reasonCode, 'recipient_unverifiable_dispatch_path');
     }
 
-    // A plan declaring neither submission nor state change cannot legitimately
-    // send, so an unclassifiable click under it is a read. Blocking those made
-    // a draft-only Gmail task unable to operate the thread it was reading.
+    // A read-only plan cannot bypass the recipient guard on an inconclusive click.
+    // Planner flags describe requested intent, not DOM effects: an unclassified
+    // control might be a Send button, so only a conclusively non-send action may proceed.
     agent._planExecutionGuards.set(tabId, {
       messaging: null, requiresSubmission: false, requiresStateChange: false,
     });
     probe = { success: true, conclusive: false, messageSend: null, identityCandidates: [] };
-    assert.equal(
-      await agent._messageRecipientGuardBlock(
-        tabId,
-        'click_ax',
-        { ref_id: 'ref_expand_all' },
-        'https://mail.google.com/mail/u/0/#inbox/thread-1',
-        {},
-      ),
-      null,
-      `${label}: read-only plan still blocked an unclassifiable thread click`,
+    const readOnlyInconclusive = await agent._messageRecipientGuardBlock(
+      tabId,
+      'click_ax',
+      { ref_id: 'ref_expand_all' },
+      'https://mail.google.com/mail/u/0/#inbox/thread-1',
+      {},
     );
+    assert.equal(readOnlyInconclusive?.blocked, true,
+      `${label}: read-only plan allowed an inconclusive click to bypass recipient guard`);
+    assert.equal(readOnlyInconclusive?.reasonCode, 'message_send_classification_inconclusive',
+      `${label}: inconclusive click did not fail closed`);
 
     // The same read-only plan must still not deliver an actual message.
     probe = {
@@ -5043,14 +5043,67 @@ test('direct-message recipient guard uses structured intent and exact active ide
       `${label}: a later clarify inherited consent staged for an earlier one`,
     );
 
+    // A timed-out or auto-selected clarify must consume staged consent without binding.
+    agent._planExecutionGuards.set(tabId, clarifyGuardState([{ identity: 'alice@example.com', role: 'to' }]));
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'alice@example.com', 'timeout'),
+      false,
+      `${label}: timed-out clarify bound a recipient`,
+    );
+    assert.equal(agent._planExecutionGuards.get(tabId)?.pendingRecipientAuthorization, false,
+      `${label}: timed-out clarify left pendingRecipientAuthorization true`);
+    assert.equal(agent._planExecutionGuards.get(tabId)?.observedRecipientCandidates, null,
+      `${label}: timed-out clarify left observedRecipientCandidates intact`);
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'alice@example.com'),
+      false,
+      `${label}: subsequent clarify inherited consent from timed-out clarify`,
+    );
+
+    agent._planExecutionGuards.set(tabId, clarifyGuardState([{ identity: 'alice@example.com', role: 'to' }]));
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'alice@example.com', 'auto'),
+      false,
+      `${label}: auto-selected clarify bound a recipient`,
+    );
+    assert.equal(agent._planExecutionGuards.get(tabId)?.pendingRecipientAuthorization, false,
+      `${label}: auto-selected clarify left pendingRecipientAuthorization true`);
+    assert.equal(agent._planExecutionGuards.get(tabId)?.observedRecipientCandidates, null,
+      `${label}: auto-selected clarify left observedRecipientCandidates intact`);
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'alice@example.com'),
+      false,
+      `${label}: subsequent clarify inherited consent from auto clarify`,
+    );
+
+    // Multi-recipient threads (e.g. Reply all): an answer naming all observed recipients
+    // authorizes the full recipient set.
     agent._planExecutionGuards.set(tabId, clarifyGuardState([
       { identity: 'alice@example.com', role: 'to' },
       { identity: 'bob@example.com', role: 'to' },
     ]));
     assert.equal(
       agent._bindClarifiedMessageRecipient(tabId, 'alice@example.com and bob@example.com'),
+      true,
+      `${label}: an answer naming all observed recipients was rejected`,
+    );
+    assert.deepEqual(agent._planExecutionGuards.get(tabId)?.messaging, {
+      target_kind: 'named',
+      recipients: [
+        { identity: 'alice@example.com', role: 'to' },
+        { identity: 'bob@example.com', role: 'to' },
+      ],
+    }, `${label}: clarify authorization did not set full recipient set`);
+
+    // But naming only a subset of the observed recipients authorizes nothing.
+    agent._planExecutionGuards.set(tabId, clarifyGuardState([
+      { identity: 'alice@example.com', role: 'to' },
+      { identity: 'bob@example.com', role: 'to' },
+    ]));
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'Send it to alice@example.com'),
       false,
-      `${label}: an ambiguous answer authorized a recipient`,
+      `${label}: an incomplete recipient subset authorized a send target`,
     );
     assert.equal(agent._planExecutionGuards.get(tabId)?.messaging, null);
 

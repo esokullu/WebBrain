@@ -17758,17 +17758,6 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       ...(target?.target_kind === 'named' ? { expectedRecipients: target.recipients } : {}),
     });
     if (probe?.success === true && probe?.conclusive === true && probe.messageSend === false) return null;
-    // A plan that declares neither submission nor state change cannot legitimately
-    // dispatch a message, so an unclassifiable click under it is a read rather than
-    // a send. Fail open for those instead of blocking every control the classifier
-    // cannot resolve. A conclusive send stays blocked: a read-only plan still may
-    // not deliver a message without recipient authorization.
-    const explicitlyReadOnly = guard?.requiresSubmission === false
-      && guard?.requiresStateChange === false;
-    const conclusiveMessageSend = probe?.success === true
-      && probe?.conclusive === true
-      && probe.messageSend === true;
-    if (explicitlyReadOnly && !conclusiveMessageSend) return null;
     // Gmail reply editors can be collapsed when planning begins. Allow only a
     // content-verified Reply/Reply all/Forward control to open the editor;
     // every other unresolved click remains blocked. Recipient authorization
@@ -17873,16 +17862,19 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
    * "receive", approval for any identity it liked. Authorization is therefore
    * the intersection of what the user picked and what the page actually shows.
    * The bound target is always an observed candidate, never the answer text,
-   * and an answer matching no candidate or more than one authorizes nothing.
+   * and an answer matching no candidate or only a subset of observed
+   * candidates authorizes nothing. When multiple recipients are observed on
+   * the page (e.g. Reply all), the answer must explicitly authorize the full
+   * observed recipient set.
    */
-  _bindClarifiedMessageRecipient(tabId, answer) {
+  _bindClarifiedMessageRecipient(tabId, answer, source = 'user') {
     const guard = this._planExecutionGuards.get(tabId);
     if (!guard) return false;
     // Read and clear together. The consent the guard staged belongs to exactly
     // one clarify, the one its own error told the model to ask; every later
     // question is a different question and must not inherit it. Clearing on
-    // the failing paths too keeps a non-matching answer from leaving consent
-    // parked for some unrelated answer to pick up.
+    // all paths (including timeout, auto, mismatch, cancellation) keeps staged
+    // consent from remaining parked for an unrelated later clarify to pick up.
     const pending = guard.pendingRecipientAuthorization === true;
     const observed = Array.isArray(guard.observedRecipientCandidates)
       ? guard.observedRecipientCandidates
@@ -17890,13 +17882,14 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     guard.pendingRecipientAuthorization = false;
     guard.observedRecipientCandidates = null;
     if (!pending || observed.length === 0) return false;
+    if (!answer || source === 'timeout' || source === 'auto') return false;
     const normalizedAnswer = normalizeRecipientIdentity(answer);
     if (!normalizedAnswer) return false;
     const matched = observed.filter(candidate => answerNamesIdentity(
       normalizedAnswer,
       normalizeRecipientIdentity(candidate?.identity),
     ));
-    if (matched.length !== 1) return false;
+    if (matched.length === 0 || matched.length !== observed.length) return false;
     const target = normalizeMessageTarget({ target_kind: 'named', recipients: matched });
     if (!target) return false;
     guard.messaging = target;
@@ -26180,6 +26173,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       if (tabPending.size === 0) this._pendingClarifications.delete(tabId);
 
       if (response && response.cancelled) {
+        this._bindClarifiedMessageRecipient(tabId, '', 'cancelled');
         return { success: false, cancelled: true, reason: response.reason || 'clarify cancelled' };
       }
       const answer = String(response?.answer || '').trim();
@@ -26191,9 +26185,9 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       // never sees it, and the run loops until it exhausts its step budget.
       // A timed-out or auto-selected answer is not a confirmation and binds
       // nothing, matching how research escalation treats those sources below.
-      if (answer && source !== 'timeout' && source !== 'auto') {
-        this._bindClarifiedMessageRecipient(tabId, answer);
-      }
+      // Every clarification outcome (human answer, timeout, auto) must consume
+      // the staged recipient consent so a later unrelated clarify does not inherit it.
+      this._bindClarifiedMessageRecipient(tabId, answer, source);
       const explicitResearchApproval = isResearchEscalation
         && source !== 'timeout'
         && source !== 'auto'
