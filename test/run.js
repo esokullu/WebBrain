@@ -7901,7 +7901,6 @@ test('12306 exposes a validated regional workflow profile with browser parity', 
     'microsoft-forms',
     'gmail',
     'linkedin',
-    'bluesky',
     'youtube',
     'railway-12306',
     'douyin',
@@ -7988,7 +7987,6 @@ test('report-driven workflow adapters route exact app-owned jobs with browser pa
     ['https://forms.cloud.microsoft/pages/responsepage.aspx?id=x', 'microsoft-forms', 'submit-form'],
     ['https://mail.google.com/mail/u/0/#inbox/abc', 'gmail', 'read-complete-thread'],
     ['https://www.linkedin.com/feed/', 'linkedin', 'publish-post'],
-    ['https://bsky.app/', 'bluesky', 'publish-post'],
     ['https://studio.youtube.com/video/abc/edit', 'youtube', 'update-metadata'],
     ['https://www.douyin.com/video/1', 'douyin', 'collect-comments'],
     ['https://www.naukrigulf.com/job/example', 'naukrigulf', 'submit-application'],
@@ -84858,15 +84856,35 @@ test('single-page app publish evidence survives the verification navigation', ()
       `${AgentClass.name}: navigating to the published resource invalidated its own evidence`,
     );
 
-    // done reads the live document, so that read is itself the observation.
-    agent._completionSubmitStates.set(tabId, publishedSubmit({
-      currentUrl: 'https://bsky.app/',
-      observedAfterSubmit: false,
-    }));
+    // Same origin on its own is not evidence the route came from the submit.
+    // Navigating to an unrelated same-origin page after a no-op submit must
+    // not be accepted as the submitted document.
+    agent._completionSubmitStates.set(tabId, publishedSubmit({ currentUrl: 'https://bsky.app/' }));
+    assert.equal(
+      agent._completionSubmissionEvidence(tabId, pageState, 'https://bsky.app/home').verifiedFinalSubmit,
+      false,
+      `${AgentClass.name}: an unrelated same-origin route stood in for the submitted document`,
+    );
+
+    // An explicit success signal is the other way a destination qualifies.
+    agent._completionSubmitStates.set(tabId, publishedSubmit({ currentUrl: 'https://bsky.app/' }));
+    assert.equal(
+      agent._completionSubmissionEvidence(
+        tabId,
+        { relevantFormCount: 0, successMessages: ['Post published successfully'] },
+        'https://bsky.app/home',
+      ).verifiedFinalSubmit,
+      true,
+      `${AgentClass.name}: an explicit success signal did not qualify the destination`,
+    );
+
+    // The observation requirement stays: done still cannot stand in for the
+    // read the guard asks for after a submit.
+    agent._completionSubmitStates.set(tabId, publishedSubmit({ observedAfterSubmit: false }));
     assert.equal(
       agent._completionSubmissionEvidence(tabId, pageState, postUrl).verifiedFinalSubmit,
-      true,
-      `${AgentClass.name}: the completion probe was not counted as an observation`,
+      false,
+      `${AgentClass.name}: a submit with no observation after it was accepted`,
     );
 
     // Still no completion when nothing actually changed: a dispatched click on
@@ -84874,7 +84892,6 @@ test('single-page app publish evidence survives the verification navigation', ()
     agent._completionSubmitStates.set(tabId, publishedSubmit({
       currentUrl: 'https://bsky.app/',
       documentChanged: false,
-      observedAfterSubmit: false,
     }));
     assert.equal(
       agent._completionSubmissionEvidence(tabId, pageState, 'https://bsky.app/').verifiedFinalSubmit,
@@ -84892,6 +84909,12 @@ test('single-page app publish evidence survives the verification navigation', ()
       false,
       `${AgentClass.name}: a submit on a different origin satisfied this task`,
     );
+
+    // Opaque origins all serialise to "null", so two unrelated local documents
+    // must not compare as the same origin.
+    assert.equal(agent._sameUrlOrigin('file:///tmp/a/form.html', 'file:///tmp/b/other.html'), false,
+      `${AgentClass.name}: unrelated file: documents compared as same-origin`);
+    assert.equal(agent._sameUrlOrigin('https://bsky.app/a', 'https://bsky.app/b'), true);
 
     // Bluesky posts get a stable published-resource identity; a profile or
     // feed URL is not one.

@@ -16236,24 +16236,13 @@ const ADAPTERS = [
   {
     name: 'bluesky',
     category: 'general',
-    revision: 1,
-    regions: ['global'],
-    jobs: ['publish-post'],
-    workflow: {
-      schema: ADAPTER_WORKFLOW_SCHEMA,
-      jobs: {
-        'publish-post': {
-          description: 'Prepare, publish, and verify a Bluesky post.',
-          template: 'publish',
-          stateChange: true,
-          requiresSubmission: true,
-          requiresLedger: false,
-          stages: ['access_gate', 'fill', 'review', 'commit', 'verify', 'deliver'],
-          successEvidence: ['The reviewed post appears under the intended handle at a stable /profile/<handle>/post/<id> URL.'],
-          partialEvidence: ['The verified composer text, attached media, and exact account, validation, or publication blocker are reported.'],
-        },
-      },
-    },
+    // Deliberately notes-only for now. A publish-post workflow job would route
+    // completion through the published_resource contract, which binds its
+    // identity either from a submit that changes the URL or from an
+    // observation-tool read afterwards. A Bluesky publish does neither — the
+    // composer closes over XHR and the agent opens the new post by clicking —
+    // so adding the job would leave done permanently blocked instead of
+    // letting the ordinary submit-transition evidence path verify the post.
     matches: (url) => /^https?:\/\/(www\.)?bsky\.app\//.test(url),
     notes: `
 - The composer opens from "Compose new post" (also the "New Post" button on wider layouts) and renders as a dialog over the current feed; the URL does not change while it is open.

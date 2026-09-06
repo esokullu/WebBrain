@@ -1644,7 +1644,11 @@ export class Agent extends LoopDetector {
 
   _sameUrlOrigin(a, b) {
     try {
-      return new URL(String(a || '')).origin === new URL(String(b || '')).origin;
+      const origin = new URL(String(a || '')).origin;
+      // file:, data: and about:blank all serialise to the string "null", so
+      // comparing those would make two unrelated documents look same-origin.
+      if (!origin || origin === 'null') return false;
+      return origin === new URL(String(b || '')).origin;
     } catch (_) {
       return false;
     }
@@ -1659,34 +1663,42 @@ export class Agent extends LoopDetector {
     const submit = this._completionSubmitStates.get(tabId);
     const observedUrl = pageUrl || pageState.url || '';
     const normalizedObserved = this._normalizeUrl(observedUrl);
-    const normalizedOriginating = this._normalizeUrl(submit?.originatingUrl || '');
-    // pageState comes from a live read of the document performed for this very
-    // check, so the probe is itself an observation of the page after the
-    // submit. Single-page apps confirm a publish by navigating to the new
-    // resource, and the tools that navigate are not in the observation set, so
-    // insisting on an earlier read made the verification step the reason the
-    // evidence was rejected.
-    const observedAfterSubmit = !!submit
-      && (submit.observedAfterSubmit === true || !!normalizedObserved);
-    const documentChanged = !!submit && (
-      submit.documentChanged === true
-      || (!!normalizedOriginating && !!normalizedObserved && normalizedOriginating !== normalizedObserved)
-    );
     // What this needs to establish is that the page being reported belongs to
     // the site that was submitted to, so another site's submit cannot stand in
-    // for this one. Demanding the exact document the last read saw punished
-    // the very navigation the completion guard asks for.
+    // for this one. Demanding the exact document the last post-submit read saw
+    // punished the very navigation the completion guard asks for: a single-page
+    // app confirms a publish by opening the new resource, and the tools that
+    // navigate there are not in the observation set, so the act of verifying
+    // moved the page off the document that carried the evidence.
+    //
+    // Everything else stays as strict as it was. A submit still has to be
+    // dispatched, still has to be observed afterwards, and still has to have
+    // changed the document or produced a success signal.
+    const observedSuccessSignal = !!submit?.completionSignalObserved || liveSignals.length > 0;
+    // Same origin alone is not evidence that this route came from the submit:
+    // navigating to /home after a no-op submit is same-origin too. The
+    // destination has to be submit-correlated — the published resource itself,
+    // or a page carrying an explicit success signal.
+    // Resolve the adapter from the observed URL when no workflow job was
+    // selected, so a recognised published-resource route still counts. A
+    // single-page app publish rarely has a workflow job, and that is exactly
+    // the case that needs this.
+    const observedPublishedResource = !!this._workflowPublishedResourceIdentity(
+      this._planExecutionGuards.get(tabId)?.siteWorkflow
+        || { adapterName: getActiveAdapter(observedUrl)?.name || '' },
+      observedUrl,
+    );
     const currentDocumentMatchesSubmit = !!submit && (
       (!!submit.currentUrl && this._normalizeUrl(submit.currentUrl) === normalizedObserved)
-      || this._sameUrlOrigin(observedUrl, submit.originatingUrl || submit.currentUrl || '')
+      || ((observedPublishedResource || observedSuccessSignal)
+        && this._sameUrlOrigin(observedUrl, submit.originatingUrl || submit.currentUrl || ''))
     );
-    const observedSuccessSignal = !!submit?.completionSignalObserved || liveSignals.length > 0;
     const verifiedSubmit = !!(
       submit?.dispatched
-      && observedAfterSubmit
+      && submit.observedAfterSubmit
       && !submit.formValidationFailed
       && currentDocumentMatchesSubmit
-      && (documentChanged || observedSuccessSignal)
+      && (submit.documentChanged || observedSuccessSignal)
     );
     return {
       submit,
