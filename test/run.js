@@ -75322,8 +75322,23 @@ test('uncertain text mutation debt blocks blind retries until the document chang
         `${label}: recording a second uncertain target unblocked the first one`);
 
       agent._rememberAxScope(tabId, 'doc-two', 'https://github.com/example/repo/edit/main/README.md');
-      assert.equal(agent._uncertainTextMutations.has(tabId), false,
-        `${label}: a replacement document kept stale mutation debt`);
+      assert.equal(agent._uncertainTextMutations.get(tabId)?.size, 2,
+        `${label}: navigating away discarded scoped mutation debt`);
+      // The new document is unblocked: retained debts are token-scoped.
+      const movedOn = await agent._uncertainTextMutationBlock(
+        tabId, 'set_field', { ref_id: 'ref_other_page', text: 'fresh field' },
+      );
+      assert.equal(movedOn, null, `${label}: retained debt blocked the new document`);
+      assert.equal(agent._uncertainTextMutations.get(tabId)?.size, 2,
+        `${label}: allowing the new document dropped the old debts`);
+      // Back-forward return restores the guard: same token, same heap,
+      // possibly landed text.
+      agent._rememberAxScope(tabId, 'doc-one', 'https://github.com/example/repo/edit/main/README.md');
+      const backBlocked = await agent._uncertainTextMutationBlock(
+        tabId, 'set_field', { ref_id: 'ref_editor', text: 'appended after return' },
+      );
+      assert.equal(backBlocked?.repeatBlocked, true,
+        `${label}: back-forward return lost the mutation guard`);
     }
   } finally {
     if (originalChrome === undefined) delete globalThis.chrome;
@@ -75439,7 +75454,7 @@ test('an uncertain contenteditable write invalidates stale proof across locator 
   }
 });
 
-test('uncertain text mutation debt survives same-document route changes', async () => {
+test('uncertain text mutation debt survives same-document route changes and back-forward returns', async () => {
   for (const [label, AgentClass, tabId] of [
     ['chrome', AgentCh, 9453],
     ['firefox', AgentFx, 9454],
@@ -75463,10 +75478,18 @@ test('uncertain text mutation debt survives same-document route changes', async 
     );
     assert.equal(stillBlocked?.repeatBlocked, true,
       `${label}: append retry escaped the guard after a same-document route change`);
-    // A genuine document change still discards the debt.
+    // A genuine document change scopes (not discards) the debt: the new
+    // document is unblocked while the record is retained boundedly.
     agent._rememberAxScope(tabId, 'doc-next', `${pageUrl}#L10`);
-    assert.equal(agent._uncertainTextMutations.has(tabId), false,
-      `${label}: document change retained stale mutation debt`);
+    assert.equal(agent._uncertainTextMutations.get(tabId)?.size, 1,
+      `${label}: document change discarded scoped mutation debt`);
+    // Back-forward return restores the guard.
+    agent._rememberAxScope(tabId, 'doc-route', pageUrl);
+    const backBlocked = await agent._uncertainTextMutationBlock(
+      tabId, 'set_field', { ref_id: 'ref_editor', text: 'appended after return' },
+    );
+    assert.equal(backBlocked?.repeatBlocked, true,
+      `${label}: back-forward return lost the mutation guard`);
   }
 });
 
@@ -77252,7 +77275,8 @@ test('focused field_value_digest and live scope cover selectorless writes', asyn
       assert.equal(live?.documentToken, 'doc-new', `${label}: focused live scope returned no token`);
       const allowed = await agent._uncertainTextMutationBlock(tabId, 'type_text', { text: 'fresh' });
       assert.equal(allowed, null, `${label}: stale debt blocked a focused write on a new document`);
-      assert.equal(agent._uncertainTextMutations.has(tabId), false, `${label}: stale debt survived navigation`);
+      assert.equal(agent._uncertainTextMutations.get(tabId)?.size, 1,
+        `${label}: scoped debt was discarded instead of retained for return`);
     }
   } finally {
     if (originalChrome === undefined) delete globalThis.chrome;
@@ -77742,7 +77766,7 @@ test('verified value with unobserved submission is not mutation debt', async () 
   }
 });
 
-test('navigation clears stale text-mutation debt via live document check', async () => {
+test('navigation scopes stale text-mutation debt to its document', async () => {
   const originalChrome = globalThis.chrome;
   const originalBrowser = globalThis.browser;
   try {
@@ -77778,16 +77802,26 @@ test('navigation clears stale text-mutation debt via live document check', async
       );
       assert.equal(agent._uncertainTextMutations.get(tabId)?.size, 1, `${label}: debt was not recorded`);
       // No AX read happened after the navigation: the cached scope still
-      // points at the old document, but the live check proves the move.
+      // points at the old document, but the live check proves the move. The
+      // write is allowed, while the scoped debt is retained boundedly.
       liveDoc.documentToken = 'doc-new';
       liveDoc.refScopeUrl = 'https://other.test/page';
       const allowed = await agent._uncertainTextMutationBlock(
         tabId, 'type_text', { selector: '#other', text: 'fresh' },
       );
       assert.equal(allowed, null, `${label}: stale debt blocked a new document`);
-      assert.equal(agent._uncertainTextMutations.has(tabId), false, `${label}: stale debt survived navigation`);
+      assert.equal(agent._uncertainTextMutations.get(tabId)?.size, 1,
+        `${label}: scoped debt was discarded instead of retained for return`);
       assert.equal(agent._lastAxScopes.get(tabId)?.documentToken, 'doc-new',
         `${label}: live scope was not adopted`);
+      // Back-forward return restores the guard on the same field.
+      liveDoc.documentToken = 'doc-old';
+      liveDoc.refScopeUrl = 'https://example.test/form';
+      const backBlocked = await agent._uncertainTextMutationBlock(
+        tabId, 'type_text', { selector: '#field', text: 'draft appended' },
+      );
+      assert.equal(backBlocked?.repeatBlocked, true,
+        `${label}: back-forward return lost the mutation guard`);
     }
   } finally {
     if (originalChrome === undefined) delete globalThis.chrome;

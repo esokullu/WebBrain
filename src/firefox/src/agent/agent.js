@@ -625,6 +625,9 @@ export class Agent extends LoopDetector {
     this._lastAxScopes = new Map(); // tabId -> { documentToken, pageUrl }, captured by the latest AX read
     this._uncertainTextMutations = new Map(); // tabId -> Map(target -> unresolved, potentially applied text write; no raw text)
     this._verifiedTextReplacements = new Map(); // tabId -> exact replacement digest bound to the live document
+    // tabId -> recent document tokens (bounded) whose mutation records are
+    // retained so a back-forward cache return restores their guards.
+    this._recentTextMutationDocuments = new Map();
     this._richTextToolbarGuard = new RichTextToolbarGuard();
     this._richTextToolbarProbe = new RichTextToolbarProbe(this);
     this._uploadSelectorRecoveryRequired = new Map(); // tabId -> prior ambiguous match count; cleared only by inspection/navigation/cleanup
@@ -4452,12 +4455,39 @@ export class Agent extends LoopDetector {
     // document, not the URL: a query/hash change or SPA navigation can change
     // the route while the same document and editor value persist. Clearing on
     // a bare route change would drop the readback-only guard and let an
-    // append-style retry duplicate landed text, so these records survive until
-    // the document itself changes. Per-field staleness across documents is
-    // still handled by the documentToken checks in the mutation guards.
+    // append-style retry duplicate landed text. On a genuine document change
+    // the records are NOT discarded wholesale either: a back-forward cache
+    // return restores the exact document (same token, same heap, possibly
+    // landed text), so token-scoped records are retained boundedly and guard
+    // again on return, while per-write token checks keep other documents
+    // unblocked. Records without a token cannot be scoped and are dropped
+    // once a new documented scope arrives (except when they name it).
     if (documentChanged) {
-      this._uncertainTextMutations.delete(tabId);
-      this._verifiedTextReplacements.delete(tabId);
+      let recent = this._recentTextMutationDocuments.get(tabId);
+      if (!(recent instanceof Array)) {
+        recent = [];
+        this._recentTextMutationDocuments.set(tabId, recent);
+      }
+      for (const token of [previous?.documentToken, next.documentToken]) {
+        if (token && !recent.includes(token)) recent.push(token);
+      }
+      while (recent.length > 5) recent.shift();
+      const keep = new Set(recent);
+      for (const [owner, map] of [
+        [this._uncertainTextMutations, this._uncertainTextMutations.get(tabId)],
+        [this._verifiedTextReplacements, this._verifiedTextReplacements.get(tabId)],
+      ]) {
+        if (!(map instanceof Map)) continue;
+        for (const [key, entry] of map) {
+          if (!entry?.documentToken) {
+            if (!entry?.pageUrl || !next.pageUrl
+                || this._normalizeUrl(entry.pageUrl) !== this._normalizeUrl(next.pageUrl)) map.delete(key);
+            continue;
+          }
+          if (!keep.has(entry.documentToken)) map.delete(key);
+        }
+        if (map.size === 0) owner.delete(tabId);
+      }
     }
     this._lastAxScopes.set(tabId, next);
   }
@@ -18494,10 +18524,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           });
         } catch { current = null; }
         const kindOk = record.focusedKind === 'editor'
-          ? (current?.fieldMeta?.contentEditable === true
-            || /\bediting\b[\s\S]*\bfile contents\b/i.test(String(
-              current?.fieldMeta?.ariaLabelledByText || current?.fieldMeta?.ariaLabel || '',
-            )))
+          ? this._isGithubFileEditorRecord({ fieldMeta: current?.fieldMeta })
           : /^(?:commit-message-input|commit_message)$/i.test(String(
             current?.fieldMeta?.id || current?.fieldMeta?.name || '',
           ));
@@ -18541,14 +18568,62 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     if (records.size === 0) this._verifiedTextReplacements.delete(tabId);
   }
 
+  // Probe the live document and adopt its scope when it differs from cache.
+  // Shared by the allow path (a stale cache must not let retained debts be
+  // skipped for the wrong document — e.g. a back-forward return) and the
+  // blocking path's last resort. Adopting routes through _rememberAxScope,
+  // so loop state resets and bounded retention pruning apply exactly as for
+  // an observed navigation. Returns the live scope when adopted, else null.
+  // Callers re-derive their target and re-scope debt selection afterwards.
+  async _adoptLiveTextMutationScope(tabId, name, args = {}, debts = null) {
+    let liveScope = null;
+    try {
+      liveScope = await this._liveTextMutationScope(tabId, name, args);
+    } catch { liveScope = null; }
+    if (!liveScope || (!liveScope.documentToken && !liveScope.pageUrl)) return null;
+    const cachedScope = this._lastAxScopes.get(tabId) || {};
+    if (String(liveScope.documentToken || '') === String(cachedScope.documentToken || '')
+        && this._normalizeUrl(liveScope.pageUrl || '') === this._normalizeUrl(cachedScope.pageUrl || '')) {
+      return null;
+    }
+    const bootstrappingFirstToken = !cachedScope.documentToken;
+    this._rememberAxScope(tabId, liveScope.documentToken || cachedScope.documentToken || '',
+      liveScope.pageUrl || cachedScope.pageUrl || '');
+    // First-token bootstrap: debts recorded before any document was observed
+    // carry no token. A tokenless debt whose recorded URL differs from the
+    // live URL provably predates this document (full navigation), so drop it
+    // instead of blocking the unrelated destination. Same-URL or URL-less
+    // debts stay blocked fail-closed — a same-document route change keeps
+    // its readback-only guard.
+    if (bootstrappingFirstToken && debts instanceof Map) {
+      for (const [key, candidate] of debts) {
+        if (!candidate.documentToken
+            && candidate.pageUrl
+            && liveScope.pageUrl
+            && this._normalizeUrl(candidate.pageUrl) !== this._normalizeUrl(liveScope.pageUrl)) {
+          debts.delete(key);
+        }
+      }
+      if (debts.size === 0) this._uncertainTextMutations.delete(tabId);
+    }
+    return liveScope;
+  }
+
   async _uncertainTextMutationBlock(tabId, name, args = {}) {
     if (!['set_field', 'type_ax', 'type_text'].includes(name)) return null;
     const debts = this._uncertainTextMutations?.get(tabId);
     if (!(debts instanceof Map) || debts.size === 0) return null;
     let target = this._textMutationTarget(tabId, name, args);
+    // Token-scoped matching: debts retained for back-forward cache returns
+    // must not guard other documents. Debts outside the recent-document
+    // backlog are TTL-collected here; anything surviving but scoped
+    // elsewhere is skipped below, never deleted.
+    const recentDocuments = this._recentTextMutationDocuments.get(tabId);
+    const recentSet = recentDocuments instanceof Array ? new Set(recentDocuments) : null;
     for (const [key, candidate] of debts) {
       if (candidate.documentToken && target.documentToken
-          && candidate.documentToken !== target.documentToken) debts.delete(key);
+          && candidate.documentToken !== target.documentToken
+          && (!recentSet || !recentSet.has(candidate.documentToken))) debts.delete(key);
     }
     if (debts.size === 0) {
       this._uncertainTextMutations.delete(tabId);
@@ -18584,37 +18659,53 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       return selectorReadback;
     };
     let debt = null;
-    for (const candidate of debts.values()) {
-      if (candidate.ambiguous || target.ambiguous || candidate.key === target.key) {
-        debt = candidate;
-        break;
+    // Shared with the post-adoption re-scope below: out-of-scope debts are
+    // skipped (retained for a back-forward return), never deleted here.
+    const selectDebt = async () => {
+      for (const candidate of debts.values()) {
+        if (candidate.documentToken && target.documentToken
+            && candidate.documentToken !== target.documentToken) continue;
+        if (candidate.ambiguous || target.ambiguous || candidate.key === target.key) return candidate;
+        const distinctAxRefs = candidate.key.startsWith('ax:')
+          && target.key.startsWith('ax:')
+          && candidate.key !== target.key;
+        if (distinctAxRefs) {
+          const readback = await readAxTarget();
+          if (readback?.success === true
+              && this._textMutationFieldsProvenDistinct(candidate.fieldMeta, readback.fieldMeta)) continue;
+        }
+        // Mirror the AX escape hatch for selector pairs: the digest probe can
+        // read the target's live metadata, so a demonstrably different field
+        // (two or more differing identity fields, no shared one) must not be
+        // blocked by another field's debt. The debt is kept — only this
+        // dispatch is allowed — and an unprovable target stays blocked.
+        const distinctSelectors = candidate.locatorType === 'selector'
+          && target.locatorType === 'selector'
+          && typeof candidate.selector === 'string'
+          && typeof target.selector === 'string'
+          && candidate.selector !== target.selector;
+        if (distinctSelectors) {
+          const readback = await readSelectorTarget();
+          if (readback && this._textMutationFieldsProvenDistinct(candidate.fieldMeta, readback.fieldMeta)) continue;
+        }
+        return candidate;
       }
-      const distinctAxRefs = candidate.key.startsWith('ax:')
-        && target.key.startsWith('ax:')
-        && candidate.key !== target.key;
-      if (distinctAxRefs) {
-        const readback = await readAxTarget();
-        if (readback?.success === true
-            && this._textMutationFieldsProvenDistinct(candidate.fieldMeta, readback.fieldMeta)) continue;
+      return null;
+    };
+    debt = await selectDebt();
+    if (!debt) {
+      // The cache may predate the live document (e.g. back-forward return
+      // while the guard was retained): refresh once before allowing, so a
+      // retained debt for the live document can still guard this write.
+      if (await this._adoptLiveTextMutationScope(tabId, name, args, debts)) {
+        if (!(this._uncertainTextMutations.get(tabId) instanceof Map)) return null;
+        target = this._textMutationTarget(tabId, name, args);
+        debt = await selectDebt();
+        if (!debt) return null;
+      } else {
+        return null;
       }
-      // Mirror the AX escape hatch for selector pairs: the digest probe can
-      // read the target's live metadata, so a demonstrably different field
-      // (two or more differing identity fields, no shared one) must not be
-      // blocked by another field's debt. The debt is kept — only this
-      // dispatch is allowed — and an unprovable target stays blocked.
-      const distinctSelectors = candidate.locatorType === 'selector'
-        && target.locatorType === 'selector'
-        && typeof candidate.selector === 'string'
-        && typeof target.selector === 'string'
-        && candidate.selector !== target.selector;
-      if (distinctSelectors) {
-        const readback = await readSelectorTarget();
-        if (readback && this._textMutationFieldsProvenDistinct(candidate.fieldMeta, readback.fieldMeta)) continue;
-      }
-      debt = candidate;
-      break;
     }
-    if (!debt) return null;
 
     const sameReplacement = debt.replacesValue === true
       && replacement
@@ -18716,41 +18807,19 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       }
     }
 
-    // Last resort before blocking: the cached scope may predate a full
-    // navigation that no AX read ever observed, pinning old debt to the new
-    // page. A genuinely new live token proves the debt's document is gone,
-    // so adopt it (clearing stale debt through the document-change path) and
-    // let the write proceed fresh. A matching token, or an unreachable page,
-    // keeps the block below exactly as before.
-    const liveScope = await this._liveTextMutationScope(tabId, name, args);
-    const cachedScope = this._lastAxScopes.get(tabId) || {};
-    if (liveScope
-        && liveScope.documentToken
-        && liveScope.documentToken !== String(cachedScope.documentToken || '')) {
-      const bootstrappingFirstToken = !cachedScope.documentToken;
-      this._rememberAxScope(tabId, liveScope.documentToken, liveScope.pageUrl || cachedScope.pageUrl || '');
-      // First-token bootstrap: debts recorded before any document was
-      // observed carry no token. A tokenless debt whose recorded URL differs
-      // from the live URL provably predates this document (full navigation),
-      // so drop it instead of blocking the unrelated destination. Same-URL
-      // or URL-less debts stay blocked fail-closed — a same-document route
-      // change keeps its readback-only guard.
-      if (bootstrappingFirstToken) {
-        for (const [key, candidate] of debts) {
-          if (!candidate.documentToken
-              && candidate.pageUrl
-              && liveScope.pageUrl
-              && this._normalizeUrl(candidate.pageUrl) !== this._normalizeUrl(liveScope.pageUrl)) {
-            debts.delete(key);
-          }
-        }
-        if (debts.size === 0) this._uncertainTextMutations.delete(tabId);
-      }
-      if (!(this._uncertainTextMutations.get(tabId) instanceof Map)
-          || this._uncertainTextMutations.get(tabId).size === 0) {
-        return null;
-      }
+    // Last resort before blocking: same freshness guarantee for the
+    // blocking path (covers an early probe that failed or scope that
+    // changed mid-call).
+    if (await this._adoptLiveTextMutationScope(tabId, name, args, debts)) {
+      if (!(this._uncertainTextMutations.get(tabId) instanceof Map)) return null;
       target = this._textMutationTarget(tabId, name, args);
+      // Re-scope after adoption: the pre-adopt selection may name a debt
+      // from the previous document, which must not guard the new one.
+      // Retained debts stay mapped for a back-forward return. (Both readback
+      // caches stay valid: the probes read the live page, which is what the
+      // new target names too.)
+      debt = await selectDebt();
+      if (!debt) return null;
     }
 
     return {
@@ -18953,6 +19022,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     this._lastTypeFieldEpoch?.delete(tabId);
     this._uncertainTextMutations.delete(tabId);
     this._verifiedTextReplacements.delete(tabId);
+    this._recentTextMutationDocuments.delete(tabId);
     this.progressPageScopes.delete(tabId);
     this.progressSessions.delete(tabId);
     this.progressExpectedItems.delete(tabId);
