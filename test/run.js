@@ -75790,6 +75790,113 @@ test('edit-file scope keeps Git paths byte-exact', () => {
   }
 });
 
+test('commit gate hashes the verbatim message text', async () => {
+  for (const [label, AgentClass, resolveJob, tabId] of [
+    ['chrome', AgentCh, resolveAdapterWorkflowJob, 9514],
+    ['firefox', AgentFx, resolveAdapterWorkflowJobFx, 9515],
+  ]) {
+    const agent = new AgentClass({});
+    const pageUrl = 'https://github.com/Example/Repo/edit/main/docs/plan.md';
+    agent._planExecutionGuards.set(tabId, {
+      enabled: true,
+      siteWorkflow: resolveJob(pageUrl, 'edit-file-and-commit'),
+      workflowMetadataRequirements: [{ field: 'commit_message', value: 'A', rawValue: 'Ａ' }],
+      workflowMetadataRequirementsResolved: true,
+    });
+    agent._taskTokens.set(tabId, 'task-verbatim');
+    const body = '# Doc\n';
+    const bodySha256 = await agent._sha256Text(body);
+    const editorRecord = {
+      key: 'ax:doc:ref_editor',
+      locatorType: 'ax',
+      refId: 'ref_editor',
+      documentToken: 'doc',
+      pageUrl,
+      ambiguous: false,
+      expectedLength: body.length,
+      expectedSha256: bodySha256,
+      expectedFp: agent._workflowInventoryFingerprint(body),
+      fieldMeta: { contentEditable: true, ariaLabelledByText: 'Editing file contents' },
+      readbackLength: body.length,
+      readbackSha256: bodySha256,
+      verifiedAt: Date.now(),
+      taskToken: 'task-verbatim',
+    };
+    const messageRecordFor = async (text) => ({
+      key: 'ax:doc:ref_msg',
+      locatorType: 'ax',
+      refId: 'ref_msg',
+      documentToken: 'doc',
+      pageUrl,
+      ambiguous: false,
+      expectedLength: text.length,
+      expectedSha256: await agent._sha256Text(text),
+      expectedFp: agent._workflowInventoryFingerprint(text),
+      fieldMeta: { id: 'commit-message-input', name: 'commit-message-input' },
+      readbackLength: text.length,
+      readbackSha256: await agent._sha256Text(text),
+      verifiedAt: Date.now(),
+      taskToken: 'task-verbatim',
+    });
+    // An exact write of the verbatim request authorizes.
+    agent._verifiedTextReplacements.set(tabId, new Map([
+      ['ax:doc:ref_editor', editorRecord],
+      ['ax:doc:ref_msg', await messageRecordFor('Ａ')],
+    ]));
+    assert.ok(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit,
+      `${label}: exact verbatim commit message did not authorize`);
+    // The NFKC fold is different bytes from the request: must not.
+    agent._verifiedTextReplacements.set(tabId, new Map([
+      ['ax:doc:ref_editor', editorRecord],
+      ['ax:doc:ref_msg', await messageRecordFor('A')],
+    ]));
+    assert.equal(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit, undefined,
+      `${label}: normalized rewrite authorized a different message`);
+  }
+});
+
+test('terminal path match compares verbatim request text', async () => {
+  for (const [label, AgentClass, tabId] of [
+    ['chrome', AgentCh, 9516],
+    ['firefox', AgentFx, 9517],
+  ]) {
+    const agent = new AgentClass({});
+    const body = '# Normalized path document\n\nOne complete copy.\n';
+    const sha = await agent._sha256Text(body);
+    const state = { siteWorkflow: { adapterName: 'github', job: { id: 'edit-file-and-commit' } } };
+    const commitUrl = 'https://github.com/Example/Repo/commit/0123456789abcdef0123456789abcdef01234567';
+    const bindingFor = (requirements) => ({
+      metadataRequirements: requirements,
+      githubFileCommit: {
+        repository: 'example/repo',
+        branch: 'main',
+        path: 'Ａ.txt',
+        expectedLength: body.length,
+        expectedSha256: sha,
+        commitMessageVerified: true,
+      },
+    });
+    const pageState = {
+      githubCommittedFileVerification: {
+        verified: true,
+        repository: 'example/repo',
+        path: 'Ａ.txt',
+        expectedSha256: sha,
+      },
+    };
+    // Verbatim request matches the byte-exact bound path.
+    assert.equal(agent._workflowPublishedResourcePayloadMatch(
+      bindingFor([{ field: 'path', value: 'A.txt', rawValue: 'Ａ.txt' }]),
+      state, pageState, commitUrl, {},
+    ), true, `${label}: verbatim path did not match the bound blob`);
+    // A genuinely different path still reports missing evidence.
+    assert.equal(agent._workflowPublishedResourcePayloadMatch(
+      bindingFor([{ field: 'path', value: 'other.md', rawValue: 'other.md' }]),
+      state, pageState, commitUrl, {},
+    ), false, `${label}: mismatched path reported evidence`);
+  }
+});
+
 test('GitHub edit-file workflow verifies the exact committed raw blob', async () => {
   const originalFetch = globalThis.fetch;
   const body = '# Corrected document\n\nOne complete copy.\n';

@@ -1746,7 +1746,13 @@ export class Agent extends LoopDetector {
       : null;
     const commitMessageRequirement = metadataRequirements
       .find(requirement => requirement?.field === 'commit_message');
-    const expectedCommitMessage = this._workflowMetadataValue(commitMessageRequirement?.value);
+    // Verbatim requirement text: the digest gate must hash what was asked
+    // for, not its NFKC fold — otherwise an exact write is blocked while a
+    // normalized rewrite could commit different bytes. Mirrors the byte-exact
+    // path scope handling. Absent rawValue means verbatim equals normalized.
+    const expectedCommitMessage = commitMessageRequirement
+      ? String(commitMessageRequirement.rawValue ?? commitMessageRequirement.value ?? '')
+      : '';
     // Collision-resistant comparison: replacement records already carry a
     // SHA-256 digest, so require it here too. A 32-bit FNV-1a fingerprint
     // collides practically (e.g. 'PSgOcTcQ' vs '9SHghNQJ'), which would set
@@ -2588,7 +2594,10 @@ export class Agent extends LoopDetector {
       const metadataMatched = binding?.metadataRequirementsIncomplete !== true
         && requirements.every(requirement => {
           if (requirement?.field === 'path') {
-            return String(requirement.value || '').replace(/^\/+/, '') === binding?.githubFileCommit?.path;
+            // Byte-exact like the scope parser: the bound path was resolved
+            // against the verbatim request text.
+            const raw = typeof requirement.rawValue === 'string' ? requirement.rawValue : requirement.value;
+            return String(raw || '').replace(/^\/+/, '') === binding?.githubFileCommit?.path;
           }
           if (requirement?.field === 'branch') {
             return this._workflowMetadataValue(requirement.value) === this._workflowMetadataValue(
