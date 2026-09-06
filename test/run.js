@@ -75605,6 +75605,132 @@ test('commit gate requires editor-specific identity', async () => {
   }
 });
 
+test('commit gate accepts locale-independent editor structure', async () => {
+  for (const rel of [
+    'src/chrome/src/content/content.js',
+    'src/firefox/src/content/content.js',
+  ]) {
+    const source = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    assert.match(source, /codeMirror/,
+      `${rel}: field metadata lost its locale-independent editor flag`);
+    assert.match(source, /cm-content/,
+      `${rel}: editor structure probe misses the CodeMirror lineage`);
+  }
+  for (const [label, AgentClass, resolveJob, tabId] of [
+    ['chrome', AgentCh, resolveAdapterWorkflowJob, 9504],
+    ['firefox', AgentFx, resolveAdapterWorkflowJobFx, 9505],
+  ]) {
+    const agent = new AgentClass({});
+    const pageUrl = 'https://github.com/Example/Repo/edit/main/docs/plan.md';
+    agent._planExecutionGuards.set(tabId, {
+      enabled: true,
+      siteWorkflow: resolveJob(pageUrl, 'edit-file-and-commit'),
+      workflowMetadataRequirements: [],
+      workflowMetadataRequirementsResolved: true,
+    });
+    agent._taskTokens.set(tabId, 'task-locale');
+    const body = '# Doc\n';
+    const bodySha256 = await agent._sha256Text(body);
+    const recordFor = (key, fieldMeta) => ({
+      key,
+      locatorType: 'ax',
+      refId: 'ref_x',
+      documentToken: 'doc',
+      pageUrl,
+      ambiguous: false,
+      expectedLength: body.length,
+      expectedSha256: bodySha256,
+      expectedFp: agent._workflowInventoryFingerprint(body),
+      fieldMeta,
+      readbackLength: body.length,
+      readbackSha256: bodySha256,
+      verifiedAt: Date.now(),
+      taskToken: 'task-locale',
+    });
+    // Localized UI: no English accessible label anywhere, but CodeMirror
+    // editor structure on a contenteditable — must authorize.
+    agent._verifiedTextReplacements.set(tabId, new Map([
+      ['ax:doc:ref_editor', recordFor('ax:doc:ref_editor',
+        { contentEditable: true, codeMirror: true, ariaLabelledByText: 'Dateiinhalt bearbeiten' })],
+    ]));
+    assert.ok(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit,
+      `${label}: locale-independent editor structure did not authorize`);
+    // Structure without editability (e.g. gutter chrome inside cm-editor)
+    // must not.
+    agent._verifiedTextReplacements.set(tabId, new Map([
+      ['ax:doc:ref_other', recordFor('ax:doc:ref_other',
+        { contentEditable: false, codeMirror: true })],
+    ]));
+    assert.equal(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit, undefined,
+      `${label}: non-editable CodeMirror chrome authorized a commit`);
+  }
+});
+
+test('refresh revalidates label-identified editor proofs', async () => {
+  const originalChrome = globalThis.chrome;
+  const originalBrowser = globalThis.browser;
+  try {
+    const pageUrl = 'https://github.com/Example/Repo/edit/main/docs/plan.md';
+    const body = '# Labelled document\n\nOne complete copy.\n';
+    for (const [label, AgentClass, tabId] of [
+      ['chrome', AgentCh, 9506],
+      ['firefox', AgentFx, 9507],
+    ]) {
+      const agent = new AgentClass({});
+      // Textarea-backed editor identified through aria-label (not
+      // labelledby, not contentEditable): the binding gate accepts it, so
+      // refresh must re-digest it too instead of skipping it as stale-safe.
+      const ariaMeta = { contentEditable: false, tag: 'textarea', id: 'file-editor', ariaLabel: 'Editing file contents' };
+      const live = { text: body };
+      const tabs = {
+        async sendMessage(_tabId, message) {
+          assert.equal(message.action, 'field_value_digest');
+          assert.equal(message.params?.ref_id, 'ref_aria');
+          return { success: true,
+            valueLength: live.text.length,
+            valueSha256: await agent._sha256Text(live.text),
+            fieldMeta: ariaMeta };
+        },
+      };
+      globalThis.chrome = { tabs };
+      globalThis.browser = { tabs };
+      const record = {
+        key: 'ax:doc:ref_aria',
+        locatorType: 'ax',
+        refId: 'ref_aria',
+        documentToken: 'doc',
+        pageUrl,
+        ambiguous: false,
+        expectedLength: body.length,
+        expectedSha256: await agent._sha256Text(body),
+        expectedFp: agent._workflowInventoryFingerprint(body),
+        fieldMeta: ariaMeta,
+        readbackLength: body.length,
+        readbackSha256: await agent._sha256Text(body),
+        verifiedAt: Date.now(),
+        taskToken: 'task-refresh-sync',
+      };
+      agent._taskTokens.set(tabId, 'task-refresh-sync');
+      agent._verifiedTextReplacements.set(tabId, new Map([['ax:doc:ref_aria', record]]));
+      // Live bytes match: kept.
+      await agent._refreshGithubTextReplacementProofs(tabId, pageUrl);
+      assert.ok(agent._verifiedTextReplacements.get(tabId)?.has('ax:doc:ref_aria'),
+        `${label}: matching label-identified proof was dropped`);
+      // Page changed after verification: must be re-digested and dropped,
+      // not skipped as unauthorized-yet-authorized.
+      live.text = `${body}\nExternal edit.\n`;
+      await agent._refreshGithubTextReplacementProofs(tabId, pageUrl);
+      assert.ok(!agent._verifiedTextReplacements.get(tabId)?.has('ax:doc:ref_aria'),
+        `${label}: stale label-identified proof skipped refresh`);
+    }
+  } finally {
+    if (originalChrome === undefined) delete globalThis.chrome;
+    else globalThis.chrome = originalChrome;
+    if (originalBrowser === undefined) delete globalThis.browser;
+    else globalThis.browser = originalBrowser;
+  }
+});
+
 test('selector writes to proven-distinct fields bypass unrelated debt', async () => {
   const originalChrome = globalThis.chrome;
   const originalBrowser = globalThis.browser;

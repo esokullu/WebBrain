@@ -3334,6 +3334,14 @@
         tag,
         type: fieldType,
         contentEditable: !!el.isContentEditable,
+        // Locale-independent file-editor structure: CodeMirror (GitHub's
+        // file editor) marks its editable lineage with stable classes that
+        // survive UI translation, unlike accessible labels.
+        codeMirror: (() => {
+          try {
+            return !!el.isContentEditable && !!el.closest?.('.cm-content, .cm-editor, .CodeMirror');
+          } catch { return false; }
+        })(),
         name: el.getAttribute ? el.getAttribute('name') : null,
         id: elId,
         role: el.getAttribute ? el.getAttribute('role') : null,

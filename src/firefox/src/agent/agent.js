@@ -1418,15 +1418,12 @@ export class Agent extends LoopDetector {
     // one identity).
     const activeTaskToken = this._taskTokens.get(tabId);
     const activeTaskTokenValid = typeof activeTaskToken === 'string' && activeTaskToken.length > 0;
-    // Editor identity must be GitHub-specific: the file editor exposes an
-    // accessible "Editing file contents" linkage (labelledby text, label, or
-    // wrapping label). A bare contentEditable flag is not enough — any other
-    // contenteditable on the edit route could otherwise mint a commit while
-    // the real editor still holds stale content. Records store the live
-    // digest metadata, so legit flows always carry the linkage.
-    const isGithubFileEditor = (record) => /\bediting\b[\s\S]*\bfile contents\b/i.test(String(
-      record?.fieldMeta?.ariaLabelledByText || record?.fieldMeta?.ariaLabel || record?.fieldMeta?.labelText || '',
-    ));
+    // Editor identity must be GitHub-specific (see _isGithubFileEditorRecord,
+    // shared with the refresh classifier so the two cannot drift): a bare
+    // contentEditable flag is not enough — any other contenteditable on the
+    // edit route could otherwise mint a commit while the real editor still
+    // holds stale content. Records store the live digest metadata, so legit
+    // flows always carry the linkage.
     const githubEditorReplacements = replacementRecordValues
       .filter(record => record?.ambiguous !== true
         && activeTaskTokenValid
@@ -1434,7 +1431,7 @@ export class Agent extends LoopDetector {
         && !!record?.expectedSha256
         && !!record?.readbackSha256
         && this._normalizeUrl(record.pageUrl || '') === this._normalizeUrl(pageUrl)
-        && isGithubFileEditor(record));
+        && this._isGithubFileEditorRecord(record));
     const githubEditorPayloads = new Set(githubEditorReplacements
       .map(record => `${record.expectedLength}:${record.expectedSha256}`));
     const verifiedReplacement = githubEditorPayloads.size === 1
@@ -17944,6 +17941,20 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     }
   }
 
+  // GitHub file-editor identity shared by the commit-authorization filter
+  // and the pre-submit refresh classifier, so the two can never drift apart
+  // again: the editor exposes an accessible "Editing file contents" linkage
+  // or locale-independent CodeMirror structure. A bare contentEditable flag
+  // is not enough — any other contenteditable on the edit route could
+  // otherwise mint or keep a commit for stale editor content.
+  _isGithubFileEditorRecord(record) {
+    if (!record || typeof record !== 'object') return false;
+    if (/\bediting\b[\s\S]*\bfile contents\b/i.test(String(
+      record?.fieldMeta?.ariaLabelledByText || record?.fieldMeta?.ariaLabel || record?.fieldMeta?.labelText || '',
+    ))) return true;
+    return record?.fieldMeta?.contentEditable === true && record?.fieldMeta?.codeMirror === true;
+  }
+
   _focusedGithubFieldKind(meta = null) {
     if (!meta || typeof meta !== 'object') return '';
     if (/^(?:commit-message-input|commit_message)$/i.test(String(meta.id || meta.name || ''))) {
@@ -18079,9 +18090,9 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         }
         continue;
       }
-      const githubEditor = record?.fieldMeta?.contentEditable === true
-        || /contenteditable/i.test(String(record?.key || key))
-        || /\bediting\b[\s\S]*\bfile contents\b/i.test(String(record?.fieldMeta?.ariaLabelledByText || ''));
+      // Same identity as the authorization filter by construction — every
+      // editor proof the gate can authorize is re-digested here.
+      const githubEditor = this._isGithubFileEditorRecord(record);
       const commitMessage = /^(?:commit-message-input|commit_message)$/i.test(String(
         record?.fieldMeta?.id || record?.fieldMeta?.name || '',
       ));
