@@ -358,7 +358,7 @@ export function publicationResourceRecordRoot(link, identity, publicationResourc
         } catch {}
         return false;
       };
-      return candidates.filter(node => {
+      const validMedia = candidates.filter(node => {
         const tag = (node.tagName || '').toLowerCase();
         const testId = typeof node.getAttribute === 'function' ? (node.getAttribute('data-testid') || '') : '';
         if (tag !== 'img' && tag !== 'video'
@@ -371,7 +371,10 @@ export function publicationResourceRecordRoot(link, identity, publicationResourc
           return false;
         }
         return !isAvatarOrEmoji(node) && !isLinkPreview(node);
-      }).slice(0, 12);
+      });
+      return validMedia
+        .filter(node => !validMedia.some(other => other !== node && other.contains?.(node)))
+        .slice(0, 12);
     } catch {
       return [];
     }

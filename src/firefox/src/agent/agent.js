@@ -204,6 +204,7 @@ const GENERIC_ATTACHMENT_WORDS = new Set([
   'true', 'yes', 'attached', 'attachment', 'attachments', 'media',
   'image', 'images', 'photo', 'photos', 'picture', 'pictures', 'pic', 'pics',
   'video', 'videos', 'clip', 'clips', 'recording', 'recordings',
+  'gif', 'gifs', 'animated',
   'file', 'files', 'graphic', 'graphics',
   'a', 'an', 'the', 'of', 'in', 'with', 'some', 'any',
   'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten',
@@ -1828,7 +1829,8 @@ export class Agent extends LoopDetector {
         discarded += 1;
         continue;
       }
-      requirements.set(field, { field, value: this._workflowMetadataValue(value.value) });
+      const maxLen = (field === 'body' || field === 'notes') ? 25000 : 10000;
+      requirements.set(field, { field, value: this._workflowMetadataValue(value.value, maxLen) });
     }
     return { items: [...requirements.values()], incomplete: discarded > 0 };
   }
@@ -2044,27 +2046,25 @@ export class Agent extends LoopDetector {
 
   _cleanSpecificAttachmentTarget(value) {
     const text = String(value || '').trim();
-    const match = text.match(/(?:(?:an?|the|\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+)?(?:images?|photos?|pictures?|videos?|attachments?|files?)\s+(?:of|named|called|with\s+name)\s+(.+)$/i);
+    const match = text.match(/(?:(?:an?|the|\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+)?(?:images?|photos?|pictures?|videos?|gifs?|animated\s+gifs?|attachments?|files?)\s+(?:of|named|called|with\s+name)\s+(.+)$/i);
     if (match) return match[1].trim().toLowerCase();
     return text.toLowerCase();
   }
 
   _parseWorkflowAttachmentRequirement(value) {
     const text = String(value || '').trim().toLowerCase();
-    if (!text) return { isGeneric: true, expectedCount: 1, wantsImage: false, wantsVideo: false, normalized: '' };
+    if (!text) return { isGeneric: true, expectedCount: 1, expectedImageCount: 0, expectedVideoCount: 0, wantsImage: false, wantsVideo: false, wantsGif: false, normalized: '' };
 
-    const wantsVideo = /\b(?:video|videos|mp4|mov|webm|mkv|clip|clips|recording|recordings|vidéo|vidéos)\b|(?:動画|视频|影片|видео)/i.test(text);
-    const wantsImage = /\b(?:image|images|photo|photos|picture|pictures|pic|pics|png|jpg|jpeg|gif|webp|foto|fotos|bild|bilder|imagen(?:es)?|imágenes)\b|(?:画像|写真|图片|照片|圖片|изображение|фото)/i.test(text);
+    const wantsGif = /\b(?:gif|gifs)\b|\.gif(?:[?#]|$)|(?:animated[-_ ]gif|動圖|动图)/i.test(text);
+    const wantsVideo = wantsGif || /\b(?:video|videos|mp4|mov|webm|mkv|clip|clips|recording|recordings|vidéo|vidéos)\b|(?:動画|视频|影片|видео)/i.test(text);
+    const wantsImage = /\b(?:image|images|photo|photos|picture|pictures|pic|pics|png|jpg|jpeg|webp|foto|fotos|bild|bilder|imagen(?:es)?|imágenes)\b|(?:画像|写真|图片|照片|圖片|изображение|фото)/i.test(text);
 
-    let expectedCount = 1;
-    const countMatch = text.match(/\b(\d+)\b/)
-      || text.match(/\b(one|two|three|four|five|six|seven|eight|nine|ten|single|multiple|both|un|une|deux|trois|quatre|cinq|uno|una|unos|unas|dos|tres|cuatro|cinco|due|tre|quattro|cinque|ein|eine|einen|einer|zwei|drei|vier|fünf|um|uma|dois|duas|três|quatro|один|одна|одно|два|две|три|четыре|пять)\b/i)
-      || text.match(/([一二两三四五六七八九十])/);
-
-    if (countMatch) {
-      const word = countMatch[1].toLowerCase();
+    const parseCountWord = (str) => {
+      if (!str) return 0;
+      const s = str.trim().toLowerCase();
+      if (/^\d+$/.test(s)) return parseInt(s, 10);
       const wordToNum = {
-        one: 1, single: 1, un: 1, une: 1, uno: 1, una: 1, ein: 1, eine: 1, einen: 1, einer: 1, um: 1, uma: 1,
+        a: 1, an: 1, one: 1, single: 1, un: 1, une: 1, uno: 1, una: 1, ein: 1, eine: 1, einen: 1, einer: 1, um: 1, uma: 1,
         '一': 1, один: 1, одна: 1, одно: 1,
         two: 2, both: 2, dos: 2, due: 2, deux: 2, zwei: 2, dois: 2, duas: 2, '两': 2, '二': 2, два: 2, две: 2,
         three: 3, tres: 3, tre: 3, trois: 3, drei: 3, 'três': 3, '三': 3, три: 3,
@@ -2073,10 +2073,29 @@ export class Agent extends LoopDetector {
         six: 6, '六': 6, seven: 7, '七': 7, eight: 8, '八': 8, nine: 9, '九': 9, ten: 10, '十': 10,
         multiple: 2,
       };
-      if (/^\d+$/.test(word)) {
-        expectedCount = parseInt(word, 10);
-      } else if (wordToNum[word]) {
-        expectedCount = wordToNum[word];
+      return wordToNum[s] || 0;
+    };
+
+    const countPrefix = '(?:\\d+|one|two|three|four|five|six|seven|eight|nine|ten|single|both|multiple|un|une|deux|trois|quatre|cinq|uno|una|unos|unas|dos|tres|cuatro|cinco|due|tre|quattro|cinque|ein|eine|einen|einer|zwei|drei|vier|fünf|um|uma|dois|duas|três|один|одна|одно|два|две|три|четыре|пять|[一二两三四五六七八九十])';
+
+    const imageCountMatch = text.match(new RegExp(`(?:^|[\\s,;and+])(${countPrefix})\\s+(?:images?|photos?|pictures?|pics?|foto|fotos|bild|bilder|imagen(?:es)?|imágenes|画像|写真|图片|照片|圖片|изображение|фото)`, 'i'));
+    const expectedImageCount = imageCountMatch ? parseCountWord(imageCountMatch[1]) : 0;
+
+    const videoCountMatch = text.match(new RegExp(`(?:^|[\\s,;and+])(${countPrefix})\\s+(?:videos?|clips?|recordings?|gifs?|animated[-_ ]gifs?|vidéo|vidéos|動画|视频|影片|видео)`, 'i'));
+    const expectedVideoCount = videoCountMatch ? parseCountWord(videoCountMatch[1]) : 0;
+
+    let expectedCount = 1;
+    if (expectedImageCount > 0 && expectedVideoCount > 0) {
+      expectedCount = expectedImageCount + expectedVideoCount;
+    } else if (expectedImageCount > 0) {
+      expectedCount = expectedImageCount;
+    } else if (expectedVideoCount > 0) {
+      expectedCount = expectedVideoCount;
+    } else {
+      const generalCountMatch = text.match(new RegExp(`\\b(${countPrefix})\\b`, 'i')) || text.match(/([一二两三四五六七八九十])/);
+      if (generalCountMatch) {
+        const parsedNum = parseCountWord(generalCountMatch[1]);
+        if (parsedNum > 0) expectedCount = parsedNum;
       }
     }
 
@@ -2089,7 +2108,7 @@ export class Agent extends LoopDetector {
       isGeneric = words.length > 0 && words.every(w => /^\d+$/.test(w) || GENERIC_ATTACHMENT_WORDS.has(w) || CJK_GENERIC_ATTACHMENT_REGEX.test(w));
     }
 
-    return { isGeneric, expectedCount, wantsImage, wantsVideo, normalized: text };
+    return { isGeneric, expectedCount, expectedImageCount, expectedVideoCount, wantsImage, wantsVideo, wantsGif, normalized: text };
   }
 
   _workflowSocialPublishedAttachmentObserved(requirement, record) {
@@ -2107,7 +2126,7 @@ export class Agent extends LoopDetector {
       const type = attachmentType(att);
       if (type === 'video' || type === 'animated_gif') return true;
       const src = String(att?.src || att?.url || '');
-      return /\.(?:mp4|mov|webm|mkv)(?:[?#]|$)/i.test(src);
+      return /\.(?:mp4|mov|webm|mkv|gif)(?:[?#]|$)/i.test(src);
     };
 
     const isImageAttachment = (att) => {
@@ -2118,7 +2137,13 @@ export class Agent extends LoopDetector {
     };
 
     let matchingAttachments = rawAttachments;
-    if (parsed.wantsVideo && !parsed.wantsImage) {
+    if (parsed.expectedImageCount > 0 && parsed.expectedVideoCount > 0) {
+      const imageCount = rawAttachments.filter(isImageAttachment).length;
+      const videoCount = rawAttachments.filter(isVideoAttachment).length;
+      if (imageCount < parsed.expectedImageCount || videoCount < parsed.expectedVideoCount) {
+        return false;
+      }
+    } else if (parsed.wantsVideo && !parsed.wantsImage) {
       matchingAttachments = rawAttachments.filter(isVideoAttachment);
     } else if (parsed.wantsImage && !parsed.wantsVideo) {
       matchingAttachments = rawAttachments.filter(isImageAttachment);
@@ -12652,13 +12677,33 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     return url;
   }
 
+  _maskQuotedPayload(text) {
+    if (!text) return '';
+    let str = String(text);
+    str = str.replace(/(["“「『«])([\s\S]*?)(["”」』»])/g, (_match, open, content, close) => {
+      return open + ' '.repeat(content.length) + close;
+    });
+    str = str.replace(/(?<!\p{L})'([^']+)'(?!\p{L})/gu, (_match, content) => {
+      return "'" + ' '.repeat(content.length) + "'";
+    });
+    return str;
+  }
+
   _socialPublicationClauses(text) {
-    const parts = String(text || '').split(SOCIAL_CLAUSE_DELIMITER);
+    const raw = String(text || '');
+    const masked = this._maskQuotedPayload(raw);
+    const parts = masked.split(SOCIAL_CLAUSE_DELIMITER);
     const clauses = [];
+    let offset = 0;
     for (let i = 0; i < parts.length; i += 2) {
-      const clauseText = parts[i] || '';
+      const maskedClause = parts[i] || '';
       const delim = i > 0 ? (parts[i - 1] || '').trim() : '';
-      clauses.push({ text: clauseText, delim });
+      const rawClause = raw.slice(offset, offset + maskedClause.length);
+      clauses.push({ text: rawClause, maskedText: maskedClause, delim });
+      offset += maskedClause.length;
+      if (i + 1 < parts.length) {
+        offset += (parts[i + 1] || '').length;
+      }
     }
 
     let carriedNegation = false;
@@ -12667,7 +12712,16 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       const isCoordinated = i > 0 && SOCIAL_COORDINATING_DELIMITER.test(c.delim);
       if (!isCoordinated) carriedNegation = false;
 
-      const hasExplicitNeg = SOCIAL_NEGATION.test(c.text);
+      const publish = c.maskedText.match(SOCIAL_PUBLISH_VERBS);
+      let hasExplicitNeg = false;
+      if (publish) {
+        const beforeVerb = c.maskedText.slice(0, publish.index);
+        const afterVerb = c.maskedText.slice(publish.index + publish[0].length);
+        hasExplicitNeg = SOCIAL_NEGATION.test(beforeVerb) || SOCIAL_POST_NEGATION.test(afterVerb.trim());
+      } else {
+        hasExplicitNeg = SOCIAL_NEGATION.test(c.maskedText);
+      }
+
       if (hasExplicitNeg) {
         c.isNegated = true;
         carriedNegation = true;
@@ -12681,7 +12735,15 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     let carriedPostNegation = false;
     for (let i = clauses.length - 1; i >= 0; i--) {
       const c = clauses[i];
-      const hasExplicitPostNeg = SOCIAL_POST_NEGATION.test(c.text.trim());
+      const publish = c.maskedText.match(SOCIAL_PUBLISH_VERBS);
+      let hasExplicitPostNeg = false;
+      if (publish) {
+        const afterVerb = c.maskedText.slice(publish.index + publish[0].length);
+        hasExplicitPostNeg = SOCIAL_POST_NEGATION.test(afterVerb.trim());
+      } else {
+        hasExplicitPostNeg = SOCIAL_POST_NEGATION.test(c.maskedText.trim());
+      }
+
       if (hasExplicitPostNeg) {
         c.isNegated = true;
         carriedPostNegation = true;
@@ -12703,13 +12765,14 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
   _socialPublicationCommandIn(text) {
     return this._socialPublicationClauses(text).some((clause) => {
       if (clause.isNegated) return false;
-      const publish = clause.text ? clause.text.match(SOCIAL_PUBLISH_VERBS) : null;
+      const targetText = clause.maskedText || clause.text;
+      const publish = targetText ? targetText.match(SOCIAL_PUBLISH_VERBS) : null;
       if (!publish) return false;
-      const before = clause.text.slice(0, publish.index);
+      const before = targetText.slice(0, publish.index);
       if (SOCIAL_READ_VERBS.test(before)) return false;
       if (SOCIAL_NEGATION.test(before)) return false;
-      const after = clause.text.slice(publish.index + publish[0].length);
-      if (SOCIAL_POST_NEGATION.test(after)) return false;
+      const after = targetText.slice(publish.index + publish[0].length);
+      if (SOCIAL_POST_NEGATION.test(after.trim())) return false;
       if (SOCIAL_NOUN_LIKE_PUBLISH.test(publish[0]) && SOCIAL_READ_VERBS.test(after)) return false;
       return true;
     });
@@ -12792,14 +12855,15 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       const verbPattern = new RegExp(SOCIAL_PUBLISH_VERBS.source, 'giu');
       return clauses.some((clause, clauseIdx) => {
         if (!clause.text || clause.isNegated) return false;
-        for (const verb of clause.text.matchAll(verbPattern)) {
+        const targetText = clause.maskedText || clause.text;
+        for (const verb of targetText.matchAll(verbPattern)) {
           const verbIndex = verb.index ?? 0;
-          const beforeVerbClause = clause.text.slice(0, verbIndex);
+          const beforeVerbClause = targetText.slice(0, verbIndex);
           if (SOCIAL_READ_VERBS.test(beforeVerbClause)) continue;
           if (SOCIAL_NEGATION.test(beforeVerbClause)) continue;
           const verbWord = verb[0] || '';
-          const afterVerbText = clause.text.slice(verbIndex + verbWord.length);
-          if (SOCIAL_POST_NEGATION.test(afterVerbText)) continue;
+          const afterVerbText = targetText.slice(verbIndex + verbWord.length);
+          if (SOCIAL_POST_NEGATION.test(afterVerbText.trim())) continue;
           if (SOCIAL_NOUN_LIKE_PUBLISH.test(verbWord) && SOCIAL_READ_VERBS.test(afterVerbText)) continue;
           const afterVerb = clause.text.slice(verbIndex, verbIndex + verbWord.length + 60);
           const beforeVerb = clause.text.slice(Math.max(0, verbIndex - 60), verbIndex);
@@ -12818,12 +12882,13 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     };
     const tweetsThis = clauses.some((clause) => {
       if (clause.isNegated) return false;
-      const match = clause.text.match(/\btweet\s+(?:this|that|it|the\s+following)\b/i);
+      const targetText = clause.maskedText || clause.text;
+      const match = targetText.match(/\btweet\s+(?:this|that|it|the\s+following)\b/i);
       if (!match) return false;
-      const before = clause.text.slice(0, match.index);
+      const before = targetText.slice(0, match.index);
       if (SOCIAL_READ_VERBS.test(before) || SOCIAL_NEGATION.test(before)) return false;
-      const after = clause.text.slice(match.index + match[0].length);
-      if (SOCIAL_POST_NEGATION.test(after)) return false;
+      const after = targetText.slice(match.index + match[0].length);
+      if (SOCIAL_POST_NEGATION.test(after.trim())) return false;
       return true;
     });
     if (publishesTo('(?:bluesky|bsky(?:\\.app)?)')) targets.add('bluesky');
@@ -19647,6 +19712,40 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     return '';
   }
 
+  _extractWorkflowTaskBody(taskText, approvedPlan) {
+    const candidates = [taskText, approvedPlan]
+      .map(t => String(t || '').trim())
+      .filter(Boolean);
+    let bestBody = '';
+    for (const text of candidates) {
+      let body = '';
+      // 1. Quoted body: Post "..." on X, Tweet "...", Publish "...", etc.
+      const quotedMatch = text.match(/(?:publish(?:ed|ing|es)?|post(?:ed|ing|s)?|tweet(?:ed|ing|s)?|skeet(?:ed|ing|s)?|share|sharing|update)[\s\S]*?(?:["“「『«]([\s\S]+?)["”」』»])/i);
+      if (quotedMatch && quotedMatch[1]?.trim()) {
+        body = quotedMatch[1].trim();
+      } else {
+        // Single-quoted body (not contractions)
+        const singleQuoteMatch = text.match(/(?:publish(?:ed|ing|es)?|post(?:ed|ing|s)?|tweet(?:ed|ing|s)?|skeet(?:ed|ing|s)?|share|sharing|update)[\s\S]*?(?:(?<!\p{L})'([\s\S]+?)'(?!\p{L}))/iu);
+        if (singleQuoteMatch && singleQuoteMatch[1]?.trim()) {
+          body = singleQuoteMatch[1].trim();
+        } else {
+          // 2. Colon-introduced body: "Publish this exact post on X:\s*<body text>", "Tweet:\s*<body text>", "Post the following on X:\s*<body text>"
+          const colonMatch = text.match(/(?:publish(?:ing|es)?|post(?:ing|s)?|tweet(?:ing|s)?|message|update)[\s\S]*?:\s*([\s\S]+)$/i);
+          if (colonMatch && colonMatch[1]?.trim()) {
+            let candidateBody = colonMatch[1].trim();
+            const innerQuote = candidateBody.match(/^["“「『«]([\s\S]+)["”」』»]$/) || candidateBody.match(/^'([\s\S]+)'$/);
+            if (innerQuote) candidateBody = innerQuote[1].trim();
+            if (candidateBody) body = candidateBody;
+          }
+        }
+      }
+      if (body && body.length > bestBody.length) {
+        bestBody = body;
+      }
+    }
+    return bestBody;
+  }
+
   _progressIntentClassifierMessages(taskText, siteContext = {}) {
     return [
       {
@@ -19661,7 +19760,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           'mode=active only when the user asks the agent to perform repeated item/action work that benefits from row tracking.',
           'Exception: for siteContext.workflow.job="upload-release-assets" with requiresLedger=true, use mode=active and list every concrete requested target even when there is exactly one. Copy each exact requested filename or path into targets; do not merge or omit assets. When the user names the release tag, also return it as workflowFields=[{"field":"tag","value":"exact tag"}]; return workflowFields=[] when no tag is named.',
           'For siteContext.workflow.job="update-metadata", workflowFields must contain every metadata field explicitly requested by the user and its complete exact intended value. Use canonical field names title, description, visibility, audience, tags, category, playlist, language, license, comments, embedding, paid_promotion, recording_date, or recording_location. Never infer a field or value from page content.',
-          'For siteContext.workflow.job="publish-release", "publish-post", or "publish-content", workflowFields must contain every publication field explicitly requested by the user and its complete exact intended value. Use canonical field names tag, title, notes, body, visibility, or attachment; for publish-post only, also use account when the user explicitly names the publishing account. Never infer a field or value from page content.',
+          'For siteContext.workflow.job="publish-release", "publish-post", or "publish-content", workflowFields must contain every publication field explicitly requested by the user and its complete exact intended value (for long post bodies or notes exceeding response budget, provide a short excerpt; complete bodies are preserved from task context). Use canonical field names tag, title, notes, body, visibility, or attachment; for publish-post only, also use account when the user explicitly names the publishing account. Never infer a field or value from page content.',
           'For siteContext.workflow.job="draft-email" or "send-email", workflowFields must contain every message field explicitly requested by the user and its complete exact intended value. Use canonical field names subject or body. Never infer a field or value from page content.',
           'For siteContext.workflow.template="transaction", workflowFields must contain every booking detail explicitly requested by the user and its exact value. Use canonical field names train, travel_date, departure, arrival, passenger, or seat_class. Never infer a detail from page content.',
           'For siteContext.workflow.template="form", workflowLabelValues must contain one entry per field the user supplied an exact value for, as {"label":"the field in the user\'s words","value":"the exact value"}. Return workflowLabelValues=[] when the user supplied no exact values, and never copy a value from page content.',
@@ -19687,12 +19786,14 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     const provider = opts.provider || this.providerManager?.getActive?.();
     if (!provider?.chat) return null;
     const pageScope = String(opts.pageScope || this._currentProgressPageScope(tabId) || '').trim();
-    const siteWorkflow = this._planExecutionGuards.get(tabId)?.siteWorkflow;
-    const approvedPlan = String(this._planExecutionGuards.get(tabId)?.approvedPlanAnchor || '').trim();
+    const guard = this._planExecutionGuards.get(tabId);
+    const siteWorkflow = guard?.siteWorkflow;
+    const approvedPlanAnchor = String(guard?.approvedPlanAnchor || '').trim();
+    const approvedPlanText = String(guard?.approvedPlanText || approvedPlanAnchor).trim();
     const siteContext = {
       pageScope,
       site: this._isGithubStargazersUrl(pageScope) ? 'github_stargazers' : 'unknown',
-      ...(approvedPlan ? { approvedPlan } : {}),
+      ...(approvedPlanAnchor ? { approvedPlan: approvedPlanAnchor } : {}),
       ...(siteWorkflow?.job && (
         siteWorkflow.job.requiresLedger === true
         || siteWorkflow.job.template === 'message'
@@ -19720,8 +19821,25 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           const details = this._normalizeWorkflowMetadataRequirementsDetails(
             obj?.workflowFields ?? obj?.workflow_fields,
           );
+          const extractedBody = this._extractWorkflowTaskBody(taskText, approvedPlanText);
+          if (extractedBody) {
+            const bodyReq = details.items.find(r => r.field === 'body');
+            if (bodyReq) {
+              if (extractedBody.length > (bodyReq.value || '').length
+                  || bodyReq.value === '[from task]'
+                  || extractedBody.includes(bodyReq.value)
+                  || bodyReq.value.includes(extractedBody)) {
+                bodyReq.value = this._workflowMetadataValue(extractedBody, 25000);
+              }
+            } else if (siteWorkflow?.job?.id === 'publish-post' || siteWorkflow?.job?.id === 'publish-content') {
+              details.items.push({
+                field: 'body',
+                value: this._workflowMetadataValue(extractedBody, 25000),
+              });
+            }
+          }
           guard.workflowMetadataRequirements = details.items;
-          guard.workflowMetadataRequirementsIncomplete = details.incomplete;
+          guard.workflowMetadataRequirementsIncomplete = details.incomplete && details.items.length === 0;
           guard.workflowMetadataRequirementsResolved = true;
         }
       }
@@ -19742,6 +19860,20 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       }
       return normalizeProgressIntent(obj, { taskText, pageScope, source: 'classifier' });
     } catch {
+      if (this._workflowJobStoresMetadataRequirements(siteWorkflow)) {
+        const guard = this._planExecutionGuards.get(tabId);
+        if (guard && guard.workflowMetadataRequirementsResolved !== true) {
+          const extractedBody = this._extractWorkflowTaskBody(taskText, approvedPlanText);
+          if (extractedBody) {
+            guard.workflowMetadataRequirements = [{
+              field: 'body',
+              value: this._workflowMetadataValue(extractedBody, 25000),
+            }];
+            guard.workflowMetadataRequirementsIncomplete = false;
+            guard.workflowMetadataRequirementsResolved = true;
+          }
+        }
+      }
       return null;
     }
   }
@@ -20429,6 +20561,8 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       && carried.conversationId === (this.conversationIds.get(tabId) || null);
     const approvedPlanAnchor = gateApprovedPlanAnchor
       || (carryMatches ? carried.approvedPlanAnchor || '' : '');
+    const approvedPlanText = String(gateOutcome?.approvedScratchpadText || '')
+      || (carryMatches ? carried.approvedPlanText || '' : '');
     const state = {
       enabled,
       requestKind,
@@ -20446,6 +20580,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       taskKey,
       taskText,
       approvedPlanAnchor,
+      approvedPlanText,
       evidenceTaskKey: carryMatches ? carried.evidenceTaskKey : '',
       taskDrifted: false,
       approvedPlan: this._hasApprovedExecutionPlan(this.conversations.get(tabId) || []),
@@ -20801,6 +20936,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         requiredSchedulingTool: guard.requiredSchedulingTool,
         siteWorkflow: guard.siteWorkflow,
         approvedPlanAnchor: guard.approvedPlanAnchor,
+        approvedPlanText: guard.approvedPlanText,
         taskKey: guard.taskKey,
         evidenceTaskKey: guard.evidenceTaskKey,
         successfulTaskToolCalls: guard.successfulTaskToolCalls,
@@ -25012,18 +25148,26 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
                     } catch {}
                     return false;
                   };
+                  const filteredAttachments = Array.from(best.querySelectorAll?.(
+                    'img, video, [data-testid="tweetPhoto"], [data-testid="videoPlayer"], [data-testid="videoComponent"], [data-testid^="postImage"], [data-testid="postGalleryImage"], [data-testid="contentHider-post"], [data-testid="card.layoutLarge.media"]'
+                  ) || []).filter(candidate => !isEmbedded(candidate) && !isAvatarOrEmoji(candidate) && !isLinkPreview(candidate));
                   const rawAttachments = mediaNodes.length
                     ? mediaNodes
-                    : Array.from(best.querySelectorAll?.(
-                        'img, video, [data-testid="tweetPhoto"], [data-testid="videoPlayer"], [data-testid="videoComponent"], [data-testid^="postImage"], [data-testid="postGalleryImage"], [data-testid="contentHider-post"], [data-testid="card.layoutLarge.media"]'
-                      ) || []).filter(candidate => !isEmbedded(candidate) && !isAvatarOrEmoji(candidate) && !isLinkPreview(candidate));
+                    : filteredAttachments.filter(node => !filteredAttachments.some(other => other !== node && other.contains?.(node)));
                   const attachments = rawAttachments.slice(0, 12).map(candidate => {
                     const tag = (candidate.tagName || '').toLowerCase();
                     const testId = typeof candidate.getAttribute === 'function' ? (candidate.getAttribute('data-testid') || '') : '';
-                    const isVideo = tag === 'video' || /video/i.test(testId);
+                    const isVideo = tag === 'video' || /video/i.test(testId) || !!candidate.querySelector?.('video');
                     let src = '';
-                    try { src = candidate.getAttribute?.('src') || candidate.src || ''; } catch {}
-                    const alt = typeof candidate.getAttribute === 'function' ? (candidate.getAttribute('alt') || candidate.getAttribute('aria-label') || '') : '';
+                    try {
+                      src = candidate.getAttribute?.('src') || candidate.src
+                        || candidate.querySelector?.('img, video, source')?.getAttribute?.('src')
+                        || candidate.querySelector?.('img, video, source')?.src || '';
+                    } catch {}
+                    const alt = typeof candidate.getAttribute === 'function'
+                      ? (candidate.getAttribute('alt') || candidate.getAttribute('aria-label')
+                        || candidate.querySelector?.('img')?.getAttribute?.('alt') || '')
+                      : '';
                     return {
                       type: isVideo ? 'video' : 'image',
                       src: String(src || '').slice(0, 500),

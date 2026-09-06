@@ -24591,14 +24591,28 @@ test('publication resource records keep the owning social card when it embeds an
       getAttribute: name => (name === 'src' ? 'https://pbs.twimg.com/card_img/thumb.jpg' : null),
       closest: selector => (selector.includes('card.layout') ? { testId: 'card.layoutLarge.media' } : null),
     };
+    const videoNode = {
+      tagName: 'video',
+      getAttribute: name => (name === 'src' ? 'https://video.twimg.com/media/clip.mp4' : null),
+      closest: () => null,
+      contains: () => false,
+    };
+    const videoComponentNode = {
+      tagName: 'div',
+      getAttribute: name => (name === 'data-testid' ? 'videoComponent' : null),
+      closest: () => null,
+      contains: node => node === videoNode,
+    };
     const mediaCard = {
       innerText: 'post with image',
-      querySelectorAll: selector => (
-        String(selector).includes('img')
-          ? [avatarNode, emojiNode, linkPreviewNode, photoNode]
-          : [plainPermalink]
-      ),
-      contains: node => [plainPermalink, mediaCard, avatarNode, emojiNode, linkPreviewNode, photoNode].includes(node),
+      querySelectorAll: selector => {
+        const s = String(selector);
+        if (s.includes('img') || s.includes('video') || s.includes('tweetPhoto')) {
+          return [avatarNode, emojiNode, linkPreviewNode, photoNode, videoComponentNode, videoNode];
+        }
+        return [plainPermalink];
+      },
+      contains: node => [plainPermalink, mediaCard, avatarNode, emojiNode, linkPreviewNode, photoNode, videoComponentNode, videoNode].includes(node),
     };
     const mediaPermalink = {
       ...plainPermalink,
@@ -24606,8 +24620,8 @@ test('publication resource records keep the owning social card when it embeds an
     };
     const mediaRecord = invariant.publicationResourceRecordRoot(mediaPermalink, identity, identityOf);
     assert.equal(mediaRecord.root, mediaCard);
-    assert.deepEqual(mediaRecord.attachments, [photoNode],
-      `${label}: media attachments failed to include photo or failed to filter avatar/emoji/link-preview`);
+    assert.deepEqual(mediaRecord.attachments, [photoNode, videoComponentNode],
+      `${label}: media attachments failed to deduplicate nested videoNode or failed to include photo`);
   }
 
   for (const [label, rel] of [
@@ -86032,6 +86046,39 @@ test('social publication workflow follows the live X or Bluesky destination and 
     assert.equal(blueskyGuard.siteWorkflow?.adapterName, 'bluesky');
 
     liveUrl = 'https://x.com/compose/post';
+    const longBodyTabId = tabId + 150;
+    const fullLongText = ('Initial post content '.repeat(700)).trim();
+    agent.conversations.set(longBodyTabId, [
+      { role: 'system', content: 'system' },
+      { role: 'user', content: 'Post this on X: ' + fullLongText },
+    ]);
+    const longBodyGuard = agent._startPlanExecutionGuard(longBodyTabId, 'act', {
+      requestKind: 'execute',
+      requiresStateChange: true,
+      requiresSubmission: true,
+      approvedScratchpadText: [
+        '[Approved plan pinned by planner]',
+        `- Post this on X: ${fullLongText}`,
+      ].join('\n'),
+    });
+    const priorChat = agent._chatWithCostAllowance;
+    agent._chatWithCostAllowance = async () => ({
+      content: JSON.stringify({
+        mode: 'inactive',
+        allowedActions: [],
+        forbiddenActions: [],
+        targets: [],
+        workflowFields: [{ field: 'body', value: fullLongText.slice(0, 100) }],
+        confidence: 0.99,
+        pageScopePolicy: 'page',
+      }),
+    });
+    assert.equal(await agent._adoptLiveSocialPublishWorkflow(longBodyTabId, provider), true);
+    assert.equal(longBodyGuard.workflowMetadataRequirements?.[0]?.value, fullLongText,
+      AgentClass.name + ': long post body was truncated by classifier output instead of preserved from context');
+    agent._chatWithCostAllowance = priorChat;
+
+    liveUrl = 'https://x.com/compose/post';
     const nonEnglishTabId = tabId + 200;
     agent.conversations.set(nonEnglishTabId, [
       { role: 'system', content: 'system' },
@@ -86230,6 +86277,14 @@ test('social publication workflow follows the live X or Bluesky destination and 
         'contrastive but clause after negated post was wrongly rejected for Bluesky'],
       ['Post or publish this on X', ['twitter'],
         'affirmative coordinated publish verbs were wrongly rejected for X'],
+      ['Post "Do not panic" on X', ['twitter'],
+        'quoted negation inside payload was treated as command negation'],
+      ['Post “Never give up” on Bluesky', ['bluesky'],
+        'smart-quoted negation inside payload was treated as command negation'],
+      ['Tweet \'Do not worry\' on X', ['twitter'],
+        'single-quoted negation inside payload was treated as command negation'],
+      ['Do not post "panic" on X', [],
+        'actual negation governing publish verb was missed'],
     ]) {
       assert.deepEqual(
         [...agent._trustedSocialPublishTargetAdapters({ taskText })],
@@ -86721,6 +86776,150 @@ test('X and Bluesky same-route publication accepts only one new permalink with t
         fixture.feedUrl,
         submit,
       ), false, AgentClass.name + ': wrong asset satisfied specific attachment phrase with generic wrapper');
+
+      const pageStateWithImageAndVideo = {
+        ...exactPageState,
+        workflowResourceRecords: [
+          {
+            ...exactPageState.workflowResourceRecords[0],
+            attachments: [
+              { type: 'image', src: 'https://pbs.twimg.com/media/xyz1.jpg', alt: 'screenshot 1' },
+              { type: 'video', src: 'https://video.twimg.com/media/clip.mp4', alt: 'demo clip' },
+            ],
+          },
+        ],
+      };
+
+      assert.equal(agent._workflowPublishedResourcePayloadMatch(
+        {
+          ...submit.workflowBinding,
+          metadataRequirements: [
+            ...submit.workflowBinding.metadataRequirements,
+            { field: 'attachment', value: '1 image, 1 video' },
+          ],
+          publishedResourceIdentity: fixture.expectedIdentity,
+          preDispatchPublicationAccountIdentity: fixture.accountIdentity,
+          preDispatchPublicationAccountIdentityComplete: true,
+        },
+        guard,
+        pageStateWithImage,
+        fixture.feedUrl,
+        submit,
+      ), false, AgentClass.name + ': single image satisfied requirement for 1 image, 1 video');
+
+      assert.equal(agent._workflowPublishedResourcePayloadMatch(
+        {
+          ...submit.workflowBinding,
+          metadataRequirements: [
+            ...submit.workflowBinding.metadataRequirements,
+            { field: 'attachment', value: '1 image, 1 video' },
+          ],
+          publishedResourceIdentity: fixture.expectedIdentity,
+          preDispatchPublicationAccountIdentity: fixture.accountIdentity,
+          preDispatchPublicationAccountIdentityComplete: true,
+        },
+        guard,
+        pageStateWithTwoImages,
+        fixture.feedUrl,
+        submit,
+      ), false, AgentClass.name + ': two images satisfied requirement for 1 image, 1 video');
+
+      assert.equal(agent._workflowPublishedResourcePayloadMatch(
+        {
+          ...submit.workflowBinding,
+          metadataRequirements: [
+            ...submit.workflowBinding.metadataRequirements,
+            { field: 'attachment', value: '1 image, 1 video' },
+          ],
+          publishedResourceIdentity: fixture.expectedIdentity,
+          preDispatchPublicationAccountIdentity: fixture.accountIdentity,
+          preDispatchPublicationAccountIdentityComplete: true,
+        },
+        guard,
+        pageStateWithImageAndVideo,
+        fixture.feedUrl,
+        submit,
+      ), true, AgentClass.name + ': requirement for 1 image, 1 video was rejected when both were published');
+
+      assert.equal(agent._workflowPublishedResourcePayloadMatch(
+        {
+          ...submit.workflowBinding,
+          metadataRequirements: [
+            ...submit.workflowBinding.metadataRequirements,
+            { field: 'attachment', value: 'a GIF' },
+          ],
+          publishedResourceIdentity: fixture.expectedIdentity,
+          preDispatchPublicationAccountIdentity: fixture.accountIdentity,
+          preDispatchPublicationAccountIdentityComplete: true,
+        },
+        guard,
+        pageStateWithImage,
+        fixture.feedUrl,
+        submit,
+      ), false, AgentClass.name + ': image satisfied requirement for a GIF');
+
+      assert.equal(agent._workflowPublishedResourcePayloadMatch(
+        {
+          ...submit.workflowBinding,
+          metadataRequirements: [
+            ...submit.workflowBinding.metadataRequirements,
+            { field: 'attachment', value: 'a GIF' },
+          ],
+          publishedResourceIdentity: fixture.expectedIdentity,
+          preDispatchPublicationAccountIdentity: fixture.accountIdentity,
+          preDispatchPublicationAccountIdentityComplete: true,
+        },
+        guard,
+        pageStateWithVideo,
+        fixture.feedUrl,
+        submit,
+      ), true, AgentClass.name + ': video attachment satisfying GIF requirement was rejected');
+
+      const pageStateWithSpecificGif = {
+        ...exactPageState,
+        workflowResourceRecords: [
+          {
+            ...exactPageState.workflowResourceRecords[0],
+            attachments: [
+              { type: 'video', src: 'https://video.twimg.com/tweet_video/animation.gif.mp4', alt: 'animation.gif' },
+            ],
+          },
+        ],
+      };
+
+      assert.equal(agent._workflowPublishedResourcePayloadMatch(
+        {
+          ...submit.workflowBinding,
+          metadataRequirements: [
+            ...submit.workflowBinding.metadataRequirements,
+            { field: 'attachment', value: 'animation.gif' },
+          ],
+          publishedResourceIdentity: fixture.expectedIdentity,
+          preDispatchPublicationAccountIdentity: fixture.accountIdentity,
+          preDispatchPublicationAccountIdentityComplete: true,
+        },
+        guard,
+        pageStateWithVideo,
+        fixture.feedUrl,
+        submit,
+      ), false, AgentClass.name + ': wrong video satisfied requirement for animation.gif');
+
+      assert.equal(agent._workflowPublishedResourcePayloadMatch(
+        {
+          ...submit.workflowBinding,
+          metadataRequirements: [
+            ...submit.workflowBinding.metadataRequirements,
+            { field: 'attachment', value: 'animation.gif' },
+          ],
+          publishedResourceIdentity: fixture.expectedIdentity,
+          preDispatchPublicationAccountIdentity: fixture.accountIdentity,
+          preDispatchPublicationAccountIdentityComplete: true,
+        },
+        guard,
+        pageStateWithSpecificGif,
+        fixture.feedUrl,
+        submit,
+      ), true, AgentClass.name + ': matching GIF video was rejected for animation.gif');
 
       if (fixture.adapterName === 'twitter') {
         const longBody1 = 'A'.repeat(10500) + ' first suffix';
