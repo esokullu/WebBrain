@@ -244,12 +244,16 @@ async function runProtocolSmoke(context, fixtureUrl) {
       assert.equal(failed.status, 'Error');
       const failureText = failed.errorText || failed.exception?.description || '';
       assert.match(failureText, /fixture failure/);
-      await waitForEntry(
-        page,
-        pageErrors,
-        error => error.includes('fixture failure'),
-        'fixture page error',
-      );
+      // Chrome 152+ isolates tool execution errors to the WebMCP protocol response
+      // rather than bubbling an unhandled window error to the page.
+      if (majorVersion < 152) {
+        await waitForEntry(
+          page,
+          pageErrors,
+          error => error.includes('fixture failure'),
+          'fixture page error',
+        );
+      }
 
       await page.evaluate(() => window.webMCPFixture.unregister());
       // Chrome can emit one toolsRemoved event per registration. Wait for the
