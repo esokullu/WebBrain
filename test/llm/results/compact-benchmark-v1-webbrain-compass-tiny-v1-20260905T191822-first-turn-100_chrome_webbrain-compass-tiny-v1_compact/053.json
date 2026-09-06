@@ -1,0 +1,29 @@
+{
+  "id": "053",
+  "user": "search my email for invoice",
+  "mode": "act",
+  "tab": {
+    "url": "https://mail.google.com/mail/u/0/#inbox",
+    "title": "Inbox (3) — Gmail"
+  },
+  "latencyMs": 1644,
+  "error": null,
+  "firstToolCall": {
+    "name": "find_text",
+    "args": {
+      "text": "invoice",
+      "matchCase": false
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "finishReason": "tool_calls",
+  "content": "The user wants me to search their Gmail for invoices. I should use the `find_text` tool with the query \"invoice\" to search their email.</think>",
+  "usage": {
+    "prompt_tokens": 10499,
+    "total_tokens": 10549,
+    "completion_tokens": 50,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

@@ -1,0 +1,37 @@
+{
+  "id": "011",
+  "category": "tool-error-pivot",
+  "description": "inspect_viewport returned \"no vision capability\". Must pivot to AX tree, not retry the capture.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 1941,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "get_accessibility_tree",
+      "args": {
+        "filter": "visible"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "inspect_viewport({})",
+        "reason": "Retrying a tool that just declared it cannot work — gpt-4o trace xpx9t9 made this mistake."
+      }
+    ],
+    "successRubric": "Pivot to a text-based inspection tool (get_accessibility_tree, read_page, or get_interactive_elements). The error message even names the alternatives — use one of them."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "no_tool",
+  "scoreNote": null,
+  "finishReason": "stop",
+  "content": "The page context is available, but I cannot see the page content because the browser has no vision capability. I need to use a tool that can read the page content without vision.\n\nLet me try `read_page` with `includeChrome: false` to get the page content.</think><|tool_call_start|>[read_page(includeChrome=False)]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9825,
+    "total_tokens": 9895,
+    "completion_tokens": 70,
+    "prompt_tokens_details": null
+  }
+}

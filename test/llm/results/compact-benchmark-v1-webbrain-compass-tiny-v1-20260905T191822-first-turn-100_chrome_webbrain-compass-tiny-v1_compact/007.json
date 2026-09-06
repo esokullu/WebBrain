@@ -1,0 +1,28 @@
+{
+  "id": "007",
+  "user": "open linkedin in this tab",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 2624,
+  "error": null,
+  "firstToolCall": {
+    "name": "navigate",
+    "args": {
+      "url": "https://www.linkedin.com/"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "finishReason": "tool_calls",
+  "content": "The user wants me to open LinkedIn in the current tab. I should use the navigate tool to open LinkedIn.</think>",
+  "usage": {
+    "prompt_tokens": 9726,
+    "total_tokens": 9769,
+    "completion_tokens": 43,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

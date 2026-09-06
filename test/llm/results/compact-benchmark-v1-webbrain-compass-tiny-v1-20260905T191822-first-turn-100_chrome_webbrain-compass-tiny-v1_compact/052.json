@@ -1,0 +1,23 @@
+{
+  "id": "052",
+  "user": "archive this",
+  "mode": "act",
+  "tab": {
+    "url": "https://mail.google.com/mail/u/0/#inbox/abc123",
+    "title": "Invoice from Acme — Gmail"
+  },
+  "latencyMs": 1858,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "finishReason": "stop",
+  "content": "The user wants me to archive the current Gmail conversation. I should use the `archive` tool with the conversation ID. The conversation ID is `abc123`. I should also include a summary of what was discussed.</think><|tool_call_start|>[archive(conversationId='abc123', summary='Archived the current Gmail conversation, which contains an invoice from Acme.')]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 10499,
+    "total_tokens": 10577,
+    "completion_tokens": 78,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

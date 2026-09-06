@@ -335,6 +335,7 @@
   "social.mastodon_label": "WebBrain บน Mastodon",
   "social.bluesky_label": "WebBrain บน Bluesky",
   "social.discord_label": "WebBrain บน Discord",
+  "social.huggingface_label": "WebBrain บน Hugging Face",
   "footer.copyright_html": "© 2026 WebBrain สร้างโดย <a href=\"https://emresokullu.com\" target=\"_blank\">Emre Sokullu</a> และ<a href=\"https://github.com/webbrain-one/webbrain/graphs/contributors\" target=\"_blank\">ผู้ร่วมสนับสนุน</a>",
   "footer.link_github": "GitHub",
   "footer.link_privacy": "นโยบายความเป็นส่วนตัว",

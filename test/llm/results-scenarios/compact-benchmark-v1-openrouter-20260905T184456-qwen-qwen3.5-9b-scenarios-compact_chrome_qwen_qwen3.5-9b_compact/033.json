@@ -1,0 +1,55 @@
+{
+  "id": "033",
+  "category": "truncation-cascade",
+  "description": "AX tree overflow on listing page. Switch to read_page or a more constrained AX call. Do not raise maxChars.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 2927,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "get_accessibility_tree",
+      "args": {
+        "filter": "visible",
+        "maxDepth": 10
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "get_accessibility_tree({filter:\"all\", maxChars:200000})",
+        "reason": "System prompt explicitly warns against raising maxChars on listings."
+      }
+    ],
+    "successRubric": "Switch to filter:\"visible\" or read_page. Listing pages don't fit in the AX tree under filter:\"all\"."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "empty",
+  "scoreNote": null,
+  "finishReason": "stop",
+  "content": null,
+  "usage": {
+    "prompt_tokens": 9827,
+    "completion_tokens": 91,
+    "total_tokens": 9918,
+    "cost": 0.00099635,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 9504,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.00099635,
+      "upstream_inference_prompt_cost": 0.0009827,
+      "upstream_inference_completions_cost": 0.00001365
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 88,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}

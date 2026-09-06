@@ -1,0 +1,42 @@
+{
+  "id": "037",
+  "category": "truncation-cascade",
+  "description": "read_page truncated; agent has the headers but the answer is below the fold. Use targeted extraction, not refetch.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 2949,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "scroll",
+      "args": {
+        "direction": "down",
+        "amount": 3000
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "read_page({})",
+        "reason": "Re-reading without scrolling won't reveal section 5."
+      },
+      {
+        "match": "fetch_url({url:\"https://www.example.com/long-doc\"})",
+        "reason": "Same URL."
+      }
+    ],
+    "successRubric": "Scroll down to bring section 5 into view, then read_page again. read_page is viewport-aware."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "no_tool",
+  "scoreNote": null,
+  "finishReason": "stop",
+  "content": "The user is asking about section 5 of the long documentation. The read_page tool shows that the document is truncated and only contains sections 1-4. There is no section 5 available in the current context.\n\nI should inform the user that section 5 is not available in the current document context, which is truncated and only contains sections 1-4.</think><|tool_call_start|>[done(summary='Section 5 is not available in the current document context. The page is truncated and only contains sections 1–4. Please provide the relevant section or a longer version of the document.', outcome='failed')]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9810,
+    "total_tokens": 9936,
+    "completion_tokens": 126,
+    "prompt_tokens_details": null
+  }
+}

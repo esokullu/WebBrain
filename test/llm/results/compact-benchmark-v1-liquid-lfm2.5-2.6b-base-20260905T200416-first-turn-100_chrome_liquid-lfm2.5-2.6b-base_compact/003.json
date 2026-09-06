@@ -1,0 +1,28 @@
+{
+  "id": "003",
+  "user": "take me to youtube",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 3261,
+  "error": null,
+  "firstToolCall": {
+    "name": "navigate",
+    "args": {
+      "url": "https://www.youtube.com/"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "finishReason": "tool_calls",
+  "content": "The user wants to go to YouTube. I need to navigate to the YouTube URL. The current page context mentions \"about:home\" which is a Google homepage, but the user wants to go to YouTube.\n\nI should use the navigate tool to go to youtube.com or the YouTube homepage URL.</think>",
+  "usage": {
+    "prompt_tokens": 9724,
+    "total_tokens": 9802,
+    "completion_tokens": 78,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

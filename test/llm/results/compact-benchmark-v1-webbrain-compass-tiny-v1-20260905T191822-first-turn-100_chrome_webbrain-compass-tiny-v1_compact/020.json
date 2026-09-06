@@ -1,0 +1,31 @@
+{
+  "id": "020",
+  "user": "look up \"javascript closures\" on stackoverflow",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 3045,
+  "error": null,
+  "firstToolCall": {
+    "name": "fetch_url",
+    "args": {
+      "url": "https://stackoverflow.com/search?q=javascript+closures&sort=relevance",
+      "method": "GET",
+      "maxChars": 7000,
+      "find": "javascript closures"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "finishReason": "tool_calls",
+  "content": "The user wants me to look up \"javascript closures\" on Stack Overflow. I should use the `fetch_url` tool to search Stack Overflow for this topic. I'll search for \"javascript closures\" on Stack Overflow.</think>",
+  "usage": {
+    "prompt_tokens": 9731,
+    "total_tokens": 9824,
+    "completion_tokens": 93,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

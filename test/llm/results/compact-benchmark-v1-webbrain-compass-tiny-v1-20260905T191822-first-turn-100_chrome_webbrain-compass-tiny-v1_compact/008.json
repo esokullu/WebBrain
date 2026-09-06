@@ -1,0 +1,28 @@
+{
+  "id": "008",
+  "user": "wikipedia please",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 2441,
+  "error": null,
+  "firstToolCall": {
+    "name": "navigate",
+    "args": {
+      "url": "https://en.wikipedia.org/wiki/Homepage"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "finishReason": "tool_calls",
+  "content": "The user wants to go to Wikipedia. The current page is about:home (New Tab). I should navigate to Wikipedia.</think>",
+  "usage": {
+    "prompt_tokens": 9723,
+    "total_tokens": 9768,
+    "completion_tokens": 45,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

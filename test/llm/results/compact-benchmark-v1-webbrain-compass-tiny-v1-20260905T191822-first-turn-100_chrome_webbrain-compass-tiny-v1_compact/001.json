@@ -1,0 +1,28 @@
+{
+  "id": "001",
+  "user": "go to firefox extensions management pagr",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 3667,
+  "error": null,
+  "firstToolCall": {
+    "name": "click",
+    "args": {
+      "text": "Firefox Extensions Management"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "finishReason": "tool_calls",
+  "content": "The user wants to go to Firefox extensions management. They wrote \"pagr\" which is likely a typo for \"extensions\" or \"manage extensions\". The current page is about:home with title \"New Tab\".\n\nI should navigate to Firefox extensions management. The correct URL would be something like `about:extensions` or `about:preferences#extensions`.\n\nLet me navigate to the Firefox extensions management page.</think>",
+  "usage": {
+    "prompt_tokens": 9728,
+    "total_tokens": 9830,
+    "completion_tokens": 102,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

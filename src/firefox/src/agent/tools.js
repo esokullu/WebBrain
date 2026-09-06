@@ -704,8 +704,8 @@ export const AGENT_TOOLS = [
           },
           purpose: {
             type: 'string',
-            enum: ['research_escalation'],
-            description: 'Set to research_escalation only when asking to delegate a read-only research subtask.',
+            enum: ['research_escalation', 'message_recipient', 'recipient_change'],
+            description: 'Optional purpose of the clarification. Use message_recipient to ask the user to confirm or specify the message/email recipient, recipient_change to switch an already-authorized recipient, or research_escalation to delegate a read-only research subtask.',
           },
           research_request: {
             type: 'string',
@@ -1474,7 +1474,11 @@ function askResearchConsentTool(tool) {
             ...properties.reason,
             description: 'Optional one-sentence explanation of why this unusually complex read-only research subtask would benefit from ChatGPT.',
           },
-          purpose: properties.purpose,
+          purpose: {
+            ...properties.purpose,
+            enum: ['research_escalation'],
+            description: 'Must be set to research_escalation.',
+          },
           research_request: properties.research_request,
           approve_option: properties.approve_option,
         },

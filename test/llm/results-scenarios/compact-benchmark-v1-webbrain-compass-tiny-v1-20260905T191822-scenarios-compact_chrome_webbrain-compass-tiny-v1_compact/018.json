@@ -1,0 +1,40 @@
+{
+  "id": "018",
+  "category": "tool-error-pivot",
+  "description": "type_text warned about \"same field twice in a row\". The right move is to click the correct field first.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 2564,
+  "error": null,
+  "firstToolCall": {
+    "name": "set_field",
+    "args": {
+      "text": "alice@example.com"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "get_interactive_elements",
+      "args": {}
+    },
+    "antiPatterns": [
+      {
+        "match": "type_text({text:\"alice@example.com\"})",
+        "reason": "Will land in the same wrong field again."
+      }
+    ],
+    "successRubric": "Find the actual email input via get_interactive_elements or get_accessibility_tree, click it, THEN type. The warning is a signal to re-target, not to repeat."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The user wants me to fill the email field with \"alice@example.com\". I tried using `type_text` but it seems the field was filled twice in a row, which is a warning.\n\nLet me try again with `set_field` which is more appropriate for filling a specific field with text. I'll use the email field and set it to \"alice@example.com\".</think>",
+  "usage": {
+    "prompt_tokens": 9791,
+    "total_tokens": 9883,
+    "completion_tokens": 92,
+    "prompt_tokens_details": null
+  }
+}

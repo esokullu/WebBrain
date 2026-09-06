@@ -1,0 +1,36 @@
+{
+  "id": "071",
+  "category": "cross-lingual",
+  "description": "Turkish user asks in Turkish on a Turkish UI. Recognize the Turkish \"Gönder\" = \"Send\".",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 206,
+  "error": "HTTP 429: {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-min. \",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"20\",\"X-RateLimit-Remaining\":\"0\",\"X-RateLimit-Reset\":\"1788627000000\"},\"limit_source\":\"openrouter_free_tier_per_minute\",\"remedy_hint\":\"Slow down requests to free models, or retry after the per-minute window resets.\",\"provider_name\":null}},\"user_id\":\"user_3AbNCAJijEuArTpJ0g3wyO8p3KK\"}",
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "click",
+      "args": {
+        "text": "Gönder"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click({text:\"Send\"})",
+        "reason": "Turkish UI — button label is \"Gönder\" not \"Send\"."
+      },
+      {
+        "match": "click({text:\"Post\"})",
+        "reason": "Same."
+      }
+    ],
+    "successRubric": "Use the visible Turkish button label \"Gönder\". Don't translate UI labels to English."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "error",
+  "scoreNote": null,
+  "finishReason": null,
+  "content": null,
+  "usage": null
+}

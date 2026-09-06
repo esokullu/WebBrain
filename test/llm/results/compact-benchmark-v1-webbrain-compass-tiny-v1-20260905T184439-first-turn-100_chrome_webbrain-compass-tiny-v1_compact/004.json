@@ -1,0 +1,23 @@
+{
+  "id": "004",
+  "user": "open my github",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 3177,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "finishReason": "stop",
+  "content": "The user wants to open their GitHub account. I should use the `click` tool to open the GitHub login page. The URL for GitHub login is `https://github.com/login`. I'll use the `click` tool with the URL parameter.</think><|tool_call_start|>[click(text='https://github.com/login')]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9723,
+    "total_tokens": 9790,
+    "completion_tokens": 67,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

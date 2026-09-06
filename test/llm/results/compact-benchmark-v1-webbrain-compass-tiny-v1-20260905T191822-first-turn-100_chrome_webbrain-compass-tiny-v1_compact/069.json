@@ -1,0 +1,29 @@
+{
+  "id": "069",
+  "user": "open it",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 2046,
+  "error": null,
+  "firstToolCall": {
+    "name": "navigate",
+    "args": {
+      "url": "https://www.google.com/search?q=about+home&udm=1",
+      "force": false
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "finishReason": "tool_calls",
+  "content": "The user wants me to open the New Tab page. The current page is about:home with title \"New Tab\". I should use the navigate tool to open this URL.</think>",
+  "usage": {
+    "prompt_tokens": 9722,
+    "total_tokens": 9788,
+    "completion_tokens": 66,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

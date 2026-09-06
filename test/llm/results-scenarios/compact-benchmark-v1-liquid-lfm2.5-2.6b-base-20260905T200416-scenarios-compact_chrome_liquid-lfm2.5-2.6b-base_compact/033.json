@@ -1,0 +1,43 @@
+{
+  "id": "033",
+  "category": "truncation-cascade",
+  "description": "AX tree overflow on listing page. Switch to read_page or a more constrained AX call. Do not raise maxChars.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 2047,
+  "error": null,
+  "firstToolCall": {
+    "name": "read_page",
+    "args": {
+      "url": "https://news.ycombinator.com/"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "get_accessibility_tree",
+      "args": {
+        "filter": "visible",
+        "maxDepth": 10
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "get_accessibility_tree({filter:\"all\", maxChars:200000})",
+        "reason": "System prompt explicitly warns against raising maxChars on listings."
+      }
+    ],
+    "successRubric": "Switch to filter:\"visible\" or read_page. Listing pages don't fit in the AX tree under filter:\"all\"."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The get_accessibility_tree call failed with a character limit error. Let me try a different approach - using the navigate tool to go to the Hacker News page and then reading the page content. Actually, I should first try to fetch the page content using fetch_url or read_page.\n\nLet me try read_page on the Hacker News URL to get the story titles and points.</think>",
+  "usage": {
+    "prompt_tokens": 9774,
+    "total_tokens": 9869,
+    "completion_tokens": 95,
+    "prompt_tokens_details": null
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "id": "075",
+  "category": "cross-lingual",
+  "description": "Spanish form, English user request, RTL/LTR mix concerns. Should focus the right field.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 3373,
+  "error": null,
+  "firstToolCall": {
+    "name": "click_ax",
+    "args": {
+      "ref_id": "0"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "click",
+      "args": {
+        "index": 0
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click({text:\"Name\"})",
+        "reason": "No field labeled \"Name\" — it's \"Nombre\"."
+      }
+    ],
+    "successRubric": "Map \"name\" → \"Nombre\". Then click the field, then type. Cross-lingual field mapping."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The user wants to put \"alice\" in the name field. From the get_interactive_elements result, I can see there's an input field with text \"Nombre\" (which means \"Name\" in Spanish) at index 0.\n\nI need to use the click_ax tool to click on the name field (ref_id \"0\" from the result), and then type \"alice\" into it.\n\nActually, looking more carefully at the get_interactive_elements result:\n- index: 0, tag: \"input\", text: \"Nombre\", placeholder: \"Nombre\"\n- index: 1, tag: \"input\", text: \"Apellido\", placeholder: \"Apellido\"\n\nSo the name field is at index 0 with ref_id \"0\". I should click on it first, then type \"alice\".\n\nLet me use click_ax with ref_id \"0\" to click on the name field.</think>",
+  "usage": {
+    "prompt_tokens": 9789,
+    "total_tokens": 9995,
+    "completion_tokens": 206,
+    "prompt_tokens_details": null
+  }
+}

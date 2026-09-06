@@ -1,0 +1,23 @@
+{
+  "id": "085",
+  "user": "tell me a joke",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 1885,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "finishReason": "stop",
+  "content": "The user wants a joke. This is a straightforward request that doesn't require any tools. I should provide a good, clean joke.</think>Why don’t scientists trust atoms?\n\nBecause they make up everything! 😄",
+  "usage": {
+    "prompt_tokens": 9724,
+    "total_tokens": 9768,
+    "completion_tokens": 44,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

@@ -1,0 +1,37 @@
+{
+  "id": "077",
+  "category": "cross-lingual",
+  "description": "HN comments in English, user asks in Turkish. Read + respond Turkish.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 2362,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "done",
+      "args": {
+        "summary": "En üstteki yorum yazarın temel önermesine katılmıyor — yazarın X ile Y'yi karıştırdığını ve bu yüzden vardığı sonucun hatalı olduğunu söylüyor."
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "done({summary:\"Top comment disagrees with...\"})",
+        "reason": "User asked in Turkish — answer in Turkish."
+      }
+    ],
+    "successRubric": "Answer in Turkish. Translate gist of English comment."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal_name",
+  "scoreNote": "prose answer credited as done (terminal tool; summary not arg-matched)",
+  "finishReason": "stop",
+  "content": "The user is asking what the top comment says, briefly. The top comment is: \"I disagree with the premise. The author conflates X with Y, which leads to...\"\n\nI should provide a concise summary in Turkish since the user asked in Turkish.</think>En üst yorum şöyle:\n\n**“Premisle uyuşmuyor. Yazar X ile Y’yi karıştırıyor, bu da…”**",
+  "usage": {
+    "prompt_tokens": 9787,
+    "total_tokens": 9871,
+    "completion_tokens": 84,
+    "prompt_tokens_details": null
+  }
+}

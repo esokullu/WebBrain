@@ -1,0 +1,44 @@
+{
+  "id": "004",
+  "category": "loop-bad-url",
+  "description": "Navigation to a non-existent release tag landed on a 404-styled page. Repeating it is the failure.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 7332,
+  "error": null,
+  "firstToolCall": {
+    "name": "read_page",
+    "args": {}
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "navigate",
+      "args": {
+        "url": "https://github.com/acme/widgets/releases"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "navigate({url:\"https://github.com/acme/widgets/releases/tag/v9.9.9\"})",
+        "reason": "Retrying a 404 URL."
+      },
+      {
+        "match": "download_files({urls:[\"https://github.com/acme/widgets/archive/refs/tags/v9.9.9.zip\"]})",
+        "reason": "Forcing a download for a tag that does not exist."
+      }
+    ],
+    "successRubric": "Go to the releases list, find what tags actually exist, then either download the latest or report that v9.9.9 doesn't exist."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The user is asking me to download the v9.9.9 source zip from GitHub. I've already navigated to the release page, but the page says \"Page not found — there isn't a GitHub Pages site here.\"\n\nThis is strange because the release page should exist. Let me try a different approach:\n\n1. First, try to find the source archive URL directly\n2. Use the GitHub API to find the release and its source archive\n3. Download the source archive\n\nThe release page URL is: https://github.com/acme/widgets/releases/tag/v9.9.9\n\nLet me try to use the GitHub API to find the source archive. I can use the `read_page` tool with a different approach, or try to fetch the release page with a different method.\n\nActually, looking at the available tools, I have `read_page` which can read the GitHub release page. But the page says \"Page not found.\"\n\nLet me try a different approach. I'll try to use the GitHub API to find the source archive. The GitHub API endpoint for releases is: `https://api.github.com/repos/{owner}/{repo}/releases`\n\nFor this release:\n- owner: acme\n- repo: widgets\n- tag: v9.9.9\n\nSo the URL would be: `https://api.github.com/repos/acme/widgets/releases`\n\nLet me try to read this page.</think>",
+  "usage": {
+    "prompt_tokens": 9992,
+    "total_tokens": 10300,
+    "completion_tokens": 308,
+    "prompt_tokens_details": null
+  }
+}

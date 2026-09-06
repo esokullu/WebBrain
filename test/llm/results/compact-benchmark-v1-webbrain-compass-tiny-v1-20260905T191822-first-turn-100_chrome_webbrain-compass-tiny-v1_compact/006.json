@@ -1,0 +1,28 @@
+{
+  "id": "006",
+  "user": "i wanna check netflix",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 2911,
+  "error": null,
+  "firstToolCall": {
+    "name": "navigate",
+    "args": {
+      "url": "https://www.netflix.com/"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "finishReason": "tool_calls",
+  "content": "The user wants to check Netflix. I should help them navigate to Netflix. I can use the navigate tool to open Netflix, or I can use the click tool to navigate to Netflix.\n\nLet me use the navigate tool to open Netflix. The URL is https://www.netflix.com/.</think>",
+  "usage": {
+    "prompt_tokens": 9726,
+    "total_tokens": 9801,
+    "completion_tokens": 75,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

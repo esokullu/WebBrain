@@ -1,0 +1,40 @@
+{
+  "id": "019",
+  "category": "tool-error-pivot",
+  "description": "download_files returned 404 on guessed raw URL. Read the folder to enumerate real filenames.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 2115,
+  "error": null,
+  "firstToolCall": {
+    "name": "fetch_url",
+    "args": {
+      "url": "https://api.github.com/repos/acme/widgets/contents/widgets-linux.zip"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "read_page",
+      "args": {}
+    },
+    "antiPatterns": [
+      {
+        "match": "download_files({urls:[\"https://github.com/acme/widgets/raw/main/dist/widgets-linux-amd64.zip\"]})",
+        "reason": "Guessing slug variants is the loop pattern."
+      }
+    ],
+    "successRubric": "Read the dist folder listing to find the actual zip filename. Then download the real URL."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The download failed with a 404 error. Let me try a different URL - perhaps the file is in a different location or the repository structure has changed. I'll try the GitHub API to find the correct file path.</think>",
+  "usage": {
+    "prompt_tokens": 9814,
+    "total_tokens": 9888,
+    "completion_tokens": 74,
+    "prompt_tokens_details": null
+  }
+}

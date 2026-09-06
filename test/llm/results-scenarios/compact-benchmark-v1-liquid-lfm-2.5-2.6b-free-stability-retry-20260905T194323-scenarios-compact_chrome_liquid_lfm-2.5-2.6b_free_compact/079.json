@@ -1,0 +1,64 @@
+{
+  "id": "079",
+  "category": "cross-lingual",
+  "description": "French form, English instructions including mixed English+French data.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 2416,
+  "error": null,
+  "firstToolCall": {
+    "name": "set_field",
+    "args": {
+      "ref_id": "0",
+      "text": "Marie Dupont"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "click",
+      "args": {
+        "index": 0
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "type_text({text:\"Marie Dupont\"})",
+        "reason": "No field focused yet; type would land in wrong field."
+      },
+      {
+        "match": "click({text:\"Name\"})",
+        "reason": "Field is labeled \"Nom complet\" not \"Name\"."
+      }
+    ],
+    "successRubric": "Click name field first (by index), then type. Use the French label \"Envoyer\" for final submit."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": null,
+  "usage": {
+    "prompt_tokens": 9800,
+    "completion_tokens": 206,
+    "total_tokens": 10006,
+    "cost": 0,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 9696,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0,
+      "upstream_inference_prompt_cost": 0,
+      "upstream_inference_completions_cost": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 168,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}

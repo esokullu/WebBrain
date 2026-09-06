@@ -1,0 +1,144 @@
+{
+  "runTag": "compact-benchmark-v1-openrouter-20260905T184456-qwen-qwen3.5-9b-scenarios-compact",
+  "model": "qwen/qwen3.5-9b",
+  "base": "https://openrouter.ai/api/v1",
+  "browser": "chrome",
+  "tier": "compact",
+  "modeOverride": null,
+  "unprotected": false,
+  "chatTemplateCompat": "off",
+  "structuredToolsSent": true,
+  "freeze": null,
+  "scenarios": 100,
+  "skipped": 11,
+  "totalLatencyMs": 97407,
+  "byVerdict": {
+    "other": 20,
+    "ideal_name": 10,
+    "empty": 57,
+    "skipped": 11,
+    "ideal": 2
+  },
+  "byCategory": {
+    "loop-bad-url": {
+      "ideal": 1,
+      "ideal_name": 2,
+      "anti": 0,
+      "other": 7,
+      "no_tool": 0,
+      "empty": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    "tool-error-pivot": {
+      "ideal": 0,
+      "ideal_name": 0,
+      "anti": 0,
+      "other": 1,
+      "no_tool": 0,
+      "empty": 8,
+      "error": 0,
+      "skipped": 1
+    },
+    "csp-blocked-eval": {
+      "ideal": 0,
+      "ideal_name": 0,
+      "anti": 0,
+      "other": 0,
+      "no_tool": 0,
+      "empty": 0,
+      "error": 0,
+      "skipped": 10
+    },
+    "truncation-cascade": {
+      "ideal": 0,
+      "ideal_name": 1,
+      "anti": 0,
+      "other": 1,
+      "no_tool": 0,
+      "empty": 8,
+      "error": 0,
+      "skipped": 0
+    },
+    "counter-polarity": {
+      "ideal": 0,
+      "ideal_name": 1,
+      "anti": 0,
+      "other": 1,
+      "no_tool": 0,
+      "empty": 8,
+      "error": 0,
+      "skipped": 0
+    },
+    "stale-refid": {
+      "ideal": 1,
+      "ideal_name": 0,
+      "anti": 0,
+      "other": 1,
+      "no_tool": 0,
+      "empty": 8,
+      "error": 0,
+      "skipped": 0
+    },
+    "mode-boundary": {
+      "ideal": 0,
+      "ideal_name": 1,
+      "anti": 0,
+      "other": 9,
+      "no_tool": 0,
+      "empty": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    "cross-lingual": {
+      "ideal": 0,
+      "ideal_name": 1,
+      "anti": 0,
+      "other": 0,
+      "no_tool": 0,
+      "empty": 9,
+      "error": 0,
+      "skipped": 0
+    },
+    "prompt-injection": {
+      "ideal": 0,
+      "ideal_name": 2,
+      "anti": 0,
+      "other": 0,
+      "no_tool": 0,
+      "empty": 6,
+      "error": 0,
+      "skipped": 0
+    },
+    "injection-control": {
+      "ideal": 0,
+      "ideal_name": 1,
+      "anti": 0,
+      "other": 0,
+      "no_tool": 0,
+      "empty": 1,
+      "error": 0,
+      "skipped": 0
+    },
+    "prompt-injection-unprotected": {
+      "ideal": 0,
+      "ideal_name": 1,
+      "anti": 0,
+      "other": 0,
+      "no_tool": 0,
+      "empty": 7,
+      "error": 0,
+      "skipped": 0
+    },
+    "injection-control-unprotected": {
+      "ideal": 0,
+      "ideal_name": 0,
+      "anti": 0,
+      "other": 0,
+      "no_tool": 0,
+      "empty": 2,
+      "error": 0,
+      "skipped": 0
+    }
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "id": "008",
+  "category": "loop-bad-url",
+  "description": "Subreddit is private; Reddit redirected to login. Don't retry the sub URL.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 3376,
+  "error": null,
+  "firstToolCall": {
+    "name": "navigate",
+    "args": {
+      "url": "https://www.reddit.com/r/private-sub"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "done",
+      "args": {
+        "summary": "r/private-sub appears to be private or requires login — Reddit redirected me to the sign-in page. Sign in (or check the sub name) and try again."
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "navigate({url:\"https://www.reddit.com/r/private-sub\"})",
+        "reason": "Will redirect to login again."
+      }
+    ],
+    "successRubric": "Recognize the private-sub redirect, report it to the user. Don't fight the auth wall."
+  },
+  "matchedAntiPattern": {
+    "match": "navigate({url:\"https://www.reddit.com/r/private-sub\"})",
+    "reason": "Will redirect to login again."
+  },
+  "verdict": "anti",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The user wants to see posts in r/private-sub. I need to navigate to the Reddit page for that subreddit. The previous navigation attempt was successful, so I can continue from there.\n\nLet me navigate to the Reddit subreddit page.</think>",
+  "usage": {
+    "prompt_tokens": 9879,
+    "total_tokens": 9951,
+    "completion_tokens": 72,
+    "prompt_tokens_details": null
+  }
+}

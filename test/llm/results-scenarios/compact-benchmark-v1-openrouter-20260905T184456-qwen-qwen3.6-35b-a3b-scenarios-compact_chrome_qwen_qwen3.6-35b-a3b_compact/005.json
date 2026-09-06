@@ -1,0 +1,59 @@
+{
+  "id": "005",
+  "category": "loop-bad-url",
+  "description": "Guessed documentation URL based on tool name failed. Should search docs index, not guess again.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 6820,
+  "error": null,
+  "firstToolCall": {
+    "name": "navigate",
+    "args": {
+      "url": "https://www.google.com/search?q=example-tool+api+reference"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "navigate",
+      "args": {
+        "url": "https://docs.example-tool.io/"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "navigate({url:\"https://docs.example-tool.io/api/v1\"})",
+        "reason": "Guess-and-check on docs path is a loop pattern."
+      }
+    ],
+    "successRubric": "Go to the docs root and let the site's nav lead to the API reference. Acceptable: web search for \"example-tool api reference\"."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal_name",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "Let me search for the correct API reference URL for example",
+  "usage": {
+    "prompt_tokens": 9128,
+    "completion_tokens": 126,
+    "total_tokens": 9254,
+    "cost": 0.0005446,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.0005446,
+      "upstream_inference_prompt_cost": 0.0004564,
+      "upstream_inference_completions_cost": 0.0000882
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 72,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}

@@ -1,0 +1,64 @@
+{
+  "id": "006",
+  "category": "loop-bad-url",
+  "description": "After three sequential failures on the same hallucinated URL, the agent must finally give up that URL.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 5780,
+  "error": null,
+  "firstToolCall": {
+    "name": "get_accessibility_tree",
+    "args": {
+      "filter": "visible",
+      "url": "https://mstdn.social/@example/12345"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "clarify",
+      "args": {
+        "question": "mastodon.turk isn't resolving — I've tried three times. Could you share the actual MastoTurk URL? It's likely mastoturk.org or similar."
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "navigate({url:\"https://mastodon.turk\"})",
+        "reason": "4th retry — exact gpt-4o failure pattern."
+      },
+      {
+        "match": "fetch_url({url:\"https://mastodon.turk\"})",
+        "reason": "Same URL via another tool — still a retry."
+      }
+    ],
+    "successRubric": "After 3 failed attempts on the same URL, abandon it. Clarify with user OR search for the real URL."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The mastodoturk domain is not resolving (DNS failure). Let me try to get the content of the original page and see if we can cross-post it elsewhere.",
+  "usage": {
+    "prompt_tokens": 9942,
+    "completion_tokens": 978,
+    "total_tokens": 10920,
+    "cost": 0,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 9696,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0,
+      "upstream_inference_prompt_cost": 0,
+      "upstream_inference_completions_cost": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 914,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}

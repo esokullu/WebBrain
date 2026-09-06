@@ -1,0 +1,23 @@
+{
+  "id": "068",
+  "user": "click that",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 2047,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "finishReason": "stop",
+  "content": "The user wants me to click the New Tab button on the current page. The page context shows it's about:home with the title \"New Tab\".\n\nI should use the click tool with the text \"New Tab\" to click that button.</think><|tool_call_start|>[click(text='New Tab')]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9722,
+    "total_tokens": 9783,
+    "completion_tokens": 61,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

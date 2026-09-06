@@ -55,6 +55,7 @@ import {
   normalizeTier,
 } from './lib/build-payload.mjs';
 import { scoreVerdict } from './lib/score.mjs';
+import { extractToolCallFromContent as extractLfm2AwareToolCallFromContent } from './lib/content-tool-call-parser.mjs';
 import {
   chatTemplateCompatLabel,
   getChatTemplateCompat,
@@ -333,7 +334,7 @@ async function runOne(scenario) {
     firstToolCall = { name: tc.function.name, args: pa };
     toolCallSource = 'tool_calls';
   } else if (msg?.content) {
-    const fb = extractToolCallFromContent(msg.content);
+    const fb = extractLfm2AwareToolCallFromContent(msg.content, { tools });
     if (fb) { firstToolCall = fb; toolCallSource = 'content_fallback'; }
   }
 

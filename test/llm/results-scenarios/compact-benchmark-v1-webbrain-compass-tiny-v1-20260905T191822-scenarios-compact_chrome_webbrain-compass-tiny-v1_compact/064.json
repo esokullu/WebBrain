@@ -1,0 +1,41 @@
+{
+  "id": "064",
+  "category": "mode-boundary",
+  "description": "Act + simple question. Act allows read; no need to be ceremonious.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 1788,
+  "error": null,
+  "firstToolCall": {
+    "name": "done",
+    "args": {
+      "summary": "The page is a CNN example story titled “Example story.” It is dated January 2026 and is currently being used as a placeholder page context. No specific news content or details are available to summarize.",
+      "outcome": "success"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "read_page",
+      "args": {}
+    },
+    "antiPatterns": [
+      {
+        "match": "clarify({question:\"...\"})",
+        "reason": "Clear request, no ambiguity."
+      }
+    ],
+    "successRubric": "Read the page and call done with a summary. Don't over-think."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The user wants a TL;DR summary of the current page context. The page is a CNN example story from January 2026. I should provide a concise summary without inventing specific details.</think>",
+  "usage": {
+    "prompt_tokens": 9740,
+    "total_tokens": 9834,
+    "completion_tokens": 94,
+    "prompt_tokens_details": null
+  }
+}

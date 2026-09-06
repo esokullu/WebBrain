@@ -1,0 +1,23 @@
+{
+  "id": "019",
+  "user": "search reddit for mechanical keyboards",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 2022,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "finishReason": "stop",
+  "content": "The user wants to search Reddit for mechanical keyboards. I should use the search tool with appropriate parameters. The search query should be \"mechanical keyboards\" and I should search on Reddit.</think><|tool_call_start|>[search(query='mechanical keyboards', max_results=10, source='reddit')]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9726,
+    "total_tokens": 9785,
+    "completion_tokens": 59,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

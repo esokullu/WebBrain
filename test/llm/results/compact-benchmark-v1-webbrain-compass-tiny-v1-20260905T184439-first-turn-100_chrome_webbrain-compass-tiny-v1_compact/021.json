@@ -1,0 +1,23 @@
+{
+  "id": "021",
+  "user": "wiki \"ww2\"",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 3503,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "finishReason": "stop",
+  "content": "The user is asking about \"ww2\" which is a common abbreviation for World War II. I should provide a brief, accurate explanation of what WW2 refers to.</think>**WW2** is an abbreviation for **World War II**, which took place from **1939 to 1945**.\n\nIt was fought between the **Allied powers**—led by the United Kingdom, the United States, and the Soviet Union—and the **Axis powers**, led by Germany, Italy, and Japan.\n\nThe war resulted in an estimated **70 to 85 million deaths**, making it the deadliest conflict in human history.",
+  "usage": {
+    "prompt_tokens": 9725,
+    "total_tokens": 9852,
+    "completion_tokens": 127,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

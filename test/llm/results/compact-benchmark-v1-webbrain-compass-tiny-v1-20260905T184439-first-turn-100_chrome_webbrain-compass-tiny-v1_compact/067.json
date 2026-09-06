@@ -1,0 +1,23 @@
+{
+  "id": "067",
+  "user": "show me what i can click on this page",
+  "mode": "act",
+  "tab": {
+    "url": "https://www.cnn.com/2026/05/world/example-story/index.html",
+    "title": "Example story — CNN"
+  },
+  "latencyMs": 1764,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "finishReason": "stop",
+  "content": "The user wants to know what they can click on the current CNN page. I should inspect the page to identify clickable elements like navigation links, article sections, search, and other interactive controls.</think><|tool_call_start|>[get_accessibility_tree(filter='all', maxDepth=10, maxChars=6000, ref_id='', page=1, tree_revision='', continuationArgs={})]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9746,
+    "total_tokens": 9826,
+    "completion_tokens": 80,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

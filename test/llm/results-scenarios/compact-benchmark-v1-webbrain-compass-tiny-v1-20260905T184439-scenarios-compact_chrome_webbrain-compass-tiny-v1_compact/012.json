@@ -1,0 +1,41 @@
+{
+  "id": "012",
+  "category": "tool-error-pivot",
+  "description": "click by text returned ambiguity error. Pivot to a more specific selector or index.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 3548,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "click",
+      "args": {
+        "text": "Add to Cart"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click({text:\"Add\"})",
+        "reason": "Same ambiguous query."
+      },
+      {
+        "match": "click({text:\"Add\", textMatch:\"contains\"})",
+        "reason": "Broader matching makes ambiguity worse, not better."
+      }
+    ],
+    "successRubric": "Use a more specific text (\"Add to Cart\" — the actual Amazon button) OR call get_interactive_elements first and use the index."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "no_tool",
+  "scoreNote": null,
+  "finishReason": "stop",
+  "content": "The user wants to add \"Acme Widget\" to the cart. The previous attempt to click \"Add\" failed because there were 4 elements matching \"Add\" exactly.\n\nI need to:\n1. Get the interactive elements to identify the correct \"Add\" button\n2. Click the correct \"Add\" button\n3. Verify the item was added to the cart\n\nLet me first get the interactive elements.</think><|tool_call_start|>[get_interactive_elements()]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9801,
+    "total_tokens": 9895,
+    "completion_tokens": 94,
+    "prompt_tokens_details": null
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "id": "006",
+  "category": "loop-bad-url",
+  "description": "After three sequential failures on the same hallucinated URL, the agent must finally give up that URL.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 4459,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "clarify",
+      "args": {
+        "question": "mastodon.turk isn't resolving — I've tried three times. Could you share the actual MastoTurk URL? It's likely mastoturk.org or similar."
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "navigate({url:\"https://mastodon.turk\"})",
+        "reason": "4th retry — exact gpt-4o failure pattern."
+      },
+      {
+        "match": "fetch_url({url:\"https://mastodon.turk\"})",
+        "reason": "Same URL via another tool — still a retry."
+      }
+    ],
+    "successRubric": "After 3 failed attempts on the same URL, abandon it. Clarify with user OR search for the real URL."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal_name",
+  "scoreNote": "prose answer credited as clarify (terminal tool; summary not arg-matched)",
+  "finishReason": "stop",
+  "content": "The user is asking what to do next, given that the Mastodon server at `mastodon.turk` is not found (NXDOMAIN error).\n\nI should provide practical next steps:\n1. Verify the server address\n2. Check if the server is reachable\n3. Try an alternative server\n4. Check network connectivity\n5. Consider using a different server if the issue persists\n\nI should not attempt to cross-post to a server that may not be reachable or may have different policies.</think><|tool_call_start|>[clarify(question='What should I do next?', options=[\"Try an alternative server\", \"Check if the server is reachable\", \"Verify the server address\"], 'reason='The target Mastodon server is currently unreachable, so I need to determine the safest next step before attempting a cross-post.', 'require_explicit_answer=True']<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9942,
+    "total_tokens": 10122,
+    "completion_tokens": 180,
+    "prompt_tokens_details": null
+  }
+}

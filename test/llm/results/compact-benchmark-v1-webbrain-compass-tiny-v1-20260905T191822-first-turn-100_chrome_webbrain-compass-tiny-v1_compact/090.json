@@ -1,0 +1,28 @@
+{
+  "id": "090",
+  "user": "switch to my netflix tab",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 1711,
+  "error": null,
+  "firstToolCall": {
+    "name": "navigate",
+    "args": {
+      "url": "https://www.netflix.com/"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "finishReason": "tool_calls",
+  "content": "The user wants to switch to their Netflix tab. I need to use the browser's navigation tool to open Netflix. The URL should be the Netflix website.</think>",
+  "usage": {
+    "prompt_tokens": 9726,
+    "total_tokens": 9775,
+    "completion_tokens": 49,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

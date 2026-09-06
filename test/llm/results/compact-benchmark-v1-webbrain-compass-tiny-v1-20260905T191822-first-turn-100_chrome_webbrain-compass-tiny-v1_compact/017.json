@@ -1,0 +1,28 @@
+{
+  "id": "017",
+  "user": "google \"best coffee shop in seattle\"",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 2266,
+  "error": null,
+  "firstToolCall": {
+    "name": "click_ax",
+    "args": {
+      "ref_id": "ref_1234567890"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "finishReason": "tool_calls",
+  "content": "The user wants me to search Google for \"best coffee shop in seattle\". I should use the search tool to perform this search.</think>",
+  "usage": {
+    "prompt_tokens": 9729,
+    "total_tokens": 9775,
+    "completion_tokens": 46,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}
