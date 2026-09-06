@@ -4998,9 +4998,40 @@ test('direct-message recipient guard uses structured intent and exact active ide
       `${label}: read-only plan dispatched a conclusive message send`);
     assert.equal(readOnlySend?.reasonCode, 'authorized_recipient_missing');
 
-    // The block tells the model to ask the user who the message is for, so the
-    // answer has to be able to reach the guard. It binds to a page-observed
-    // identity, never to the model-authored option text.
+    // A read-only plan must never stage recipient consent: an answer to a recipient
+    // clarify must not elevate a read-only plan into a send-capable one.
+    assert.equal(
+      agent._planExecutionGuards.get(tabId)?.observedRecipientCandidates,
+      null,
+      `${label}: read-only plan staged recipient candidates`,
+    );
+    assert.equal(
+      agent._planExecutionGuards.get(tabId)?.pendingRecipientAuthorization,
+      false,
+      `${label}: read-only plan staged pendingRecipientAuthorization`,
+    );
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'Reply to Alice (alice@example.com)'),
+      false,
+      `${label}: clarify answer elevated a read-only plan into an authorized sender`,
+    );
+    assert.equal(agent._planExecutionGuards.get(tabId)?.messaging, null);
+
+    // A messaging-authorized plan does stage consent for the clarify it asks for,
+    // and binds to the page-observed candidate rather than model-authored option text.
+    agent._planExecutionGuards.set(tabId, {
+      messaging: null,
+      requiresSubmission: true,
+      requiresStateChange: true,
+    });
+    const authorizedSendBlock = await agent._messageRecipientGuardBlock(
+      tabId,
+      'click_ax',
+      { ref_id: 'ref_send' },
+      'https://mail.google.com/mail/u/0/#inbox/thread-1',
+      {},
+    );
+    assert.equal(authorizedSendBlock?.blocked, true);
     assert.deepEqual(
       agent._planExecutionGuards.get(tabId)?.observedRecipientCandidates,
       [{ identity: 'alice@example.com', role: 'to' }],
@@ -10406,7 +10437,14 @@ test('Gmail expansion detection separates nothing-to-expand from not-yet-checked
       closest: () => null,
       __name: name,
     });
-    const rootWith = controls => ({ querySelectorAll: () => controls });
+    const rootWith = (controls, messages = [{}]) => ({
+      querySelectorAll: selector => {
+        if (typeof selector === 'string' && (selector.includes('button') || selector.includes('[role="button"]'))) {
+          return controls;
+        }
+        return messages;
+      },
+    });
 
     const build = ({ route = true, visible = () => true } = {}) => {
       const factory = new Function(
@@ -10421,6 +10459,10 @@ test('Gmail expansion detection separates nothing-to-expand from not-yet-checked
     // nothing collapsed, not an unfinished check.
     assert.equal(detect(rootWith([control('Reply'), control('Print all')])), 'not_applicable',
       `${prefix}: a thread with no expansion control did not report not_applicable`);
+    assert.equal(detect(rootWith([control('Reply'), control('Print all')], [{}, {}])), null,
+      `${prefix}: multi-message thread missing controls should not report not_applicable`);
+    assert.equal(detect(rootWith([control('Reply'), control('Print all')], [])), null,
+      `${prefix}: thread with unknown message structure should not report not_applicable`);
     assert.equal(detect(rootWith([control('Expand all')])), 'collapsed',
       `${prefix}: a collapsed thread was misreported`);
     assert.equal(detect(rootWith([control('Collapse all')])), 'expanded',
@@ -10456,7 +10498,7 @@ test('accessibility-tree schema and prompts preserve exact whole-document contin
   assert.match(chromeSource, /conversationExpansionState/, 'Gmail expansion evidence is not returned as structured metadata');
   assert.match(chromeSource, /function gmailConversationExpansionControlState\(control\) \{[\s\S]*?jsname === 'xvWlrc'[\s\S]*?jsname === 'tRarif'[\s\S]*?name === 'Collapse all'[\s\S]*?name === 'Expand all'/, 'Gmail expansion detection still depends exclusively on English labels');
   assert.match(chromeSource, /closest\('\[role="listitem"\],\[role="article"\],\.adn,\.ads'\)/, 'message-body controls can spoof Gmail expansion evidence');
-  assert.match(chromeSource, /return scanned \? 'not_applicable' : null;/, 'Gmail expansion detection cannot report a thread with nothing to expand');
+  assert.match(chromeSource, /return \(scanned && isSingleMessageGmailThread\(conversationRoot\)\) \? 'not_applicable' : null;/, 'Gmail expansion detection cannot report a thread with nothing to expand');
 
   for (const [label, getTools, prompt] of [
     ['chrome', getToolsForModeCh, SYSTEM_PROMPT_ASK_CH],

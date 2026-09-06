@@ -1282,6 +1282,17 @@
     return null;
   }
 
+  function isSingleMessageGmailThread(conversationRoot) {
+    if (!conversationRoot || typeof conversationRoot.querySelectorAll !== 'function') return false;
+    try {
+      const gmailMessages = conversationRoot.querySelectorAll('.adn,.ads,[data-message-id]');
+      if (gmailMessages.length) return gmailMessages.length === 1;
+      const semanticMessages = conversationRoot.querySelectorAll('[role="article"]');
+      if (semanticMessages.length) return semanticMessages.length === 1;
+    } catch (e) {}
+    return false;
+  }
+
   function detectGmailConversationExpansionState(conversationRoot) {
     if (!isGmailConversationRoute() || !conversationRoot) return null;
     let collapsed = false;
@@ -1304,8 +1315,9 @@
     // all. Report that as its own state so the read-completeness guard can tell
     // "nothing to expand" apart from "not checked yet"; conflating the two left
     // `done` permanently blocked on threads that were already fully readable.
-    // Only a scan that ran to completion may report it.
-    return scanned ? 'not_applicable' : null;
+    // Only a scan that ran to completion on a verified single-message thread
+    // may report it; a multi-message thread missing controls must stay unconfirmed.
+    return (scanned && isSingleMessageGmailThread(conversationRoot)) ? 'not_applicable' : null;
   }
 
   function findGmailConversationExpandAll(conversationRoot) {

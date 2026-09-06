@@ -17824,17 +17824,26 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       return null;
     }
 
-    // Retain what the page actually showed. The block below tells the model to
-    // ask the user who the message is for, and that answer has to be matched
-    // against real observed identities rather than model-authored option text.
+    // Retain what the page actually showed only when the plan already permits
+    // messaging. The block below tells the model to ask the user who the
+    // message is for, and that answer has to be matched against real observed
+    // identities. A read-only plan (requiresSubmission=false or
+    // requiresStateChange=false) must never stage recipient consent: an answer
+    // to a recipient clarify must not elevate a read-only plan into a sendable one.
     if (guard) {
-      const observedRecipientCandidates = this._messageRecipientCandidates(probe);
+      const messagingPermitted = guard.requiresSubmission === true
+        && guard.requiresStateChange === true;
+      const observedRecipientCandidates = messagingPermitted
+        ? this._messageRecipientCandidates(probe)
+        : [];
       guard.observedRecipientCandidates = observedRecipientCandidates.length
         ? observedRecipientCandidates
         : null;
       // Offered to the next clarify only. The model chooses what it asks, so a
       // pending authorization must not survive into an unrelated question.
-      guard.pendingRecipientAuthorization = observedRecipientCandidates.length > 0;
+      // Staged only when the plan already permits messaging.
+      guard.pendingRecipientAuthorization = messagingPermitted
+        && observedRecipientCandidates.length > 0;
     }
 
     return {
@@ -17850,7 +17859,9 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         ? 'Message action blocked: WebBrain could not conclusively resolve the target control and active composer. Re-read the page and retry with an exact visible control or fresh ref_id.'
         : target
           ? 'Message send blocked: the active conversation does not exactly match the recipient authorized by the user. Select the intended conversation, re-read its visible header, then retry the send action.'
-          : 'Message send blocked: the current task has no structured recipient authorization. Ask the user to name the recipient or explicitly authorize the currently open conversation before retrying.',
+          : (guard?.requiresSubmission === false || guard?.requiresStateChange === false
+            ? 'Message send blocked: the current plan does not authorize sending or submitting messages. Return the draft in chat or ask the user to authorize sending before attempting delivery.'
+            : 'Message send blocked: the current task has no structured recipient authorization. Ask the user to name the recipient or explicitly authorize the currently open conversation before retrying.'),
     };
   }
 
@@ -17865,7 +17876,8 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
    * and an answer matching no candidate or only a subset of observed
    * candidates authorizes nothing. When multiple recipients are observed on
    * the page (e.g. Reply all), the answer must explicitly authorize the full
-   * observed recipient set.
+   * observed recipient set. A recipient answer may only bind under a plan
+   * that already permits messaging (requiresSubmission=true and requiresStateChange=true).
    */
   _bindClarifiedMessageRecipient(tabId, answer, source = 'user') {
     const guard = this._planExecutionGuards.get(tabId);
@@ -17875,7 +17887,9 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     // question is a different question and must not inherit it. Clearing on
     // all paths (including timeout, auto, mismatch, cancellation) keeps staged
     // consent from remaining parked for an unrelated later clarify to pick up.
-    const pending = guard.pendingRecipientAuthorization === true;
+    const messagingPermitted = guard.requiresSubmission === true
+      && guard.requiresStateChange === true;
+    const pending = guard.pendingRecipientAuthorization === true && messagingPermitted;
     const observed = Array.isArray(guard.observedRecipientCandidates)
       ? guard.observedRecipientCandidates
       : [];
