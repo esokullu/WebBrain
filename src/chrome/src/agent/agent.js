@@ -245,7 +245,7 @@ const SOCIAL_NOUN_LIKE_PUBLISH = new RegExp(
   'iu',
 );
 const SOCIAL_NEGATION = new RegExp(
-  `(?<![${SOCIAL_WORD_EDGE}])(?:not|never|don't|dont|do\\s+not|cannot|can't|cant|shouldn't|shouldnt|should\\s+not|mustn't|mustnt|must\\s+not|won't|wont|will\\s+not|avoid|refrain|stop|prevent|prohibit|no(?=\\s+(?!attachments?|photos?|images?|pictures?|videos?|files?|media|delays?|doubt|worries|hashtags?|tags?|links?|urls?\\b))|ne|pas|ne\\s+pas|nunca|jamás|jamais|nicht|nie|kein|keine|non|mai|não|nao|hayır|asla|sakın|yapmayın|yapma|не|никогда|нет)(?![${SOCIAL_WORD_EDGE}])`
+  `(?<![${SOCIAL_WORD_EDGE}])(?:not|never|neither|nor|don't|dont|do\\s+not|cannot|can't|cant|shouldn't|shouldnt|should\\s+not|mustn't|mustnt|must\\s+not|won't|wont|will\\s+not|avoid|refrain|stop|prevent|prohibit|no(?=\\s+(?!attachments?|photos?|images?|pictures?|videos?|files?|media|delays?|doubt|worries|hashtags?|tags?|links?|urls?\\b))|ne|pas|ne\\s+pas|nunca|jamás|jamais|nicht|nie|kein|keine|non|mai|não|nao|hayır|asla|sakın|yapmayın|yapma|не|никогда|нет)(?![${SOCIAL_WORD_EDGE}])`
   + '|不要|别|不能|不可|不得|不用|请勿|勿|严禁|禁止|决不|绝不|決して'
   + '|하지\\s*마|하지\\s*마세요|금지',
   'iu',
@@ -254,7 +254,38 @@ const SOCIAL_POST_NEGATION = new RegExp(
   `^(?:\\s*(?:nothing|nowhere|none)|しないで|してはいけない|してはならない|はいけない|はならない|はだめ|はいけません|はなりません|すんな|するな|禁止|ないで|\\s*(?:하지\\s*마|하지\\s*마세요|하지\\s*않|금지))`,
   'iu',
 );
-const SOCIAL_CLAUSE_BREAK = new RegExp('[.!?;:,\\n]|(?<![\\p{L}\\p{N}_])(?:and|then|but|or|after|before|y|luego|puis|et|ensuite|und|dann|poi|sonra|ve|затем|и)(?![\\p{L}\\p{N}_])|然后|然後|接着|そして|それから|、|。', 'iu');
+const SOCIAL_CLAUSE_DELIMITER = new RegExp(
+  `([.!?;:\\n]|(?<![${SOCIAL_WORD_EDGE}])(?:and|then|but|or|nor|after|before|y|luego|puis|et|ensuite|und|dann|poi|sonra|ve|затем|и)(?![${SOCIAL_WORD_EDGE}])|然后|然後|接着|そして|それから|または|、|。|,)`,
+  'iu',
+);
+const SOCIAL_COORDINATING_DELIMITER = new RegExp(
+  `^(?:or|nor|and|neither|o|ou|oder|ni|nem|né|veya|ya\\s+da|или|ни|或|或者|または|もしくは|や|또는|이나|거나|,|、)$`,
+  'iu',
+);
+const SOCIAL_CLAUSE_BREAK = new RegExp(
+  `[.!?;:,\\n]|(?<![${SOCIAL_WORD_EDGE}])(?:and|then|but|or|nor|after|before|y|luego|puis|et|ensuite|und|dann|poi|sonra|ve|затем|и)(?![${SOCIAL_WORD_EDGE}])|然后|然後|接着|そして|それから|または|、|。`,
+  'iu',
+);
+
+const GENERIC_ATTACHMENT_WORDS = new Set([
+  'true', 'yes', 'attached', 'attachment', 'attachments', 'media',
+  'image', 'images', 'photo', 'photos', 'picture', 'pictures', 'pic', 'pics',
+  'video', 'videos', 'clip', 'clips', 'recording', 'recordings',
+  'file', 'files', 'graphic', 'graphics',
+  'a', 'an', 'the', 'of', 'in', 'with', 'some', 'any',
+  'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten',
+  'single', 'multiple', 'both',
+  'de', 'du', 'des', 'el', 'la', 'los', 'las', 'der', 'die', 'das', 'di', 'il', 'lo', 'gli', 'le',
+  'o', 'os', 'as', 'do', 'da', 'dos', 'das', 'un', 'une', 'deux', 'trois', 'quatre', 'cinq',
+  'uno', 'una', 'unos', 'unas', 'dos', 'tres', 'cuatro', 'cinco', 'due', 'tre', 'quattro', 'cinque',
+  'ein', 'eine', 'einen', 'einer', 'zwei', 'drei', 'vier', 'fünf', 'um', 'uma', 'dois', 'duas', 'três',
+  'imagen', 'imagenes', 'imágenes', 'foto', 'fotos', 'vidéo', 'vidéos', 'bild', 'bilder',
+  'fichier', 'fichiers', 'archivo', 'archivos', 'datei', 'dateien', 'allegato', 'allegati', 'anexo', 'anexos',
+  'один', 'одна', 'одно', 'два', 'две', 'три', 'четыре', 'пять',
+  'вложения', 'вложение', 'фотографии', 'фотография', 'изображения', 'изображение', 'видео',
+]);
+
+const CJK_GENERIC_ATTACHMENT_REGEX = /^[0-9一二两三四五六七八九十添付画像写真動画メディア已上传附件图片照片视频媒体枚つの本张條条个個장での\s\-_,.:;!?/\\()]+$/u;
 
 // "On <url>, publish this" names a destination just as plainly as
 // "publish this on <url>", but only when the URL is presented as a place.
@@ -2298,14 +2329,10 @@ export class Agent extends LoopDetector {
   }
 
   _cleanSpecificAttachmentTarget(value) {
-    let target = String(value || '').trim().toLowerCase();
-    target = target
-      .replace(/^https?:\/\/[^\s]+/i, '')
-      .replace(/\b(?:two|three|four|five|six|seven|eight|nine|ten|\d+)\s+(?:images?|photos?|pictures?|videos?|attachments?|files?)\s+(?:of|named|called|with name)\s+/i, '')
-      .replace(/\b(?:an?|the)\s+(?:image|photo|picture|video|attachment|file)\s+(?:of|named|called|with name)\s+/i, '')
-      .replace(/\b(?:images?|photos?|pictures?|videos?|attachments?|files?)\s+(?:of|named|called|with name)\s+/i, '')
-      .trim();
-    return target;
+    const text = String(value || '').trim();
+    const match = text.match(/(?:(?:an?|the|\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+)?(?:images?|photos?|pictures?|videos?|attachments?|files?)\s+(?:of|named|called|with\s+name)\s+(.+)$/i);
+    if (match) return match[1].trim().toLowerCase();
+    return text.toLowerCase();
   }
 
   _parseWorkflowAttachmentRequirement(value) {
@@ -2339,18 +2366,14 @@ export class Agent extends LoopDetector {
       }
     }
 
-    const stripped = text
-      .replace(/^(?:true|yes|attached)\b/i, '')
-      .replace(/\b(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|single|multiple|both|un|une|deux|trois|quatre|cinq|uno|una|unos|unas|dos|tres|cuatro|cinco|due|tre|quattro|cinque|ein|eine|einen|einer|zwei|drei|vier|fünf|um|uma|dois|duas|três|quatro|один|одна|одно|два|две|три|четыре|пять)\b/gi, '')
-      .replace(/\b(?:a|an|the|of|in|with|some|any|de|du|des|el|la|los|las|der|die|das|di|il|lo|gli|le|o|os|as|do|da|dos|das)\b/gi, '')
-      .replace(/\b(?:image|images|photo|photos|picture|pictures|pic|pics|video|videos|clip|clips|recording|recordings|media|attachment|attachments|file|files|graphic|graphics)\b/gi, '')
-      .replace(/\b(?:imagen(?:es)?|imágenes|foto|fotos|vidéo|vidéos|bild(?:er)?|fichier|fichiers|archivo|archivos|datei(?:en)?|allegat[oi]|anexo|anexos)\b/gi, '')
-      .replace(/\b(?:вложени[яе]|фотографи[ия]|изображени[яе]|видео)\b/gi, '')
-      .replace(/[一二两三四五六七八九十]/g, '')
-      .replace(/(?:添付|画像|写真|動画|メディア|已上传|附件|图片|照片|视频|媒体|枚|つの|本|张|條|条|个|個|장|개|の)/gu, '')
-      .replace(/[\s\-_,.:;!?/\\()]+/g, '');
-
-    const isGeneric = stripped.length === 0;
+    let isGeneric = false;
+    if (CJK_GENERIC_ATTACHMENT_REGEX.test(text)) {
+      isGeneric = true;
+    } else {
+      const nonPunctuation = text.replace(/[\s\-_,.:;!?/\\()]+/g, ' ').trim();
+      const words = nonPunctuation ? nonPunctuation.split(/\s+/) : [];
+      isGeneric = words.length > 0 && words.every(w => /^\d+$/.test(w) || GENERIC_ATTACHMENT_WORDS.has(w) || CJK_GENERIC_ATTACHMENT_REGEX.test(w));
+    }
 
     return { isGeneric, expectedCount, wantsImage, wantsVideo, normalized: text };
   }
@@ -14829,19 +14852,63 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     return url;
   }
 
+  _socialPublicationClauses(text) {
+    const parts = String(text || '').split(SOCIAL_CLAUSE_DELIMITER);
+    const clauses = [];
+    for (let i = 0; i < parts.length; i += 2) {
+      const clauseText = parts[i] || '';
+      const delim = i > 0 ? (parts[i - 1] || '').trim() : '';
+      clauses.push({ text: clauseText, delim });
+    }
+
+    let carriedNegation = false;
+    for (let i = 0; i < clauses.length; i++) {
+      const c = clauses[i];
+      const isCoordinated = i > 0 && SOCIAL_COORDINATING_DELIMITER.test(c.delim);
+      if (!isCoordinated) carriedNegation = false;
+
+      const hasExplicitNeg = SOCIAL_NEGATION.test(c.text);
+      if (hasExplicitNeg) {
+        c.isNegated = true;
+        carriedNegation = true;
+      } else if (carriedNegation) {
+        c.isNegated = true;
+      } else {
+        c.isNegated = false;
+      }
+    }
+
+    let carriedPostNegation = false;
+    for (let i = clauses.length - 1; i >= 0; i--) {
+      const c = clauses[i];
+      const hasExplicitPostNeg = SOCIAL_POST_NEGATION.test(c.text.trim());
+      if (hasExplicitPostNeg) {
+        c.isNegated = true;
+        carriedPostNegation = true;
+      } else if (carriedPostNegation && i < clauses.length - 1 && SOCIAL_COORDINATING_DELIMITER.test(clauses[i + 1].delim)) {
+        c.isNegated = true;
+      } else {
+        carriedPostNegation = false;
+      }
+    }
+
+    return clauses;
+  }
+
   // Publication language only counts as a command when nothing in its own
   // clause is asking to read or forbidding publication. "Read posts on <feed>"
   // and "阅读推文 <feed>" name content; "do not post this on <feed>" forbids
   // publication; "read the summary and publish it on <feed>" asks for a post in
   // a clause of its own.
   _socialPublicationCommandIn(text) {
-    return String(text || '').split(SOCIAL_CLAUSE_BREAK).some((clause) => {
-      const publish = clause ? clause.match(SOCIAL_PUBLISH_VERBS) : null;
+    return this._socialPublicationClauses(text).some((clause) => {
+      if (clause.isNegated) return false;
+      const publish = clause.text ? clause.text.match(SOCIAL_PUBLISH_VERBS) : null;
       if (!publish) return false;
-      const before = clause.slice(0, publish.index);
+      const before = clause.text.slice(0, publish.index);
       if (SOCIAL_READ_VERBS.test(before)) return false;
       if (SOCIAL_NEGATION.test(before)) return false;
-      const after = clause.slice(publish.index + publish[0].length);
+      const after = clause.text.slice(publish.index + publish[0].length);
       if (SOCIAL_POST_NEGATION.test(after)) return false;
       if (SOCIAL_NOUN_LIKE_PUBLISH.test(publish[0]) && SOCIAL_READ_VERBS.test(after)) return false;
       return true;
@@ -14895,8 +14962,9 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         match.index + match[0].length,
         match.index + match[0].length + 60,
       );
-      const clauseBefore = before.split(SOCIAL_CLAUSE_BREAK).pop() || '';
-      if (SOCIAL_NEGATION.test(clauseBefore)) continue;
+      const beforeClauses = this._socialPublicationClauses(before);
+      const lastBeforeClause = beforeClauses[beforeClauses.length - 1];
+      if (lastBeforeClause?.isNegated) continue;
       const governed = /\/(?:compose|intent|i\/flow)\//.test(url)
         || this._socialPublicationCommandIn(before)
         || (SOCIAL_PUBLISH_DESTINATION_LEAD.test(before) && this._socialPublicationCommandIn(after));
@@ -14912,6 +14980,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     // publication target. Verbs and prepositions are the same multilingual
     // sets the URL scan uses, so "Publícalo en X" counts while English-only
     // matching would leave it unbound.
+    const clauses = this._socialPublicationClauses(trustedContext);
     const publishesTo = (platform) => {
       const platformPattern = new RegExp(
         `(?<![${SOCIAL_WORD_EDGE}])(?:on|onto|to|via|in|at|en|sur|sobre|\u00e0|au|auf|su|em|na|para|\u0432|\u043d\u0430)(?![${SOCIAL_WORD_EDGE}])\\s+(?:the\\s+)?${platform}(?![${SOCIAL_WORD_EDGE}])`
@@ -14921,26 +14990,25 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         'iu',
       );
       const verbPattern = new RegExp(SOCIAL_PUBLISH_VERBS.source, 'giu');
-      const clauses = trustedContext.split(SOCIAL_CLAUSE_BREAK);
       return clauses.some((clause, clauseIdx) => {
-        if (!clause) return false;
-        for (const verb of clause.matchAll(verbPattern)) {
+        if (!clause.text || clause.isNegated) return false;
+        for (const verb of clause.text.matchAll(verbPattern)) {
           const verbIndex = verb.index ?? 0;
-          const beforeVerbClause = clause.slice(0, verbIndex);
+          const beforeVerbClause = clause.text.slice(0, verbIndex);
           if (SOCIAL_READ_VERBS.test(beforeVerbClause)) continue;
           if (SOCIAL_NEGATION.test(beforeVerbClause)) continue;
           const verbWord = verb[0] || '';
-          const afterVerbText = clause.slice(verbIndex + verbWord.length);
+          const afterVerbText = clause.text.slice(verbIndex + verbWord.length);
           if (SOCIAL_POST_NEGATION.test(afterVerbText)) continue;
           if (SOCIAL_NOUN_LIKE_PUBLISH.test(verbWord) && SOCIAL_READ_VERBS.test(afterVerbText)) continue;
-          const afterVerb = clause.slice(verbIndex, verbIndex + verbWord.length + 60);
-          const beforeVerb = clause.slice(Math.max(0, verbIndex - 60), verbIndex);
+          const afterVerb = clause.text.slice(verbIndex, verbIndex + verbWord.length + 60);
+          const beforeVerb = clause.text.slice(Math.max(0, verbIndex - 60), verbIndex);
           platformPattern.lastIndex = 0;
           if (platformPattern.test(afterVerb) || platformPattern.test(beforeVerb)) return true;
           if (clauseIdx > 0) {
             const prevClause = clauses[clauseIdx - 1];
             platformPattern.lastIndex = 0;
-            if (platformPattern.test(prevClause) && !SOCIAL_READ_VERBS.test(prevClause) && !SOCIAL_NEGATION.test(prevClause)) {
+            if (platformPattern.test(prevClause.text) && !SOCIAL_READ_VERBS.test(prevClause.text) && !prevClause.isNegated) {
               return true;
             }
           }
@@ -14948,12 +15016,13 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         return false;
       });
     };
-    const tweetsThis = String(trustedContext || '').split(SOCIAL_CLAUSE_BREAK).some((clause) => {
-      const match = clause.match(/\btweet\s+(?:this|that|it|the\s+following)\b/i);
+    const tweetsThis = clauses.some((clause) => {
+      if (clause.isNegated) return false;
+      const match = clause.text.match(/\btweet\s+(?:this|that|it|the\s+following)\b/i);
       if (!match) return false;
-      const before = clause.slice(0, match.index);
+      const before = clause.text.slice(0, match.index);
       if (SOCIAL_READ_VERBS.test(before) || SOCIAL_NEGATION.test(before)) return false;
-      const after = clause.slice(match.index + match[0].length);
+      const after = clause.text.slice(match.index + match[0].length);
       if (SOCIAL_POST_NEGATION.test(after)) return false;
       return true;
     });

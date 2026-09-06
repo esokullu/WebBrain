@@ -86220,6 +86220,16 @@ test('social publication workflow follows the live X or Bluesky destination and 
         'Korean post-negated publication command was wrongly treated as a publish destination'],
       ['Post this on X with no attachments', ['twitter'],
         'post with no-attachments phrase was wrongly rejected'],
+      ['Do not post or publish this on X; submit it in the survey', [],
+        'coordinated publish verbs under negation were wrongly treated as a publish destination'],
+      ['Never publish or post to Bluesky', [],
+        'coordinated publish verbs under never were wrongly treated as Bluesky publish destination'],
+      ['Do not post on X or publish on Bluesky', [],
+        'multiple publish destinations joined by or under negation were wrongly treated as a publish destination'],
+      ['Do not post on X, but publish on Bluesky', ['bluesky'],
+        'contrastive but clause after negated post was wrongly rejected for Bluesky'],
+      ['Post or publish this on X', ['twitter'],
+        'affirmative coordinated publish verbs were wrongly rejected for X'],
     ]) {
       assert.deepEqual(
         [...agent._trustedSocialPublishTargetAdapters({ taskText })],
