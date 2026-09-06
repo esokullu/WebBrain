@@ -75746,6 +75746,50 @@ test('commit page blob links feed verification scope evidence', () => {
   }
 });
 
+test('edit-file scope keeps Git paths byte-exact', () => {
+  for (const [label, AgentClass] of [['chrome', AgentCh], ['firefox', AgentFx]]) {
+    const agent = new AgentClass({});
+    // Ingestion keeps the verbatim request text next to the normalized value.
+    const details = agent._normalizeWorkflowMetadataRequirementsDetails([
+      { field: 'path', value: 'Ａ.txt' },
+    ]);
+    assert.equal(details.items[0]?.value, 'A.txt', `${label}: normalized value changed shape`);
+    assert.equal(details.items[0]?.rawValue, 'Ａ.txt', `${label}: verbatim path was not preserved`);
+    // Re-ingestion keeps the original verbatim text instead of re-deriving
+    // it from the already-normalized value.
+    const again = agent._normalizeWorkflowMetadataRequirementsDetails(details.items);
+    assert.equal(again.items[0]?.rawValue, 'Ａ.txt', `${label}: re-ingestion lost the verbatim path`);
+    // Fullwidth Ａ (U+FF21) survives percent-decoding on the route and must
+    // match byte-exactly: NFKC would fold it to A and null the scope.
+    assert.deepEqual(agent._workflowGithubEditFileScope(
+      'https://github.com/Example/Repo/edit/main/%EF%BC%A1.txt',
+      [{ field: 'path', value: 'A.txt', rawValue: 'Ａ.txt' }],
+    ), {
+      repository: 'example/repo',
+      branch: 'main',
+      path: 'Ａ.txt',
+    }, `${label}: NFKC-sensitive path did not resolve byte-exactly`);
+    // Significant trailing whitespace likewise survives.
+    assert.deepEqual(agent._workflowGithubEditFileScope(
+      'https://github.com/Example/Repo/edit/main/docs/plan.md%20',
+      [{ field: 'path', value: 'docs/plan.md', rawValue: 'docs/plan.md ' }],
+    ), {
+      repository: 'example/repo',
+      branch: 'main',
+      path: 'docs/plan.md ',
+    }, `${label}: trailing-space path did not resolve byte-exactly`);
+    // The explicitly supported leading-slash tolerance still applies.
+    assert.deepEqual(agent._workflowGithubEditFileScope(
+      'https://github.com/Example/Repo/edit/main/docs/plan.md',
+      [{ field: 'path', value: '/docs/plan.md', rawValue: '/docs/plan.md' }],
+    ), {
+      repository: 'example/repo',
+      branch: 'main',
+      path: 'docs/plan.md',
+    }, `${label}: leading-slash tolerance regressed`);
+  }
+});
+
 test('GitHub edit-file workflow verifies the exact committed raw blob', async () => {
   const originalFetch = globalThis.fetch;
   const body = '# Corrected document\n\nOne complete copy.\n';

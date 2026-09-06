@@ -1891,7 +1891,22 @@ export class Agent extends LoopDetector {
         discarded += 1;
         continue;
       }
-      requirements.set(field, { field, value: this._workflowMetadataValue(value.value) });
+      // Keep the byte-exact request text alongside the normalized value, but
+      // only when normalization changed something: Git paths preserve
+      // distinctions NFKC/trim fold (fullwidth Ａ vs A, significant
+      // whitespace), and scope resolution must compare those. Absent means
+      // verbatim equals normalized, so existing shapes are untouched.
+      // Re-ingestion keeps an existing rawValue instead of re-deriving it
+      // from the already-normalized value.
+      const normalizedValue = this._workflowMetadataValue(value.value);
+      const verbatimValue = typeof value.rawValue === 'string'
+        ? value.rawValue
+        : String(value.value ?? '');
+      requirements.set(field, {
+        field,
+        value: normalizedValue,
+        ...(verbatimValue !== normalizedValue ? { rawValue: verbatimValue } : {}),
+      });
     }
     return { items: [...requirements.values()], incomplete: discarded > 0 };
   }
@@ -2017,7 +2032,12 @@ export class Agent extends LoopDetector {
         try { return decodeURIComponent(segment); } catch { return segment; }
       });
       const byField = new Map((Array.isArray(requirements) ? requirements : [])
-        .map(item => [item?.field, this._workflowMetadataValue(item?.value)]));
+        // Byte-exact scope values: prefer the verbatim request text kept at
+        // ingestion (rawValue). NFKC/trim would fold distinctions Git
+        // preserves (fullwidth Ａ vs A, significant whitespace), turning a
+        // valid request into a null scope. Only the documented slash
+        // tolerance applies below.
+        .map(item => [item?.field, typeof item?.rawValue === 'string' ? item.rawValue : item?.value]));
       const requestedPath = String(byField.get('path') || '').replace(/^\/+/, '');
       const requestedBranch = String(byField.get('branch') || '').replace(/^\/+|\/+$/g, '');
       let branch = requestedBranch;
@@ -2117,7 +2137,10 @@ export class Agent extends LoopDetector {
         : [];
       const requestedScopeValue = (field) => {
         const entry = requirements.find(requirement => requirement?.field === field);
-        return String(this._workflowMetadataValue(entry?.value) || '').replace(/^\/+/, '');
+        // Byte-exact like the scope parser: emptiness is tested on the
+        // verbatim request text, not the normalized value.
+        const raw = typeof entry?.rawValue === 'string' ? entry.rawValue : entry?.value;
+        return String(raw || '').replace(/^\/+/, '');
       };
       const scopeAmbiguous = !requestedScopeValue('path') && !requestedScopeValue('branch');
       const segments = `${expected.branch}/${expected.path}`.split('/');
