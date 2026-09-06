@@ -18213,6 +18213,33 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     return differingIdentityCount >= 2;
   }
 
+  // Positive same-field identity for focused elements: the debt's
+  // record-time metadata and the retry's live digest metadata must agree on
+  // a stable identity. Strong identifiers win outright; weaker label text
+  // only counts when neither side offers an id or name and the tag and
+  // editability also agree. Anything less stays blocked (fail-closed).
+  _focusedFieldIdentityMatches(previousMeta, nextMeta) {
+    if (!previousMeta || typeof previousMeta !== 'object'
+        || !nextMeta || typeof nextMeta !== 'object') return false;
+    const normalized = (meta, field) => String(meta?.[field] ?? '').trim().toLowerCase();
+    const previousId = normalized(previousMeta, 'id');
+    const nextId = normalized(nextMeta, 'id');
+    if (previousId || nextId) return !!previousId && previousId === nextId;
+    const previousName = normalized(previousMeta, 'name');
+    const nextName = normalized(nextMeta, 'name');
+    const sameTag = !!previousMeta.tag
+      && normalized(previousMeta, 'tag') === normalized(nextMeta, 'tag');
+    if (previousName || nextName) return !!previousName && previousName === nextName && sameTag;
+    const sameLabel = ['ariaLabel', 'ariaLabelledByText', 'labelText', 'placeholder']
+      .some(field => {
+        const previous = normalized(previousMeta, field);
+        const next = normalized(nextMeta, field);
+        return !!previous && previous === next;
+      });
+    return sameLabel && sameTag
+      && previousMeta.contentEditable === nextMeta.contentEditable;
+  }
+
   async _sha256Text(value) {
     try {
       const bytes = new TextEncoder().encode(String(value ?? ''));
@@ -18587,6 +18614,53 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     // could not be proven distinct), clearing that debt and minting proof for
     // the target would unguard a partial or duplicated write. Those cases
     // stay blocked until the document changes.
+    // Focused same-field recovery: a selectorless retry carries no locator,
+    // so the ambiguous debt/target pair can never satisfy the key-identity
+    // branch below — yet the still-focused element is directly readable via
+    // the focused digest path. When the debt captured focused identity at
+    // record time and the live digest verifies the exact replacement text on
+    // the provably same field, recover exactly like a selector readback. A
+    // moved focus, a proven-different field, or missing identity all stay
+    // blocked, and a proof is minted only for a classifiable editor or
+    // commit-message kind.
+    if (sameReplacement
+        && name === 'type_text' && !args.selector && args.index == null
+        && target.locatorType === 'focused' && debt.locatorType === 'focused'
+        && debt.key === target.key) {
+      let focusedReadback = null;
+      try {
+        focusedReadback = await this._textMutationValueDigest(
+          tabId, { locatorType: 'focused', ambiguous: false }, text);
+      } catch { /* an unavailable readback leaves the write blocked */ }
+      if (focusedReadback?.verified === true
+          && this._focusedFieldIdentityMatches(debt.fieldMeta, focusedReadback.fieldMeta)) {
+        debts.delete(debt.key);
+        if (debts.size === 0) this._uncertainTextMutations.delete(tabId);
+        const normalizedFocusedMeta = this._normalizeFocusedFieldMeta(null, focusedReadback.fieldMeta);
+        const focusedKind = this._focusedGithubFieldKind(normalizedFocusedMeta);
+        if ((focusedKind === 'editor' || focusedKind === 'commit-message') && debt.replacesValue === true) {
+          let verifiedReplacements = this._verifiedTextReplacements.get(tabId);
+          if (!(verifiedReplacements instanceof Map)) {
+            verifiedReplacements = new Map();
+            this._verifiedTextReplacements.set(tabId, verifiedReplacements);
+          }
+          const effectiveTarget = this._focusedReplacementTarget(tabId, focusedKind);
+          verifiedReplacements.set(effectiveTarget.key, await this._verifiedTextReplacementRecord(
+            tabId, effectiveTarget, text, normalizedFocusedMeta,
+          ));
+        }
+        return {
+          success: true,
+          verified: true,
+          dispatched: false,
+          noDispatch: true,
+          recoveredUncertainMutation: true,
+          method: 'exact-text-readback',
+          expectedLength: text.length,
+          expectedSha256,
+        };
+      }
+    }
     if (sameReplacement && !target.ambiguous && debt.key === target.key
         && (((name === 'set_field' || name === 'type_ax') && typeof args.ref_id === 'string')
           || (name === 'type_text' && typeof args.selector === 'string' && args.selector.trim()))) {
@@ -18748,6 +18822,18 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       if (!target.documentToken && !debtPageUrl) {
         try { debtPageUrl = String(await this._currentUrl(tabId) || ''); } catch { debtPageUrl = ''; }
       }
+      // Focused identity capture: selectorless writes carry no locator, so an
+      // identical retry could never prove same-field recovery. Capture the
+      // still-focused element's live metadata now — focus hasn't moved since
+      // the write just ran. Failure keeps the result metadata (if any), and
+      // identity-less retries stay blocked.
+      let debtFieldMeta = result.fieldMeta || null;
+      if (target.locatorType === 'focused') {
+        try {
+          const identity = await this._textMutationValueDigest(tabId, { locatorType: 'focused', ambiguous: false });
+          if (identity?.fieldMeta) debtFieldMeta = identity.fieldMeta;
+        } catch { /* identity stays as the result metadata */ }
+      }
       debts.set(target.key, {
         ...target,
         pageUrl: debtPageUrl,
@@ -18756,7 +18842,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         expectedLength: text.length,
         expectedSha256,
         expectedFp: this._workflowInventoryFingerprint(text),
-        fieldMeta: result.fieldMeta || null,
+        fieldMeta: debtFieldMeta,
         recordedAt: Date.now(),
       });
       return {

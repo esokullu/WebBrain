@@ -77230,6 +77230,130 @@ test('uncertain write after navigation records live scoped debt', async () => {
   }
 });
 
+test('focused uncertain writes recover on exact same-field readback', async () => {
+  const originalChrome = globalThis.chrome;
+  const originalBrowser = globalThis.browser;
+  try {
+    const text = 'hello focused';
+    const editorMeta = { tag: 'div', contentEditable: true, id: 'editor-1', ariaLabelledByText: 'Editing file contents' };
+    for (const [label, AgentClass, tabId, controlTabId] of [
+      ['chrome', AgentCh, 9518, 9520],
+      ['firefox', AgentFx, 9519, 9521],
+    ]) {
+      const agent = new AgentClass({});
+      agent._lastAxScopes.set(tabId, { documentToken: 'doc-focus', pageUrl: 'https://example.test/form' });
+      // Commit-proof workflow so recovery mints a full readback record.
+      agent._planExecutionGuards.set(tabId, {
+        enabled: true,
+        siteWorkflow: { adapterName: 'github', job: { id: 'edit-file-and-commit' } },
+      });
+      // Record phase: the uncertain write carries no metadata, but focus is
+      // still on the indebted field, so the capture digest identifies it.
+      // Retry phase: the same focused field verifies the exact text.
+      const tabs = {
+        async sendMessage(_tabId, message) {
+          assert.equal(message.action, 'field_value_digest');
+          if (message.params?.expected !== undefined && message.params.expected !== text) {
+            return { success: false, documentToken: 'doc-focus', refScopeUrl: 'https://example.test/form' };
+          }
+          return { success: true,
+            ...(typeof message.params?.expected === 'string' ? { verified: true } : {}),
+            valueLength: text.length,
+            valueSha256: await agent._sha256Text(text),
+            fieldMeta: { ...editorMeta },
+            documentToken: 'doc-focus', refScopeUrl: 'https://example.test/form' };
+        },
+      };
+      globalThis.chrome = { tabs };
+      globalThis.browser = { tabs };
+      await agent._finalizeTextMutationResult(
+        tabId, 'type_text', { text, clear: true },
+        { success: false, dispatched: true, verified: false },
+      );
+      const debt = [...(agent._uncertainTextMutations.get(tabId)?.values() || [])][0];
+      assert.deepEqual(debt?.fieldMeta, editorMeta,
+        `${label}: record-time capture missed the focused identity`);
+      const recovered = await agent._uncertainTextMutationBlock(
+        tabId, 'type_text', { text, clear: true },
+      );
+      assert.equal(recovered?.success, true, `${label}: exact focused readback did not recover`);
+      assert.equal(recovered?.recoveredUncertainMutation, true);
+      assert.equal(recovered?.noDispatch, true);
+      assert.equal(agent._uncertainTextMutations.has(tabId), false, `${label}: recovered focused debt retained`);
+      const proof = [...(agent._verifiedTextReplacements.get(tabId)?.values() || [])]
+        .find(record => record?.focusedKind === 'editor');
+      assert.ok(proof?.readbackSha256, `${label}: recovery minted no editor proof`);
+      // Control: record-time focus already lost (identity capture fails), so
+      // even a later exact readback cannot prove the same field.
+      const control = new AgentClass({});
+      control._lastAxScopes.set(controlTabId, { documentToken: 'doc-focus', pageUrl: 'https://example.test/form' });
+      const controlTabs = {
+        async sendMessage(_tabId, message) {
+          assert.equal(message.action, 'field_value_digest');
+          // Probes without expected text (live-scope refresh, identity
+          // capture): nothing focused yet.
+          if (message.params?.expected === undefined) {
+            return { success: false, documentToken: 'doc-focus', refScopeUrl: 'https://example.test/form' };
+          }
+          if (message.params.expected !== text) {
+            return { success: false, documentToken: 'doc-focus', refScopeUrl: 'https://example.test/form' };
+          }
+          return { success: true, verified: true,
+            valueLength: text.length,
+            valueSha256: await control._sha256Text(text),
+            fieldMeta: { ...editorMeta },
+            documentToken: 'doc-focus', refScopeUrl: 'https://example.test/form' };
+        },
+      };
+      globalThis.chrome = { tabs: controlTabs };
+      globalThis.browser = { tabs: controlTabs };
+      await control._finalizeTextMutationResult(
+        controlTabId, 'type_text', { text, clear: true },
+        { success: false, dispatched: true, verified: false },
+      );
+      const blocked = await control._uncertainTextMutationBlock(
+        controlTabId, 'type_text', { text, clear: true },
+      );
+      assert.equal(blocked?.repeatBlocked, true,
+        `${label}: identity-less focused debt was cleared by an unattributed readback`);
+      assert.equal(control._uncertainTextMutations.get(controlTabId)?.size, 1,
+        `${label}: identity-less focused debt was not retained`);
+      assert.equal(control._verifiedTextReplacements.has(controlTabId), false,
+        `${label}: identity-less recovery minted proof for the wrong field`);
+    }
+  } finally {
+    if (originalChrome === undefined) delete globalThis.chrome;
+    else globalThis.chrome = originalChrome;
+    if (originalBrowser === undefined) delete globalThis.browser;
+    else globalThis.browser = originalBrowser;
+  }
+});
+
+test('focused field identity matching is strict', () => {
+  for (const [label, AgentClass] of [['chrome', AgentCh], ['firefox', AgentFx]]) {
+    const agent = new AgentClass({});
+    const base = { tag: 'div', contentEditable: true, id: 'editor-1', ariaLabelledByText: 'Editing file contents' };
+    assert.equal(agent._focusedFieldIdentityMatches(base, { ...base }), true, `${label}: identical metadata rejected`);
+    assert.equal(agent._focusedFieldIdentityMatches(
+      { tag: 'input', name: 'q' }, { tag: 'input', name: 'q' }), true, `${label}: name+tag rejected`);
+    assert.equal(agent._focusedFieldIdentityMatches(
+      { tag: 'input', name: 'q' }, { tag: 'textarea', name: 'q' }), false, `${label}: cross-tag name matched`);
+    assert.equal(agent._focusedFieldIdentityMatches(
+      { tag: 'textarea', labelText: 'Notes' }, { tag: 'textarea', labelText: 'Notes', contentEditable: false }), false,
+      `${label}: editability drift matched`);
+    assert.equal(agent._focusedFieldIdentityMatches(
+      { tag: 'textarea', labelText: 'Notes' }, { tag: 'textarea', labelText: 'Notes' }), true,
+      `${label}: label+tag identity rejected`);
+    assert.equal(agent._focusedFieldIdentityMatches(
+      { id: 'a', labelText: 'X' }, { id: 'b', labelText: 'X' }), false,
+      `${label}: shared label overrode differing ids`);
+    assert.equal(agent._focusedFieldIdentityMatches(null, base), false, `${label}: null matched`);
+    assert.equal(agent._focusedFieldIdentityMatches(base, null), false, `${label}: null matched`);
+    assert.equal(agent._focusedFieldIdentityMatches(
+      { tag: 'div' }, { tag: 'div' }), false, `${label}: identity-less metadata matched`);
+  }
+});
+
 test('first live token bootstraps tokenless debt by URL', async () => {
   const originalChrome = globalThis.chrome;
   const originalBrowser = globalThis.browser;
