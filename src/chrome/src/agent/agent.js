@@ -20333,6 +20333,11 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         stableSelector: typeof response.stableSelector === 'string' && response.stableSelector.trim()
           ? response.stableSelector.trim()
           : null,
+        // Live scope the probe answered from (attached by the dispatcher on
+        // every return path): selector/focused writes need no AX read, so the
+        // caller may hold empty/stale scope while this is current.
+        documentToken: String(response.documentToken || ''),
+        pageUrl: String(response.refScopeUrl || ''),
       };
     } catch {
       return null;
@@ -20438,6 +20443,23 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     };
   }
 
+  // Rebuild a mutation target's key for a fresher scope, keeping the locator
+  // identical. Used when the write-time digest answers from the live
+  // document while the target still carries empty/stale scope.
+  _rekeyTextMutationTarget(target, documentToken, pageUrl) {
+    const doc = documentToken || pageUrl || 'document';
+    if (target?.locatorType === 'ax' && typeof target.refId === 'string') {
+      return `ax:${doc}:${target.refId}`;
+    }
+    if (target?.locatorType === 'selector' && typeof target.selector === 'string') {
+      return `selector:${doc}:${target.selector}`;
+    }
+    if (target?.locatorType === 'focused') {
+      return target.focusedKind ? `focused:${doc}:${target.focusedKind}` : `focused:${doc}`;
+    }
+    return target?.key;
+  }
+
   async _verifiedTextReplacementRecord(tabId, target, text, fieldMeta = null) {
     const workflow = this._planExecutionGuards.get(tabId)?.siteWorkflow;
     const needsCommitProof = workflow?.adapterName === 'github'
@@ -20446,8 +20468,27 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       ? await this._textMutationValueDigest(tabId, target, text)
       : null;
     const readback = candidateReadback?.verified === true ? candidateReadback : null;
+    // Live scope propagation: selector/focused writes need no AX read, so
+    // the target can carry empty/stale scope while the digest answered from
+    // the live document. Stamp the record (fields + key) with the live scope
+    // so the binding's exact-URL checks don't reject an otherwise valid
+    // proof. When both tokens agree the document is proven identical, the
+    // agent-canonical URL spelling wins (the gate compares paths
+    // case-sensitively); otherwise the live probe is authoritative.
+    // Deliberately no global adoption here — adopting would clear the maps
+    // this caller's set() still targets.
+    const tokensAgree = !!readback?.documentToken && !!target.documentToken
+      && readback.documentToken === target.documentToken;
+    const liveDocumentToken = readback?.documentToken || target.documentToken;
+    const livePageUrl = tokensAgree ? target.pageUrl : (readback?.pageUrl || target.pageUrl);
+    const liveScope = readback && (readback.documentToken || readback.pageUrl);
     return {
       ...target,
+      documentToken: liveDocumentToken,
+      pageUrl: livePageUrl,
+      key: liveScope
+        ? this._rekeyTextMutationTarget(target, liveDocumentToken, livePageUrl)
+        : target.key,
       expectedLength: text.length,
       expectedSha256: await this._sha256Text(text),
       expectedFp: this._workflowInventoryFingerprint(text),

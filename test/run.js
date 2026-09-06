@@ -75731,6 +75731,72 @@ test('refresh revalidates label-identified editor proofs', async () => {
   }
 });
 
+test('minted proofs carry the live digest scope', async () => {
+  const originalChrome = globalThis.chrome;
+  const originalBrowser = globalThis.browser;
+  try {
+    const pageUrl = 'https://github.com/Example/Repo/edit/main/docs/plan.md';
+    const body = '# Live scope document\n\nOne complete copy.\n';
+    for (const [label, AgentClass, resolveJob, tabId, controlTabId] of [
+      ['chrome', AgentCh, resolveAdapterWorkflowJob, 9508, 9510],
+      ['firefox', AgentFx, resolveAdapterWorkflowJobFx, 9509, 9511],
+    ]) {
+      const agent = new AgentClass({});
+      agent._planExecutionGuards.set(tabId, {
+        enabled: true,
+        siteWorkflow: resolveJob(pageUrl, 'edit-file-and-commit'),
+        workflowMetadataRequirements: [],
+        workflowMetadataRequirementsResolved: true,
+      });
+      // No AX-tree read ever happened: the target carries empty scope, but
+      // the digest answers from the live document.
+      const tabs = {
+        async sendMessage(_tabId, message) {
+          assert.equal(message.action, 'field_value_digest');
+          return { success: true, verified: true,
+            valueLength: body.length, valueSha256: await agent._sha256Text(body),
+            fieldMeta: { contentEditable: true, ariaLabelledByText: 'Editing file contents' },
+            documentToken: 'doc-live', refScopeUrl: pageUrl };
+        },
+      };
+      globalThis.chrome = { tabs };
+      globalThis.browser = { tabs };
+      const record = await agent._verifiedTextReplacementRecord(
+        tabId, agent._textMutationTarget(tabId, 'type_text', { selector: '#ed' }), body, null,
+      );
+      assert.equal(record.documentToken, 'doc-live',
+        `${label}: proof kept the empty scope instead of the live token`);
+      assert.equal(record.pageUrl, pageUrl,
+        `${label}: proof kept the empty scope instead of the live URL`);
+      assert.ok(String(record.key).includes('doc-live'),
+        `${label}: proof key was not rebuilt for the live scope (key: ${record.key})`);
+      assert.ok(record.readbackSha256,
+        `${label}: scoped proof lost its readback`);
+      // Stale cache variant: same treatment, never the cached token.
+      const stale = new AgentClass({});
+      stale._planExecutionGuards.set(controlTabId, {
+        enabled: true,
+        siteWorkflow: resolveJob(pageUrl, 'edit-file-and-commit'),
+        workflowMetadataRequirements: [],
+        workflowMetadataRequirementsResolved: true,
+      });
+      stale._lastAxScopes.set(controlTabId, { documentToken: 'doc-stale', pageUrl });
+      const staleRecord = await stale._verifiedTextReplacementRecord(
+        controlTabId, stale._textMutationTarget(controlTabId, 'type_text', { selector: '#ed' }), body, null,
+      );
+      assert.equal(staleRecord.documentToken, 'doc-live',
+        `${label}: proof kept the stale token instead of the live one`);
+      assert.ok(!String(staleRecord.key).includes('doc-stale'),
+        `${label}: proof key kept the stale scope (key: ${staleRecord.key})`);
+    }
+  } finally {
+    if (originalChrome === undefined) delete globalThis.chrome;
+    else globalThis.chrome = originalChrome;
+    if (originalBrowser === undefined) delete globalThis.browser;
+    else globalThis.browser = originalBrowser;
+  }
+});
+
 test('selector writes to proven-distinct fields bypass unrelated debt', async () => {
   const originalChrome = globalThis.chrome;
   const originalBrowser = globalThis.browser;
