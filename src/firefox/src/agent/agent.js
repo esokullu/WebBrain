@@ -15621,20 +15621,51 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     };
   }
 
-  _isRecipientClarification(context, pendingType = 'message_recipient') {
+  _isRecipientClarification(context, pendingType = 'message_recipient', observedCandidates = []) {
     if (!context || typeof context !== 'object') return false;
     const purpose = String(context.purpose || '').trim();
     if (pendingType === 'recipient_change') {
       if (purpose === 'recipient_change') return true;
-      const text = [context.question, context.reason].filter(Boolean).join(' ').toLowerCase();
-      return /(change|switch|different|instead|update|replace).*(recipient|conversation|contact|send to|person|address)/i.test(text)
-        || /(recipient|conversation|contact).*(change|switch|different)/i.test(text)
-        || /(send|deliver).*(to .* instead|to someone else)/i.test(text)
-        || /(send|reply).*(instead of)/i.test(text);
+      if (purpose === 'research_escalation') return false;
+      const text = [
+        context.question,
+        context.reason,
+        ...(Array.isArray(context.options) ? context.options : []),
+      ].filter(Boolean).join(' ').toLowerCase();
+      const changeWord = /(change|switch|different|instead|update|replace|another|new|更改|更换|切换|替换|换成)/i.test(text);
+      const targetWord = /(recipient|conversation|contact|send to|person|address|target|someone else|收件人|联系人|发送)/i.test(text);
+      return changeWord && targetWord;
     }
     if (purpose === 'message_recipient' || purpose === 'recipient_change') return true;
-    const text = [context.question, context.reason].filter(Boolean).join(' ').toLowerCase();
-    return /(recipient|who (is|to|should|are)|send (the |this )?(message|email|draft) to|message (to|for)|deliver to|email to|draft to|authorize.*conversation)/i.test(text);
+    if (purpose === 'research_escalation') return false;
+
+    // Check if the clarify question, reason, or options explicitly mention any observed candidate identity
+    if (Array.isArray(observedCandidates) && observedCandidates.length > 0) {
+      const allCandidateText = [
+        context.question,
+        context.reason,
+        ...(Array.isArray(context.options) ? context.options : []),
+      ].filter(Boolean).join(' ');
+      for (const candidate of observedCandidates) {
+        const id = typeof candidate === 'string' ? candidate : (candidate?.identity ?? candidate?.recipient);
+        if (id && answerNamesIdentity(allCandidateText, id)) {
+          return true;
+        }
+      }
+    }
+
+    const text = [
+      context.question,
+      context.reason,
+      ...(Array.isArray(context.options) ? context.options : []),
+    ].filter(Boolean).join(' ').toLowerCase();
+
+    if (/recipient|收件人/i.test(text)) return true;
+
+    const hasRecipientTerm = /(contact|person|address|who|whom|which contact|which person|which recipient|which user|which address|to whom|for whom|someone|联系人|哪位|谁)/i.test(text);
+    const hasMessagingTerm = /(send|receive|deliver|message|email|mail|draft|reply|chat|conversation|发送|邮件|信息|消息|寄|回复)/i.test(text);
+
+    return hasRecipientTerm && hasMessagingTerm;
   }
 
   /**
@@ -15675,10 +15706,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     if (!pending || !pendingType || observed.length === 0) return false;
     if (!answer || source === 'timeout' || source === 'auto') return false;
     if (pendingType === 'recipient_change') {
-      if (!clarifyContext || !this._isRecipientClarification(clarifyContext, 'recipient_change')) {
+      if (!clarifyContext || !this._isRecipientClarification(clarifyContext, 'recipient_change', observed)) {
         return false;
       }
-    } else if (clarifyContext && !this._isRecipientClarification(clarifyContext, 'message_recipient')) {
+    } else if (clarifyContext && !this._isRecipientClarification(clarifyContext, 'message_recipient', observed)) {
       return false;
     }
     const normalizedAnswer = normalizeRecipientIdentity(answer);

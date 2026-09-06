@@ -58,9 +58,40 @@ export function recipientMatchesObservedIdentity(recipient, observedIdentity) {
 
 const IDENTITY_WORD_CHAR = /[\p{L}\p{N}]/u;
 
+let cachedWordSegmenter = null;
+
+function getWordSegmenter() {
+  if (cachedWordSegmenter) return cachedWordSegmenter;
+  if (typeof Intl !== 'undefined' && typeof Intl.Segmenter === 'function') {
+    try {
+      cachedWordSegmenter = new Intl.Segmenter(undefined, { granularity: 'word' });
+    } catch {
+      cachedWordSegmenter = null;
+    }
+  }
+  return cachedWordSegmenter;
+}
+
+export function getWordBoundaries(text) {
+  const boundaries = new Set([0, text.length]);
+  const segmenter = getWordSegmenter();
+  if (segmenter) {
+    try {
+      for (const seg of segmenter.segment(text)) {
+        boundaries.add(seg.index);
+        boundaries.add(seg.index + seg.segment.length);
+      }
+    } catch {
+      // fallback
+    }
+  }
+  return boundaries;
+}
+
 /**
  * Return all start/end spans where normalizedIdentity occurs in normalizedAnswer
- * at word boundaries, or as an exact full-string match for short identities (< 3 chars).
+ * at word boundaries (including script-aware segmentation for unsegmented scripts),
+ * or as an exact full-string match for short identities (< 3 chars).
  */
 export function findCandidateAnswerSpans(normalizedAnswer, normalizedIdentity) {
   const answer = normalizeRecipientIdentity(normalizedAnswer);
@@ -69,12 +100,17 @@ export function findCandidateAnswerSpans(normalizedAnswer, normalizedIdentity) {
   if (identity.length < 3) {
     return answer === identity ? [{ start: 0, end: answer.length }] : [];
   }
+  const boundaries = getWordBoundaries(answer);
   const spans = [];
   for (let at = answer.indexOf(identity); at >= 0; at = answer.indexOf(identity, at + 1)) {
+    const end = at + identity.length;
     const before = at > 0 ? answer[at - 1] : '';
-    const after = answer[at + identity.length] || '';
-    if (!IDENTITY_WORD_CHAR.test(before) && !IDENTITY_WORD_CHAR.test(after)) {
-      spans.push({ start: at, end: at + identity.length });
+    const after = answer[end] || '';
+    const charBoundary = (!before || !IDENTITY_WORD_CHAR.test(before))
+      && (!after || !IDENTITY_WORD_CHAR.test(after));
+    const segmentBoundary = boundaries.has(at) && boundaries.has(end);
+    if (charBoundary || segmentBoundary) {
+      spans.push({ start: at, end });
     }
   }
   return spans;

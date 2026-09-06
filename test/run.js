@@ -2715,6 +2715,11 @@ test('research escalation is opt-in, tier-complete when enabled, and absent othe
     for (const field of researchOnlyClarifyFields) {
       assert.ok(actClarify.function.parameters.properties[field], `${label}: enabled Act clarification lost ${field}`);
     }
+    assert.deepEqual(
+      actClarify.function.parameters.properties.purpose.enum,
+      ['research_escalation', 'message_recipient', 'recipient_change'],
+      `${label}: clarify purpose did not expose recipient purposes`,
+    );
     assert.deepEqual(actClarify.function.parameters.required, ['question']);
     assert.doesNotMatch(actClarify.function.description, /not a generic clarification tool/i);
 
@@ -4646,6 +4651,8 @@ test('direct-message recipient guard uses structured intent and exact active ide
     assert.equal(helper.answerNamesIdentity('Lisa', 'Li'), false);
     assert.equal(helper.answerNamesIdentity('王', '王'), true);
     assert.equal(helper.answerNamesIdentity('王小明', '王'), false);
+    assert.equal(helper.answerNamesIdentity('请发送给王小明', '王小明'), true, 'natural Chinese sentence must match CJK recipient');
+    assert.equal(helper.answerNamesIdentity('请发送给王小明', '王'), false, 'sub-fragment of CJK name must not match short identity');
     assert.equal(helper.answerNamesAllObservedRecipients(
       'Send to Ann Smith',
       [{ identity: 'Ann' }, { identity: 'Ann Smith' }],
@@ -5246,6 +5253,26 @@ test('direct-message recipient guard uses structured intent and exact active ide
       }),
       true,
       `${label}: valid recipient clarification context was rejected`,
+    );
+
+    // Natural recipient question without explicit purpose (e.g. "Which contact should receive this message?").
+    agent._planExecutionGuards.set(tabId, clarifyGuardState([{ identity: 'alice@example.com', role: 'to' }]));
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'alice@example.com', 'user', {
+        question: 'Which contact should receive this message?',
+      }),
+      true,
+      `${label}: natural recipient question ("Which contact should receive this message?") was rejected`,
+    );
+
+    // Natural-language Chinese answer for CJK recipient.
+    agent._planExecutionGuards.set(tabId, clarifyGuardState([{ identity: '王小明', role: 'to' }]));
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, '请发送给王小明', 'user', {
+        question: '请确认要发送给哪位联系人？',
+      }),
+      true,
+      `${label}: natural Chinese clarification question/answer was rejected`,
     );
 
     // Recipient-change clarification check: when a target was already set, an explicit
