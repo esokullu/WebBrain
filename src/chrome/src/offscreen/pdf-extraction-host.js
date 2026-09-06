@@ -8,6 +8,9 @@ import {
   isTrustedPdfExtractionSender,
   normalizePdfUrl,
 } from '../agent/pdf-extraction.js';
+
+const PDF_MESSAGE_TYPES = new Set([PDF_EXTRACTION_MESSAGE, PDF_EXTRACTION_READY_MESSAGE]);
+
 let pdfjsPromise = null;
 
 function getPdfjs() {
@@ -17,18 +20,38 @@ function getPdfjs() {
         chrome.runtime.getURL('vendor/pdfjs/pdf.worker.mjs');
       return pdfjs;
     });
+    // The offscreen document outlives any single read, so never memoize a
+    // rejection: one transient import failure would otherwise make every
+    // later read_pdf fail until the document is torn down.
+    pdfjsPromise.catch(() => { pdfjsPromise = null; });
   }
   return pdfjsPromise;
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (![PDF_EXTRACTION_MESSAGE, PDF_EXTRACTION_READY_MESSAGE].includes(message?.type)) return false;
+  if (!PDF_MESSAGE_TYPES.has(message?.type)) return false;
+
+  // A 16 MB PDF answers with ~21 MB of base64, and an oversized or
+  // unserializable reply makes sendResponse throw. Without this guard that
+  // throw would reach the catch below and call sendResponse a second time on
+  // an already-closed channel, hiding the original failure.
+  let responded = false;
+  const respond = (payload) => {
+    if (responded) return;
+    responded = true;
+    try {
+      sendResponse(payload);
+    } catch (error) {
+      console.warn('[pdf-extraction-host] failed to deliver response', error);
+    }
+  };
+
   if (!isTrustedPdfExtractionSender(sender)) {
-    sendResponse({ ok: false, ready: false, error: 'Unauthorized PDF extraction sender.' });
+    respond({ ok: false, ready: false, error: 'Unauthorized PDF extraction sender.' });
     return false;
   }
   if (message.type === PDF_EXTRACTION_READY_MESSAGE) {
-    sendResponse({ ok: true, ready: true });
+    respond({ ok: true, ready: true });
     return false;
   }
 
@@ -47,9 +70,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const pdfjs = await getPdfjs();
     const result = await extractPdfTextFromBytes(pdfjs, bytes, message.options || {});
     if (passthrough) result._pdfBase64 = bytesToBase64(passthrough);
-    sendResponse({ ok: true, result });
+    respond({ ok: true, result });
   })().catch((error) => {
-    sendResponse({ ok: false, error: error?.message || String(error) });
+    respond({ ok: false, error: error?.message || String(error) });
   });
 
   return true;

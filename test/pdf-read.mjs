@@ -27,6 +27,9 @@ async function testMv3PdfExtractionUsesTheSharedOffscreenHost() {
   assert.match(host, /extractPdfTextFromBytes/);
   assert.match(host, /isTrustedPdfExtractionSender\(sender\)/);
   assert.match(offscreenHtml, /<script type="module" src="pdf-extraction-host\.js"><\/script>/);
+  // The offscreen document outlives any single read, so a failed PDF.js import
+  // must not be memoized into every later read_pdf.
+  assert.match(host, /pdfjsPromise\.catch\(\(\) => \{ pdfjsPromise = null; \}\);/);
 }
 
 async function testPdfUrlAndSenderBoundaries() {
@@ -73,6 +76,22 @@ async function testPdfUrlAndSenderBoundaries() {
     () => normalizePdfUrl(`${runtime.getURL('src/ui/pdf-handler.html')}?url=${encodeURIComponent('javascript:alert(1)')}`, runtime),
     /must use http.*https.*file/i,
     'An unwrapped inner URL must still pass the scheme allowlist.');
+
+  // The viewer page follows the manifest too, so renaming it cannot start
+  // rejecting our own PDF tabs with a bogus scheme error.
+  const renamedHandlerRuntime = {
+    ...runtime,
+    getManifest: () => ({ mime_types_handler: { 'application/pdf': { handler_url: 'src/ui/viewer.html' } } }),
+  };
+  assert.equal(
+    normalizePdfUrl(
+      `${runtime.getURL('src/ui/viewer.html')}?url=${encodeURIComponent('https://example.test/paper.pdf')}&tabId=7`,
+      renamedHandlerRuntime),
+    'https://example.test/paper.pdf');
+  assert.throws(
+    () => normalizePdfUrl(handlerUrl, renamedHandlerRuntime),
+    /must use http.*https.*file/i,
+    'Only the manifest-declared viewer page may unwrap an inner URL.');
 
   let fetchCalls = 0;
   const originalFetch = globalThis.fetch;

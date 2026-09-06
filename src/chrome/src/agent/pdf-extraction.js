@@ -11,8 +11,16 @@ export const PDF_EXTRACTION_READY_MESSAGE = 'offscreen-pdf-extract-ready';
 export const PDF_PASSTHROUGH_MAX_BYTES = 16 * 1024 * 1024;
 
 const ALLOWED_PDF_PROTOCOLS = new Set(['http:', 'https:', 'file:']);
-const PDF_HANDLER_PAGE = 'src/ui/pdf-handler.html';
+const DEFAULT_PDF_HANDLER_PAGE = 'src/ui/pdf-handler.html';
 const BASE64_MAX_INPUT_BYTES = 32 * 1024 * 1024;
+
+// Derived from the manifest for the same reason as the background path below:
+// renaming the viewer page would otherwise make read_pdf report a bogus
+// "must use http:, https:, or file:" on our own PDF tabs.
+function pdfHandlerPage(runtime) {
+  const manifest = typeof runtime?.getManifest === 'function' ? runtime.getManifest() : null;
+  return manifest?.mime_types_handler?.['application/pdf']?.handler_url || DEFAULT_PDF_HANDLER_PAGE;
+}
 
 // When the native MIME handler owns a PDF tab, the tab URL is our own viewer
 // page wrapping the real URL in ?url=. read_pdf falls back to the tab URL when
@@ -22,7 +30,7 @@ function unwrapPdfHandlerUrl(url, runtime = globalThis.chrome?.runtime) {
   if (typeof runtime?.getURL !== 'function') return url;
   let handler;
   try {
-    handler = new URL(runtime.getURL(PDF_HANDLER_PAGE));
+    handler = new URL(runtime.getURL(pdfHandlerPage(runtime)));
   } catch {
     return url;
   }
