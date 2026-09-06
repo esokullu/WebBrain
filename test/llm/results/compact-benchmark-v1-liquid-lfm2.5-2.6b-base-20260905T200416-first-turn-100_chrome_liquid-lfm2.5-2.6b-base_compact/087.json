@@ -1,0 +1,28 @@
+{
+  "id": "087",
+  "user": "open this link in a new tab",
+  "mode": "act",
+  "tab": {
+    "url": "https://www.cnn.com/2026/05/world/example-story/index.html",
+    "title": "Example story — CNN"
+  },
+  "latencyMs": 2879,
+  "error": null,
+  "firstToolCall": {
+    "name": "navigate",
+    "args": {
+      "url": "https://www.cnn.com/2026/05/world/example-story/index.html"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "finishReason": "tool_calls",
+  "content": "The user wants me to open a specific CNN link in a new tab. This is a straightforward action - I need to use the navigate tool to open this URL. The URL is https://www.cnn.com/2026/05/world/example-story/index.html\n\nLet me use the navigate tool to open this link.</think>",
+  "usage": {
+    "prompt_tokens": 9744,
+    "total_tokens": 9839,
+    "completion_tokens": 95,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

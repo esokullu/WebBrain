@@ -1,0 +1,35 @@
+{
+  "id": "056",
+  "category": "stale-refid",
+  "description": "Used index from get_interactive_elements after a navigation. Indices are tied to the call that produced them.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 2924,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "get_interactive_elements",
+      "args": {}
+    },
+    "antiPatterns": [
+      {
+        "match": "click({index:1})",
+        "reason": "Reuse of stale index — system prompt explicitly forbids this."
+      }
+    ],
+    "successRubric": "After navigation, indices reset. Call get_interactive_elements again before using an index."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "no_tool",
+  "scoreNote": null,
+  "finishReason": "stop",
+  "content": "The user wants me to open the first link from the list. I already clicked index 0 (the first link) and it navigated successfully. Now I should check what's on the current page and see if there are more links to open.\n\nLet me first get the current page context to see what's there now.</think><|tool_call_start|>[get_interactive_elements()]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9868,
+    "total_tokens": 9943,
+    "completion_tokens": 75,
+    "prompt_tokens_details": null
+  }
+}

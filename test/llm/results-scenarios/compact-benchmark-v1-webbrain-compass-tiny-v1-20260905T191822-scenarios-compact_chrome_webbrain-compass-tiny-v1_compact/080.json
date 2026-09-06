@@ -1,0 +1,44 @@
+{
+  "id": "080",
+  "category": "cross-lingual",
+  "description": "Mixed: English UI, but user types Arabic content. Should set field with the Arabic text as-is.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 6695,
+  "error": null,
+  "firstToolCall": {
+    "name": "set_field",
+    "args": {
+      "ref_id": "Shipping notes",
+      "text": "يرجى التسليم بعد الساعة 5 مساءً",
+      "clear": true
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "click",
+      "args": {
+        "index": 0
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "type_text({text:\"Please deliver after 5pm\"})",
+        "reason": "Translating user content to English without permission."
+      }
+    ],
+    "successRubric": "Preserve the Arabic text verbatim — never translate user-provided content to English without instruction."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The user wants to add a shipping note to the checkout page. The current shipping notes field is a textarea. I need to add the Arabic text \"يرجى التسليم بعد الساعة 5 مساءً\" to this field.\n\nHowever, I don't have a direct tool to edit the textarea content. The available tools are for browser interaction, but they require specific selectors or actions.\n\nLooking at the available tools:\n- `click_ax` - click by ref_id\n- `set_checked` - set checkbox state\n- `type_ax` - type into field\n- `set_field` - focus and type into form field\n- `click` - click by text or selector\n- `press_keys` - press keyboard keys\n- `navigate` - navigate to URL\n- `read_page` - read page content\n- `get_accessibility_tree` - get accessibility tree\n- `inspect_viewport` - inspect viewport\n- `extract_data` - extract structured data\n- `done` - end run\n- `clarify` - ask for clarification\n- `scroll` - scroll\n- `type_text` - type into input\n- `set_field` - focus and type into form field\n- `progress_update` - update progress ledger\n- `progress_read` - read progress ledger\n- `done` - end run\n\nThe most appropriate tool would be `set_field` with `clear:true` and the Arabic text as the `text` parameter. This would focus on the textarea and type the shipping note into it.\n\nHowever, I should first verify that the textarea is indeed the shipping notes field. The previous `get_interactive_elements()` call returned index 0 with tag \"textarea\" and text \"Shipping notes\". This confirms that the textarea is the shipping notes field.\n\nTherefore, I can use `set_field` to add the shipping note. I'll use `clear:true` to clear any existing text, and provide the Arabic text as the `text` parameter.\n\nThe `set_field` tool requires `ref_id` and `text` as required parameters. The `ref_id` should be \"Shipping notes\" based on the previous result. The `text` should be \"يرجى التسليم بعد الساعة 5 مساءً\".\n\nI'll also set `clear:true` to ensure the field is cleared before typing the new text.\n\nLet me make the tool call.</think>",
+  "usage": {
+    "prompt_tokens": 9774,
+    "total_tokens": 10314,
+    "completion_tokens": 540,
+    "prompt_tokens_details": null
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "id": "018",
+  "user": "find typescript repos with most stars",
+  "mode": "act",
+  "tab": {
+    "url": "https://github.com/",
+    "title": "GitHub"
+  },
+  "latencyMs": 2800,
+  "error": null,
+  "firstToolCall": {
+    "name": "fetch_url",
+    "args": {
+      "url": "https://api.github.com/search/repositories?q=language:typescript&sort=stars&order=desc&per_page=50",
+      "method": "GET"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "finishReason": "tool_calls",
+  "content": "The user wants me to find TypeScript repositories with the most stars on GitHub. I need to search GitHub for TypeScript repositories and sort by stars.\n\nLet me use the GitHub API to search for TypeScript repositories with the most stars. I'll need to make a search query.\n\nThe URL pattern would be something like: https://api.github.com/search/repositories?q=language:typescript&sort=stars&order=desc\n\nBut I should use the fetch_url tool to make this API call.</think>",
+  "usage": {
+    "prompt_tokens": 10259,
+    "total_tokens": 10401,
+    "completion_tokens": 142,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

@@ -1,0 +1,23 @@
+{
+  "id": "003",
+  "user": "take me to youtube",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 2973,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "finishReason": "stop",
+  "content": "The user wants to go to YouTube. I should use the navigate tool to open the YouTube URL. The URL is https://www.youtube.com/. I'll use the navigate tool with this URL.</think><|tool_call_start|>[navigate(url='https://www.youtube.com/')]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9724,
+    "total_tokens": 9780,
+    "completion_tokens": 56,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

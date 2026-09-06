@@ -1,0 +1,42 @@
+{
+  "id": "040",
+  "category": "truncation-cascade",
+  "description": "After repeated truncated reads of the same URL, agent should call done with what it has and tell user the response is partial.",
+  "mode": "ask",
+  "browser": "chrome",
+  "latencyMs": 2129,
+  "error": null,
+  "firstToolCall": {
+    "name": "done",
+    "args": {
+      "summary": "This page contains a long academic text with sections labeled **Section A** and **Section B**. The visible content is truncated, so I can only summarize what is present:\n\n- The page begins with a title and introductory section.\n- It contains multiple sections labeled **Section A** and **Section B**.\n- The visible text is truncated, so the full content of the sections is not available.\n\nFor a complete summary, I would need the full text of the page."
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "done",
+      "args": {
+        "summary": "Summary of the visible portion: [synthesis of Section A and B]. The page is large and read_page returned truncated content twice — I've summarized what I can see."
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "read_page({})",
+        "reason": "Third identical read won't yield more."
+      }
+    ],
+    "successRubric": "Deliver a summary of what is visible. Acknowledge the truncation. Don't loop."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal_name",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The page is truncated and appears to be a long academic text with sections A and B. The page content is not fully available, so I should summarize what is visible while noting the limitation.</think>",
+  "usage": {
+    "prompt_tokens": 7639,
+    "total_tokens": 7788,
+    "completion_tokens": 149,
+    "prompt_tokens_details": null
+  }
+}

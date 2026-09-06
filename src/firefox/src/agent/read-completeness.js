@@ -136,10 +136,15 @@ function normalizedTreeMaxChars(args) {
 function updateExpansionEvidence(state, result) {
   let expansionConfirmed = state.expansionConfirmed === true;
   let expansionChanged = false;
-  if (result?.conversationExpansionState === 'expanded') {
+  const observed = result?.conversationExpansionState;
+  // 'not_applicable' means Gmail exposed no expansion control at all, which is
+  // what a single-message thread looks like. Nothing is collapsed there, so the
+  // coverage requirement is already met and demanding an Expand all click would
+  // block completion on a thread that was fully read.
+  if (observed === 'expanded' || observed === 'not_applicable') {
     expansionChanged = expansionConfirmed !== true;
     expansionConfirmed = true;
-  } else if (result?.conversationExpansionState === 'collapsed') {
+  } else if (observed === 'collapsed') {
     expansionChanged = expansionConfirmed !== false;
     expansionConfirmed = false;
   }

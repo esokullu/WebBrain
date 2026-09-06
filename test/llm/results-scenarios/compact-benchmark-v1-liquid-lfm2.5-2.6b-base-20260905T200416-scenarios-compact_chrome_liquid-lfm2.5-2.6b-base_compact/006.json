@@ -1,0 +1,41 @@
+{
+  "id": "006",
+  "category": "loop-bad-url",
+  "description": "After three sequential failures on the same hallucinated URL, the agent must finally give up that URL.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 9415,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "clarify",
+      "args": {
+        "question": "mastodon.turk isn't resolving — I've tried three times. Could you share the actual MastoTurk URL? It's likely mastoturk.org or similar."
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "navigate({url:\"https://mastodon.turk\"})",
+        "reason": "4th retry — exact gpt-4o failure pattern."
+      },
+      {
+        "match": "fetch_url({url:\"https://mastodon.turk\"})",
+        "reason": "Same URL via another tool — still a retry."
+      }
+    ],
+    "successRubric": "After 3 failed attempts on the same URL, abandon it. Clarify with user OR search for the real URL."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal_name",
+  "scoreNote": "prose answer credited as clarify (terminal tool; summary not arg-matched)",
+  "finishReason": "stop",
+  "content": "The user is trying to cross-post a Mastodon post to mastoturk. However, the mastodon.turk domain appears to be unavailable (NXDOMAIN - DNS lookup failed).\n\nLet me try to find an alternative. The user mentioned the URL is https://mstdn.social/@example/12345 - Title: Example post - Mastodon\n\nThe original URL was https://mstdn.social/@example/12345 which also failed DNS lookup.\n\nSo both the original Mastodon post and the target mastoturk server appear to be unavailable.\n\nI should inform the user that the target server (mastoturk) is not accessible and the original post cannot be found. I cannot complete the cross-post operation without a valid target.\n\nLet me try one more thing - maybe I can search for the post on other Mastodon instances or check if there's an alternative URL. But given the DNS failures, it seems like the entire infrastructure is down.\n\nI should inform the user that:\n1. The target server (mastoturk) is not accessible (DNS lookup failed)\n2. The original post at mstdn.social/@example/12345 is also not accessible\n3. Therefore, the cross-post cannot be completed\n\nI'll provide this information to the user.</think>The target server **mastoturk** is not accessible — the DNS lookup for `mastodon.turk` (and the original `mstdn.social` domain) both failed with **NXDOMAIN**.\n\nThis means:\n- The original Mastodon post at `https://mstdn.social/@example/12345` cannot be found.\n- The target cross-post destination `https://mastodon.turk/` is unreachable.\n\n**Conclusion:** The cross-post cannot be completed because neither the source nor the target is accessible. You may need to:\n1. Verify the correct URLs for both the original post and the target server.\n2. Check if the target server has been reconfigured or if there's an alternative endpoint.\n\nWould you like me to try any other approach, or do you have updated URLs for the cross-post?",
+  "usage": {
+    "prompt_tokens": 9942,
+    "total_tokens": 10387,
+    "completion_tokens": 445,
+    "prompt_tokens_details": null
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "id": "076",
+  "category": "cross-lingual",
+  "description": "Chinese site. The agent must use 搜索 (search) not English.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 1974,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "click_ax",
+      "args": {
+        "ref_id": "ref_5"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click({text:\"Search\"})",
+        "reason": "Chinese UI — search input has placeholder 搜索, not \"Search\"."
+      }
+    ],
+    "successRubric": "Click the Chinese searchbox via ref_id. Then type the query."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "no_tool",
+  "scoreNote": null,
+  "finishReason": "stop",
+  "content": "The user wants to search for \"lo-fi study\" on Bilibili. I need to use the search functionality on the current page. The searchbox is available with ref_5. I should search for \"lo-fi study\" using the search functionality.</think><|tool_call_start|>[click_ax(ref_id='ref_5')]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9768,
+    "total_tokens": 9836,
+    "completion_tokens": 68,
+    "prompt_tokens_details": null
+  }
+}

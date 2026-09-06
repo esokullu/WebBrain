@@ -1,0 +1,44 @@
+{
+  "id": "034",
+  "category": "truncation-cascade",
+  "description": "After getting first page of HN listing, agent tried to paginate without delivering first-page results. Anti-pattern.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 2012,
+  "error": null,
+  "firstToolCall": {
+    "name": "get_accessibility_tree",
+    "args": {
+      "filter": "all",
+      "maxChars": 6000,
+      "continuationArgs": {}
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "done",
+      "args": {
+        "summary": "Top 30 HN stories: [list with titles + points + comments from page 1]"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "get_accessibility_tree({filter:\"visible\"})",
+        "reason": "Reading page 2 before delivering page 1 — system prompt says EXTRACT first, paginate second."
+      }
+    ],
+    "successRubric": "Per LISTINGS guidance: deliver page 1's 30 stories now, then optionally continue. Even though we just navigated to p=2, we should back-deliver and stop."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The user wants the top 30 Hacker News stories. I've navigated to the second page of HN stories (p=2), which should contain stories 31-60.\n\nLet me read the current page to get the story titles and points.</think>",
+  "usage": {
+    "prompt_tokens": 9857,
+    "total_tokens": 9932,
+    "completion_tokens": 75,
+    "prompt_tokens_details": null
+  }
+}

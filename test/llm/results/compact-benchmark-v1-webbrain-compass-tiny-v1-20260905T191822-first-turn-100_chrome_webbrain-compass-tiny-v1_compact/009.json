@@ -1,0 +1,29 @@
+{
+  "id": "009",
+  "user": "open chatgpt in a new tab",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 2879,
+  "error": null,
+  "firstToolCall": {
+    "name": "navigate",
+    "args": {
+      "url": "https://chatgpt.com/",
+      "force": true
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "finishReason": "tool_calls",
+  "content": "The user wants to open ChatGPT in a new tab. I should use the navigate tool to open the ChatGPT URL in a new tab. The URL for ChatGPT is https://chatgpt.com/. I should set the window to open in a new tab.</think>",
+  "usage": {
+    "prompt_tokens": 9728,
+    "total_tokens": 9804,
+    "completion_tokens": 76,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

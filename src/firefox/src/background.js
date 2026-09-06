@@ -18,6 +18,7 @@ import { createEmergencyDownloadController } from './agent/emergency-download-co
 import { createHostedOfflineRagIndexClient } from './agent/offline-rag-index-host.js';
 import { getSharedOfflineSemanticReranker } from './agent/offline-semantic-runtime.js';
 import { EMERGENCY_DOWNLOAD_ACTION } from './ui/emergency-download-client.js';
+import { readPdfResponseBytes } from './agent/pdf-stream.js';
 import {
   compileWorkflowFromDemonstration,
   compileLatestSuccessfulWorkflow,
@@ -200,10 +201,13 @@ const MAX_AGENT_STEPS_DEFAULT = 130;
 const MAX_AGENT_STEPS_UNLIMITED_SENTINEL = 200;
 const CONTEXT_MENU_ASK_SELECTION_ID = 'webbrain-ask-selection';
 const CONTEXT_MENU_OPEN_CHAT_ID = 'webbrain-selection-open-chat';
+const CONTEXT_MENU_OPEN_PDF_VIEWER_ID = 'webbrain-open-pdf-viewer';
 const CONTEXT_MENU_ACTION_PREFIX = 'webbrain-selection-action-';
 const CONTEXT_MENU_TRANSLATE_ID = 'webbrain-selection-translate';
 const CONTEXT_MENU_TRANSLATE_PREFIX = 'webbrain-selection-translate-';
 const CONTEXT_MENU_GENERIC_ASK_ID = 'webbrain-selection-generic-ask';
+const pdfResponseTabs = new Set();
+const pdfOcrRequests = new Map();
 function resolveStoredSelectionShortcutLocale(value) {
   return normalizeSelectionShortcutLocale(
     value || (typeof navigator !== 'undefined' ? navigator.language : 'en'),
@@ -223,6 +227,75 @@ function getContextMenuApi() {
 
 function getContextMenuPromptStore() {
   return browser.storage?.session || browser.storage?.local || null;
+}
+
+function safeOnlinePdfUrl(value) {
+  try {
+    const url = new URL(String(value || ''));
+    return ['http:', 'https:'].includes(url.protocol) ? url.href : '';
+  } catch {
+    return '';
+  }
+}
+
+function isPdfUrl(value) {
+  try {
+    const url = new URL(String(value || ''));
+    return ['http:', 'https:'].includes(url.protocol) && /\.pdf$/i.test(url.pathname);
+  } catch {
+    return false;
+  }
+}
+
+function trackPdfResponse(details) {
+  if (!Number.isInteger(details?.tabId) || details.tabId < 0) return;
+  const contentType = (details.responseHeaders || [])
+    .find(header => String(header?.name || '').toLowerCase() === 'content-type')?.value;
+  if (/^application\/pdf(?:\s*;|$)/i.test(String(contentType))) pdfResponseTabs.add(details.tabId);
+  else pdfResponseTabs.delete(details.tabId);
+}
+
+function getPdfHandlerBaseUrl() {
+  try {
+    return browser.runtime.getURL('src/ui/pdf-handler.html');
+  } catch {
+    return '';
+  }
+}
+
+// The PDF viewer is an extension page, so sender.tab is empty. Scope the
+// request to the handler that sent it: the sender must be our viewer and,
+// when the sender URL carries an explicit tabId, it must match msg.tabId.
+function isPdfHandlerSender(sender, tabId) {
+  if (!sender || sender.id !== browser.runtime.id) return false;
+  const senderUrl = String(sender?.url || '');
+  const base = getPdfHandlerBaseUrl();
+  if (!base || !senderUrl.startsWith(base)) return false;
+  try {
+    const senderTabId = new URL(senderUrl).searchParams.get('tabId');
+    if (senderTabId != null && Number(senderTabId) !== tabId) return false;
+  } catch {
+    return false;
+  }
+  return true;
+}
+
+async function fetchPdfDocumentForViewer(url) {
+  const maxPdfBytes = 64 * 1024 * 1024;
+  const response = await fetch(url, { credentials: 'include', redirect: 'follow' });
+  if (!response.ok) throw new Error(`Firefox PDF fetch returned HTTP ${response.status}.`);
+  // Require the proxied URL to actually be a PDF so the credentialed
+  // fetch cannot be pointed at arbitrary HTML the viewer did not open.
+  const contentType = String(response.headers.get('content-type') || '');
+  if (!/^application\/pdf(?:\s*;|$)/i.test(contentType)) {
+    throw new Error('The requested URL did not return a PDF document.');
+  }
+  const bytes = await readPdfResponseBytes(response, {
+    maxBytes: maxPdfBytes,
+    emptyMessage: 'Firefox returned an empty PDF stream.',
+    unreadableMessage: 'Firefox PDF stream could not be read safely.',
+  });
+  return { ok: true, bytes: bytes.buffer };
 }
 
 const contextMenuStorage = createContextMenuStorage(getContextMenuPromptStore);
@@ -292,6 +365,12 @@ async function createContextMenus() {
     }
     createItem({ id: 'webbrain-selection-separator-2', parentId: CONTEXT_MENU_ASK_SELECTION_ID, type: 'separator', contexts: ['selection'] });
     createItem({ id: CONTEXT_MENU_GENERIC_ASK_ID, parentId: CONTEXT_MENU_ASK_SELECTION_ID, title: strings.askAbout, contexts: ['selection'] });
+    createItem({
+      id: CONTEXT_MENU_OPEN_PDF_VIEWER_ID,
+      title: 'Open PDF with WebBrain',
+      contexts: ['page'],
+      visible: false,
+    });
   };
 
   try {
@@ -1240,6 +1319,15 @@ function openSidebarForContextMenu(tab) {
 async function handleContextMenuAsk(info, tab) {
   if (!tab?.id) return;
   const menuItemId = String(info?.menuItemId || '');
+  if (menuItemId === CONTEXT_MENU_OPEN_PDF_VIEWER_ID) {
+    const pdfUrl = safeOnlinePdfUrl(tab.url);
+    if (!pdfUrl || (!pdfResponseTabs.has(tab.id) && !isPdfUrl(pdfUrl))) return;
+    const viewerUrl = browser.runtime.getURL(
+      `src/ui/pdf-handler.html?url=${encodeURIComponent(pdfUrl)}&tabId=${encodeURIComponent(tab.id)}`,
+    );
+    await browser.tabs.update(tab.id, { url: viewerUrl });
+    return;
+  }
   if (menuItemId === CONTEXT_MENU_OPEN_CHAT_ID) {
     openSidebarForContextMenu(tab);
     return;
@@ -1279,6 +1367,19 @@ async function handleContextMenuAsk(info, tab) {
 getContextMenuApi()?.onClicked?.addListener?.((info, tab) => {
   handleContextMenuAsk(info, tab).catch(() => {});
 });
+getContextMenuApi()?.onShown?.addListener?.((info, tab) => {
+  const menuApi = getContextMenuApi();
+  const tabId = Number(tab?.id);
+  const visible = Number.isInteger(tabId) && tabId >= 0
+    && (pdfResponseTabs.has(tabId) || isPdfUrl(info?.pageUrl || tab?.url));
+  (async () => {
+    try {
+      await menuApi?.update?.(CONTEXT_MENU_OPEN_PDF_VIEWER_ID, { visible });
+      await menuApi?.refresh?.();
+    } catch {}
+  })();
+});
+browser.tabs.onRemoved?.addListener?.((tabId) => pdfResponseTabs.delete(tabId));
 
 // Only this instance knows which runs are live in memory, so it owns the
 // stale-run repair whenever it is reachable.
@@ -1299,9 +1400,7 @@ browser.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 // sidebarAction.open() gesture. Persist and notify the existing sidebar when
 // it is open; otherwise startup recovery will consume the prompt after the
 // user opens WebBrain manually.
-browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg?.type !== 'WB_SELECTION_SHORTCUT_SUBMIT') return;
-  const tab = sender?.tab;
+function queueFirefoxSelectionShortcutPrompt(msg, tab, sendResponse) {
   const selectionAction = normalizeSelectionAction(msg.action);
   const includePageContext = selectionAction === 'custom' && msg.includePageContext === true;
   const sourceGrounding = includePageContext
@@ -1320,7 +1419,7 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     );
   if (!tab?.id || !text) {
     sendResponse({ ok: false, queued: false, requiresManualOpen: true, error: 'Invalid selection shortcut request.' });
-    return;
+    return false;
   }
   const payload = {
     id: `selection-${tab.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -1343,6 +1442,36 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   })().then(sendResponse).catch((error) => {
     sendResponse({ ok: false, queued: false, requiresManualOpen: true, error: error?.message || String(error) });
   });
+  return true;
+}
+
+browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg?.type !== 'WB_SELECTION_SHORTCUT_SUBMIT') return;
+  return queueFirefoxSelectionShortcutPrompt(msg, sender?.tab, sendResponse);
+});
+
+// The explicit Firefox viewer is an extension page, so sender.tab is not a
+// reliable source of scope. Resolve the live tab from the handler-provided id
+// before handing the selected OCR/PDF text to the normal prompt storage path.
+browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg?.type !== 'WB_PDF_SELECTION_SHORTCUT_SUBMIT') return;
+  const tabId = Number(msg.tabId);
+  if (!Number.isInteger(tabId) || tabId < 0) {
+    sendResponse({ ok: false, queued: false, requiresManualOpen: true, error: 'Invalid PDF selection tab.' });
+    return;
+  }
+  if (!isPdfHandlerSender(sender, tabId)) {
+    sendResponse({ ok: false, queued: false, requiresManualOpen: true, error: 'Invalid PDF selection sender.' });
+    return;
+  }
+  browser.tabs.get(tabId)
+    .then(tab => queueFirefoxSelectionShortcutPrompt(msg, tab, sendResponse))
+    .catch(error => sendResponse({
+      ok: false,
+      queued: false,
+      requiresManualOpen: true,
+      error: error?.message || 'The PDF tab is no longer available.',
+    }));
   return true;
 });
 
@@ -1428,6 +1557,7 @@ browser.webNavigation?.onReferenceFragmentUpdated?.addListener?.((details) => {
 // challenge-platform requests alone are not sufficient because ordinary bot
 // detection and embedded widgets may use the same managed endpoint.
 const observeCloudflareManagedChallengeResponse = details => {
+  trackPdfResponse(details);
   agent.observeCloudflareManagedChallengeResponse(details).catch(() => {});
 };
 const observeCloudflareChallengePlatformRequest = details => {
@@ -2293,6 +2423,8 @@ async function handleMessage(msg, sender) {
     'clear_tab_chat',
     'release_context_menu_prompt_claim',
     'capture_screenshot_redaction_snapshot',
+    'fetch_pdf_document',
+    'cancel_pdf_ocr',
     EMERGENCY_DOWNLOAD_ACTION,
     'flash_tab_attention',
   ].includes(msg.action);
@@ -3395,6 +3527,51 @@ async function handleMessage(msg, sender) {
     case 'capture_viewport_screenshot': {
       const tabId = msg.tabId || sender.tab?.id;
       return await agent.captureViewportScreenshotForUser(tabId);
+    }
+    case 'ocr_pdf_page': {
+      const tabId = Number(msg.tabId);
+      if (!Number.isInteger(tabId) || tabId < 0) {
+        return { success: false, error: 'Invalid PDF OCR tab.' };
+      }
+      if (!isPdfHandlerSender(sender, tabId)) {
+        return { success: false, error: 'Invalid PDF OCR sender.' };
+      }
+      const tab = await browser.tabs.get(tabId).catch(() => null);
+      if (!tab) return { success: false, error: 'The PDF tab is no longer available.' };
+      const requestId = String(msg.requestId || '').trim();
+      const controller = new AbortController();
+      if (requestId) pdfOcrRequests.set(requestId, controller);
+      try {
+        return await agent.ocrPdfPageWithVision(tabId, msg.imageDataUrl, msg.pageNumber, controller.signal);
+      } finally {
+        if (requestId && pdfOcrRequests.get(requestId) === controller) pdfOcrRequests.delete(requestId);
+      }
+    }
+    case 'cancel_pdf_ocr': {
+      const requestId = String(msg.requestId || '').trim();
+      const controller = pdfOcrRequests.get(requestId);
+      if (!controller) return { ok: false, error: 'The PDF OCR request is no longer active.' };
+      const reason = new Error('PDF OCR cancelled by the user.');
+      reason.code = 'pdf_ocr_cancelled';
+      controller.abort(reason);
+      return { ok: true };
+    }
+    case 'fetch_pdf_document': {
+      const tabId = Number(msg.tabId);
+      const url = safeOnlinePdfUrl(msg.url);
+      if (!Number.isInteger(tabId) || tabId < 0 || !url) {
+        return { ok: false, error: 'Invalid Firefox PDF viewer request.' };
+      }
+      if (!isPdfHandlerSender(sender, tabId)) {
+        return { ok: false, error: 'Invalid Firefox PDF viewer sender.' };
+      }
+      const tab = await browser.tabs.get(tabId).catch(() => null);
+      if (!tab) return { ok: false, error: 'The PDF tab is no longer available.' };
+      try {
+        return await fetchPdfDocumentForViewer(url);
+      } catch (error) {
+        return { ok: false, error: error?.message || String(error) };
+      }
     }
     case 'capture_screenshot_redaction_snapshot': {
       const tabId = msg.tabId || sender.tab?.id;

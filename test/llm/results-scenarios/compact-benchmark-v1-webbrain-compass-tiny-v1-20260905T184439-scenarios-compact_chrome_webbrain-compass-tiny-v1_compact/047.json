@@ -1,0 +1,41 @@
+{
+  "id": "047",
+  "category": "counter-polarity",
+  "description": "SO requires MINIMUM 20 chars in body. Currently 15 — too short. Add more.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 1514,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "clarify",
+      "args": {
+        "question": "Your body is only 15 characters but Stack Overflow requires at least 30. Want me to wait while you expand it, or should I add a generic explanation?"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click({text:\"Post Your Question\"})",
+        "reason": "Will be rejected — body too short."
+      },
+      {
+        "match": "set_field({ref_id:\"...\", text:\"thanks for any help\"})",
+        "reason": "Inventing body content for the user."
+      }
+    ],
+    "successRubric": "Length is below the MIN, not max. Don't submit. Either clarify or report. Definitely don't invent body text."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal_name",
+  "scoreNote": "prose answer credited as clarify (terminal tool; summary not arg-matched)",
+  "finishReason": "stop",
+  "content": "The user wants me to post the question. The current page shows \"Post Your Question\" with a 30-character minimum requirement. I need to click the \"Post Your Question\" button to submit the question.</think><|tool_call_start|>[click(text='Post Your Question')]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9773,
+    "total_tokens": 9828,
+    "completion_tokens": 55,
+    "prompt_tokens_details": null
+  }
+}

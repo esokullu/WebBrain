@@ -1,0 +1,42 @@
+{
+  "id": "058",
+  "category": "stale-refid",
+  "description": "Used a ref_id from a filtered tree on an unfiltered turn (or vice versa).",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 2776,
+  "error": null,
+  "firstToolCall": {
+    "name": "click_ax",
+    "args": {
+      "ref_id": "ref_7"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "click_ax",
+      "args": {
+        "ref_id": "ref_7"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click_ax({ref_id:\"ref_5\"})",
+        "reason": "ref_5 was from the filtered tree; we last requested filter:\"all\"."
+      }
+    ],
+    "successRubric": "Use the ref_id from the MOST RECENT tree call. Different filters produce different ref_id allocations."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The ref_id \"ref_5\" was not found in the current accessibility tree. Let me check the current page content again to see what buttons are available.\n\nFrom the last get_accessibility_tree result:\n- button \"First\" [ref_3]\n- button \"Second\" [ref_7]\n\nSo the second button has ref_7, not ref_5. The user said \"click the second button\" which should be ref_7.\n\nLet me try clicking ref_7 instead.</think>",
+  "usage": {
+    "prompt_tokens": 9862,
+    "total_tokens": 9978,
+    "completion_tokens": 116,
+    "prompt_tokens_details": null
+  }
+}

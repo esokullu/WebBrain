@@ -1,0 +1,30 @@
+{
+  "runTag": "compact-benchmark-v1-liquid-lfm-2.5-2.6b-free-stability-retry-20260905T194323-first-turn-100",
+  "model": "liquid/lfm-2.5-2.6b:free",
+  "browser": "chrome",
+  "base": "https://openrouter.ai/api/v1",
+  "saveRequest": false,
+  "tier": "compact",
+  "modeOverride": null,
+  "chatTemplateCompat": "off",
+  "structuredToolsSent": true,
+  "reasoningEffort": null,
+  "freeze": null,
+  "cases": 100,
+  "totalLatencyMs": 254153,
+  "errors": 0,
+  "withToolCall": 96,
+  "withToolCallFromContent": 0,
+  "byTool": {
+    "navigate": 17,
+    "get_accessibility_tree": 57,
+    "read_page": 14,
+    "fetch_url": 3,
+    "scratchpad_write": 1,
+    "find_text": 1,
+    "inspect_viewport": 1,
+    "get_window_info": 1,
+    "(no_tool_call)": 4,
+    "press_keys": 1
+  }
+}

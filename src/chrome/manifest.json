@@ -30,6 +30,12 @@
     "http://127.0.0.1/*",
     "http://*/*"
   ],
+  "mime_types_handler": {
+    "application/pdf": {
+      "handler_url": "src/ui/pdf-handler.html",
+      "can_embed": true
+    }
+  },
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src * data: blob:;"
   },

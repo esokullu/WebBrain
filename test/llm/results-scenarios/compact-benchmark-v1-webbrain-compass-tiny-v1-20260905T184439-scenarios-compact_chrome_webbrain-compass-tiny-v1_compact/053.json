@@ -1,0 +1,37 @@
+{
+  "id": "053",
+  "category": "stale-refid",
+  "description": "A dialog opened after a click; ref_ids from before the dialog are stale within the dialog scope.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 1902,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "get_accessibility_tree",
+      "args": {
+        "filter": "visible"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "type_ax({ref_id:\"ref_30\", text:\"hi alice\"})",
+        "reason": "Compose dialog opened; previous tree didn't include it. Re-read."
+      }
+    ],
+    "successRubric": "After opening a dialog/modal, re-read AX tree. The compose dialog has its own ref_id space."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "no_tool",
+  "scoreNote": null,
+  "finishReason": "stop",
+  "content": "The compose window is open but the text field isn't accessible yet. I need to wait for the text field to appear in the accessibility tree before I can type \"hi alice\".</think><|tool_call_start|>[wait_for_element(selector='input[placeholder=\"Type a message\"]]', timeout=10)]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9859,
+    "total_tokens": 9920,
+    "completion_tokens": 61,
+    "prompt_tokens_details": null
+  }
+}

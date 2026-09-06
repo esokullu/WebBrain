@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PDF — WebBrain</title>
+  <link rel="stylesheet" href="pdf-handler.css">
+</head>
+<body>
+  <header class="pdf-header">
+    <div class="pdf-title" aria-label="WebBrain PDF viewer">
+      <span class="pdf-badge" aria-hidden="true">PDF</span>
+      <span id="pdf-title">WebBrain PDF</span>
+    </div>
+    <div class="pdf-controls" role="toolbar" aria-label="PDF controls">
+      <div class="control-group" aria-label="Page navigation">
+        <button id="previous-page" type="button" aria-label="Previous page" disabled>←</button>
+        <label class="page-control">
+          <span class="sr-only">Page</span>
+          <input id="page-number" type="number" min="1" value="1" inputmode="numeric" disabled>
+          <span aria-hidden="true">/</span>
+          <strong id="page-count">—</strong>
+        </label>
+        <button id="next-page" type="button" aria-label="Next page" disabled>→</button>
+      </div>
+      <div class="control-group" aria-label="View controls">
+        <button id="zoom-out" type="button" aria-label="Zoom out" disabled>−</button>
+        <button id="fit-width" type="button" disabled>Fit width</button>
+        <button id="zoom-in" type="button" aria-label="Zoom in" disabled>＋</button>
+        <button id="rotate-page" type="button" aria-label="Rotate pages" disabled>↻</button>
+        <button id="ocr-page" type="button" aria-label="Read this page with OCR" title="Read this page with OCR" hidden disabled>OCR page</button>
+        <button id="cancel-ocr-page" type="button" aria-label="Cancel OCR" title="Cancel OCR" hidden>Cancel OCR</button>
+      </div>
+      <form id="search-form" class="search-control" role="search">
+        <label class="sr-only" for="document-search">Find in PDF</label>
+        <input id="document-search" type="search" placeholder="Find in PDF" disabled>
+        <button id="search-submit" type="submit" disabled>Find</button>
+      </form>
+      <button id="download-pdf" type="button" disabled>Download</button>
+      <button id="print-pdf" type="button" disabled>Print</button>
+    </div>
+  </header>
+  <main id="pdf-stage" class="pdf-stage">
+    <div id="pdf-status" class="pdf-status" role="status" aria-live="polite">Loading PDF…</div>
+    <div id="pdf-pages" class="pdf-pages"></div>
+  </main>
+  <script type="module" src="pdf-handler.js"></script>
+</body>
+</html>

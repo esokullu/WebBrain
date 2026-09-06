@@ -1,0 +1,42 @@
+{
+  "id": "011",
+  "category": "tool-error-pivot",
+  "description": "inspect_viewport returned \"no vision capability\". Must pivot to AX tree, not retry the capture.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 2645,
+  "error": null,
+  "firstToolCall": {
+    "name": "get_accessibility_tree",
+    "args": {
+      "filter": "all"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "get_accessibility_tree",
+      "args": {
+        "filter": "visible"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "inspect_viewport({})",
+        "reason": "Retrying a tool that just declared it cannot work — gpt-4o trace xpx9t9 made this mistake."
+      }
+    ],
+    "successRubric": "Pivot to a text-based inspection tool (get_accessibility_tree, read_page, or get_interactive_elements). The error message even names the alternatives — use one of them."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal_name",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The inspect_viewport tool failed because the model doesn't have vision capability. Let me try using get_accessibility_tree or read_page to get information about the page content.\n\nThe URL is https://mastoturk.org/publish with Title \"MastoTurk\".\n\nLet me try get_accessibility_tree first to see what's on the page.</think>",
+  "usage": {
+    "prompt_tokens": 9825,
+    "total_tokens": 9907,
+    "completion_tokens": 82,
+    "prompt_tokens_details": null
+  }
+}

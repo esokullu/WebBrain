@@ -14,6 +14,20 @@ Firefox uses Manifest V2 (background page, not service worker) and has **no acce
 
 Everything else — the agent loop, LLM providers, site adapters, Ask/Act/Dev mode routing, Plan before Act, loop detection, API shortcut observer, trace recorder, scheduler, context management — is architecturally identical to Chrome unless noted below.
 
+PDF handling is an intentional platform exception: Firefox has no equivalent
+to Chrome's global `mime_types_handler`/`chrome.mimeHandler` route in this
+extension. Firefox therefore keeps its native PDF viewer as the default and
+uses an explicit WebBrain PDF viewer context-menu entry when the user chooses
+it. The Chrome-only automatic PDF viewer opt-in setting does not apply to
+Firefox; the explicit Firefox entry remains available independently.
+
+The explicit Firefox route is URL/GET based. It cannot replay an arbitrary
+POST navigation because the context-menu event does not expose the original
+request body; those documents remain in the native viewer unless a stable PDF
+URL is available. Chrome's MIME-handler route receives the browser's one-time
+stream and therefore also covers PDF responses that originated from POST
+navigations.
+
 ---
 
 ## High-Level Overview

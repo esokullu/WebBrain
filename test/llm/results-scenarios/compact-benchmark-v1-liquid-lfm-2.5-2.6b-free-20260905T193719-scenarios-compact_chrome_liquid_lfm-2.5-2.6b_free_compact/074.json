@@ -1,0 +1,32 @@
+{
+  "id": "074",
+  "category": "cross-lingual",
+  "description": "Japanese site, English user. Use the visible kanji label OR the aria-label equivalent.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 362,
+  "error": "HTTP 429: {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-min. \",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"20\",\"X-RateLimit-Remaining\":\"0\",\"X-RateLimit-Reset\":\"1788626400000\"},\"limit_source\":\"openrouter_free_tier_per_minute\",\"remedy_hint\":\"Slow down requests to free models, or retry after the per-minute window resets.\",\"provider_name\":null}},\"user_id\":\"user_3AbNCAJijEuArTpJ0g3wyO8p3KK\"}",
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "click",
+      "args": {
+        "text": "ログイン"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click({text:\"Sign in\"})",
+        "reason": "Japanese site — no English \"Sign in\" label."
+      }
+    ],
+    "successRubric": "Use the Japanese label \"ログイン\" (login). Multilingual interfaces require using the visible label."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "error",
+  "scoreNote": null,
+  "finishReason": null,
+  "content": null,
+  "usage": null
+}

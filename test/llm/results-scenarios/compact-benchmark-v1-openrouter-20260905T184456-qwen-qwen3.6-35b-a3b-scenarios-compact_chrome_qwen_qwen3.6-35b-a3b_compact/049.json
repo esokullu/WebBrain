@@ -1,0 +1,54 @@
+{
+  "id": "049",
+  "category": "counter-polarity",
+  "description": "File size: 12.4 MB; limit 10 MB. Recognize the over-limit and report.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 4373,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "done",
+      "args": {
+        "summary": "report.pdf is 12.4 MB but this form caps uploads at 10 MB. Compress it or split before retrying."
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click({text:\"Upload\"})",
+        "reason": "Will be rejected — file too big."
+      }
+    ],
+    "successRubric": "Recognize the over-limit number, surface honestly to the user. Do not attempt the upload."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal_name",
+  "scoreNote": "prose answer credited as done (terminal tool; summary not arg-matched)",
+  "finishReason": "stop",
+  "content": "\n\nThe file `report.pdf` (12.4 MB) is selected, but it **exceeds the maximum allowed size of 10 MB**. The upload cannot proceed with this file.\n\nWould you like to:\n1. Select a different, smaller file?\n2. Compress the PDF to reduce its size?",
+  "usage": {
+    "prompt_tokens": 9043,
+    "completion_tokens": 108,
+    "total_tokens": 9151,
+    "cost": 0.00052775,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.00052775,
+      "upstream_inference_prompt_cost": 0.00045215,
+      "upstream_inference_completions_cost": 0.0000756
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 37,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}

@@ -335,6 +335,7 @@
   "social.mastodon_label": "WebBrain di Mastodon",
   "social.bluesky_label": "WebBrain di Bluesky",
   "social.discord_label": "WebBrain di Discord",
+  "social.huggingface_label": "WebBrain di Hugging Face",
   "footer.copyright_html": "© 2026 WebBrain. Dibina oleh <a href=\"https://emresokullu.com\" target=\"_blank\">Emre Sokullu</a> dan <a href=\"https://github.com/webbrain-one/webbrain/graphs/contributors\" target=\"_blank\">penyumbang</a>.",
   "footer.link_github": "GitHub",
   "footer.link_privacy": "Dasar Privasi",

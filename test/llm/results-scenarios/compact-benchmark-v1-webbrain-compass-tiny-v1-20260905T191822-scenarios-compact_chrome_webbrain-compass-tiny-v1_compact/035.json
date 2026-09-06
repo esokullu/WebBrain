@@ -1,0 +1,49 @@
+{
+  "id": "035",
+  "category": "truncation-cascade",
+  "description": "read_pdf returned 50 pages truncated; agent should call again with fromPage to continue OR answer if enough.",
+  "mode": "ask",
+  "browser": "chrome",
+  "latencyMs": 3505,
+  "error": null,
+  "firstToolCall": {
+    "name": "read_pdf",
+    "args": {
+      "url": "https://arxiv.org/pdf/2401.00001.pdf",
+      "maxChars": 60000
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "read_pdf",
+      "args": {
+        "url": "https://arxiv.org/pdf/2401.00001.pdf",
+        "fromPage": 70,
+        "toPage": 87
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "read_pdf({url:\"...\", fromPage:1, toPage:50})",
+        "reason": "Re-reading the same range."
+      },
+      {
+        "match": "fetch_url({url:\"https://arxiv.org/pdf/2401.00001.pdf\"})",
+        "reason": "Won't parse the PDF."
+      }
+    ],
+    "successRubric": "Conclusion is at the END of a paper. Use fromPage near the total to grab the conclusion. Don't re-read the same range."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal_name",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The PDF is truncated and I don't have the full text. I need to use the available tools to extract the conclusion. Let me try `read_pdf` with a different approach or use `extract_data` for headings. Actually, the PDF is truncated, so I may not get the full conclusion. Let me try reading it again with the same URL, but the previous call already returned truncated data. I should try a different approach - perhaps `read_page` with the current tab, but the PDF is a separate file. Actually, the PDF is accessible via `read_pdf` which fetches the PDF binary and extracts text. The previous call returned truncated text with `_truncated: true`. This means the PDF was partially read. I should try again, but the PDF might be the same. Let me try `read_pdf` with `maxChars` set to a larger value to try to get more text. The default maxChars is 50000. The PDF has 87 pages, so it's likely longer than 50000 characters. Let me try with a larger maxChars.</think>",
+  "usage": {
+    "prompt_tokens": 7652,
+    "total_tokens": 7910,
+    "completion_tokens": 258,
+    "prompt_tokens_details": null
+  }
+}

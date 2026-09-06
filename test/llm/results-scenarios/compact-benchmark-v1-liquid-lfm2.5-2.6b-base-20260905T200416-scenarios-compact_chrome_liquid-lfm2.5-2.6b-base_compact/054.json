@@ -1,0 +1,49 @@
+{
+  "id": "054",
+  "category": "stale-refid",
+  "description": "Page re-rendered after a JS event; ref_ids invalidated.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 7695,
+  "error": null,
+  "firstToolCall": {
+    "name": "click_ax",
+    "args": {
+      "ref_id": "ref_22"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "get_accessibility_tree",
+      "args": {
+        "filter": "visible"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click_ax({ref_id:\"ref_22\"})",
+        "reason": "Tree invalidated after the size click triggered a re-render."
+      },
+      {
+        "match": "click_ax({ref_id:\"ref_23\"})",
+        "reason": "Adjacent guess."
+      }
+    ],
+    "successRubric": "After clicks that may re-render (variant selection on product pages), re-read AX tree before subsequent ref_id-based actions."
+  },
+  "matchedAntiPattern": {
+    "match": "click_ax({ref_id:\"ref_22\"})",
+    "reason": "Tree invalidated after the size click triggered a re-render."
+  },
+  "verdict": "anti",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The \"Add to Cart\" button (ref_22) is not showing up in the accessibility tree after clicking the size button. This could mean the page structure changed or the button wasn't properly focused.\n\nLet me try clicking the \"Add to Cart\" button directly by its ref_id, but since it wasn't found, I need to check the current accessibility tree again to see what's available.\n\nActually, looking at the previous result, the accessibility tree showed:\n- button \"Size: Large\" [ref_15]\n- button \"Add to Cart\" [ref_22]\n\nBut when I tried to click ref_22, it said \"ref_id ref_22 not found in current accessibility tree.\"\n\nThis is strange - the button was listed in the tree but then disappeared when I tried to click it. This could be a timing issue or the element was removed from the DOM.\n\nLet me try the click again, or perhaps I need to wait for the element to be available. But since I already got a success response for ref_15, the click was successful.\n\nFor ref_22, it might have been removed from the DOM after the page updated. Let me try clicking it again, or check if there's another way to add to cart.\n\nActually, looking more carefully at the error - it says \"ref_id ref_22 not found in current accessibility tree.\" This suggests the button is no longer in the tree at all.\n\nI should try clicking it again - perhaps the element reappears or the state changes. Or I could try a different approach.\n\nLet me try clicking ref_22 again.</think>",
+  "usage": {
+    "prompt_tokens": 9863,
+    "total_tokens": 10205,
+    "completion_tokens": 342,
+    "prompt_tokens_details": null
+  }
+}

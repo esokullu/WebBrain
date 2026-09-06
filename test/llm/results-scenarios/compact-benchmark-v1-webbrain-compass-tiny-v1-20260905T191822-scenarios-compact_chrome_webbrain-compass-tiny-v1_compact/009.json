@@ -1,0 +1,37 @@
+{
+  "id": "009",
+  "category": "loop-bad-url",
+  "description": "Tenant URL but no auth/permission — refresh or retry won't help.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 4420,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "done",
+      "args": {
+        "summary": "The Notion workspace at my-tenant.notion.site is saying \"You don't have access\". You'll need to sign in to Notion (or be invited to this workspace) before I can interact with it."
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "navigate({url:\"https://my-tenant.notion.site/\"})",
+        "reason": "Refreshing won't produce a different result."
+      }
+    ],
+    "successRubric": "Report the access wall to the user, do not loop."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal_name",
+  "scoreNote": "prose answer credited as done (terminal tool; summary not arg-matched)",
+  "finishReason": "stop",
+  "content": "The user is asking to open their Notion workspace at my-tenant. The previous attempt to navigate to https://my-tenant.notion.site/ resulted in \"You don't have access\" - which means the user doesn't have permission to access that workspace.\n\nI should explain that the workspace is not accessible and ask whether they want me to help with access or if they should contact the workspace owner.</think><|tool_call_start|>[clarify(question='The workspace is not accessible. Do you want me to help with access, or should you contact the workspace owner?', options=[\"Help with access\", \"Contact the owner\"], \"reason=\"The workspace is not accessible, so I need your preferred action before attempting further.\", \"require_explicit_answer=True\"])]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9841,
+    "total_tokens": 10003,
+    "completion_tokens": 162,
+    "prompt_tokens_details": null
+  }
+}

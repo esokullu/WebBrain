@@ -1,0 +1,23 @@
+{
+  "id": "025",
+  "user": "search youtube for \"never gonna give you up\"",
+  "mode": "act",
+  "tab": {
+    "url": "https://www.youtube.com/",
+    "title": "YouTube"
+  },
+  "latencyMs": 3485,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "finishReason": "stop",
+  "content": "The user wants me to search YouTube for \"never gonna give you up\". This is a straightforward search task. I should use the YouTube search capability available in the browser.\n\nLet me search for \"never gonna give you up\" on YouTube.</think><|tool_call_start|>[click_ax(ref_id='ref_1234567890')]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 10025,
+    "total_tokens": 10092,
+    "completion_tokens": 67,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

@@ -1,0 +1,23 @@
+{
+  "id": "053",
+  "user": "search my email for invoice",
+  "mode": "act",
+  "tab": {
+    "url": "https://mail.google.com/mail/u/0/#inbox",
+    "title": "Inbox (3) — Gmail"
+  },
+  "latencyMs": 1674,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "finishReason": "stop",
+  "content": "The user wants me to search their Gmail for invoices. I should use the `search` tool with the query \"invoice\".</think><|tool_call_start|>[read_page(includeChrome=False, offset=0, limit=6000, continuationArgs={})]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 10499,
+    "total_tokens": 10554,
+    "completion_tokens": 55,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

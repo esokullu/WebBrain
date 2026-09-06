@@ -1,0 +1,39 @@
+{
+  "id": "044",
+  "category": "counter-polarity",
+  "description": "X counter shows \"-5\" — over by 5. Shorten before posting.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 3926,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "set_field",
+      "args": {
+        "ref_id": "ref_textarea",
+        "clear": true,
+        "text": "<shortened text>"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click({text:\"Post\"})",
+        "reason": "Will be rejected — text is 5 over."
+      }
+    ],
+    "successRubric": "Negative on X's counter = over by N chars. Shorten before submit."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "no_tool",
+  "scoreNote": null,
+  "finishReason": "stop",
+  "content": "The user wants me to post the draft they provided. The draft is:\n\n\"What is happening? ... -5 ... Post\"\n\nI should use the `set_field` tool to fill in the textarea with this draft content. The field is currently empty, so I should fill it with the draft text.\n\nLet me use `set_field` with:\n- ref_id: \"ref_0\" (the textarea input)\n- text: \"What is happening? ... -5 ... Post\"\n- clear: true (to clear any existing content)\n- submit: false (we're just filling the field, not submitting yet)\n\nActually, looking at the tool definition more carefully, `set_field` is described as \"Atomically fill text into a form field by ref_id, then verify the exact settled value.\"\n\nSo I should use `set_field` with the text. The field is currently empty, so I should fill it with the draft content.\n\nLet me proceed with the tool call.</think><|tool_call_start|>[set_field(ref_id='ref_0', text='What is happening? ... -5 ... Post', clear=True)]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9788,
+    "total_tokens": 10018,
+    "completion_tokens": 230,
+    "prompt_tokens_details": null
+  }
+}

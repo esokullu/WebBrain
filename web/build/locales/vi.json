@@ -335,6 +335,7 @@
   "social.mastodon_label": "WebBrain trên Mastodon",
   "social.bluesky_label": "WebBrain trên Bluesky",
   "social.discord_label": "WebBrain trên Discord",
+  "social.huggingface_label": "WebBrain trên Hugging Face",
   "footer.copyright_html": "© 2026 WebBrain. Được xây dựng bởi <a href=\"https://emresokullu.com\" target=\"_blank\">Emre Sokullu</a> và <a href=\"https://github.com/webbrain-one/webbrain/graphs/contributors\" target=\"_blank\">những người đóng góp</a>.",
   "footer.link_github": "GitHub",
   "footer.link_privacy": "Chính sách bảo mật",

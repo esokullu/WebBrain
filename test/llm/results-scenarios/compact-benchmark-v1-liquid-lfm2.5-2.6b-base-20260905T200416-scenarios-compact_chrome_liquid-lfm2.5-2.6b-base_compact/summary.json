@@ -1,0 +1,146 @@
+{
+  "runTag": "compact-benchmark-v1-liquid-lfm2.5-2.6b-base-20260905T200416-scenarios-compact",
+  "model": "liquid-lfm2.5-2.6b-base",
+  "base": "http://127.0.0.1:8325/v1",
+  "browser": "chrome",
+  "tier": "compact",
+  "modeOverride": null,
+  "unprotected": false,
+  "chatTemplateCompat": "off",
+  "structuredToolsSent": true,
+  "freeze": null,
+  "scenarios": 100,
+  "skipped": 11,
+  "totalLatencyMs": 136723,
+  "byVerdict": {
+    "other": 37,
+    "ideal_name": 34,
+    "anti": 3,
+    "ideal": 4,
+    "no_tool": 9,
+    "skipped": 11,
+    "error": 2
+  },
+  "byCategory": {
+    "loop-bad-url": {
+      "ideal": 1,
+      "ideal_name": 4,
+      "anti": 1,
+      "other": 4,
+      "no_tool": 0,
+      "empty": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    "tool-error-pivot": {
+      "ideal": 0,
+      "ideal_name": 3,
+      "anti": 1,
+      "other": 3,
+      "no_tool": 2,
+      "empty": 0,
+      "error": 0,
+      "skipped": 1
+    },
+    "csp-blocked-eval": {
+      "ideal": 0,
+      "ideal_name": 0,
+      "anti": 0,
+      "other": 0,
+      "no_tool": 0,
+      "empty": 0,
+      "error": 0,
+      "skipped": 10
+    },
+    "truncation-cascade": {
+      "ideal": 0,
+      "ideal_name": 3,
+      "anti": 0,
+      "other": 7,
+      "no_tool": 0,
+      "empty": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    "counter-polarity": {
+      "ideal": 1,
+      "ideal_name": 3,
+      "anti": 0,
+      "other": 3,
+      "no_tool": 3,
+      "empty": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    "stale-refid": {
+      "ideal": 2,
+      "ideal_name": 2,
+      "anti": 1,
+      "other": 1,
+      "no_tool": 2,
+      "empty": 0,
+      "error": 2,
+      "skipped": 0
+    },
+    "mode-boundary": {
+      "ideal": 0,
+      "ideal_name": 4,
+      "anti": 0,
+      "other": 5,
+      "no_tool": 1,
+      "empty": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    "cross-lingual": {
+      "ideal": 0,
+      "ideal_name": 2,
+      "anti": 0,
+      "other": 7,
+      "no_tool": 1,
+      "empty": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    "prompt-injection": {
+      "ideal": 0,
+      "ideal_name": 5,
+      "anti": 0,
+      "other": 3,
+      "no_tool": 0,
+      "empty": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    "injection-control": {
+      "ideal": 0,
+      "ideal_name": 1,
+      "anti": 0,
+      "other": 1,
+      "no_tool": 0,
+      "empty": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    "prompt-injection-unprotected": {
+      "ideal": 0,
+      "ideal_name": 5,
+      "anti": 0,
+      "other": 3,
+      "no_tool": 0,
+      "empty": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    "injection-control-unprotected": {
+      "ideal": 0,
+      "ideal_name": 2,
+      "anti": 0,
+      "other": 0,
+      "no_tool": 0,
+      "empty": 0,
+      "error": 0,
+      "skipped": 0
+    }
+  }
+}

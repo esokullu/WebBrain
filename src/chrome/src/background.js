@@ -289,10 +289,106 @@ const MAX_AGENT_STEPS_DEFAULT = 130;
 const MAX_AGENT_STEPS_UNLIMITED_SENTINEL = 200;
 const CONTEXT_MENU_ASK_SELECTION_ID = 'webbrain-ask-selection';
 const CONTEXT_MENU_OPEN_CHAT_ID = 'webbrain-selection-open-chat';
+const CONTEXT_MENU_OPEN_PDF_VIEWER_ID = 'webbrain-open-pdf-viewer';
 const CONTEXT_MENU_ACTION_PREFIX = 'webbrain-selection-action-';
 const CONTEXT_MENU_TRANSLATE_ID = 'webbrain-selection-translate';
 const CONTEXT_MENU_TRANSLATE_PREFIX = 'webbrain-selection-translate-';
 const CONTEXT_MENU_GENERIC_ASK_ID = 'webbrain-selection-generic-ask';
+const PDF_VIEWER_ENABLED_KEY = 'pdfViewerEnabled';
+const PDF_MIME_TYPE = 'application/pdf';
+const PDF_MIME_HANDLER_INSTALL_SYNC_DELAY_MS = 500;
+const pdfResponseTabs = new Set();
+const pdfOcrRequests = new Map();
+
+function safeOnlinePdfUrl(value) {
+  try {
+    const url = new URL(String(value || ''));
+    return ['http:', 'https:'].includes(url.protocol) ? url.href : '';
+  } catch {
+    return '';
+  }
+}
+
+function isPdfUrl(value) {
+  try {
+    const url = new URL(String(value || ''));
+    return ['http:', 'https:'].includes(url.protocol) && /\.pdf$/i.test(url.pathname);
+  } catch {
+    return false;
+  }
+}
+
+function trackPdfResponse(details) {
+  if (!Number.isInteger(details?.tabId) || details.tabId < 0) return;
+  const contentType = (details.responseHeaders || [])
+    .find(header => String(header?.name || '').toLowerCase() === 'content-type')?.value;
+  if (/^application\/pdf(?:\s*;|$)/i.test(String(contentType))) pdfResponseTabs.add(details.tabId);
+  else pdfResponseTabs.delete(details.tabId);
+}
+
+async function setNativePdfMimeHandlerEnabled(enabled) {
+  if (typeof chrome.mimeHandler?.setMimeHandlerOptions !== 'function') return false;
+  await chrome.mimeHandler.setMimeHandlerOptions(PDF_MIME_TYPE, {
+    enabled: enabled === true,
+  });
+  return true;
+}
+
+async function syncNativePdfMimeHandlerFromStorage() {
+  const stored = await chrome.storage.local.get({ [PDF_VIEWER_ENABLED_KEY]: false });
+  return setNativePdfMimeHandlerEnabled(stored?.[PDF_VIEWER_ENABLED_KEY] === true);
+}
+
+function reportPdfMimeHandlerSyncFailure(error) {
+  console.warn('[WebBrain] Could not synchronize the native PDF MIME handler option:', error);
+}
+
+function scheduleNativePdfMimeHandlerSync(delayMs = 0) {
+  setTimeout(() => {
+    syncNativePdfMimeHandlerFromStorage().catch(reportPdfMimeHandlerSyncFailure);
+  }, delayMs);
+}
+
+function setPdfContextMenuVisibility(visible) {
+  chrome.contextMenus?.update?.(CONTEXT_MENU_OPEN_PDF_VIEWER_ID, { visible: Boolean(visible) }, () => {
+    void chrome.runtime.lastError;
+  });
+}
+
+async function syncPdfContextMenuForActiveTab() {
+  if (!chrome.contextMenus?.update || !chrome.tabs?.query) return;
+  const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  const tabId = Number(tab?.id);
+  const visible = Number.isInteger(tabId) && tabId >= 0
+    && (pdfResponseTabs.has(tabId) || isPdfUrl(tab?.url));
+  setPdfContextMenuVisibility(visible);
+}
+
+function getPdfHandlerBaseUrl() {
+  try {
+    return chrome.runtime.getURL('src/ui/pdf-handler.html');
+  } catch {
+    return '';
+  }
+}
+
+// The PDF viewer is an extension page, so sender.tab is empty. Scope the
+// request to the handler that sent it: the sender must be our viewer and,
+// when the sender URL carries an explicit tabId, it must match msg.tabId.
+function isPdfHandlerSender(sender, tabId) {
+  if (!sender || sender.id !== chrome.runtime.id) return false;
+  const senderUrl = String(sender?.url || '');
+  const base = getPdfHandlerBaseUrl();
+  if (!base || !senderUrl.startsWith(base)) return false;
+  try {
+    const senderTabId = new URL(senderUrl).searchParams.get('tabId');
+    if (senderTabId != null && Number(senderTabId) !== tabId) return false;
+  } catch {
+    return false;
+  }
+  return true;
+}
+
 function resolveStoredSelectionShortcutLocale(value) {
   return normalizeSelectionShortcutLocale(
     value || (typeof navigator !== 'undefined' ? navigator.language : 'en'),
@@ -339,6 +435,9 @@ async function createContextMenus() {
       if (err && !/duplicate/i.test(String(err.message || err))) {
         console.warn('[WebBrain] Failed to create context menu:', err.message || err);
       }
+      if (item.id === CONTEXT_MENU_OPEN_PDF_VIEWER_ID) {
+        syncPdfContextMenuForActiveTab().catch(() => {});
+      }
     });
   };
 
@@ -371,6 +470,12 @@ async function createContextMenus() {
     }
     create({ id: 'webbrain-selection-separator-2', parentId: CONTEXT_MENU_ASK_SELECTION_ID, type: 'separator', contexts: ['selection'] });
     create({ id: CONTEXT_MENU_GENERIC_ASK_ID, parentId: CONTEXT_MENU_ASK_SELECTION_ID, title: strings.askAbout, contexts: ['selection'] });
+    create({
+      id: CONTEXT_MENU_OPEN_PDF_VIEWER_ID,
+      title: 'Open PDF with WebBrain',
+      contexts: ['page'],
+      visible: false,
+    });
   });
 }
 
@@ -1048,12 +1153,19 @@ chrome.runtime.onInstalled.addListener(async (details) => {
   await loadClarifyTimeout();
   await syncAgentUserMemoryFromStorage().catch(() => {});
   await cloudRunController.syncBridge().catch(() => {});
+  // Chrome registers the manifest handler with enabled=true after install.
+  // Reconcile now and once more after registration settles so the native
+  // default cannot overwrite the extension's opt-in default. The in-handler
+  // storage guard covers the short installation window between these calls.
+  await syncNativePdfMimeHandlerFromStorage().catch(reportPdfMimeHandlerSyncFailure);
+  scheduleNativePdfMimeHandlerSync(PDF_MIME_HANDLER_INSTALL_SYNC_DELAY_MS);
   scheduleUserMemoryExtractionDrain(5000);
   console.log('[WebBrain] Extension installed, providers loaded.');
 });
 
 // Also load on startup
 chrome.runtime.onStartup?.addListener(async () => {
+  await syncNativePdfMimeHandlerFromStorage().catch(reportPdfMimeHandlerSyncFailure);
   await createContextMenus();
   await providerManager.load();
   await loadMaxSteps();
@@ -1064,7 +1176,11 @@ chrome.runtime.onStartup?.addListener(async () => {
 });
 
 // Listen for setting changes
-chrome.storage.onChanged.addListener((changes) => {
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName === 'local' && changes[PDF_VIEWER_ENABLED_KEY]) {
+    setNativePdfMimeHandlerEnabled(changes[PDF_VIEWER_ENABLED_KEY].newValue === true)
+      .catch(reportPdfMimeHandlerSyncFailure);
+  }
   if (changes.wbLocale) {
     selectionShortcutLocale = normalizeSelectionShortcutLocale(changes.wbLocale.newValue);
     createContextMenus().catch(() => {});
@@ -1459,6 +1575,15 @@ function openSidePanelForContextMenu(tab) {
 async function handleContextMenuAsk(info, tab) {
   if (!tab?.id) return;
   const menuItemId = String(info?.menuItemId || '');
+  if (menuItemId === CONTEXT_MENU_OPEN_PDF_VIEWER_ID) {
+    const pdfUrl = safeOnlinePdfUrl(tab.url);
+    if (!pdfUrl || (!pdfResponseTabs.has(tab.id) && !isPdfUrl(pdfUrl))) return;
+    const viewerUrl = chrome.runtime.getURL(
+      `src/ui/pdf-handler.html?url=${encodeURIComponent(pdfUrl)}&tabId=${encodeURIComponent(tab.id)}`,
+    );
+    await chrome.tabs.update(tab.id, { url: viewerUrl });
+    return;
+  }
   if (menuItemId === CONTEXT_MENU_OPEN_CHAT_ID) {
     openSidePanelForContextMenu(tab);
     return;
@@ -1518,9 +1643,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 // Selection-shortcut clicks originate in a content script. Keep this listener
 // synchronous until sidePanel.open() so Chrome preserves the originating user
 // gesture; prompt recovery storage can finish afterward.
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg?.type !== 'WB_SELECTION_SHORTCUT_SUBMIT') return;
-  const tab = sender?.tab;
+function queueSelectionShortcutPrompt(msg, tab, sendResponse) {
   const selectionAction = normalizeSelectionAction(msg.action);
   const includePageContext = selectionAction === 'custom' && msg.includePageContext === true;
   const sourceGrounding = includePageContext
@@ -1539,7 +1662,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     );
   if (!tab?.id || !text) {
     sendResponse({ ok: false, queued: false, requiresManualOpen: false, error: 'Invalid selection shortcut request.' });
-    return;
+    return false;
   }
   const payload = {
     id: `selection-${tab.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -1563,6 +1686,43 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   })().then(sendResponse).catch((error) => {
     sendResponse({ ok: false, queued: false, requiresManualOpen: false, error: error?.message || String(error) });
   });
+  return true;
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg?.type !== 'WB_SELECTION_SHORTCUT_SUBMIT') return;
+  return queueSelectionShortcutPrompt(msg, sender?.tab, sendResponse);
+});
+
+// PDF handler pages are extension pages, so Chrome does not populate
+// sender.tab. The handler carries the tab id returned by getStreamInfo();
+// resolve the live tab before building the prompt so its scope cannot be
+// forged or reused after the tab has gone away.
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg?.type !== 'WB_PDF_SELECTION_SHORTCUT_SUBMIT') return;
+  const tabId = Number(msg.tabId);
+  if (!Number.isInteger(tabId) || tabId < 0) {
+    sendResponse({ ok: false, queued: false, requiresManualOpen: false, error: 'Invalid PDF selection tab.' });
+    return;
+  }
+  if (!isPdfHandlerSender(sender, tabId)) {
+    sendResponse({ ok: false, queued: false, requiresManualOpen: false, error: 'Invalid PDF selection sender.' });
+    return;
+  }
+  // sidePanel.open() must run synchronously in this handler to preserve the
+  // click gesture; chrome.tabs.get() would lose it. Open for the claimed tab
+  // now (stub is enough for setOptions/open), then verify the live tab.
+  try {
+    openSidePanelForContextMenu({ id: tabId });
+  } catch {}
+  chrome.tabs.get(tabId)
+    .then(tab => queueSelectionShortcutPrompt(msg, tab, sendResponse))
+    .catch(error => sendResponse({
+      ok: false,
+      queued: false,
+      requiresManualOpen: false,
+      error: error?.message || 'The PDF tab is no longer available.',
+    }));
   return true;
 });
 
@@ -1645,6 +1805,14 @@ function reassertIndicatorIfActive(tabId) {
 }
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  // Do not clear pdfResponseTabs here: onHeadersReceived records the PDF
+  // content type while the response is still in flight and the tab's URL only
+  // changes once that navigation commits, so deleting on changeInfo.url would
+  // discard the entry it just recorded. trackPdfResponse() already replaces
+  // the entry on the next main-frame response, and onRemoved clears it.
+  if (changeInfo?.url || changeInfo?.status) {
+    syncPdfContextMenuForActiveTab().catch(() => {});
+  }
   if (changeInfo?.status === 'complete') {
     reassertIndicatorIfActive(tabId);
   }
@@ -2236,6 +2404,8 @@ chrome.webNavigation?.onCompleted?.addListener((details) => {
 // challenge-platform requests alone are not sufficient because ordinary bot
 // detection and embedded widgets may use the same managed endpoint.
 const observeCloudflareManagedChallengeResponse = details => {
+  trackPdfResponse(details);
+  syncPdfContextMenuForActiveTab().catch(() => {});
   agent.observeCloudflareManagedChallengeResponse(details).catch(() => {});
 };
 const observeCloudflareChallengePlatformRequest = details => {
@@ -2252,6 +2422,7 @@ chrome.webRequest?.onBeforeRequest?.addListener?.(
 );
 
 chrome.tabs.onRemoved.addListener((tabId) => lastNavByTab.delete(tabId));
+chrome.tabs.onRemoved.addListener((tabId) => pdfResponseTabs.delete(tabId));
 
 // Background API call observer (issue #189). Watches XHR/fetch requests the
 // page itself fires — e.g. clicking "Next Page" — so the agent can later spot
@@ -2485,6 +2656,7 @@ async function showCompletionNotification(tabId, success) {
 
 chrome.tabs.onActivated.addListener(({ tabId } = {}) => {
   flashedBadgeTabs.delete(tabId);
+  syncPdfContextMenuForActiveTab().catch(() => {});
   // Clear unconditionally: the Set only lives in service-worker memory, but
   // a tab-scoped badge survives MV3 worker suspension/restarts. Resetting
   // the per-tab override is idempotent and restores any global badge.
@@ -2502,6 +2674,7 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
     const [activeTab] = await chrome.tabs.query({ active: true, windowId });
     const activeTabId = Number(activeTab?.id);
     if (!Number.isInteger(activeTabId)) return;
+    setPdfContextMenuVisibility(pdfResponseTabs.has(activeTabId) || isPdfUrl(activeTab?.url));
     flashedBadgeTabs.delete(activeTabId);
     await chrome.action.setBadgeText({ tabId: activeTabId, text: '' });
   } catch { /* best-effort cleanup */ }
@@ -2618,6 +2791,7 @@ async function handleMessage(msg, sender) {
     'clear_tab_chat',
     'release_context_menu_prompt_claim',
     'capture_screenshot_redaction_snapshot',
+    'cancel_pdf_ocr',
     'ensure_offscreen_offline_rag_host',
     EMERGENCY_DOWNLOAD_ACTION,
     'flash_tab_attention',
@@ -3957,6 +4131,34 @@ async function handleMessage(msg, sender) {
     case 'capture_viewport_screenshot': {
       const tabId = msg.tabId || sender.tab?.id;
       return await agent.captureViewportScreenshotForUser(tabId);
+    }
+    case 'ocr_pdf_page': {
+      const tabId = Number(msg.tabId);
+      if (!Number.isInteger(tabId) || tabId < 0) {
+        return { success: false, error: 'Invalid PDF OCR tab.' };
+      }
+      if (!isPdfHandlerSender(sender, tabId)) {
+        return { success: false, error: 'Invalid PDF OCR sender.' };
+      }
+      const tab = await chrome.tabs.get(tabId).catch(() => null);
+      if (!tab) return { success: false, error: 'The PDF tab is no longer available.' };
+      const requestId = String(msg.requestId || '').trim();
+      const controller = new AbortController();
+      if (requestId) pdfOcrRequests.set(requestId, controller);
+      try {
+        return await agent.ocrPdfPageWithVision(tabId, msg.imageDataUrl, msg.pageNumber, controller.signal);
+      } finally {
+        if (requestId && pdfOcrRequests.get(requestId) === controller) pdfOcrRequests.delete(requestId);
+      }
+    }
+    case 'cancel_pdf_ocr': {
+      const requestId = String(msg.requestId || '').trim();
+      const controller = pdfOcrRequests.get(requestId);
+      if (!controller) return { ok: false, error: 'The PDF OCR request is no longer active.' };
+      const reason = new Error('PDF OCR cancelled by the user.');
+      reason.code = 'pdf_ocr_cancelled';
+      controller.abort(reason);
+      return { ok: true };
     }
     case 'capture_screenshot_redaction_snapshot': {
       const tabId = msg.tabId || sender.tab?.id;

@@ -1,0 +1,41 @@
+{
+  "id": "079",
+  "category": "cross-lingual",
+  "description": "French form, English instructions including mixed English+French data.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 2484,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "click",
+      "args": {
+        "index": 0
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "type_text({text:\"Marie Dupont\"})",
+        "reason": "No field focused yet; type would land in wrong field."
+      },
+      {
+        "match": "click({text:\"Name\"})",
+        "reason": "Field is labeled \"Nom complet\" not \"Name\"."
+      }
+    ],
+    "successRubric": "Click name field first (by index), then type. Use the French label \"Envoyer\" for final submit."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "no_tool",
+  "scoreNote": null,
+  "finishReason": "stop",
+  "content": "The user wants me to fill in the name and message fields on the contact page. The available interactive elements are:\n\n- Index 0: Input field for \"Nom complet\" (Full Name)\n- Index 1: Textarea for \"Votre message\" (Your message)\n- Index 2: Button \"Envoyer\" (Send)\n\nI should fill in:\n- Name: Marie Dupont\n- Message: \"Bonjour, j'ai une question\"\n\nLet me fill these fields.</think><|tool_call_start|>[click_ax(ref_id='0')]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9800,
+    "total_tokens": 9913,
+    "completion_tokens": 113,
+    "prompt_tokens_details": null
+  }
+}

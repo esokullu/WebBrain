@@ -1,0 +1,28 @@
+{
+  "id": "054",
+  "user": "download this image",
+  "mode": "act",
+  "tab": {
+    "url": "https://example.com/photo.jpg",
+    "title": "photo.jpg"
+  },
+  "latencyMs": 2550,
+  "error": null,
+  "firstToolCall": {
+    "name": "fetch_url",
+    "args": {
+      "url": "https://example.com/photo.jpg"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "finishReason": "tool_calls",
+  "content": "The user wants to download an image from a URL. The URL is https://example.com/photo.jpg and the title is photo.jpg.\n\nI need to use the `fetch_url` tool to get the content of this URL. This will allow me to see the image data and then potentially download it.\n\nLet me fetch the URL first.</think>",
+  "usage": {
+    "prompt_tokens": 9727,
+    "total_tokens": 9812,
+    "completion_tokens": 85,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

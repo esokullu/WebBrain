@@ -1,0 +1,23 @@
+{
+  "id": "008",
+  "user": "wikipedia please",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 2765,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "finishReason": "stop",
+  "content": "The user wants to go to Wikipedia. I should use the navigate tool to go to Wikipedia's main page.</think><|tool_call_start|>[navigate(url='https://en.wikipedia.org/wiki/Main_Page')]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9723,
+    "total_tokens": 9766,
+    "completion_tokens": 43,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

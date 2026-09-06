@@ -1,0 +1,42 @@
+{
+  "id": "053",
+  "category": "stale-refid",
+  "description": "A dialog opened after a click; ref_ids from before the dialog are stale within the dialog scope.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 10481,
+  "error": null,
+  "firstToolCall": {
+    "name": "get_accessibility_tree",
+    "args": {
+      "filter": "visible"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "get_accessibility_tree",
+      "args": {
+        "filter": "visible"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "type_ax({ref_id:\"ref_30\", text:\"hi alice\"})",
+        "reason": "Compose dialog opened; previous tree didn't include it. Re-read."
+      }
+    ],
+    "successRubric": "After opening a dialog/modal, re-read AX tree. The compose dialog has its own ref_id space."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The compose window was opened and I clicked the \"Compose\" button (ref_7). Now I need to type \"hi alice\" in the compose window. The previous attempt used ref_30 which wasn't found. Let me try again with the correct approach - after clicking Compose, the text field should be focused. I should use type_ax with the appropriate ref_id for the text input field.\n\nLooking at the accessibility tree, after clicking the Compose button, the text input field should be the next focus. I need to find the correct ref_id for the text input. Let me try using type_ax without a specific ref_id first, or try to find the text input element.\n\nActually, looking at the previous error, ref_30 was not found. The compose window likely has a text input field with a specific ref_id. Let me try a different approach - perhaps I need to wait for the text input to be available, or use a different ref_id.\n\nLet me try using type_ax with a more general approach. Since the compose window was just opened, the text field should be the next focus. I'll try again with type_ax - perhaps the previous call failed due to timing, and now the element is available.\n\nActually, looking more carefully at the error: \"ref_id ref_30 not found in current accessibility tree.\" This suggests that ref_30 was referenced in a previous step but is no longer in the tree. The text input field might have a different ref_id.\n\nLet me try a different approach. I'll use the click tool to focus on the text input area, or I can try to find the correct ref_id by looking at the accessibility tree again.\n\nActually, I should first check if the text input is now available in the accessibility tree. Let me call get_accessibility_tree again to see the current state.</think>",
+  "usage": {
+    "prompt_tokens": 9859,
+    "total_tokens": 10251,
+    "completion_tokens": 392,
+    "prompt_tokens_details": null
+  }
+}

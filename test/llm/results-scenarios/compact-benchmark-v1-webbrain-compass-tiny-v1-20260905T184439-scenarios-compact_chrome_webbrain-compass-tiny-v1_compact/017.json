@@ -1,0 +1,41 @@
+{
+  "id": "017",
+  "category": "tool-error-pivot",
+  "description": "solve_captcha returned \"wrong captcha type\". Stop, ask user to solve manually, do not loop.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 5175,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "done",
+      "args": {
+        "summary": "CapSolver can't solve this particular CAPTCHA variant. Please solve the \"I'm not a robot\" check manually — once it's green, tell me and I'll click Submit."
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "solve_captcha({})",
+        "reason": "System prompt: \"do not loop on solve_captcha\". gpt-4o wr0h8w did this correctly — most models do not."
+      },
+      {
+        "match": "click({text:\"I'm not a robot\"})",
+        "reason": "Programmatically clicking the reCAPTCHA box does not solve it and may flag the session."
+      }
+    ],
+    "successRubric": "Surface that the user needs to solve the CAPTCHA themselves. Single call to done() with the explanation. Do not retry solve_captcha."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal_name",
+  "scoreNote": "prose answer credited as done (terminal tool; summary not arg-matched)",
+  "finishReason": "stop",
+  "content": "The captcha is failing because the captcha type is not supported by the CapSolver. The error message says \"wrong captcha type\". This is a known limitation - the CapSolver can only solve certain types of captchas, and not all of them.\n\nI should explain this to the user and suggest alternatives:\n1. Use a different captcha service\n2. Use a CAPTCHA-free alternative\n3. Use a different browser or device\n4. Use a CAPTCHA-solving service (but this is not recommended for security reasons)\n\nI should not attempt to solve the captcha myself. I should explain the limitation and provide alternatives.</think><|tool_call_start|>[clarify(question='The captcha is currently unsolvable with the available solver because it is a different captcha type. Please provide a captcha that the solver can handle, or use a CAPTCHA-free alternative.', options=[\"Provide a solvable captcha\", \"Use a CAPTCHA-free alternative\"], \"reason=\"The current captcha type is not supported by the available solver, so it cannot be solved automatically.\")]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9779,
+    "total_tokens": 10007,
+    "completion_tokens": 228,
+    "prompt_tokens_details": null
+  }
+}

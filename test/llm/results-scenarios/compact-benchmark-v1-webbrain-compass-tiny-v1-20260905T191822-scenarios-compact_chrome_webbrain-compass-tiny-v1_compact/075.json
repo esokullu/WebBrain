@@ -1,0 +1,44 @@
+{
+  "id": "075",
+  "category": "cross-lingual",
+  "description": "Spanish form, English user request, RTL/LTR mix concerns. Should focus the right field.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 2105,
+  "error": null,
+  "firstToolCall": {
+    "name": "set_field",
+    "args": {
+      "ref_id": "ref_0",
+      "text": "alice",
+      "clear": true
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "click",
+      "args": {
+        "index": 0
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click({text:\"Name\"})",
+        "reason": "No field labeled \"Name\" — it's \"Nombre\"."
+      }
+    ],
+    "successRubric": "Map \"name\" → \"Nombre\". Then click the field, then type. Cross-lingual field mapping."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The user wants me to put \"alice\" in the name field of the form. I need to use the `set_field` tool with the name field's ref_id, text \"alice\", and clear set to true.\n\nFrom the previous `get_interactive_elements` call, I can see:\n- Index 0: Name field with ref_id \"ref_0\"\n- Index 1: Last name field with ref_id \"ref_1\"\n\nSo I should use ref_id \"ref_0\" for the name field.</think>",
+  "usage": {
+    "prompt_tokens": 9789,
+    "total_tokens": 9921,
+    "completion_tokens": 132,
+    "prompt_tokens_details": null
+  }
+}

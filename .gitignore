@@ -55,3 +55,6 @@ web/assets/_backup/
 
 # Local Wasm build work tree (scripts/build-zim-xapian.mjs)
 .build/
+
+# Mobile app (local dev)
+mobile/
