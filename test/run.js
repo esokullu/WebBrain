@@ -4925,6 +4925,94 @@ test('direct-message recipient guard uses structured intent and exact active ide
       'grouped role answer Put Alice and Bob in BCC must rebind both recipients to BCC',
     );
 
+    // Negated delivery-role rejection tests:
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Do not move Alice to To', 'Alice', 'to'),
+      false,
+      'negated delivery-role phrase "Do not move Alice to To" must not authorize To for Alice',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, "Don't put Alice in To", 'Alice', 'to'),
+      false,
+      'negated delivery-role phrase "Don\'t put Alice in To" must not authorize To for Alice',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Never put Alice in BCC', 'Alice', 'bcc'),
+      false,
+      'negated delivery-role phrase "Never put Alice in BCC" must not authorize BCC for Alice',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Not To: Alice', 'Alice', 'to'),
+      false,
+      'negated prefix role "Not To: Alice" must not authorize To for Alice',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Do not move Alice and Bob to To', 'Alice', 'to'),
+      false,
+      'negated grouped role "Do not move Alice and Bob to To" must not authorize To for Alice',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Do not move Alice and Bob to To', 'Bob', 'to'),
+      false,
+      'negated grouped role "Do not move Alice and Bob to To" must not authorize To for Bob',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, '不要把Alice设为To', 'Alice', 'to'),
+      false,
+      'Chinese negated role "不要把Alice设为To" must not authorize To for Alice',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, '别把Alice移到To', 'Alice', 'to'),
+      false,
+      'Chinese negated role "别把Alice移到To" must not authorize To for Alice',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Do not move to To', 'Alice', 'to'),
+      false,
+      'negated single-clause answer without candidate spans must not authorize To',
+    );
+    assert.deepEqual(
+      helper.resolveClarifiedRecipients(
+        [
+          { identity: 'alice@example.com', role: 'to', aliases: ['alice@example.com', 'Alice'] },
+        ],
+        {
+          target_kind: 'named',
+          recipients: [
+            { identity: 'alice@example.com', role: 'bcc' },
+          ],
+        },
+        null,
+        'Do not move Alice to To',
+      ),
+      [
+        { identity: 'alice@example.com', role: 'bcc' },
+      ],
+      'negated role answer "Do not move Alice to To" must preserve previously authorized BCC role',
+    );
+    assert.deepEqual(
+      helper.resolveClarifiedRecipients(
+        [
+          { identity: 'alice@example.com', role: 'to', aliases: ['alice@example.com', 'Alice'] },
+          { identity: 'bob@example.com', role: 'to', aliases: ['bob@example.com', 'Bob'] },
+        ],
+        {
+          target_kind: 'named',
+          recipients: [
+            { identity: 'alice@example.com', role: 'bcc' },
+            { identity: 'bob@example.com', role: 'to' },
+          ],
+        },
+        null,
+        'Do not move Alice to To, keep Bob in To',
+      ),
+      [
+        { identity: 'alice@example.com', role: 'bcc' },
+        { identity: 'bob@example.com', role: 'to' },
+      ],
+      'answer with negated role for Alice and affirmative role for Bob must preserve Alice as BCC and Bob as To',
+    );
+
     assert.equal(helper.messageTargetMatchesObservedIdentities(
       { target_kind: 'named', recipients: ['Alice', 'bob@example.com'] },
       ['Alice'],
