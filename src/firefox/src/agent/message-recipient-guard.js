@@ -237,9 +237,15 @@ export function messageTargetMatchesObservedIdentities(target, candidates) {
  * model-authored and cannot supply recipient authorization.
  *
  * For 'bcc' and 'cc', explicit mentions of BCC or CC in the answer authorize the role.
+ * Each role label is strictly associated with its intended recipient rather than
+ * accepted anywhere in a shared multi-recipient sentence or clause.
+ *
+ * For 'bcc' and 'cc', explicit mentions of BCC or CC attached to the recipient
+ * identity in the answer authorize the role.
  * For 'to', because "to" is also a ubiquitous preposition ("send to Alice"),
  * an explicit role label ("To: Alice", "Alice (To)", "as To", "in To", "to To", "To field")
- * or localized role indicator ("收件人", "主送") is required in the user's answer.
+ * or localized role indicator ("收件人", "主送") attached to the recipient identity
+ * is required in the user's answer.
  */
 export function clarificationAuthorizesRecipientRole(clarifyContext, answer, candidateIdentity, targetRole) {
   const role = String(targetRole || '').trim().toLowerCase();
@@ -281,86 +287,140 @@ export function clarificationAuthorizesRecipientRole(clarifyContext, answer, can
     return false;
   }
 
-  const clauseDelimiters = /[,;\n\r|/]|(?:\s+(?:and|or|以及|与|及)\s+)/i;
+  const prefixPatterns = {
+    to: /(?:\bto\s*[:：]|\b(?:as|in|into|to)\s+(?:the\s+)?to(?:\s+(?:field|role|recipient))?\s*[:：,]?(?:\s+(?:put|move|set|send|keep|leave|add|place))?|(?:作为|设为)?(?:收件人|主送)\s*[:：]?)\s*$/i,
+    cc: /(?:\b(?:cc|carbon\s+copy)\s*[:：]|\b(?:as|in|into)\s+(?:the\s+)?(?:cc|carbon\s+copy)(?:\s+(?:field|role|recipient))?\s*[:：,]?(?:\s+(?:put|move|set|send|keep|leave|add|place))?|(?:作为|设为)?抄送\s*[:：]?)\s*$/i,
+    bcc: /(?:\b(?:bcc|blind\s+carbon\s+copy)\s*[:：]|\b(?:as|in|into)\s+(?:the\s+)?(?:bcc|blind\s+carbon\s+copy)(?:\s+(?:field|role|recipient))?\s*[:：,]?(?:\s+(?:put|move|set|send|keep|leave|add|place))?|(?:作为|设为)?(?:密送|暗送)\s*[:：]?)\s*$/i,
+  };
 
-  function textAuthorizesRoleForIdentity(text) {
-    if (!text) return false;
-    const clauses = text.split(clauseDelimiters).map(s => s.trim()).filter(Boolean);
-    let matchedClause = false;
-    for (const clause of clauses) {
-      if (candidateAliases.some(alias => answerNamesIdentity(clause, alias))) {
-        matchedClause = true;
-        if (snippetHasExplicitRole(clause, role)) return true;
-      }
-    }
-    if (!matchedClause) {
-      const matchingAliases = candidateAliases.filter(alias => answerNamesIdentity(text, alias));
-      if (matchingAliases.length > 0) {
-        for (const alias of matchingAliases) {
-          const spans = findCandidateAnswerSpans(text, alias);
-          for (const span of spans) {
-            const window = text.slice(Math.max(0, span.start - 40), Math.min(text.length, span.end + 40));
-            if (snippetHasExplicitRole(window, role)) return true;
+  const suffixPatterns = {
+    to: /^\s*(?:[:：]\s*to\b|[(\[【]\s*to\s*[)\]】]|(?:->|=>|→)\s*to\b|(?:(?:is|should\s+be|remains?|stays?|needs?\s+to\s+be)\s+)?(?:as|in|into|to)\s+(?:the\s+)?to(?:\s+(?:field|role|recipient))?\b|(?:from\s+(?:bcc|cc)\s+to\s+to\b)|to\s+(?:field|role|recipient)\b|(?:作为|设为)?(?:收件人|主送))/i,
+    cc: /^\s*(?:[:：]\s*(?:cc|carbon\s+copy)\b|[(\[【]\s*(?:cc|carbon\s+copy)\s*[)\]】]|(?:->|=>|→)\s*(?:cc|carbon\s+copy)\b|(?:(?:is|should\s+be|remains?|stays?|needs?\s+to\s+be)\s+)?(?:as|in|into|to)\s+(?:the\s+)?(?:cc|carbon\s+copy)(?:\s+(?:field|role|recipient))?\b|(?:from\s+(?:to|bcc)\s+to\s+cc\b)|(?:cc|carbon\s+copy)\s+(?:field|role|recipient)\b|(?:作为|设为)?抄送)/i,
+    bcc: /^\s*(?:[:：]\s*(?:bcc|blind\s+carbon\s+copy)\b|[(\[【]\s*(?:bcc|blind\s+carbon\s+copy)\s*[)\]】]|(?:->|=>|→)\s*(?:bcc|blind\s+carbon\s+copy)\b|(?:(?:is|should\s+be|remains?|stays?|needs?\s+to\s+be)\s+)?(?:as|in|into|to)\s+(?:the\s+)?(?:bcc|blind\s+carbon\s+copy)(?:\s+(?:field|role|recipient))?\b|(?:from\s+(?:to|cc)\s+to\s+bcc\b)|(?:bcc|blind\s+carbon\s+copy)\s+(?:field|role|recipient)\b|(?:作为|设为)?(?:密送|暗送))/i,
+  };
+
+  const delimiterRe = /[,;，；\n\r|/]|(?:\s+(?:and|or|while|whilst|but|whereas|yet|however|instead\s+of|rather\s+than|as\s+well\s+as|以及|与|及|而|但是|但)\s+)/gi;
+
+  let hasSpans = false;
+  for (const alias of candidateAliases) {
+    const spans = findCandidateAnswerSpans(answerText, alias);
+    if (spans.length > 0) {
+      hasSpans = true;
+      for (const span of spans) {
+        let clauseStart = 0;
+        delimiterRe.lastIndex = 0;
+        let m;
+        while ((m = delimiterRe.exec(answerText)) !== null) {
+          if (m.index < span.start) {
+            clauseStart = m.index + m[0].length;
+          } else {
+            break;
           }
         }
-      } else if (candidateAliases.length === 0 || clauses.length <= 1) {
-        if (snippetHasExplicitRole(text, role)) return true;
+
+        let clauseEnd = answerText.length;
+        delimiterRe.lastIndex = span.end;
+        const mAfter = delimiterRe.exec(answerText);
+        if (mAfter) {
+          clauseEnd = mAfter.index;
+        }
+
+        const prefix = answerText.slice(clauseStart, span.start);
+        const suffix = answerText.slice(span.end, clauseEnd);
+
+        if (prefixPatterns[role].test(prefix) || suffixPatterns[role].test(suffix)) {
+          return true;
+        }
       }
     }
-    return false;
   }
 
-  return textAuthorizesRoleForIdentity(answerText);
+  if (!hasSpans) {
+    delimiterRe.lastIndex = 0;
+    const hasMultipleClauses = delimiterRe.test(answerText);
+    if (!hasMultipleClauses && snippetHasExplicitRole(answerText, role)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 /**
  * Resolve observed recipient candidates against previously authorized recipients
  * and clarification context/answer.
  *
- * When an observed candidate was already authorized with a different role (for
- * example, authorized as 'bcc' while the composer exposes 'to'), require the
- * clarification to explicitly authorize each changed To/CC/BCC role, or retain
- * the previously authorized role when only the identity was confirmed.
+ * Preserves previously authorized delivery roles (such as 'bcc') both when an
+ * observed recipient's role is changed and when previously authorized recipients
+ * are replaced by new identities (e.g. replacing BCC Alice with Bob). An observed
+ * candidate only adopts a different delivery role when the user's answer affirmatively
+ * authorizes that role for that specific recipient.
  */
 export function resolveClarifiedRecipients(observedCandidates, previousTarget, clarifyContext, answer) {
   const previous = normalizeMessageTarget(previousTarget);
-  const previousRolesByIdentity = new Map();
-  if (previous?.recipients) {
-    for (const r of previous.recipients) {
-      const norm = normalizeRecipientIdentity(r.identity);
-      if (norm && r.role) {
-        previousRolesByIdentity.set(norm, r.role);
+  const previousRecipients = previous?.recipients || [];
+  const rawList = Array.isArray(observedCandidates) ? observedCandidates : [];
+
+  const matchedPreviousIndices = new Set();
+  const candidatePreviousRoles = new Map();
+
+  for (let i = 0; i < rawList.length; i++) {
+    const candidate = rawList[i];
+    const legacy = typeof candidate === 'string' || typeof candidate === 'number';
+    const identity = compact(legacy ? candidate : (candidate?.identity ?? candidate?.recipient), 240);
+    const norm = normalizeRecipientIdentity(identity);
+    const candidateAliases = [
+      norm,
+      ...(Array.isArray(candidate?.aliases) ? candidate.aliases.map(normalizeRecipientIdentity) : []),
+    ].filter(Boolean);
+
+    for (let p = 0; p < previousRecipients.length; p++) {
+      if (matchedPreviousIndices.has(p)) continue;
+      const prevNorm = normalizeRecipientIdentity(previousRecipients[p].identity);
+      if (candidateAliases.includes(prevNorm)) {
+        candidatePreviousRoles.set(i, previousRecipients[p].role);
+        matchedPreviousIndices.add(p);
+        break;
       }
     }
   }
 
-  const rawList = Array.isArray(observedCandidates) ? observedCandidates : [];
-  return rawList.map(candidate => {
+  const remainingPrevious = previousRecipients
+    .map((r, idx) => ({ ...r, idx }))
+    .filter(r => !matchedPreviousIndices.has(r.idx));
+
+  const roleRank = { bcc: 3, cc: 2, to: 1 };
+  remainingPrevious.sort((a, b) => (roleRank[b.role] || 0) - (roleRank[a.role] || 0));
+
+  for (let i = 0; i < rawList.length; i++) {
+    if (candidatePreviousRoles.has(i)) continue;
+    if (remainingPrevious.length > 0) {
+      const replaced = remainingPrevious.shift();
+      candidatePreviousRoles.set(i, replaced.role);
+    }
+  }
+
+  return rawList.map((candidate, i) => {
     const legacy = typeof candidate === 'string' || typeof candidate === 'number';
     const identity = compact(legacy ? candidate : (candidate?.identity ?? candidate?.recipient), 240);
     const observedRole = compact(legacy ? 'to' : candidate?.role, 12).toLowerCase() || 'to';
-    const norm = normalizeRecipientIdentity(identity);
-    let previousRole = previousRolesByIdentity.get(norm);
-    if (!previousRole && Array.isArray(candidate?.aliases)) {
-      for (const alias of candidate.aliases) {
-        const normAlias = normalizeRecipientIdentity(alias);
-        if (normAlias && previousRolesByIdentity.has(normAlias)) {
-          previousRole = previousRolesByIdentity.get(normAlias);
-          break;
-        }
+    const previousRole = candidatePreviousRoles.get(i);
+
+    let authorizedRole = null;
+    for (const r of ['to', 'cc', 'bcc']) {
+      if (clarificationAuthorizesRecipientRole(clarifyContext, answer, candidate, r)) {
+        authorizedRole = r;
+        break;
       }
     }
-    if (previousRole && previousRole !== observedRole) {
-      const authorized = clarificationAuthorizesRecipientRole(clarifyContext, answer, candidate, observedRole);
-      return {
-        identity,
-        role: authorized ? observedRole : previousRole,
-      };
+
+    if (authorizedRole) {
+      return { identity, role: authorizedRole };
     }
-    return {
-      identity,
-      role: observedRole,
-    };
+    if (previousRole) {
+      return { identity, role: previousRole };
+    }
+    return { identity, role: observedRole };
   });
 }
 

@@ -4811,6 +4811,61 @@ test('direct-message recipient guard uses structured intent and exact active ide
       'user answer selecting option to move from BCC to To must update to To role',
     );
 
+    const obsBob = [{ identity: 'bob@example.com', role: 'to', aliases: ['bob@example.com', 'Bob'] }];
+    assert.deepEqual(
+      helper.resolveClarifiedRecipients(obsBob, prevBccTarget, modelAuthoredRoleContext, 'Bob'),
+      [{ identity: 'bob@example.com', role: 'bcc' }],
+      'replacing BCC recipient with Bob via bare answer Bob must preserve BCC role',
+    );
+    assert.deepEqual(
+      helper.resolveClarifiedRecipients(obsBob, prevBccTarget, modelAuthoredRoleContext, 'To: Bob'),
+      [{ identity: 'bob@example.com', role: 'to' }],
+      'explicit To: Bob answer when replacing recipient must authorize To role',
+    );
+
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Keep Alice as BCC while putting Bob in To', 'Alice', 'to'),
+      false,
+      'Alice must not be authorized as To when user says Keep Alice as BCC while putting Bob in To',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Keep Alice as BCC while putting Bob in To', 'Alice', 'bcc'),
+      true,
+      'Alice must be authorized as BCC when user says Keep Alice as BCC while putting Bob in To',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Keep Alice as BCC while putting Bob in To', 'Bob', 'to'),
+      true,
+      'Bob must be authorized as To when user says Keep Alice as BCC while putting Bob in To',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Keep Alice as BCC while putting Bob in To', 'Bob', 'bcc'),
+      false,
+      'Bob must not be authorized as BCC when user says Keep Alice as BCC while putting Bob in To',
+    );
+    assert.deepEqual(
+      helper.resolveClarifiedRecipients(
+        [
+          { identity: 'alice@example.com', role: 'to', aliases: ['alice@example.com', 'Alice'] },
+          { identity: 'bob@example.com', role: 'to', aliases: ['bob@example.com', 'Bob'] },
+        ],
+        {
+          target_kind: 'named',
+          recipients: [
+            { identity: 'alice@example.com', role: 'bcc' },
+            { identity: 'carol@example.com', role: 'to' },
+          ],
+        },
+        null,
+        'Keep Alice as BCC while putting Bob in To',
+      ),
+      [
+        { identity: 'alice@example.com', role: 'bcc' },
+        { identity: 'bob@example.com', role: 'to' },
+      ],
+      'multi-recipient answer associating roles to different recipients must resolve each recipient to their authorized role',
+    );
+
     assert.equal(helper.messageTargetMatchesObservedIdentities(
       { target_kind: 'named', recipients: ['Alice', 'bob@example.com'] },
       ['Alice'],
