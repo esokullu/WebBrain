@@ -348,6 +348,16 @@ export function publicationResourceRecordRoot(link, identity, publicationResourc
         } catch {}
         return false;
       };
+      const isLinkPreview = (node) => {
+        try {
+          const cardContainer = node.closest?.('[data-testid*="card.layout"]');
+          if (!cardContainer) return false;
+          // Images inside an uploaded-media wrapper are genuine, not previews.
+          if (node.closest?.('[data-testid="tweetPhoto"],[data-testid^="postImage"]')) return false;
+          return true;
+        } catch {}
+        return false;
+      };
       return candidates.filter(node => {
         const tag = (node.tagName || '').toLowerCase();
         const testId = typeof node.getAttribute === 'function' ? (node.getAttribute('data-testid') || '') : '';
@@ -360,7 +370,7 @@ export function publicationResourceRecordRoot(link, identity, publicationResourc
             && !testId.includes('card.layoutLarge.media')) {
           return false;
         }
-        return !isAvatarOrEmoji(node);
+        return !isAvatarOrEmoji(node) && !isLinkPreview(node);
       }).slice(0, 12);
     } catch {
       return [];

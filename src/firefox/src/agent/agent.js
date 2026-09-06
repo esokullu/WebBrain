@@ -159,7 +159,7 @@ const STAGED_SCREENSHOT_REDACTION_MAX_REGIONS = 400;
 // them honest.
 const SOCIAL_WORD_EDGE = '\\p{L}\\p{N}_';
 const SOCIAL_PUBLISH_VERBS = new RegExp(
-  `(?<![${SOCIAL_WORD_EDGE}])(?:post|posts|posted|posting|publish|publishes|published|publishing|tweet|tweets|tweeted|tweeting|retweet|retweets|skeet|skeets|share|shares|shared|sharing|publica|public\u00e1|publ\u00edcalo|publ\u00edcala|publicalo|publicala|publicar|publicas|publican|publique|publiquen|publiquem|publicando|posta|postar|comparte|compartir|compartilhe|compartilhar|publie|publier|publiez|publions|publi\u00e9e|publi\u00e9e|publi\u00e9|partage|partager|partagez|pubblica|pubblicare|pubblicate|condividi|condividere|ver\u00f6ffentliche|ver\u00f6ffentlichen|ver\u00f6ffentlicht|poste|posten|teile|teilen|yay\u0131nla|yay\u0131nlay\u0131n|yay\u0131mla|payla\u015f|payla\u015f\u0131n|\u043e\u043f\u0443\u0431\u043b\u0438\u043a\u0443\u0439|\u043e\u043f\u0443\u0431\u043b\u0438\u043a\u0443\u0439\u0442\u0435|\u043e\u043f\u0443\u0431\u043b\u0438\u043a\u043e\u0432\u0430\u0442\u044c|\u043f\u0443\u0431\u043b\u0438\u043a\u0443\u0439|\u043f\u043e\u0434\u0435\u043b\u0438\u0441\u044c|\u0437\u0430\u043f\u043e\u0441\u0442\u044c)(?![${SOCIAL_WORD_EDGE}])`
+  `(?<![${SOCIAL_WORD_EDGE}])(?:post|posts|posted|posting|publish|publishes|published|publishing|tweet|tweets|tweeted|tweeting|skeet|skeets|share|shares|shared|sharing|publica|public\u00e1|publ\u00edcalo|publ\u00edcala|publicalo|publicala|publicar|publicas|publican|publique|publiquen|publiquem|publicando|posta|postar|comparte|compartir|compartilhe|compartilhar|publie|publier|publiez|publions|publi\u00e9e|publi\u00e9e|publi\u00e9|partage|partager|partagez|pubblica|pubblicare|pubblicate|condividi|condividere|ver\u00f6ffentliche|ver\u00f6ffentlichen|ver\u00f6ffentlicht|poste|posten|teile|teilen|yay\u0131nla|yay\u0131nlay\u0131n|yay\u0131mla|payla\u015f|payla\u015f\u0131n|\u043e\u043f\u0443\u0431\u043b\u0438\u043a\u0443\u0439|\u043e\u043f\u0443\u0431\u043b\u0438\u043a\u0443\u0439\u0442\u0435|\u043e\u043f\u0443\u0431\u043b\u0438\u043a\u043e\u0432\u0430\u0442\u044c|\u043f\u0443\u0431\u043b\u0438\u043a\u0443\u0439|\u043f\u043e\u0434\u0435\u043b\u0438\u0441\u044c|\u0437\u0430\u043f\u043e\u0441\u0442\u044c)(?![${SOCIAL_WORD_EDGE}])`
   + '|\u6295\u7a3f\u3059\u308b|\u6295\u7a3f\u3057\u3066|\u6295\u7a3f\u3057|\u6295\u7a3f|\u30c4\u30a4\u30fc\u30c8\u3057\u3066|\u30c4\u30a4\u30fc\u30c8\u3057|\u30dd\u30b9\u30c8\u3057\u3066|\u30dd\u30b9\u30c8\u3057|\u53d1\u5e03|\u767c\u5e03|\u53d1\u5e16|\u767c\u5e16|\u53d1\u63a8|\u767c\u63a8|\u53d1\u9001\u63a8\u6587|\uac8c\uc2dc|\uc62c\ub824|\uc62c\ub9ac|\u0627\u0646\u0634\u0631|\u0646\u0634\u0631',
   'iu',
 );
@@ -1545,7 +1545,7 @@ export class Agent extends LoopDetector {
       .filter(Boolean)
       .join('\n');
     try { text = text.normalize('NFKC'); } catch {}
-    return text.length <= 20000 ? text : '';
+    return text.length <= 25000 ? text : '';
   }
 
   _workflowTerminalEvidenceMatchesState(state, record) {
@@ -1737,11 +1737,12 @@ export class Agent extends LoopDetector {
     }))?.[0] || '';
   }
 
-  _workflowMetadataValue(value) {
+  _workflowMetadataValue(value, maxLength = 10000) {
     let text = String(value ?? '').replace(/\r\n?/g, '\n')
       .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '');
     try { text = text.normalize('NFKC'); } catch {}
-    return text.trim().slice(0, 10000);
+    text = text.trim();
+    return (typeof maxLength === 'number' && maxLength > 0) ? text.slice(0, maxLength) : text;
   }
 
   // AX formatLine truncates values at 60 chars and appends '...', plus
@@ -1826,9 +1827,11 @@ export class Agent extends LoopDetector {
   }
 
   _workflowPublishedPayloadValueObserved(requirement, sources = {}) {
-    const want = this._workflowMetadataValue(requirement?.value);
-    if (!want) return false;
     const field = requirement?.field;
+    const want = field === 'body'
+      ? this._workflowMetadataValue(requirement?.value, 0)
+      : this._workflowMetadataValue(requirement?.value);
+    if (!want) return false;
 
     if (field === 'tag') {
       const escaped = want.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -1853,7 +1856,9 @@ export class Agent extends LoopDetector {
       return false;
     }
 
-    const pageText = this._workflowMetadataValue(sources.pageText);
+    const pageText = field === 'body'
+      ? this._workflowMetadataValue(sources.pageText, 0)
+      : this._workflowMetadataValue(sources.pageText);
     if (pageText) {
       if (pageText === want) return true;
       const escaped = want.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -1863,8 +1868,12 @@ export class Agent extends LoopDetector {
 
     if (Array.isArray(sources.inventory?.items)) {
       for (const item of sources.inventory.items) {
-        const itemVal = this._workflowMetadataValue(item?.value);
-        const itemLabel = this._workflowMetadataValue(item?.label);
+        const itemVal = field === 'body'
+          ? this._workflowMetadataValue(item?.value, 0)
+          : this._workflowMetadataValue(item?.value);
+        const itemLabel = field === 'body'
+          ? this._workflowMetadataValue(item?.label, 0)
+          : this._workflowMetadataValue(item?.label);
         if (itemVal === want || itemLabel === want) return true;
         if (itemVal && this._workflowAxValueMatchesExpected(itemVal, want, item)) return true;
       }
@@ -2017,13 +2026,7 @@ export class Agent extends LoopDetector {
 
     if (matchesSpecific) return true;
 
-    if (/\.(?:png|jpg|jpeg|gif|webp|mp4|mov|webm|mkv)$/i.test(normalized)) {
-      return wantsVideo
-        ? rawAttachments.some(att => attachmentType(att) === 'video' || /\.(?:mp4|mov|webm|mkv)/i.test(String(att?.src || '')))
-        : rawAttachments.some(att => attachmentType(att) === 'image' || !/\.(?:mp4|mov|webm|mkv)/i.test(String(att?.src || '')));
-    }
-
-    return true;
+    return false;
   }
 
   _workflowGithubReleaseIdentityParts(identity) {
@@ -12640,7 +12643,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     if (publishesTo('(?:bluesky|bsky(?:\\.app)?)')) targets.add('bluesky');
     if (publishesTo('(?:x|x\\.com|twitter(?:\\.com)?)')
         // "tweet this" names its own destination.
-        || /\b(?:tweet|retweet)\s+(?:this|that|it|the\s+following)\b/i.test(trustedContext)) {
+        || /\btweet\s+(?:this|that|it|the\s+following)\b/i.test(trustedContext)) {
       targets.add('twitter');
     }
     return targets;
@@ -24814,11 +24817,20 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
                     } catch {}
                     return false;
                   };
+                  const isLinkPreview = (node) => {
+                    try {
+                      const cardContainer = node.closest?.('[data-testid*="card.layout"]');
+                      if (!cardContainer) return false;
+                      if (node.closest?.('[data-testid="tweetPhoto"],[data-testid^="postImage"]')) return false;
+                      return true;
+                    } catch {}
+                    return false;
+                  };
                   const rawAttachments = mediaNodes.length
                     ? mediaNodes
                     : Array.from(best.querySelectorAll?.(
                         'img, video, [data-testid="tweetPhoto"], [data-testid="videoPlayer"], [data-testid="videoComponent"], [data-testid^="postImage"], [data-testid="postGalleryImage"], [data-testid="contentHider-post"], [data-testid="card.layoutLarge.media"]'
-                      ) || []).filter(candidate => !isEmbedded(candidate) && !isAvatarOrEmoji(candidate));
+                      ) || []).filter(candidate => !isEmbedded(candidate) && !isAvatarOrEmoji(candidate) && !isLinkPreview(candidate));
                   const attachments = rawAttachments.slice(0, 12).map(candidate => {
                     const tag = (candidate.tagName || '').toLowerCase();
                     const testId = typeof candidate.getAttribute === 'function' ? (candidate.getAttribute('data-testid') || '') : '';

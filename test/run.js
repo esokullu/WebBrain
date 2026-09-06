@@ -24586,14 +24586,19 @@ test('publication resource records keep the owning social card when it embeds an
       getAttribute: name => (name === 'data-testid' ? 'tweetPhoto' : (name === 'src' ? 'https://pbs.twimg.com/media/pic.jpg' : null)),
       closest: () => null,
     };
+    const linkPreviewNode = {
+      tagName: 'img',
+      getAttribute: name => (name === 'src' ? 'https://pbs.twimg.com/card_img/thumb.jpg' : null),
+      closest: selector => (selector.includes('card.layout') ? { testId: 'card.layoutLarge.media' } : null),
+    };
     const mediaCard = {
       innerText: 'post with image',
       querySelectorAll: selector => (
         String(selector).includes('img')
-          ? [avatarNode, emojiNode, photoNode]
+          ? [avatarNode, emojiNode, linkPreviewNode, photoNode]
           : [plainPermalink]
       ),
-      contains: node => [plainPermalink, mediaCard, avatarNode, emojiNode, photoNode].includes(node),
+      contains: node => [plainPermalink, mediaCard, avatarNode, emojiNode, linkPreviewNode, photoNode].includes(node),
     };
     const mediaPermalink = {
       ...plainPermalink,
@@ -24602,7 +24607,7 @@ test('publication resource records keep the owning social card when it embeds an
     const mediaRecord = invariant.publicationResourceRecordRoot(mediaPermalink, identity, identityOf);
     assert.equal(mediaRecord.root, mediaCard);
     assert.deepEqual(mediaRecord.attachments, [photoNode],
-      `${label}: media attachments failed to include photo or failed to filter avatar/emoji`);
+      `${label}: media attachments failed to include photo or failed to filter avatar/emoji/link-preview`);
   }
 
   for (const [label, rel] of [
@@ -86179,6 +86184,12 @@ test('social publication workflow follows the live X or Bluesky destination and 
         'a Chinese read command was wrongly treated as a publish destination'],
       ['发布到xbox', [],
         'a word containing x was wrongly treated as X platform'],
+      ['retweet this', [],
+        'retweet this was wrongly treated as a publish destination'],
+      ['retweet that', [],
+        'retweet that was wrongly treated as a publish destination'],
+      ['retweet it', [],
+        'retweet it was wrongly treated as a publish destination'],
     ]) {
       assert.deepEqual(
         [...agent._trustedSocialPublishTargetAdapters({ taskText })],
@@ -86523,6 +86534,100 @@ test('X and Bluesky same-route publication accepts only one new permalink with t
         fixture.feedUrl,
         submit,
       ), true, AgentClass.name + ': post with matching video attachment was rejected');
+
+      assert.equal(agent._workflowPublishedResourcePayloadMatch(
+        {
+          ...submit.workflowBinding,
+          metadataRequirements: [
+            ...submit.workflowBinding.metadataRequirements,
+            { field: 'attachment', value: 'quarterly-chart.png' },
+          ],
+          publishedResourceIdentity: fixture.expectedIdentity,
+          preDispatchPublicationAccountIdentity: fixture.accountIdentity,
+          preDispatchPublicationAccountIdentityComplete: true,
+        },
+        guard,
+        pageStateWithImage,
+        fixture.feedUrl,
+        submit,
+      ), false, AgentClass.name + ': wrong uploaded asset satisfied specific attachment requirement');
+
+      const pageStateWithSpecificImage = {
+        ...exactPageState,
+        workflowResourceRecords: [
+          {
+            ...exactPageState.workflowResourceRecords[0],
+            attachments: [
+              { type: 'image', src: 'https://pbs.twimg.com/media/quarterly-chart.png', alt: 'quarterly-chart.png' },
+            ],
+          },
+        ],
+      };
+      assert.equal(agent._workflowPublishedResourcePayloadMatch(
+        {
+          ...submit.workflowBinding,
+          metadataRequirements: [
+            ...submit.workflowBinding.metadataRequirements,
+            { field: 'attachment', value: 'quarterly-chart.png' },
+          ],
+          publishedResourceIdentity: fixture.expectedIdentity,
+          preDispatchPublicationAccountIdentity: fixture.accountIdentity,
+          preDispatchPublicationAccountIdentityComplete: true,
+        },
+        guard,
+        pageStateWithSpecificImage,
+        fixture.feedUrl,
+        submit,
+      ), true, AgentClass.name + ': post with matching specific attachment was rejected');
+
+      if (fixture.adapterName === 'twitter') {
+        const longBody1 = 'A'.repeat(10500) + ' first suffix';
+        const longBody2 = 'A'.repeat(10500) + ' second suffix';
+        const longBodyState = {
+          ...exactPageState,
+          workflowResourceRecords: [
+            {
+              ...exactPageState.workflowResourceRecords[0],
+              bodyText: longBody1,
+              text: 'WebBrain\n' + longBody1 + '\n2m',
+            },
+          ],
+        };
+        const longBodyMismatchState = {
+          ...exactPageState,
+          workflowResourceRecords: [
+            {
+              ...exactPageState.workflowResourceRecords[0],
+              bodyText: longBody2,
+              text: 'WebBrain\n' + longBody2 + '\n2m',
+            },
+          ],
+        };
+        const longBodyBinding = {
+          ...submit.workflowBinding,
+          metadataRequirements: [
+            { field: 'body', value: longBody1 },
+          ],
+          publishedResourceIdentity: fixture.expectedIdentity,
+          preDispatchPublicationAccountIdentity: fixture.accountIdentity,
+          preDispatchPublicationAccountIdentityComplete: true,
+        };
+        assert.equal(agent._workflowPublishedResourcePayloadMatch(
+          longBodyBinding,
+          guard,
+          longBodyState,
+          fixture.feedUrl,
+          submit,
+        ), true, AgentClass.name + ': full Premium body (>10k chars) was rejected');
+
+        assert.equal(agent._workflowPublishedResourcePayloadMatch(
+          longBodyBinding,
+          guard,
+          longBodyMismatchState,
+          fixture.feedUrl,
+          submit,
+        ), false, AgentClass.name + ': Premium body with mismatched suffix past 10k chars was accepted');
+      }
 
       assert.equal(agent._workflowTerminalEvidenceFromDone(
         tabId,
