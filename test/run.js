@@ -4642,6 +4642,26 @@ test('direct-message recipient guard uses structured intent and exact active ide
     assert.equal(helper.recipientMatchesObservedIdentity('Team', 'Team-Sales'), false);
     assert.equal(helper.recipientMatchesObservedIdentity('Alice', 'Search results for Alice'), false);
     assert.equal(helper.recipientMatchesObservedIdentity('Alice', 'Malice'), false);
+    assert.equal(helper.answerNamesIdentity('Li', 'Li'), true);
+    assert.equal(helper.answerNamesIdentity('Lisa', 'Li'), false);
+    assert.equal(helper.answerNamesIdentity('王', '王'), true);
+    assert.equal(helper.answerNamesIdentity('王小明', '王'), false);
+    assert.equal(helper.answerNamesAllObservedRecipients(
+      'Send to Ann Smith',
+      [{ identity: 'Ann' }, { identity: 'Ann Smith' }],
+    ), false, 'a single mention must not satisfy both a prefix candidate and full name');
+    assert.equal(helper.answerNamesAllObservedRecipients(
+      'Send to Ann and Ann Smith',
+      [{ identity: 'Ann' }, { identity: 'Ann Smith' }],
+    ), true, 'distinct mentions for both candidates must succeed');
+    assert.equal(helper.answerNamesAllObservedRecipients(
+      'user@example.co.uk',
+      [{ identity: 'user@example.co' }, { identity: 'user@example.co.uk' }],
+    ), false, 'a single mention must not satisfy both .co and .co.uk');
+    assert.equal(helper.answerNamesAllObservedRecipients(
+      'user@example.co and user@example.co.uk',
+      [{ identity: 'user@example.co' }, { identity: 'user@example.co.uk' }],
+    ), true, 'distinct mentions for both domain variants must succeed');
     assert.equal(helper.messageTargetMatchesObservedIdentities(
       { target_kind: 'named', recipients: ['迷你世界皓宸'] },
       ['迷你世界皓宸'],
@@ -5167,6 +5187,100 @@ test('direct-message recipient guard uses structured intent and exact active ide
       true,
       `${label}: a short identity the user actually named was rejected`,
     );
+
+    // Short identities (< 3 chars) require exact full-string match to avoid substring false positives.
+    agent._planExecutionGuards.set(tabId, clarifyGuardState([{ identity: 'Li', role: 'to' }]));
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'Lisa'),
+      false,
+      `${label}: a prefix matching a short identity authorized the recipient`,
+    );
+    agent._planExecutionGuards.set(tabId, clarifyGuardState([{ identity: 'Li', role: 'to' }]));
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'Li'),
+      true,
+      `${label}: an exact match for a short identity was rejected`,
+    );
+
+    // Multi-recipient prefix collision resolution: non-overlapping distinct spans are required.
+    agent._planExecutionGuards.set(tabId, clarifyGuardState([
+      { identity: 'Ann', role: 'to' },
+      { identity: 'Ann Smith', role: 'to' },
+    ]));
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'Send to Ann Smith'),
+      false,
+      `${label}: a single mention satisfied both prefix candidate and full name in agent binding`,
+    );
+    agent._planExecutionGuards.set(tabId, clarifyGuardState([
+      { identity: 'Ann', role: 'to' },
+      { identity: 'Ann Smith', role: 'to' },
+    ]));
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'Send to Ann and Ann Smith'),
+      true,
+      `${label}: distinct mentions for prefix and full name were rejected`,
+    );
+
+    // Clarification context validation: unrelated clarify question must not authorize recipient,
+    // and must consume the staged consent.
+    agent._planExecutionGuards.set(tabId, clarifyGuardState([{ identity: 'alice@example.com', role: 'to' }]));
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'alice@example.com', 'user', {
+        question: 'Should I book the flight to New York?',
+      }),
+      false,
+      `${label}: unrelated clarify question authorized a send target`,
+    );
+    assert.equal(agent._planExecutionGuards.get(tabId)?.pendingRecipientAuthorization, false,
+      `${label}: unrelated clarify left pendingRecipientAuthorization true`);
+    assert.equal(agent._planExecutionGuards.get(tabId)?.observedRecipientCandidates, null,
+      `${label}: unrelated clarify left observedRecipientCandidates intact`);
+
+    // Valid message_recipient clarification context authorizes candidate.
+    agent._planExecutionGuards.set(tabId, clarifyGuardState([{ identity: 'alice@example.com', role: 'to' }]));
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'alice@example.com', 'user', {
+        question: 'Who should I send the message to?',
+        purpose: 'message_recipient',
+      }),
+      true,
+      `${label}: valid recipient clarification context was rejected`,
+    );
+
+    // Recipient-change clarification check: when a target was already set, an explicit
+    // recipient_change context is required.
+    const recipientChangeGuardState = (candidates) => ({
+      messaging: { target_kind: 'named', recipients: [{ identity: 'bob@example.com', role: 'to' }] },
+      requiresSubmission: true,
+      requiresStateChange: true,
+      pendingRecipientAuthorization: 'recipient_change',
+      observedRecipientCandidates: candidates,
+    });
+
+    agent._planExecutionGuards.set(tabId, recipientChangeGuardState([{ identity: 'alice@example.com', role: 'to' }]));
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'alice@example.com', 'user', {
+        question: 'Who should I send the message to?',
+        purpose: 'message_recipient',
+      }),
+      false,
+      `${label}: standard recipient clarification authorized a recipient change`,
+    );
+
+    agent._planExecutionGuards.set(tabId, recipientChangeGuardState([{ identity: 'alice@example.com', role: 'to' }]));
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'alice@example.com', 'user', {
+        question: 'Do you want to switch recipient to Alice instead?',
+        purpose: 'recipient_change',
+      }),
+      true,
+      `${label}: explicit recipient change clarification was rejected`,
+    );
+    assert.deepEqual(agent._planExecutionGuards.get(tabId)?.messaging, {
+      target_kind: 'named',
+      recipients: [{ identity: 'alice@example.com', role: 'to' }],
+    }, `${label}: recipient change did not update target`);
   }
 });
 

@@ -59,26 +59,84 @@ export function recipientMatchesObservedIdentity(recipient, observedIdentity) {
 const IDENTITY_WORD_CHAR = /[\p{L}\p{N}]/u;
 
 /**
+ * Return all start/end spans where normalizedIdentity occurs in normalizedAnswer
+ * at word boundaries, or as an exact full-string match for short identities (< 3 chars).
+ */
+export function findCandidateAnswerSpans(normalizedAnswer, normalizedIdentity) {
+  const answer = normalizeRecipientIdentity(normalizedAnswer);
+  const identity = normalizeRecipientIdentity(normalizedIdentity);
+  if (!identity || !answer) return [];
+  if (identity.length < 3) {
+    return answer === identity ? [{ start: 0, end: answer.length }] : [];
+  }
+  const spans = [];
+  for (let at = answer.indexOf(identity); at >= 0; at = answer.indexOf(identity, at + 1)) {
+    const before = at > 0 ? answer[at - 1] : '';
+    const after = answer[at + identity.length] || '';
+    if (!IDENTITY_WORD_CHAR.test(before) && !IDENTITY_WORD_CHAR.test(after)) {
+      spans.push({ start: at, end: at + identity.length });
+    }
+  }
+  return spans;
+}
+
+/**
  * Does the user's answer actually name this identity, rather than merely
  * containing its letters?
  *
  * A bare substring test authorizes on accidents: the observed display name
  * "Ann" is inside "I cannot decide". Requiring the match to sit against a
  * non-alphanumeric neighbour or a string edge keeps an incidental fragment
- * from standing in for the user naming someone. Scripts written without word
- * separators fall back to exact equality, which fails closed rather than
- * guessing where a name ends.
+ * from standing in for the user naming someone. Identities shorter than 3
+ * characters accept exact equality to authorize short names without loose
+ * substring false positives.
  */
 export function answerNamesIdentity(normalizedAnswer, normalizedIdentity) {
-  const answer = String(normalizedAnswer || '');
-  const identity = String(normalizedIdentity || '');
-  if (identity.length < 3 || !answer) return false;
-  for (let at = answer.indexOf(identity); at >= 0; at = answer.indexOf(identity, at + 1)) {
-    const before = at > 0 ? answer[at - 1] : '';
-    const after = answer[at + identity.length] || '';
-    if (!IDENTITY_WORD_CHAR.test(before) && !IDENTITY_WORD_CHAR.test(after)) return true;
+  return findCandidateAnswerSpans(normalizedAnswer, normalizedIdentity).length > 0;
+}
+
+/**
+ * Verify that each observed recipient identity is matched by a distinct,
+ * non-overlapping span in the user's answer.
+ *
+ * When one observed identity is a boundary-delimited prefix of another
+ * (e.g. "Ann" and "Ann Smith", or "user@example.co" and "user@example.co.uk"),
+ * a single mention must not satisfy both candidates. A distinct span is
+ * required for each observed recipient identity.
+ */
+export function answerNamesAllObservedRecipients(normalizedAnswer, observedCandidates) {
+  const answer = normalizeRecipientIdentity(normalizedAnswer);
+  if (!answer || !Array.isArray(observedCandidates) || observedCandidates.length === 0) {
+    return false;
   }
-  return false;
+  const uniqueIdentities = [...new Set(
+    observedCandidates
+      .map(c => normalizeRecipientIdentity(typeof c === 'string' ? c : (c?.identity ?? c?.recipient)))
+      .filter(Boolean)
+  )];
+  if (uniqueIdentities.length === 0) return false;
+
+  const candidateSpans = [];
+  for (const identity of uniqueIdentities) {
+    const spans = findCandidateAnswerSpans(answer, identity);
+    if (spans.length === 0) return false;
+    candidateSpans.push(spans);
+  }
+
+  function search(index, usedSpans) {
+    if (index >= candidateSpans.length) return true;
+    for (const span of candidateSpans[index]) {
+      const overlaps = usedSpans.some(used => !(span.end <= used.start || used.end <= span.start));
+      if (!overlaps) {
+        usedSpans.push(span);
+        if (search(index + 1, usedSpans)) return true;
+        usedSpans.pop();
+      }
+    }
+    return false;
+  }
+
+  return search(0, []);
 }
 
 export function messageTargetMatchesObservedIdentities(target, candidates) {

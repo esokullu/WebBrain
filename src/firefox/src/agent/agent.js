@@ -42,7 +42,7 @@ import {
   workflowControlLabelIsRequested,
   workflowRequiredRowsAreProcessed,
 } from './adapter-workflow-evidence.js';
-import { answerNamesIdentity, messageTargetMatchesObservedIdentities, normalizeMessageTarget, normalizeRecipientIdentity } from './message-recipient-guard.js';
+import { answerNamesAllObservedRecipients, answerNamesIdentity, messageTargetMatchesObservedIdentities, normalizeMessageTarget, normalizeRecipientIdentity } from './message-recipient-guard.js';
 import {
   fetchUrl,
   executeHttpSkillTool,
@@ -15595,8 +15595,11 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       // Offered to the next clarify only. The model chooses what it asks, so a
       // pending authorization must not survive into an unrelated question.
       // Staged only when the plan already permits messaging.
-      guard.pendingRecipientAuthorization = messagingPermitted
-        && observedRecipientCandidates.length > 0;
+      // Associate with an explicit recipient-change clarification when a target
+      // was already authorized, or a recipient clarification when missing.
+      guard.pendingRecipientAuthorization = messagingPermitted && observedRecipientCandidates.length > 0
+        ? (target ? 'recipient_change' : true)
+        : false;
     }
 
     return {
@@ -15618,6 +15621,22 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     };
   }
 
+  _isRecipientClarification(context, pendingType = 'message_recipient') {
+    if (!context || typeof context !== 'object') return false;
+    const purpose = String(context.purpose || '').trim();
+    if (pendingType === 'recipient_change') {
+      if (purpose === 'recipient_change') return true;
+      const text = [context.question, context.reason].filter(Boolean).join(' ').toLowerCase();
+      return /(change|switch|different|instead|update|replace).*(recipient|conversation|contact|send to|person|address)/i.test(text)
+        || /(recipient|conversation|contact).*(change|switch|different)/i.test(text)
+        || /(send|deliver).*(to .* instead|to someone else)/i.test(text)
+        || /(send|reply).*(instead of)/i.test(text);
+    }
+    if (purpose === 'message_recipient' || purpose === 'recipient_change') return true;
+    const text = [context.question, context.reason].filter(Boolean).join(' ').toLowerCase();
+    return /(recipient|who (is|to|should|are)|send (the |this )?(message|email|draft) to|message (to|for)|deliver to|email to|draft to|authorize.*conversation)/i.test(text);
+  }
+
   /**
    * Bind a user's clarify answer to a recipient the content probe observed.
    *
@@ -15629,10 +15648,12 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
    * and an answer matching no candidate or only a subset of observed
    * candidates authorizes nothing. When multiple recipients are observed on
    * the page (e.g. Reply all), the answer must explicitly authorize the full
-   * observed recipient set. A recipient answer may only bind under a plan
-   * that already permits messaging (requiresSubmission=true and requiresStateChange=true).
+   * observed recipient set with distinct non-overlapping answer spans.
+   * A recipient answer may only bind under a plan that already permits
+   * messaging (requiresSubmission=true and requiresStateChange=true) and must
+   * match the specific clarification purpose or question.
    */
-  _bindClarifiedMessageRecipient(tabId, answer, source = 'user') {
+  _bindClarifiedMessageRecipient(tabId, answer, source = 'user', clarifyContext = null) {
     const guard = this._planExecutionGuards.get(tabId);
     if (!guard) return false;
     // Read and clear together. The consent the guard staged belongs to exactly
@@ -15642,22 +15663,28 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     // consent from remaining parked for an unrelated later clarify to pick up.
     const messagingPermitted = guard.requiresSubmission === true
       && guard.requiresStateChange === true;
-    const pending = guard.pendingRecipientAuthorization === true && messagingPermitted;
+    const pending = !!guard.pendingRecipientAuthorization && messagingPermitted;
+    const pendingType = typeof guard.pendingRecipientAuthorization === 'string'
+      ? guard.pendingRecipientAuthorization
+      : (pending ? 'message_recipient' : null);
     const observed = Array.isArray(guard.observedRecipientCandidates)
       ? guard.observedRecipientCandidates
       : [];
     guard.pendingRecipientAuthorization = false;
     guard.observedRecipientCandidates = null;
-    if (!pending || observed.length === 0) return false;
+    if (!pending || !pendingType || observed.length === 0) return false;
     if (!answer || source === 'timeout' || source === 'auto') return false;
+    if (pendingType === 'recipient_change') {
+      if (!clarifyContext || !this._isRecipientClarification(clarifyContext, 'recipient_change')) {
+        return false;
+      }
+    } else if (clarifyContext && !this._isRecipientClarification(clarifyContext, 'message_recipient')) {
+      return false;
+    }
     const normalizedAnswer = normalizeRecipientIdentity(answer);
     if (!normalizedAnswer) return false;
-    const matched = observed.filter(candidate => answerNamesIdentity(
-      normalizedAnswer,
-      normalizeRecipientIdentity(candidate?.identity),
-    ));
-    if (matched.length === 0 || matched.length !== observed.length) return false;
-    const target = normalizeMessageTarget({ target_kind: 'named', recipients: matched });
+    if (!answerNamesAllObservedRecipients(normalizedAnswer, observed)) return false;
+    const target = normalizeMessageTarget({ target_kind: 'named', recipients: observed });
     if (!target) return false;
     guard.messaging = target;
     return true;
@@ -22849,7 +22876,11 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         ? args.options.map(s => String(s).slice(0, 200)).filter(Boolean).slice(0, 4)
         : [];
       const reason = args?.reason ? String(args.reason).slice(0, 300) : null;
-      const purpose = args?.purpose === 'research_escalation' ? 'research_escalation' : null;
+      const purpose = args?.purpose === 'research_escalation'
+        ? 'research_escalation'
+        : (args?.purpose === 'recipient_change'
+          ? 'recipient_change'
+          : (args?.purpose === 'message_recipient' ? 'message_recipient' : null));
       const isResearchEscalation = purpose === 'research_escalation';
       const requireExplicitAnswer = isResearchEscalation || args?.require_explicit_answer === true;
       const researchRequest = isResearchEscalation ? normalizeResearchRequest(args?.research_request) : '';
@@ -22951,7 +22982,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       if (tabPending.size === 0) this._pendingClarifications.delete(tabId);
 
       if (response && response.cancelled) {
-        this._bindClarifiedMessageRecipient(tabId, '', 'cancelled');
+        this._bindClarifiedMessageRecipient(tabId, '', 'cancelled', { question, options, reason, purpose });
         return { success: false, cancelled: true, reason: response.reason || 'clarify cancelled' };
       }
       const answer = String(response?.answer || '').trim();
@@ -22965,7 +22996,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       // nothing, matching how research escalation treats those sources below.
       // Every clarification outcome (human answer, timeout, auto) must consume
       // the staged recipient consent so a later unrelated clarify does not inherit it.
-      this._bindClarifiedMessageRecipient(tabId, answer, source);
+      this._bindClarifiedMessageRecipient(tabId, answer, source, { question, options, reason, purpose });
       const explicitResearchApproval = isResearchEscalation
         && source !== 'timeout'
         && source !== 'auto'
