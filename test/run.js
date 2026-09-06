@@ -86285,6 +86285,10 @@ test('social publication workflow follows the live X or Bluesky destination and 
         'single-quoted negation inside payload was treated as command negation'],
       ['Do not post "panic" on X', [],
         'actual negation governing publish verb was missed'],
+      ['Do not submit the survey, post this on X', ['twitter'],
+        'independent affirmative clause after negated non-publish clause separated by comma was wrongly rejected'],
+      ['Do not post on Bluesky, post this on X', ['twitter'],
+        'independent affirmative publish clause separated by comma from negated publish clause was wrongly rejected'],
     ]) {
       assert.deepEqual(
         [...agent._trustedSocialPublishTargetAdapters({ taskText })],
@@ -87325,6 +87329,84 @@ test('a thread published with Post all binds the post carrying the reviewed body
       { submit: ambiguousSubmit, verifiedFinalSubmit: false, relevantForms: 0 },
     ), null, AgentClass.name + ': two matching new permalinks were bound ambiguously');
     assert.equal(ambiguousSubmit.workflowBinding?.publishedResourceIdentity, undefined);
+  }
+});
+
+test('article-qualified mixed media requirements are counted and typed correctly', () => {
+  for (const AgentClass of [AgentCh, AgentFx]) {
+    const agent = new AgentClass({});
+    const req1 = agent._parseWorkflowAttachmentRequirement('an image and a video');
+    assert.equal(req1.expectedCount, 2, AgentClass.name + ': expectedCount should be 2 for an image and a video');
+    assert.equal(req1.expectedImageCount, 1, AgentClass.name + ': expectedImageCount should be 1');
+    assert.equal(req1.expectedVideoCount, 1, AgentClass.name + ': expectedVideoCount should be 1');
+    assert.equal(req1.wantsImage, true, AgentClass.name + ': wantsImage should be true');
+    assert.equal(req1.wantsVideo, true, AgentClass.name + ': wantsVideo should be true');
+
+    const req2 = agent._parseWorkflowAttachmentRequirement('an image, a video');
+    assert.equal(req2.expectedCount, 2, AgentClass.name + ': expectedCount should be 2 for an image, a video');
+    assert.equal(req2.expectedImageCount, 1, AgentClass.name + ': expectedImageCount should be 1');
+    assert.equal(req2.expectedVideoCount, 1, AgentClass.name + ': expectedVideoCount should be 1');
+
+    const req3 = agent._parseWorkflowAttachmentRequirement('a photo and a clip');
+    assert.equal(req3.expectedCount, 2, AgentClass.name + ': expectedCount should be 2 for a photo and a clip');
+    assert.equal(req3.expectedImageCount, 1);
+    assert.equal(req3.expectedVideoCount, 1);
+  }
+});
+
+test('extracting post body skips URL scheme colons', () => {
+  for (const AgentClass of [AgentCh, AgentFx]) {
+    const agent = new AgentClass({});
+    assert.equal(
+      agent._extractWorkflowTaskBody('Publish this on https://x.com/home: Hello world'),
+      'Hello world',
+      AgentClass.name + ': URL scheme colon halted body extraction',
+    );
+    assert.equal(
+      agent._extractWorkflowTaskBody('Post to https://x.com: Hello world'),
+      'Hello world',
+      AgentClass.name + ': URL scheme colon before domain colon halted body extraction',
+    );
+    assert.equal(
+      agent._extractWorkflowTaskBody('Post the following on https://bluesky.app/: Announcing v2!'),
+      'Announcing v2!',
+      AgentClass.name + ': Bluesky URL scheme colon halted body extraction',
+    );
+  }
+});
+
+test('classifier fallback leaves metadata requirements incomplete and unresolved', async () => {
+  for (const [index, AgentClass] of [AgentCh, AgentFx].entries()) {
+    const agent = new AgentClass({});
+    const tabId = 9870 + index;
+    const siteWorkflow = agent._resolvePlannerSiteWorkflow('https://x.com/home', {
+      request_kind: 'execute',
+      site_job: 'publish-post',
+    });
+    const guard = agent._startPlanExecutionGuard(tabId, 'act', {
+      requestKind: 'execute',
+      requiresStateChange: true,
+      requiresSubmission: true,
+      siteWorkflow,
+    });
+    const failingProvider = {
+      chat: async () => {
+        throw new Error('Classifier network error');
+      },
+    };
+    await agent._classifyProgressIntentWithProvider(tabId, {
+      provider: failingProvider,
+      taskText: 'Publish this on X: Hello from fallback',
+      pageScope: 'https://x.com/home',
+    });
+    assert.equal(guard.workflowMetadataRequirementsIncomplete, true,
+      AgentClass.name + ': fallback should mark workflowMetadataRequirementsIncomplete as true');
+    assert.notEqual(guard.workflowMetadataRequirementsResolved, true,
+      AgentClass.name + ': fallback should not mark workflowMetadataRequirementsResolved as true');
+    assert.deepEqual(guard.workflowMetadataRequirements, [{
+      field: 'body',
+      value: 'Hello from fallback',
+    }], AgentClass.name + ': fallback should extract body requirement');
   }
 });
 

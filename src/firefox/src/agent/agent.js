@@ -192,7 +192,7 @@ const SOCIAL_CLAUSE_DELIMITER = new RegExp(
   'iu',
 );
 const SOCIAL_COORDINATING_DELIMITER = new RegExp(
-  `^(?:or|nor|and|neither|o|ou|oder|ni|nem|né|veya|ya\\s+da|или|ни|或|或者|または|もしくは|や|또는|이나|거나|,|、)$`,
+  `^(?:or|nor|and|neither|o|ou|oder|ni|nem|né|veya|ya\\s+da|или|ни|或|或者|または|もしくは|や|또는|이나|거나)$`,
   'iu',
 );
 const SOCIAL_CLAUSE_BREAK = new RegExp(
@@ -2076,7 +2076,7 @@ export class Agent extends LoopDetector {
       return wordToNum[s] || 0;
     };
 
-    const countPrefix = '(?:\\d+|one|two|three|four|five|six|seven|eight|nine|ten|single|both|multiple|un|une|deux|trois|quatre|cinq|uno|una|unos|unas|dos|tres|cuatro|cinco|due|tre|quattro|cinque|ein|eine|einen|einer|zwei|drei|vier|fünf|um|uma|dois|duas|três|один|одна|одно|два|две|три|четыре|пять|[一二两三四五六七八九十])';
+    const countPrefix = '(?:\\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|single|both|multiple|un|une|deux|trois|quatre|cinq|uno|una|unos|unas|dos|tres|cuatro|cinco|due|tre|quattro|cinque|ein|eine|einen|einer|zwei|drei|vier|fünf|um|uma|dois|duas|três|один|одна|одно|два|две|три|четыре|пять|[一二两三四五六七八九十])';
 
     const imageCountMatch = text.match(new RegExp(`(?:^|[\\s,;and+])(${countPrefix})\\s+(?:images?|photos?|pictures?|pics?|foto|fotos|bild|bilder|imagen(?:es)?|imágenes|画像|写真|图片|照片|圖片|изображение|фото)`, 'i'));
     const expectedImageCount = imageCountMatch ? parseCountWord(imageCountMatch[1]) : 0;
@@ -19730,7 +19730,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           body = singleQuoteMatch[1].trim();
         } else {
           // 2. Colon-introduced body: "Publish this exact post on X:\s*<body text>", "Tweet:\s*<body text>", "Post the following on X:\s*<body text>"
-          const colonMatch = text.match(/(?:publish(?:ing|es)?|post(?:ing|s)?|tweet(?:ing|s)?|message|update)[\s\S]*?:\s*([\s\S]+)$/i);
+          const colonMatch = text.match(/(?:publish(?:ing|es)?|post(?:ing|s)?|tweet(?:ing|s)?|message|update)[\s\S]*?(?<!https?|ftp|sftp):(?!\/\/)\s*([\s\S]+)$/i);
           if (colonMatch && colonMatch[1]?.trim()) {
             let candidateBody = colonMatch[1].trim();
             const innerQuote = candidateBody.match(/^["“「『«]([\s\S]+)["”」』»]$/) || candidateBody.match(/^'([\s\S]+)'$/);
@@ -19869,8 +19869,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
               field: 'body',
               value: this._workflowMetadataValue(extractedBody, 25000),
             }];
-            guard.workflowMetadataRequirementsIncomplete = false;
-            guard.workflowMetadataRequirementsResolved = true;
+            guard.workflowMetadataRequirementsIncomplete = true;
           }
         }
       }
