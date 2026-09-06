@@ -20942,9 +20942,8 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           ? (state.siteWorkflow?.job?.id
             ? `[PLAN EXECUTION BLOCK: The selected ${state.siteWorkflow.job.id} job requires terminal evidence for its own submit/send/publish/commit contract. Filling fields, another site's submit, or an unrelated success signal is not completion. Dispatch the intended action and observe the job-specific terminal state (for example recipient-bound sent state, saved/published resource, form confirmation, or paid/ticket-issued transaction) before calling done again. If that cannot be verified, use outcome partial or failed and report the exact blocker.]`
             // No site workflow was selected, so there is no job contract to
-            // point at. Naming one sent the model looking for the terminal
-            // state of something that does not exist.
-            : '[PLAN EXECUTION BLOCK: This task requires a submit/send/publish/commit action, and the page state read at completion does not yet show it took effect. Read the page that resulted from the action — the published item, the confirmation, or the changed state — in the same browser tab, then call done from there. If the action cannot be confirmed, use outcome partial or failed and report the exact blocker.]')
+            // point at.
+            : '[PLAN EXECUTION BLOCK: This task requires a submit/send/publish/commit action, and the page state read at completion does not yet show it took effect. No structured site workflow is bound to this run. Read the page that resulted from the action — the published item, the confirmation, or the changed state — in the same browser tab, then call done from there. If the action cannot be confirmed, use outcome partial or failed and report the exact blocker.]')
           : forbiddenSubmission
           ? `[PLAN EXECUTION BLOCK: The selected ${state.siteWorkflow?.job?.id || 'workflow'} job prepares the form and leaves it unsubmitted, but a submit action was dispatched. Do not submit again or try to undo it by submitting anything else. Call done with outcome partial or failed, state plainly that the form was submitted without authorization, and report what the page shows now.]`
           : missingJobEvidence
