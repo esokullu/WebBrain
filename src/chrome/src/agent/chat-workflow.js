@@ -336,7 +336,15 @@ export function advanceChatSession(value, rawSnapshot, now = Date.now()) {
   if (snapshot.userInput?.required) {
     events.push({ type: 'user_input_required', ...snapshot.userInput });
   } else {
-    if (session.state === 'needs_user_input' && session.stopReason !== 'thread_changed') {
+    // A thread_changed pause is only lifted by evidence that the bound thread
+    // is active again — either an explicit rebind (which starts a fresh
+    // session) or an observation of the same threadKey. Without the second
+    // case the pause is escaped implicitly by the next state transition while
+    // stopReason stays 'thread_changed' forever, which would keep the rebind
+    // precondition permanently satisfied.
+    const boundThreadObserved = !!session.threadKey && session.threadKey === snapshot.threadKey;
+    if (session.state === 'needs_user_input'
+        && (session.stopReason !== 'thread_changed' || boundThreadObserved)) {
       events.push({ type: 'user_input_cleared', resumeState: session.pausedState });
     }
     if (evidenceComplete(snapshot.resolutionEvidence)) {

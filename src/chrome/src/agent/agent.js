@@ -44,7 +44,7 @@ import {
   workflowRequiredRowsAreProcessed,
 } from './adapter-workflow-evidence.js';
 import { answerNamesAllObservedRecipients, answerNamesIdentity, messageTargetMatchesObservedIdentities, normalizeMessageTarget, normalizeRecipientAnswer, normalizeRecipientIdentity, resolveClarifiedRecipients } from './message-recipient-guard.js';
-import { advanceChatSession, createChatSession, decideChatSend, markChatSendPending, normalizeChatSession, serializeChatSession } from './chat-workflow.js';
+import { advanceChatSession, createChatSession, decideChatSend, markChatSendPending, normalizeChatSession, normalizeChatSnapshot, serializeChatSession } from './chat-workflow.js';
 import {
   fetchUrl,
   executeHttpSkillTool,
@@ -17735,6 +17735,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
   async _observeChatWorkflow(tabId, args = {}) {
     const observation = await this._readChatObservation(tabId);
     if (observation?.success !== true) return observation;
+    // chat_observe reports the normalized threadKey, so a key the model passes
+    // back must be compared against that same form — not against the raw
+    // content-script value, which normalization can still change.
+    const observedThreadKey = normalizeChatSnapshot(observation).threadKey;
     let prior = this.chatSessions.get(tabId) || createChatSession();
     const rebindThreadKey = String(args.rebind_thread_key || args.rebindThreadKey || '').trim();
     const reconcilePending = args.reconcile_pending_outbound === true;
@@ -17769,7 +17773,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           error: 'Chat thread rebind requires a prior thread_changed pause with no pending outbound send.',
         };
       }
-      if (rebindThreadKey !== observation.threadKey) {
+      if (!observedThreadKey || rebindThreadKey !== observedThreadKey) {
         return {
           success: false,
           noDispatch: true,
@@ -17777,7 +17781,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           error: 'Chat thread rebind was rejected because the requested key does not match the current observation.',
         };
       }
-      prior = createChatSession({ threadKey: observation.threadKey });
+      prior = createChatSession({ threadKey: observedThreadKey });
     }
     const advanced = advanceChatSession(prior, observation);
     this.chatSessions.set(tabId, advanced.session);
@@ -17804,7 +17808,9 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     this.chatSessions.set(tabId, observed.session);
     this._persist(tabId);
     const requestedThreadKey = String(args.thread_key || args.threadKey || '');
-    if (!requestedThreadKey || requestedThreadKey !== before.threadKey) {
+    // chat_observe reported the normalized key, so match against that one.
+    const observedThreadKey = observed.snapshot.threadKey;
+    if (!requestedThreadKey || !observedThreadKey || requestedThreadKey !== observedThreadKey) {
       return {
         success: false,
         noDispatch: true,
@@ -17879,19 +17885,17 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     this.chatSessions.set(tabId, pending);
     const pendingPersisted = await this._persistNow(tabId);
     if (pendingPersisted !== true && pendingPersisted?.ok !== true) {
+      // Nothing was dispatched, so this pending record is provably false.
+      // Leaving it in place would refuse every later send with 'send_pending'
+      // until the user confirms an uncertain outcome that never happened.
+      this.chatSessions.set(tabId, observed.session);
       return {
         success: false,
         noDispatch: true,
         dispatched: false,
         reason: 'chat_state_not_durable',
         error: 'Chat send blocked because the pending outbound message could not be persisted safely. Retry after storage is available.',
-        chatWorkflow: this._chatWorkflowView({
-          session: pending,
-          snapshot: before,
-          events: [],
-          newMessages: [],
-          nextAction: 'observe',
-        }),
+        chatWorkflow: workflow(),
       };
     }
     let dispatch;
@@ -17905,13 +17909,27 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         error: error?.message || String(error),
       };
     }
+    // A dispatch that proves it never reached the page is not an uncertain
+    // send: keeping the pending record would strand the workflow behind an
+    // explicit user reconciliation for a message that was never typed.
+    let dispatchedSession = pending;
+    if (dispatch?.noDispatch === true && dispatch?.dispatched !== true) {
+      dispatchedSession = { ...pending, pendingOutbound: null };
+      this.chatSessions.set(tabId, dispatchedSession);
+      this._persist(tabId);
+    }
 
     const after = await this._readChatObservation(tabId);
     if (after?.success !== true) {
       return {
         ...this._chatObservationResult(after, {
-          session: pending,
-          snapshot: after,
+          session: dispatchedSession,
+          // `after` failed, so it carries no thread binding or evidence. Report
+          // the session's own so the model can still reconcile this send.
+          snapshot: {
+            threadKey: dispatchedSession.threadKey,
+            resolutionEvidence: dispatchedSession.resolutionEvidence,
+          },
           events: [],
           newMessages: [],
           nextAction: 'observe',
@@ -17926,7 +17944,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         dispatch,
       };
     }
-    const verifiedState = advanceChatSession(pending, after);
+    const verifiedState = advanceChatSession(dispatchedSession, after);
     this.chatSessions.set(tabId, verifiedState.session);
     this._persist(tabId);
     const previouslySeenIds = new Set(observed.session.seenMessageIds);
@@ -17948,7 +17966,6 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       }),
       messageKey: decision.messageKey,
       dispatch,
-      chatWorkflow: this._chatWorkflowView(verifiedState),
     };
   }
 

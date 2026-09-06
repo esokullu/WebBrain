@@ -266,9 +266,16 @@
     const selected = [];
     for (const candidate of candidates) {
       const duplicate = selected.find(item => {
-        if (item.id && candidate.id) return item.id === candidate.id;
+        if (item.id && candidate.id && item.id === candidate.id) return true;
+        // A wrapper and the bubble inside it are one message, even when the
+        // page gives each of them its own id: innerText of the ancestor
+        // already repeats the descendant's text, so keeping both reports the
+        // same message twice. Only DOM containment collapses entries; sibling
+        // bubbles with identical text stay separate and are numbered instead.
+        if (!contains(item.node, candidate.node) && !contains(candidate.node, item.node)) return false;
         return item.text === candidate.text
-          && (contains(item.node, candidate.node) || contains(candidate.node, item.node));
+          || item.text.includes(candidate.text)
+          || candidate.text.includes(item.text);
       });
       if (!duplicate) {
         selected.push(candidate);
