@@ -4866,6 +4866,65 @@ test('direct-message recipient guard uses structured intent and exact active ide
       'multi-recipient answer associating roles to different recipients must resolve each recipient to their authorized role',
     );
 
+    // Grouped role authorization tests:
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Put Alice and Bob in BCC', 'Alice', 'bcc'),
+      true,
+      'Alice in grouped answer Put Alice and Bob in BCC must be authorized as BCC',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Put Alice and Bob in BCC', 'Alice', 'to'),
+      false,
+      'Alice in grouped answer Put Alice and Bob in BCC must not be authorized as To',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Put Alice and Bob in BCC', 'Bob', 'bcc'),
+      true,
+      'Bob in grouped answer Put Alice and Bob in BCC must be authorized as BCC',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Put Alice and Bob in BCC', 'Bob', 'to'),
+      false,
+      'Bob in grouped answer Put Alice and Bob in BCC must not be authorized as To',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'To: Alice and Bob', 'Alice', 'to'),
+      true,
+      'Alice in grouped prefix answer To: Alice and Bob must be authorized as To',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'To: Alice and Bob', 'Bob', 'to'),
+      true,
+      'Bob in grouped prefix answer To: Alice and Bob must be authorized as To',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'To: Alice and Bob', 'Bob', 'bcc'),
+      false,
+      'Bob in grouped prefix answer To: Alice and Bob must not be authorized as BCC',
+    );
+    assert.deepEqual(
+      helper.resolveClarifiedRecipients(
+        [
+          { identity: 'alice@example.com', role: 'bcc', aliases: ['alice@example.com', 'Alice'] },
+          { identity: 'bob@example.com', role: 'bcc', aliases: ['bob@example.com', 'Bob'] },
+        ],
+        {
+          target_kind: 'named',
+          recipients: [
+            { identity: 'alice@example.com', role: 'to' },
+            { identity: 'bob@example.com', role: 'to' },
+          ],
+        },
+        null,
+        'Put Alice and Bob in BCC',
+      ),
+      [
+        { identity: 'alice@example.com', role: 'bcc' },
+        { identity: 'bob@example.com', role: 'bcc' },
+      ],
+      'grouped role answer Put Alice and Bob in BCC must rebind both recipients to BCC',
+    );
+
     assert.equal(helper.messageTargetMatchesObservedIdentities(
       { target_kind: 'named', recipients: ['Alice', 'bob@example.com'] },
       ['Alice'],

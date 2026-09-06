@@ -300,6 +300,7 @@ export function clarificationAuthorizesRecipientRole(clarifyContext, answer, can
   };
 
   const delimiterRe = /[,;，；\n\r|/]|(?:\s+(?:and|or|while|whilst|but|whereas|yet|however|instead\s+of|rather\s+than|as\s+well\s+as|以及|与|及|而|但是|但)\s+)/gi;
+  const roleWordsRe = /\b(?:to|cc|bcc|carbon\s+copy|blind\s+carbon\s+copy)\b|收件人|主送|抄送|密送|暗送/i;
 
   let hasSpans = false;
   for (const alias of candidateAliases) {
@@ -330,6 +331,28 @@ export function clarificationAuthorizesRecipientRole(clarifyContext, answer, can
 
         if (prefixPatterns[role].test(prefix) || suffixPatterns[role].test(suffix)) {
           return true;
+        }
+
+        // Grouped role suffix: e.g. Put Alice and Bob in BCC / 把Alice和Bob设为密送
+        const fullSuffix = answerText.slice(span.end);
+        const coordMatch = fullSuffix.match(/^(?:\s*(?:[,;，；和]|(?:\s+(?:and|or|以及|与|及)\s*))\s*[^,;，；\n\r|/]+?)+?(\s*(?:(?:as|in|into|to)\s+(?:the\s+)?(?:to|cc|bcc|blind\s+carbon\s+copy|carbon\s+copy)(?:\s+(?:field|role|recipient))?\b|[(\[【]\s*(?:to|cc|bcc)\s*[)\]】]|\s*[:：]\s*(?:to|cc|bcc)\b|(?:作为|设为)?(?:收件人|主送|抄送|密送|暗送)))/i);
+        if (coordMatch) {
+          const intervening = fullSuffix.slice(0, coordMatch.index + coordMatch[0].length - coordMatch[1].length);
+          const rolePart = coordMatch[1];
+          if (!roleWordsRe.test(intervening) && suffixPatterns[role].test(rolePart)) {
+            return true;
+          }
+        }
+
+        // Grouped role prefix: e.g. To: Alice and Bob
+        const fullPrefix = answerText.slice(0, span.start);
+        const prefixCoordMatch = fullPrefix.match(/(?:(\b(?:to|cc|bcc)\s*[:：]|(?:作为|设为)?(?:收件人|主送|抄送|密送|暗送)\s*[:：]?)\s*[^,;，；\n\r|/]+(?:\s*(?:[,;，；和]|(?:\s+(?:and|or|以及|与|及)\s*))\s*[^,;，；\n\r|/]+)*\s*(?:[,;，；和]|(?:\s+(?:and|or|以及|与|及)\s*))\s*)$/i);
+        if (prefixCoordMatch) {
+          const roleLeader = prefixCoordMatch[1];
+          const intervening = prefixCoordMatch[0].slice(roleLeader.length);
+          if (!roleWordsRe.test(intervening) && prefixPatterns[role].test(roleLeader)) {
+            return true;
+          }
         }
       }
     }
