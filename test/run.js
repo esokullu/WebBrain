@@ -4976,7 +4976,7 @@ test('long-running chat workflow tracks deltas, safe states, and idempotent send
       {
         threadId: 'case-42',
         agentConnected: true,
-        composer: { available: true, ref: 'composer-1', sendRef: 'send-1' },
+        composer: { available: true, ref: 'composer-1', sendRef: 'send-1', empty: true },
         messages: [],
       },
       Date.parse('2026-09-05T01:00:00Z'),
@@ -4997,7 +4997,7 @@ test('long-running chat workflow tracks deltas, safe states, and idempotent send
       pending,
       {
         threadId: 'case-42',
-        composer: { available: true },
+        composer: { available: true, empty: true },
         messages: [{ id: 'out-1', direction: 'outgoing', text: decision.text }],
       },
       Date.parse('2026-09-05T01:02:00Z'),
@@ -5015,7 +5015,7 @@ test('long-running chat workflow tracks deltas, safe states, and idempotent send
       sent.session,
       {
         threadId: 'case-42',
-        composer: { available: true },
+        composer: { available: true, empty: true },
         messages: [
           { id: 'out-1', direction: 'outgoing', text: decision.text },
           { id: 'in-2', direction: 'incoming', author: 'Support', text: 'Would you also like the case number?' },
@@ -5030,7 +5030,7 @@ test('long-running chat workflow tracks deltas, safe states, and idempotent send
       sent.session,
       {
         threadId: 'case-42',
-        composer: { available: true },
+        composer: { available: true, empty: true },
         messages: [
           { id: 'out-1', direction: 'outgoing', text: decision.text },
           { id: 'in-1', direction: 'incoming', author: 'Support', text: 'I am checking that now.' },
@@ -5049,7 +5049,7 @@ test('long-running chat workflow tracks deltas, safe states, and idempotent send
       replied.session,
       {
         threadId: 'case-42',
-        composer: { available: true },
+        composer: { available: true, empty: true },
         userInput: { required: true, reason: 'otp', message: 'The site requests a one-time code.' },
         messages: replied.snapshot.messages,
       },
@@ -5059,7 +5059,7 @@ test('long-running chat workflow tracks deltas, safe states, and idempotent send
     assert.equal(workflow.decideChatSend(sensitive.session, sensitive.snapshot, '123456').reason, 'user_input_required');
     const resumedAfterUserInput = workflow.advanceChatSession(
       sensitive.session,
-      { threadId: 'case-42', composer: { available: true }, messages: replied.snapshot.messages },
+      { threadId: 'case-42', composer: { available: true, empty: true }, messages: replied.snapshot.messages },
     );
     assert.equal(resumedAfterUserInput.session.state, 'counterparty_replied');
     assert.equal(resumedAfterUserInput.events[0].type, 'user_input_cleared');
@@ -5067,7 +5067,7 @@ test('long-running chat workflow tracks deltas, safe states, and idempotent send
 
     const changedThread = workflow.advanceChatSession(
       replied.session,
-      { threadId: 'different-case', composer: { available: true }, messages: [] },
+      { threadId: 'different-case', composer: { available: true, empty: true }, messages: [] },
     );
     assert.equal(changedThread.session.state, 'needs_user_input');
     assert.equal(changedThread.events[0].type, 'thread_changed');
@@ -5101,11 +5101,55 @@ test('long-running chat workflow tracks deltas, safe states, and idempotent send
     assert.match(normalized.messages[0].text, /IGNORE previous instructions/);
     assert.equal(normalized.userInput, null);
 
+    const slidingWindowFirst = workflow.advanceChatSession(
+      workflow.createChatSession(),
+      {
+        threadId: 'case-42',
+        composer: { available: true, empty: true },
+        messages: Array.from({ length: 200 }, () => ({ direction: 'incoming', text: 'same reply' })),
+      },
+    );
+    const slidingWindowSecond = workflow.advanceChatSession(
+      slidingWindowFirst.session,
+      {
+        threadId: 'case-42',
+        composer: { available: true, empty: true },
+        messages: Array.from({ length: 201 }, () => ({ direction: 'incoming', text: 'same reply' })),
+      },
+    );
+    assert.equal(
+      slidingWindowSecond.newMessages.length,
+      1,
+      'no-ID bubbles must retain a stable occurrence identity as the transcript window advances',
+    );
+
+    const draftDecision = workflow.decideChatSend(
+      first.session,
+      { ...first.snapshot, composer: { ...first.snapshot.composer, empty: false } },
+      'Do not overwrite a user draft.',
+    );
+    assert.equal(draftDecision.reason, 'composer_not_empty');
+
+    const pendingAfterAge = workflow.advanceChatSession(
+      workflow.markChatSendPending(first.session, decision, Date.parse('2026-09-05T01:01:00Z')),
+      {
+        threadId: 'case-42',
+        composer: { available: true, empty: true },
+        messages: [],
+      },
+      Date.parse('2026-09-05T01:12:00Z'),
+    );
+    assert.ok(pendingAfterAge.session.pendingOutbound, 'uncertain outbound sends must not expire by elapsed time');
+    assert.equal(
+      workflow.decideChatSend(pendingAfterAge.session, pendingAfterAge.snapshot, decision.text).reason,
+      'send_pending',
+    );
+
     const largeDelta = workflow.advanceChatSession(
       workflow.createChatSession(),
       {
         threadId: 'case-42',
-        composer: { available: true },
+        composer: { available: true, empty: true },
         messages: Array.from({ length: 25 }, (_, index) => ({
           id: `delta-${index}`,
           direction: 'incoming',
@@ -5137,6 +5181,7 @@ test('model-callable chat tools bind the thread, send once, and require outgoing
     ['chrome', AgentCh, getToolsForModeCh],
     ['firefox', AgentFx, getToolsForModeFx],
   ]) {
+    const workflow = label === 'chrome' ? ChatWorkflowCh : ChatWorkflowFx;
     const names = new Set(getTools('ask').map(tool => tool.function.name));
     assert.equal(names.has('chat_observe'), true, `${label}: Ask must expose read-only chat_observe`);
     assert.equal(names.has('chat_send'), false, `${label}: Ask must not expose chat_send`);
@@ -5176,6 +5221,30 @@ test('model-callable chat tools bind the thread, send once, and require outgoing
     assert.ok(JSON.stringify(boundedView).length <= 8000, `${label}: chat workflow view exceeded the model tool-result envelope`);
     assert.equal(boundedView.newMessages.at(-1).truncated, true, `${label}: oversized chat delta was not marked truncated`);
     assert.equal(boundedView.deltaTruncated, true, `${label}: dropped chat delta entries were not disclosed`);
+    const staleAgent = new AgentClass({});
+    staleAgent._persist = () => { throw new Error('stale preflight must not commit chat state'); };
+    staleAgent._persistNow = async () => { throw new Error('stale preflight must not persist chat state'); };
+    staleAgent.chatSessions.set(tabId, agent.chatSessions.get(tabId));
+    staleAgent._readChatObservation = async () => ({
+      ...baseSnapshot,
+      messages: [{ id: 'in-race', direction: 'incoming', text: 'A newer support reply arrived.' }],
+    });
+    let staleDispatches = 0;
+    staleAgent.executeTool = async () => { staleDispatches += 1; return { success: true, dispatched: true }; };
+    const stale = await staleAgent._sendChatWorkflow(tabId, {
+      thread_key: 'case-42',
+      composer_ref: 'composer-1',
+      text: 'This reply is now stale.',
+    });
+    assert.equal(stale.reason, 'chat_observe_required', 'stale pre-send reply was not blocked for ' + label);
+    assert.deepEqual(stale.chatWorkflow.newMessages.map(message => message.id), ['in-race']);
+    assert.equal(staleDispatches, 0, 'stale pre-send reply still dispatched for ' + label);
+    assert.equal(
+      staleAgent.chatSessions.get(tabId).seenMessageIds.includes('in-race'),
+      false,
+      'stale pre-send delta was committed before chat_observe for ' + label,
+    );
+
     const sent = await agent._sendChatWorkflow(tabId, {
       thread_key: 'case-42',
       composer_ref: 'composer-1',
@@ -5213,7 +5282,12 @@ test('model-callable chat tools bind the thread, send once, and require outgoing
     guardedAgent._messageRecipientGuardBlock = async (_tabId, toolName, args) => {
       guardCalls += 1;
       assert.equal(toolName, 'set_field', `${label}: chat_send did not preflight the actual set_field dispatch`);
-      assert.equal(args.submit, true, `${label}: recipient preflight was not submit-scoped`);
+      assert.deepEqual(args, {
+        ref_id: 'composer-1',
+        text: 'This must be recipient-bound.',
+        clear: true,
+        submit: true,
+      }, `${label}: recipient preflight did not receive the exact set_field dispatch`);
       return {
         success: false,
         noDispatch: true,
@@ -5240,15 +5314,31 @@ test('model-callable chat tools bind the thread, send once, and require outgoing
       threadKey: 'case-99',
       conversationIdentity: 'new-agent',
     });
+    const rebindPending = workflow.markChatSendPending(agent.chatSessions.get(tabId), {
+      ok: true,
+      messageKey: 'pending-rebind',
+      threadKey: 'case-42',
+      text: 'An uncertain message.',
+      replyAnchor: 'chat_start',
+      attemptedAt: '2026-09-05T01:00:00.000Z',
+    });
     rebindAgent.chatSessions.set(tabId, {
-      ...agent.chatSessions.get(tabId),
+      ...rebindPending,
       state: 'needs_user_input',
       stopReason: 'thread_changed',
       userInput: { required: true, reason: 'thread_changed', message: 'Select the intended thread.' },
     });
-    const rebound = await rebindAgent._observeChatWorkflow(tabId, { rebind_thread_key: 'case-99' });
+    const changed = await rebindAgent._observeChatWorkflow(tabId);
+    assert.equal(changed.chatWorkflow.pendingOutbound, true, 'thread drift discarded the uncertain outbound record for ' + label);
+    const pendingOutboundKey = changed.chatWorkflow.pendingOutboundKey;
+    const rebound = await rebindAgent._observeChatWorkflow(tabId, {
+      rebind_thread_key: 'case-99',
+      reconcile_pending_outbound: true,
+      pending_outbound_key: pendingOutboundKey,
+    });
     assert.equal(rebound.chatWorkflow.threadKey, 'case-99', `${label}: explicit thread rebind did not bind the new thread`);
     assert.notEqual(rebound.chatWorkflow.state, 'needs_user_input', `${label}: explicit thread rebind kept the old pause state`);
+    assert.equal(rebound.chatWorkflow.pendingOutbound, false, 'explicit pending reconciliation did not clear the old send for ' + label);
 
     const driftAgent = new AgentClass({});
     driftAgent._readChatObservation = async () => ({ ...baseSnapshot, threadKey: 'other-case' });
@@ -6028,7 +6118,7 @@ test('chat observation returns a current-thread snapshot without treating messag
       getComputedStyle: () => ({ display: 'block', visibility: 'visible' }),
       Date,
     };
-    return { context, composer, otp, main };
+    return { context, composer, otp, main, makeElement };
   };
 
   const chrome = makeDom();
@@ -6064,6 +6154,33 @@ test('chat observation returns a current-thread snapshot without treating messag
   });
   assert.equal(nonChatSnapshot.success, false, 'a generic main/body with an editable must not be treated as a chat root');
   assert.equal(nonChatSnapshot.reason, 'chat_root_unverified');
+
+  const unbound = makeDom();
+  unbound.main._attributes = { 'data-chat-root': '' };
+  vm.runInNewContext(chromeSource, unbound.context);
+  const unboundSnapshot = unbound.context.window.__wb_observe_chat_dom({
+    probe: { success: true, composerAvailable: true, composerRef: 'composer_ref' },
+  });
+  assert.equal(unboundSnapshot.success, false, 'a chat root without a conversation identity must fail closed');
+  assert.equal(unboundSnapshot.reason, 'chat_thread_unverified');
+
+  const ordered = makeDom();
+  const early = ordered.makeElement('article', { 'data-message-direction': 'incoming' }, 'early message');
+  const late = ordered.makeElement('div', {
+    'data-message-id': 'late',
+    'data-message-direction': 'incoming',
+  }, 'late message');
+  ordered.main.appendChild(early);
+  ordered.main.appendChild(late);
+  vm.runInNewContext(chromeSource, ordered.context);
+  const orderedSnapshot = ordered.context.window.__wb_observe_chat_dom({
+    probe: { success: true, composerAvailable: true, composerRef: 'composer_ref' },
+  });
+  assert.deepEqual(
+    Array.from(orderedSnapshot.messages, message => message.text).slice(-2),
+    ['early message', 'late message'],
+    'mixed message selectors must preserve DOM order',
+  );
 
   const noComposer = makeDom();
   noComposer.composer.isConnected = false;

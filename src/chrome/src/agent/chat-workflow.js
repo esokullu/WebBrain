@@ -55,9 +55,6 @@ const MAX_MESSAGES = 200;
 const MAX_NEW_MESSAGES = 20;
 const MAX_MESSAGE_TEXT = 4_000;
 const MAX_ID = 240;
-// A dispatch that never produced a visible bubble must not block the same text
-// forever. `attemptedAt` ages the pending record out so the workflow can retry.
-const PENDING_OUTBOUND_TTL_MS = 10 * 60 * 1000;
 
 function bounded(value, max = MAX_ID) {
   return String(value ?? '')
@@ -170,16 +167,21 @@ export function normalizeChatSnapshot(value, now = Date.now()) {
   const conversationId = bounded(source.conversationId ?? source.conversation_id ?? source.threadId, MAX_ID);
   const identity = bounded(source.conversationIdentity ?? source.recipient ?? source.identity, MAX_ID);
   const url = bounded(source.url, 1000);
-  const threadKey = bounded(source.threadKey || conversationId || identity || url, MAX_ID);
+  const threadKey = bounded(source.threadKey || conversationId || identity, MAX_ID);
   const seenOccurrences = new Map();
   const messages = [];
-  for (const raw of (Array.isArray(source.messages) ? source.messages : []).slice(-MAX_MESSAGES)) {
+  const messageIds = new Set();
+  for (const raw of (Array.isArray(source.messages) ? source.messages : [])) {
     const provisionalText = canonicalChatText(raw?.text ?? raw?.content ?? raw?.message);
     const provisionalDirection = normalizeDirection(raw?.direction ?? raw?.authorRole ?? raw?.role);
     const occurrence = seenOccurrences.get(`${provisionalDirection}\u001f${provisionalText}`) || 0;
     seenOccurrences.set(`${provisionalDirection}\u001f${provisionalText}`, occurrence + 1);
     const message = normalizeChatMessage(raw, { threadKey, occurrence });
-    if (message && !messages.some(item => item.id === message.id)) messages.push(message);
+    if (message && !messageIds.has(message.id)) {
+      messageIds.add(message.id);
+      messages.push(message);
+      if (messages.length > MAX_MESSAGES) messageIds.delete(messages.shift().id);
+    }
   }
   const composerSource = source.composer && typeof source.composer === 'object' ? source.composer : {};
   const resolutionEvidence = normalizeEvidence(source.resolutionEvidence ?? source.resolution_evidence);
@@ -224,13 +226,6 @@ export function createChatSession({ threadKey = '', now = Date.now() } = {}) {
   const session = emptySession(now);
   session.threadKey = bounded(threadKey, MAX_ID);
   return session;
-}
-
-function pendingOutboundExpired(pending, now) {
-  if (!pending) return false;
-  const attempted = Date.parse(pending.attemptedAt || '');
-  if (!Number.isFinite(attempted)) return true;
-  return now - attempted > PENDING_OUTBOUND_TTL_MS;
 }
 
 export function normalizeChatSession(value, now = Date.now()) {
@@ -323,7 +318,6 @@ export function advanceChatSession(value, rawSnapshot, now = Date.now()) {
       state: transitionChatState(session.state, { type: 'thread_changed' }),
       userInput: { required: true, reason: 'thread_changed', message: 'The active conversation changed. Select and verify the intended thread before continuing.' },
       stopReason: 'thread_changed',
-      pendingOutbound: null,
     };
     events.push({ type: 'thread_changed', previousThreadKey: session.threadKey, threadKey: snapshot.threadKey });
     return { session, snapshot, events, newMessages: [], nextAction: 'pause_for_user' };
@@ -371,9 +365,7 @@ export function advanceChatSession(value, rawSnapshot, now = Date.now()) {
     state: nextState,
     seenMessageIds: [...new Set([...session.seenMessageIds, ...snapshot.messages.map(message => message.id)])].slice(-MAX_MESSAGES),
     sentMessageKeys: [...outgoingKeys].slice(-MAX_MESSAGES),
-    pendingOutbound: matchedPending || pendingOutboundExpired(session.pendingOutbound, now)
-      ? null
-      : session.pendingOutbound,
+    pendingOutbound: matchedPending ? null : session.pendingOutbound,
     resolutionEvidence: snapshot.resolutionEvidence,
     lastObservedAt: snapshot.observedAt,
     userInput: snapshot.userInput,
@@ -424,9 +416,11 @@ export function decideChatSend(value, rawSnapshot, text, now = Date.now()) {
   if (snapshot.composer.available !== true) {
     return { ok: false, reason: 'composer_unavailable', error: 'The active conversation composer is not available.' };
   }
+  if (snapshot.composer.empty !== true) {
+    return { ok: false, reason: 'composer_not_empty', error: 'Chat send blocked because the composer contains a user draft. Clear or reconcile the draft before sending.' };
+  }
   const replyAnchor = latestIncomingId(snapshot);
   const key = messageKey(snapshot.threadKey, body, replyAnchor);
-  const legacyKey = legacyMessageKey(snapshot.threadKey, body);
   const latestIncomingIndex = snapshot.messages.map(message => message.direction).lastIndexOf('incoming');
   const sameReplyAlreadyVisible = snapshot.messages.some((message, index) => (
     index > latestIncomingIndex
@@ -437,11 +431,16 @@ export function decideChatSend(value, rawSnapshot, text, now = Date.now()) {
       || sameReplyAlreadyVisible) {
     return { ok: false, duplicate: true, reason: 'already_sent', messageKey: key, error: 'This exact message is already visible as an outgoing message in this conversation.' };
   }
-  if (session.pendingOutbound
-      && (session.pendingOutbound.key === key
-        || (!session.pendingOutbound.replyAnchor && session.pendingOutbound.key === legacyKey))
-      && !pendingOutboundExpired(session.pendingOutbound, now)) {
-    return { ok: false, duplicate: true, pending: true, reason: 'send_pending', messageKey: key, error: 'This exact message is already pending verification; observe the conversation before retrying.' };
+  if (session.pendingOutbound) {
+    return {
+      ok: false,
+      duplicate: true,
+      pending: true,
+      reason: 'send_pending',
+      messageKey: key,
+      pendingMessageKey: session.pendingOutbound.key,
+      error: 'An outbound message is still pending verification; observe the conversation or explicitly reconcile its outcome before sending again.',
+    };
   }
   return {
     ok: true,

@@ -17692,6 +17692,9 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       newMessages,
       ...(deltaTruncated ? { deltaTruncated: true } : {}),
       pendingOutbound: !!advanced.session.pendingOutbound,
+      ...(advanced.session.pendingOutbound?.key
+        ? { pendingOutboundKey: advanced.session.pendingOutbound.key }
+        : {}),
       userInput: advanced.session.userInput,
       resolutionEvidence: advanced.snapshot.resolutionEvidence,
     };
@@ -17734,6 +17737,29 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     if (observation?.success !== true) return observation;
     let prior = this.chatSessions.get(tabId) || createChatSession();
     const rebindThreadKey = String(args.rebind_thread_key || args.rebindThreadKey || '').trim();
+    const reconcilePending = args.reconcile_pending_outbound === true;
+    const pendingOutboundKey = String(args.pending_outbound_key || '').trim();
+    if (reconcilePending) {
+      if (!prior.pendingOutbound) {
+        return {
+          success: false,
+          noDispatch: true,
+          reason: 'pending_reconciliation_not_needed',
+          error: 'There is no pending outbound message to reconcile.',
+        };
+      }
+      if (!pendingOutboundKey || pendingOutboundKey !== prior.pendingOutbound.key) {
+        return {
+          success: false,
+          noDispatch: true,
+          reason: 'pending_reconciliation_mismatch',
+          error: 'Pending outbound reconciliation requires the exact pending_outbound_key from chatWorkflow.',
+        };
+      }
+      // Clearing an uncertain send is an explicit user-authorized decision;
+      // elapsed time alone is never evidence that dispatch failed.
+      prior = { ...prior, pendingOutbound: null };
+    }
     if (rebindThreadKey) {
       if (prior.stopReason !== 'thread_changed' || prior.pendingOutbound) {
         return {
@@ -17764,9 +17790,19 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     if (before?.success !== true) return before;
     const prior = this.chatSessions.get(tabId) || createChatSession();
     const observed = advanceChatSession(prior, before);
+    const workflow = () => this._chatWorkflowView(observed);
+    if (observed.newMessages.some(message => message.direction === 'incoming')) {
+      return {
+        success: false,
+        noDispatch: true,
+        dispatched: false,
+        reason: 'chat_observe_required',
+        error: 'Chat send blocked because a new incoming message appeared since the last chat_observe. Observe that message delta before replying.',
+        chatWorkflow: workflow(),
+      };
+    }
     this.chatSessions.set(tabId, observed.session);
     this._persist(tabId);
-    const workflow = () => this._chatWorkflowView(observed);
     const requestedThreadKey = String(args.thread_key || args.threadKey || '');
     if (!requestedThreadKey || requestedThreadKey !== before.threadKey) {
       return {
@@ -17804,6 +17840,12 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       };
     }
 
+    const dispatchArgs = {
+      ref_id: composerRef,
+      text: decision.text,
+      clear: true,
+      submit: true,
+    };
     const sendContext = executionContext && typeof executionContext === 'object'
       ? { ...executionContext }
       : {};
@@ -17812,7 +17854,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       recipientBlock = await this._messageRecipientGuardBlock(
         tabId,
         'set_field',
-        { ref_id: composerRef, submit: true },
+        dispatchArgs,
         before.url || '',
         sendContext,
       );
@@ -17854,12 +17896,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     }
     let dispatch;
     try {
-      dispatch = await this.executeTool(tabId, 'set_field', {
-        ref_id: composerRef,
-        text: decision.text,
-        clear: true,
-        submit: true,
-      }, onUpdate, sendContext);
+      dispatch = await this.executeTool(tabId, 'set_field', dispatchArgs, onUpdate, sendContext);
     } catch (error) {
       dispatch = {
         success: false,

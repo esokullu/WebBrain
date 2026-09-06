@@ -100,17 +100,7 @@
   };
 
   const queryMany = (root, selectors) => {
-    const result = [];
-    const seen = new Set();
-    for (const selector of selectors) {
-      for (const node of query(root, selector)) {
-        if (!seen.has(node)) {
-          seen.add(node);
-          result.push(node);
-        }
-      }
-    }
-    return result;
+    return query(root, (Array.isArray(selectors) ? selectors : []).filter(Boolean).join(','));
   };
 
   const parentChain = (node, limit = 20) => {
@@ -378,9 +368,17 @@
       const threadKey = compact(
         conversationId
           ? `dom:${conversationId}`
-          : (url && conversationIdentity ? `${url}#${conversationIdentity}` : url || conversationIdentity || 'document'),
+          : (conversationIdentity ? `identity:${conversationIdentity}` : ''),
         240,
       );
+      if (!threadKey) {
+        return {
+          success: false,
+          schema: SCHEMA,
+          reason: 'chat_thread_unverified',
+          error: 'The active chat does not expose a conversation-specific identity; sending is disabled until the thread can be verified.',
+        };
+      }
       const composerValue = composer
         ? ('value' in composer ? composer.value : (composer.innerText || composer.textContent || ''))
         : '';
