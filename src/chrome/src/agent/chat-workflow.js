@@ -174,8 +174,11 @@ export function normalizeChatSnapshot(value, now = Date.now()) {
   for (const raw of (Array.isArray(source.messages) ? source.messages : [])) {
     const provisionalText = canonicalChatText(raw?.text ?? raw?.content ?? raw?.message);
     const provisionalDirection = normalizeDirection(raw?.direction ?? raw?.authorRole ?? raw?.role);
-    const occurrence = seenOccurrences.get(`${provisionalDirection}\u001f${provisionalText}`) || 0;
-    seenOccurrences.set(`${provisionalDirection}\u001f${provisionalText}`, occurrence + 1);
+    const counted = seenOccurrences.get(`${provisionalDirection}\u001f${provisionalText}`) || 0;
+    seenOccurrences.set(`${provisionalDirection}\u001f${provisionalText}`, counted + 1);
+    // An observation that numbered its own messages before its own truncation
+    // is authoritative; such a source must number every message it reports.
+    const occurrence = Number.isInteger(raw?.occurrence) && raw.occurrence >= 0 ? raw.occurrence : counted;
     const message = normalizeChatMessage(raw, { threadKey, occurrence });
     if (message && !messageIds.has(message.id)) {
       messageIds.add(message.id);
@@ -352,8 +355,13 @@ export function advanceChatSession(value, rawSnapshot, now = Date.now()) {
   let nextState = session.state;
   for (const event of events) nextState = transitionChatState(nextState, event);
   const visibleOutgoingKeys = outgoingMessageKeys(snapshot);
+  // The anchored key is recomputed from DOM order, so a counterparty message
+  // that renders after a send could move our anchor and the key never matches,
+  // stranding the pending record. A newly visible outgoing bubble carrying the
+  // pending text is the same proof of delivery without depending on the anchor.
   const matchedPending = session.pendingOutbound
     && (visibleOutgoingKeys.has(session.pendingOutbound.key)
+      || newOutgoing.some(message => canonicalChatText(message.text) === canonicalChatText(session.pendingOutbound.text))
       || (!session.pendingOutbound.replyAnchor
         && session.pendingOutbound.key === legacyMessageKey(snapshot.threadKey, session.pendingOutbound.text)));
   const clearUserInput = events.some(event => event.type === 'user_input_cleared');

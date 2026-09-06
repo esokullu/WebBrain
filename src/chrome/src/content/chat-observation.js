@@ -65,6 +65,13 @@
     .join('\n')
     .slice(0, MAX_TEXT);
 
+  // Mirrors the kernel's canonical form so the fallback ordinal below groups
+  // exactly the bubbles the kernel would otherwise give the same id.
+  const canonicalText = (value) => {
+    const text = normalizeText(value);
+    try { return text.normalize('NFKC').toLocaleLowerCase(); } catch { return text.toLowerCase(); }
+  };
+
   const attribute = (node, name) => compact(node?.getAttribute?.(name), 1000);
 
   const visible = (node) => {
@@ -271,12 +278,31 @@
       }
     }
 
+    // A bubble the page does not identify is identified positionally, so the
+    // ordinal has to be assigned over the whole transcript rather than over
+    // the retained tail. Numbering after the cap restarts at 0 as older
+    // bubbles age out, which lets a genuinely new duplicate collapse onto an
+    // id the session has already seen and never surface as a delta.
+    const occurrences = new Map();
+    for (const item of selected) {
+      const key = [
+        item.direction,
+        canonicalText(item.text),
+        canonicalText(item.author),
+        item.timestamp,
+      ].join('\u001f');
+      const seen = occurrences.get(key) || 0;
+      occurrences.set(key, seen + 1);
+      item.occurrence = seen;
+    }
+
     // The kernel keeps the last MAX_ITEMS entries, so the newest bubbles —
     // not the oldest — must survive the cap in a long conversation.
     return selected.slice(-MAX_ITEMS).map(item => ({
       ...(item.id ? { id: item.id } : {}),
       direction: item.direction,
       text: item.text,
+      occurrence: item.occurrence,
       ...(item.author ? { author: item.author } : {}),
       ...(item.timestamp ? { timestamp: item.timestamp } : {}),
     }));

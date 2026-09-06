@@ -5973,6 +5973,38 @@ test('long-running chat workflow tracks deltas, safe states, and idempotent send
     assert.equal(sent.session.pendingOutbound, null);
     assert.equal(sent.newMessages.length, 1);
 
+    // A support message that renders above our own bubble moves the anchor the
+    // pending key was built from, so the recomputed key never matches. Delivery
+    // is still proven by the new outgoing bubble itself carrying the pending
+    // text, so the pending record must not survive.
+    const anchorMoved = workflow.advanceChatSession(
+      pending,
+      {
+        threadId: 'case-42',
+        composer: { available: true, empty: true },
+        messages: [
+          { id: 'in-0', direction: 'incoming', author: 'Support', text: 'One moment.' },
+          { id: 'out-1', direction: 'outgoing', text: decision.text },
+        ],
+      },
+      Date.parse('2026-09-05T01:02:00Z'),
+    );
+    assert.equal(
+      anchorMoved.session.pendingOutbound,
+      null,
+      'a verified send was left pending because a counterparty message moved its reply anchor',
+    );
+    assert.equal(
+      workflow.decideChatSend(
+        anchorMoved.session,
+        anchorMoved.snapshot,
+        'A follow-up question.',
+        Date.parse('2026-09-05T01:02:10Z'),
+      ).ok,
+      true,
+      'a stranded pending record must not block the next send',
+    );
+
     const duplicate = workflow.decideChatSend(sent.session, sent.snapshot, decision.text);
     assert.equal(duplicate.ok, false);
     assert.equal(duplicate.duplicate, true);
@@ -6126,6 +6158,42 @@ test('long-running chat workflow tracks deltas, safe states, and idempotent send
     );
     assert.equal(largeDelta.newMessages.length, 20, 'chat workflow delta must remain bounded independently of transcript retention');
     assert.equal(largeDelta.newMessages[0].id, 'delta-5');
+
+    // Unidentified duplicates are numbered positionally. Numbering only the
+    // retained window would restart at 0 as older bubbles age out, so a new
+    // duplicate would normalize onto an already-seen id and never surface.
+    const untitled = count => Array.from({ length: count }, () => ({ direction: 'incoming', text: 'Are you still there?' }));
+    const overCap = workflow.normalizeChatSnapshot({ threadId: 'case-42', messages: untitled(205) });
+    assert.equal(overCap.messages.length, 200, 'transcript retention cap changed');
+    assert.equal(
+      new Set(overCap.messages.map(message => message.id)).size,
+      200,
+      'duplicate untitled messages collapsed onto shared ids past the retention cap',
+    );
+    const grown = workflow.normalizeChatSnapshot({ threadId: 'case-42', messages: untitled(206) });
+    assert.equal(
+      grown.messages.filter(message => !overCap.messages.some(item => item.id === message.id)).length,
+      1,
+      'a new untitled duplicate past the retention cap produced no delta',
+    );
+    // An observation that numbered its own messages before its own truncation
+    // is authoritative, so the ordinal survives a transcript the kernel never
+    // saw in full.
+    const preNumbered = workflow.normalizeChatSnapshot({
+      threadId: 'case-42',
+      messages: [
+        { direction: 'incoming', text: 'Are you still there?', occurrence: 41 },
+        { direction: 'incoming', text: 'Are you still there?', occurrence: 42 },
+      ],
+    });
+    assert.deepEqual(
+      preNumbered.messages.map(message => message.id),
+      [
+        workflow.stableChatMessageId({ threadKey: 'case-42', direction: 'incoming', text: 'Are you still there?', occurrence: 41 }),
+        workflow.stableChatMessageId({ threadKey: 'case-42', direction: 'incoming', text: 'Are you still there?', occurrence: 42 }),
+      ],
+      'an observer-assigned message ordinal was discarded',
+    );
   }
 });
 
@@ -7181,6 +7249,29 @@ test('chat observation returns a current-thread snapshot without treating messag
       reason: 'otp',
       message: 'A one-time code or verification code requires the user.',
     }),
+  );
+
+  // The observer caps the transcript it reports, so it — not the kernel — is
+  // the last layer that can see a duplicate that falls outside the cap. It has
+  // to number those duplicates before truncating, or the numbering restarts at
+  // 0 as older bubbles age out.
+  const capped = makeDom();
+  for (let index = 0; index < 205; index += 1) {
+    capped.main.appendChild(capped.makeElement('article', {
+      'data-message-direction': 'incoming',
+      'data-message-author': 'Support',
+    }, 'Are you still there?'));
+  }
+  vm.runInNewContext(chromeSource, capped.context);
+  const cappedSnapshot = capped.context.window.__wb_observe_chat_dom({
+    probe: { success: true, composerAvailable: true, composerRef: 'composer_ref' },
+  });
+  const cappedDuplicates = cappedSnapshot.messages.filter(message => message.text === 'Are you still there?');
+  assert.equal(cappedDuplicates.length, 200, 'observer transcript cap changed');
+  assert.deepEqual(
+    [cappedDuplicates[0].occurrence, cappedDuplicates.at(-1).occurrence],
+    [5, 204],
+    'the observer numbered unidentified duplicates after its own cap instead of before it',
   );
 
   const firefox = makeDom();
