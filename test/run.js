@@ -84828,15 +84828,15 @@ test('YouTube metadata success requires exact app-classified post-save readback'
   }
 });
 
-test('single-page app publish evidence survives the verification navigation', () => {
+test('completion evidence still requires the reported document to be the observed one', () => {
   for (const AgentClass of [AgentCh, AgentFx]) {
     const agent = new AgentClass({ getVisionProvider: async () => null });
     const tabId = 8801;
     const pageState = { relevantFormCount: 0, successMessages: [] };
     const postUrl = 'https://bsky.app/profile/webbrain-one.bsky.social/post/3mutnbiq6d22s';
-    const publishedSubmit = (overrides = {}) => ({
+    const submitState = (overrides = {}) => ({
       originatingUrl: 'https://bsky.app/',
-      currentUrl: 'https://bsky.app/profile/webbrain-one.bsky.social',
+      currentUrl: postUrl,
       submitLike: true,
       dispatched: true,
       documentChanged: true,
@@ -84846,50 +84846,40 @@ test('single-page app publish evidence survives the verification navigation', ()
       ...overrides,
     });
 
-    // The completion guard asks the agent to go and observe the resulting
-    // state. Doing exactly that lands done on a document the post-submit reads
-    // never saw, which used to invalidate the evidence the guard demanded.
-    agent._completionSubmitStates.set(tabId, publishedSubmit());
+    // The supported route for a single-page app publish: read the resulting
+    // page, which moves currentUrl to it, then call done from there. This is
+    // what the job-free completion block now tells the model to do.
+    agent._completionSubmitStates.set(tabId, submitState());
     assert.equal(
       agent._completionSubmissionEvidence(tabId, pageState, postUrl).verifiedFinalSubmit,
       true,
-      `${AgentClass.name}: navigating to the published resource invalidated its own evidence`,
+      `${AgentClass.name}: reading the resulting page did not produce completion evidence`,
     );
 
-    // Same origin on its own is not evidence the route came from the submit.
-    // Navigating to an unrelated same-origin page after a no-op submit must
-    // not be accepted as the submitted document.
-    agent._completionSubmitStates.set(tabId, publishedSubmit({ currentUrl: 'https://bsky.app/' }));
+    // Reaching a page that merely looks like a published resource proves
+    // nothing on its own. Without a payload check there is no way to tell the
+    // resource this run published from a pre-existing one, so an unobserved
+    // destination must not stand in for the submitted document.
+    agent._completionSubmitStates.set(tabId, submitState({ currentUrl: 'https://bsky.app/' }));
+    assert.equal(
+      agent._completionSubmissionEvidence(tabId, pageState, postUrl).verifiedFinalSubmit,
+      false,
+      `${AgentClass.name}: an unobserved post-shaped URL stood in for the submitted document`,
+    );
     assert.equal(
       agent._completionSubmissionEvidence(tabId, pageState, 'https://bsky.app/home').verifiedFinalSubmit,
       false,
       `${AgentClass.name}: an unrelated same-origin route stood in for the submitted document`,
     );
 
-    // An explicit success signal is the other way a destination qualifies.
-    agent._completionSubmitStates.set(tabId, publishedSubmit({ currentUrl: 'https://bsky.app/' }));
-    assert.equal(
-      agent._completionSubmissionEvidence(
-        tabId,
-        { relevantFormCount: 0, successMessages: ['Post published successfully'] },
-        'https://bsky.app/home',
-      ).verifiedFinalSubmit,
-      true,
-      `${AgentClass.name}: an explicit success signal did not qualify the destination`,
-    );
-
-    // The observation requirement stays: done still cannot stand in for the
-    // read the guard asks for after a submit.
-    agent._completionSubmitStates.set(tabId, publishedSubmit({ observedAfterSubmit: false }));
+    // The rest of the contract is unchanged.
+    agent._completionSubmitStates.set(tabId, submitState({ observedAfterSubmit: false }));
     assert.equal(
       agent._completionSubmissionEvidence(tabId, pageState, postUrl).verifiedFinalSubmit,
       false,
       `${AgentClass.name}: a submit with no observation after it was accepted`,
     );
-
-    // Still no completion when nothing actually changed: a dispatched click on
-    // a page that stayed put and produced no success signal proves nothing.
-    agent._completionSubmitStates.set(tabId, publishedSubmit({
+    agent._completionSubmitStates.set(tabId, submitState({
       currentUrl: 'https://bsky.app/',
       documentChanged: false,
     }));
@@ -84898,42 +84888,6 @@ test('single-page app publish evidence survives the verification navigation', ()
       false,
       `${AgentClass.name}: an unchanged page after a submit-like click counted as completion`,
     );
-
-    // Another site's submit must never stand in for this one.
-    agent._completionSubmitStates.set(tabId, publishedSubmit({
-      originatingUrl: 'https://example.com/compose',
-      currentUrl: 'https://example.com/compose',
-    }));
-    assert.equal(
-      agent._completionSubmissionEvidence(tabId, pageState, postUrl).verifiedFinalSubmit,
-      false,
-      `${AgentClass.name}: a submit on a different origin satisfied this task`,
-    );
-
-    // Opaque origins all serialise to "null", so two unrelated local documents
-    // must not compare as the same origin.
-    assert.equal(agent._sameUrlOrigin('file:///tmp/a/form.html', 'file:///tmp/b/other.html'), false,
-      `${AgentClass.name}: unrelated file: documents compared as same-origin`);
-    assert.equal(agent._sameUrlOrigin('https://bsky.app/a', 'https://bsky.app/b'), true);
-
-    // Bluesky posts get a stable published-resource identity; a profile or
-    // feed URL is not one.
-    assert.equal(
-      agent._workflowPublishedResourceIdentity({ adapterName: 'bluesky' }, postUrl),
-      'bluesky:bsky.app/profile/webbrain-one.bsky.social/post/3mutnbiq6d22s',
-      `${AgentClass.name}: a published Bluesky post produced no resource identity`,
-    );
-    for (const notAPost of [
-      'https://bsky.app/profile/webbrain-one.bsky.social',
-      'https://bsky.app/',
-      'https://example.com/profile/a/post/b',
-    ]) {
-      assert.equal(
-        agent._workflowPublishedResourceIdentity({ adapterName: 'bluesky' }, notAPost),
-        '',
-        `${AgentClass.name}: ${notAPost} was accepted as a published post`,
-      );
-    }
   }
 });
 

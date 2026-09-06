@@ -1642,18 +1642,6 @@ export class Agent extends LoopDetector {
     return null;
   }
 
-  _sameUrlOrigin(a, b) {
-    try {
-      const origin = new URL(String(a || '')).origin;
-      // file:, data: and about:blank all serialise to the string "null", so
-      // comparing those would make two unrelated documents look same-origin.
-      if (!origin || origin === 'null') return false;
-      return origin === new URL(String(b || '')).origin;
-    } catch (_) {
-      return false;
-    }
-  }
-
   _completionSubmissionEvidence(tabId, pageState, pageUrl = '') {
     if (!pageState) return { verifiedFinalSubmit: false, liveSignals: [], relevantForms: 0 };
     const relevantForms = Number(pageState.relevantFormCount || 0);
@@ -1661,38 +1649,20 @@ export class Agent extends LoopDetector {
       ? pageState.successMessages.filter(text => this._completionTextSignalsSuccess(text, { allowBare: true }))
       : [];
     const submit = this._completionSubmitStates.get(tabId);
-    const observedUrl = pageUrl || pageState.url || '';
-    const normalizedObserved = this._normalizeUrl(observedUrl);
-    // What this needs to establish is that the page being reported belongs to
-    // the site that was submitted to, so another site's submit cannot stand in
-    // for this one. Demanding the exact document the last post-submit read saw
-    // punished the very navigation the completion guard asks for: a single-page
-    // app confirms a publish by opening the new resource, and the tools that
-    // navigate there are not in the observation set, so the act of verifying
-    // moved the page off the document that carried the evidence.
-    //
-    // Everything else stays as strict as it was. A submit still has to be
-    // dispatched, still has to be observed afterwards, and still has to have
-    // changed the document or produced a success signal.
+    // The document reported at completion must be the one the last post-submit
+    // read saw. Loosening this to same-origin was tried and withdrawn twice:
+    // without a payload check there is nothing here that distinguishes the
+    // resource this run published from any other page on the site, so an
+    // unrelated route — or a pre-existing post that merely looks like a
+    // published resource — could stand in for a publish that never happened.
+    // A single-page app that navigates to confirm its own publish is steered
+    // by the completion block instead: it says to read the resulting page in
+    // the same tab and call done from there, which satisfies this directly.
+    const currentDocumentMatchesSubmit = !!(
+      submit?.currentUrl
+      && this._normalizeUrl(pageUrl || pageState.url || '') === this._normalizeUrl(submit.currentUrl)
+    );
     const observedSuccessSignal = !!submit?.completionSignalObserved || liveSignals.length > 0;
-    // Same origin alone is not evidence that this route came from the submit:
-    // navigating to /home after a no-op submit is same-origin too. The
-    // destination has to be submit-correlated — the published resource itself,
-    // or a page carrying an explicit success signal.
-    // Resolve the adapter from the observed URL when no workflow job was
-    // selected, so a recognised published-resource route still counts. A
-    // single-page app publish rarely has a workflow job, and that is exactly
-    // the case that needs this.
-    const observedPublishedResource = !!this._workflowPublishedResourceIdentity(
-      this._planExecutionGuards.get(tabId)?.siteWorkflow
-        || { adapterName: getActiveAdapter(observedUrl)?.name || '' },
-      observedUrl,
-    );
-    const currentDocumentMatchesSubmit = !!submit && (
-      (!!submit.currentUrl && this._normalizeUrl(submit.currentUrl) === normalizedObserved)
-      || ((observedPublishedResource || observedSuccessSignal)
-        && this._sameUrlOrigin(observedUrl, submit.originatingUrl || submit.currentUrl || ''))
-    );
     const verifiedSubmit = !!(
       submit?.dispatched
       && submit.observedAfterSubmit
@@ -2291,13 +2261,6 @@ export class Agent extends LoopDetector {
       && /^\/video\/\d+$/i.test(path)
     ) {
       return `douyin:${host}${path}`;
-    }
-    if (
-      siteWorkflow?.adapterName === 'bluesky'
-      && host === 'bsky.app'
-      && /^\/profile\/[^/]+\/post\/[^/]+$/i.test(path)
-    ) {
-      return `bluesky:${host}${path}`;
     }
     return '';
   }
@@ -27399,7 +27362,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
                   .map(link => {
                     try { return new URL(link.getAttribute('href') || link.href || '', location.href).href; } catch { return ''; }
                   })
-                  .filter(url => /linkedin\\.com\\/(?:feed\\/update|posts)\\/|github\\.com\\/[^/]+\\/[^/]+\\/releases\\/tag\\/|douyin\\.com\\/video\\/\\d+|bsky\\.app\\/profile\\/[^/]+\\/post\\//i.test(url))
+                  .filter(url => /linkedin\\.com\\/(?:feed\\/update|posts)\\/|github\\.com\\/[^/]+\\/[^/]+\\/releases\\/tag\\/|douyin\\.com\\/video\\/\\d+/i.test(url))
                   .slice(0, 200);
                 return {
                   openDialogCount: dialogs.length,
