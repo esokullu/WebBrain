@@ -1282,9 +1282,31 @@
     return null;
   }
 
+  function isSingleMessageGmailThread(conversationRoot) {
+    if (!conversationRoot || typeof conversationRoot.querySelectorAll !== 'function') return false;
+    try {
+      const gmailMessages = Array.from(conversationRoot.querySelectorAll('.adn,.ads,[data-message-id]'));
+      if (gmailMessages.length) {
+        const topLevelGmailMessages = gmailMessages.filter(msg => (
+          !msg.closest?.('.a3s,.ii') && (!msg.parentElement || !msg.parentElement.closest?.('.adn,.ads,[data-message-id]'))
+        ));
+        return topLevelGmailMessages.length === 1;
+      }
+      const semanticMessages = Array.from(conversationRoot.querySelectorAll('[role="article"]'));
+      if (semanticMessages.length) {
+        const topLevelSemantic = semanticMessages.filter(msg => (
+          !msg.closest?.('.a3s,.ii') && (!msg.parentElement || !msg.parentElement.closest?.('[role="article"]'))
+        ));
+        return topLevelSemantic.length === 1;
+      }
+    } catch (e) {}
+    return false;
+  }
+
   function detectGmailConversationExpansionState(conversationRoot) {
     if (!isGmailConversationRoute() || !conversationRoot) return null;
     let collapsed = false;
+    let scanned = false;
     try {
       for (const control of conversationRoot.querySelectorAll('button,[role="button"]')) {
         if (!isVisible(control)) continue;
@@ -1296,8 +1318,16 @@
         if (state === 'expanded') return state;
         if (state === 'collapsed') collapsed = true;
       }
+      scanned = true;
     } catch (e) {}
-    return collapsed ? 'collapsed' : null;
+    if (collapsed) return 'collapsed';
+    // A thread with a single message exposes neither Expand all nor Collapse
+    // all. Report that as its own state so the read-completeness guard can tell
+    // "nothing to expand" apart from "not checked yet"; conflating the two left
+    // `done` permanently blocked on threads that were already fully readable.
+    // Only a scan that ran to completion on a verified single-message thread
+    // may report it; a multi-message thread missing controls must stay unconfirmed.
+    return (scanned && isSingleMessageGmailThread(conversationRoot)) ? 'not_applicable' : null;
   }
 
   function findGmailConversationExpandAll(conversationRoot) {
