@@ -85886,6 +85886,91 @@ test('YouTube metadata success requires exact app-classified post-save readback'
   }
 });
 
+test('completion evidence still requires the reported document to be the observed one', () => {
+  for (const AgentClass of [AgentCh, AgentFx]) {
+    const agent = new AgentClass({ getVisionProvider: async () => null });
+    const tabId = 8801;
+    const pageState = { relevantFormCount: 0, successMessages: [] };
+    const postUrl = 'https://bsky.app/profile/webbrain-one.bsky.social/post/3mutnbiq6d22s';
+    const submitState = (overrides = {}) => ({
+      originatingUrl: 'https://bsky.app/',
+      currentUrl: postUrl,
+      submitLike: true,
+      dispatched: true,
+      documentChanged: true,
+      formValidationFailed: false,
+      completionSignalObserved: false,
+      observedAfterSubmit: true,
+      ...overrides,
+    });
+
+    // The supported route for a single-page app publish: read the resulting
+    // page, which moves currentUrl to it, then call done from there. This is
+    // what the job-free completion block now tells the model to do.
+    agent._completionSubmitStates.set(tabId, submitState());
+    assert.equal(
+      agent._completionSubmissionEvidence(tabId, pageState, postUrl).verifiedFinalSubmit,
+      true,
+      `${AgentClass.name}: reading the resulting page did not produce completion evidence`,
+    );
+
+    // Reaching a page that merely looks like a published resource proves
+    // nothing on its own. Without a payload check there is no way to tell the
+    // resource this run published from a pre-existing one, so an unobserved
+    // destination must not stand in for the submitted document.
+    agent._completionSubmitStates.set(tabId, submitState({ currentUrl: 'https://bsky.app/' }));
+    assert.equal(
+      agent._completionSubmissionEvidence(tabId, pageState, postUrl).verifiedFinalSubmit,
+      false,
+      `${AgentClass.name}: an unobserved post-shaped URL stood in for the submitted document`,
+    );
+    assert.equal(
+      agent._completionSubmissionEvidence(tabId, pageState, 'https://bsky.app/home').verifiedFinalSubmit,
+      false,
+      `${AgentClass.name}: an unrelated same-origin route stood in for the submitted document`,
+    );
+
+    // The rest of the contract is unchanged.
+    agent._completionSubmitStates.set(tabId, submitState({ observedAfterSubmit: false }));
+    assert.equal(
+      agent._completionSubmissionEvidence(tabId, pageState, postUrl).verifiedFinalSubmit,
+      false,
+      `${AgentClass.name}: a submit with no observation after it was accepted`,
+    );
+    agent._completionSubmitStates.set(tabId, submitState({
+      currentUrl: 'https://bsky.app/',
+      documentChanged: false,
+    }));
+    assert.equal(
+      agent._completionSubmissionEvidence(tabId, pageState, 'https://bsky.app/').verifiedFinalSubmit,
+      false,
+      `${AgentClass.name}: an unchanged page after a submit-like click counted as completion`,
+    );
+  }
+});
+
+test('a submit block names a workflow job only when one was selected', () => {
+  for (const relPath of [
+    'src/chrome/src/agent/agent.js',
+    'src/firefox/src/agent/agent.js',
+  ]) {
+    const source = fs.readFileSync(path.join(ROOT, relPath), 'utf8');
+    // With no site workflow selected there is no job contract to point at.
+    // The old `|| 'workflow'` fallback sent the model looking for the terminal
+    // state of a job that never existed, which it could not produce.
+    assert.doesNotMatch(
+      source,
+      /The selected \$\{state\.siteWorkflow\?\.job\?\.id \|\| 'workflow'\} job requires terminal evidence/,
+      `${relPath}: the submit block still invents a workflow job when none was selected`,
+    );
+    assert.match(
+      source,
+      /This task requires a submit\/send\/publish\/commit action, and the page state read at completion does not yet show it took effect\./,
+      `${relPath}: missing the job-free submit recovery instruction`,
+    );
+  }
+});
+
 test('adapter workflow execution policy is bounded and mirrored', () => {
   const selected = resolveAdapterWorkflowJob(
     'https://forms.cloud.microsoft/pages/responsepage.aspx?id=x',
@@ -93704,7 +93789,12 @@ test('Chrome click paths suppress native file choosers and redirect to upload_fi
     assert.match(source, /const installPageShowPickerGuard = \(\) =>/, `${relPath}: missing page-world showPicker bridge handshake`);
     assert.match(source, /webbrain:file-picker-guard-arm/, `${relPath}: missing page-world showPicker arm event`);
     assert.match(source, /webbrain:file-picker-guard-blocked/, `${relPath}: missing page-world blocked result event`);
-    assert.match(source, /cleanupPageShowPickerGuard\?\.\(!!state\.blocked\)/, `${relPath}: delayed programmatic guard should survive an empty consume`);
+    // The page-world guard must outlive the consume in BOTH directions. An app
+    // that retries its upload affordance on a timer would otherwise open a real
+    // OS chooser on the retry — one nothing can close, which then sits on
+    // screen for the rest of the run while upload_file attaches the file.
+    assert.match(source, /cleanupPageShowPickerGuard\?\.\(false\)/, `${relPath}: delayed programmatic guard should survive a consume whether or not it intercepted`);
+    assert.doesNotMatch(source, /cleanupPageShowPickerGuard\?\.\(!!state\.blocked\)/, `${relPath}: an interception must not disarm the guard that stops the retry`);
     assert.match(source, /clickWithoutNativeFilePicker\(\(\) => el\.click\(\)\)/, `${relPath}: synthetic clicks should use the chooser guard`);
     assert.match(source, /_filePickerGuardId:\s*filePickerGuard\.guardId/, `${relPath}: click response should return without waiting on the unloading document`);
     assert.match(source, /'consume_file_picker_guard':\s*\(\) => consumeFilePickerGuard/, `${relPath}: missing deferred guard result handshake`);

@@ -1505,11 +1505,18 @@
     if (!state.settled) return { success: true, settled: false, filePickerBlocked: false };
     if (state.cleanupTimer) clearTimeout(state.cleanupTimer);
     document.removeEventListener('click', state.guard, true);
-    // If nothing was observed, stop content-side observation but leave the
-    // page-world programmatic click/showPicker guard active until its own
-    // short TTL. This suppresses longer debounces without blocking the tool
-    // response or intercepting a user's direct native input click.
-    state.cleanupPageShowPickerGuard?.(!!state.blocked);
+    // Stop content-side observation, but leave the page-world programmatic
+    // click/showPicker guard active until its own short TTL. This suppresses
+    // longer debounces without blocking the tool response or intercepting a
+    // user's direct native input click.
+    //
+    // This has to hold most of all when something WAS blocked. An app that
+    // routes an upload affordance through a file input often retries on a
+    // timer, and disarming here on the strength of the first interception left
+    // that retry unguarded — it opened a real OS chooser that nothing can
+    // close, and it stayed on screen through the rest of the run while
+    // upload_file attached the file directly.
+    state.cleanupPageShowPickerGuard?.(false);
     _filePickerGuardStates.delete(guardId);
     if (state.blocked) {
       return { ...filePickerBlockedResponse(state.blocked), settled: true };
