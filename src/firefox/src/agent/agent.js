@@ -15652,20 +15652,18 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
   _isRecipientClarification(context, pendingType = 'message_recipient', observedCandidates = []) {
     if (!context || typeof context !== 'object') return false;
     const purpose = String(context.purpose || '').trim();
+    if (purpose === 'research_escalation') return false;
+
+    const questionText = [
+      context.question,
+      ...(Array.isArray(context.options) ? context.options : []),
+    ].filter(Boolean).join(' ').toLowerCase();
+
     if (pendingType === 'recipient_change') {
-      if (purpose === 'recipient_change') return true;
-      if (purpose === 'research_escalation') return false;
-      const text = [
-        context.question,
-        context.reason,
-        ...(Array.isArray(context.options) ? context.options : []),
-      ].filter(Boolean).join(' ').toLowerCase();
-      const changeWord = /(change|switch|different|instead|update|replace|another|new|更改|更换|切换|替换|换成)/i.test(text);
-      const targetWord = /(recipient|conversation|contact|send to|person|address|target|someone else|\b(?:to|cc|bcc|role|field)\b|收件人|联系人|发送)/i.test(text);
+      const changeWord = /(change|switch|different|instead|update|replace|another|new|更改|更换|切换|替换|换成)/i.test(questionText);
+      const targetWord = /(recipient|conversation|contact|send to|person|address|target|someone else|\b(?:to|cc|bcc|role|field)\b|收件人|联系人|发送)/i.test(questionText);
       return changeWord && targetWord;
     }
-    if (purpose === 'message_recipient' || purpose === 'recipient_change') return true;
-    if (purpose === 'research_escalation') return false;
 
     // Check if the clarify question, reason, or options explicitly mention any observed candidate identity or alias
     if (Array.isArray(observedCandidates) && observedCandidates.length > 0) {
@@ -15686,16 +15684,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       }
     }
 
-    const text = [
-      context.question,
-      context.reason,
-      ...(Array.isArray(context.options) ? context.options : []),
-    ].filter(Boolean).join(' ').toLowerCase();
+    if (/recipient|收件人/i.test(questionText)) return true;
 
-    if (/recipient|收件人/i.test(text)) return true;
-
-    const hasRecipientTerm = /(contact|person|address|who|whom|which contact|which person|which recipient|which user|which address|to whom|for whom|someone|联系人|哪位|谁)/i.test(text);
-    const hasMessagingTerm = /(send|receive|deliver|message|email|mail|draft|reply|chat|conversation|发送|邮件|信息|消息|寄|回复)/i.test(text);
+    const hasRecipientTerm = /(contact|person|address|who|whom|which contact|which person|which recipient|which user|which address|to whom|for whom|someone|联系人|哪位|谁)/i.test(questionText);
+    const hasMessagingTerm = /(send|receive|deliver|message|email|mail|draft|reply|chat|conversation|发送|邮件|信息|消息|寄|回复)/i.test(questionText);
 
     return hasRecipientTerm && hasMessagingTerm;
   }

@@ -5772,6 +5772,29 @@ test('direct-message recipient guard uses structured intent and exact active ide
       recipients: [{ identity: 'alice@example.com', role: 'to' }],
     }, `${label}: recipient change did not update target`);
 
+    // A mislabeled question with purpose: 'recipient_change' but lacking recipient-change semantics
+    // must never authorize changing the recipient.
+    agent._planExecutionGuards.set(tabId, recipientChangeGuardState([{ identity: 'alice@example.com', role: 'to' }]));
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'alice@example.com', 'user', {
+        question: 'Which colleague should present?',
+        purpose: 'recipient_change',
+      }),
+      false,
+      `${label}: mislabeled clarification question with purpose: recipient_change authorized recipient change`,
+    );
+
+    // A mislabeled question with purpose: 'message_recipient' must never authorize a standard recipient either.
+    agent._planExecutionGuards.set(tabId, clarifyGuardState([{ identity: 'alice@example.com', role: 'to' }]));
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'alice@example.com', 'user', {
+        question: 'Which colleague should present?',
+        purpose: 'message_recipient',
+      }),
+      false,
+      `${label}: mislabeled clarification question with purpose: message_recipient authorized recipient`,
+    );
+
     // Role preservation during recipient-change clarification:
     // A plan authorizing Alice as BCC when composer exposes Alice as To must retain BCC
     // on an identity-only answer, preventing unauthorized exposure on next send.
