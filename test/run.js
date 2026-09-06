@@ -5442,6 +5442,55 @@ test('direct-message recipient guard uses structured intent and exact active ide
       target_kind: 'named',
       recipients: [{ identity: 'alice@example.com', role: 'to' }],
     }, `${label}: explicit role answer must adopt the authorized To role`);
+
+    // Gmail recipient mismatch preserves observed candidates and stages recipient_change:
+    // When composer chips differ from the plan's authorized target, strongRecipientCandidates
+    // is empty, but observedRecipientCandidates carries the observed chips.
+    // The mismatch blocks dispatch, stages 'recipient_change', and clarification rebinds the target.
+    const mismatchPlanState = {
+      messaging: { target_kind: 'named', recipients: [{ identity: 'alice@example.com', role: 'to' }] },
+      requiresSubmission: true,
+      requiresStateChange: true,
+    };
+    agent._planExecutionGuards.set(tabId, { ...mismatchPlanState });
+    probe = {
+      success: true,
+      conclusive: true,
+      composerAvailable: true,
+      messageSend: true,
+      messageBody: 'Hello Bob',
+      messageBodyBaselineCount: 0,
+      strongRecipientCandidates: [],
+      observedRecipientCandidates: [{ identity: 'bob@example.com', role: 'to' }],
+    };
+    const mismatchSendBlock = await agent._messageRecipientGuardBlock(
+      tabId,
+      'click_ax',
+      { ref_id: 'ref_send' },
+      'https://mail.google.com/mail/u/0/#inbox/thread-1',
+      {},
+    );
+    assert.equal(mismatchSendBlock?.blocked, true, `${label}: mismatched Gmail recipient allowed dispatch`);
+    assert.equal(mismatchSendBlock?.reasonCode, 'active_recipient_unverified');
+    assert.equal(agent._planExecutionGuards.get(tabId)?.pendingRecipientAuthorization, 'recipient_change',
+      `${label}: mismatched Gmail recipient did not stage recipient_change authorization`);
+    assert.deepEqual(agent._planExecutionGuards.get(tabId)?.observedRecipientCandidates, [
+      { identity: 'bob@example.com', role: 'to' },
+    ], `${label}: mismatched Gmail recipient did not preserve observed candidates in guard`);
+
+    // Clarification answer naming the observed candidate successfully rebinds target:
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'Send to bob@example.com', 'user', {
+        question: 'The composer is addressed to Bob. Should I send to bob@example.com instead?',
+        purpose: 'recipient_change',
+      }),
+      true,
+      `${label}: clarify answer failed to rebind observed mismatched recipient`,
+    );
+    assert.deepEqual(agent._planExecutionGuards.get(tabId)?.messaging, {
+      target_kind: 'named',
+      recipients: [{ identity: 'bob@example.com', role: 'to' }],
+    }, `${label}: target was not rebound to clarified recipient`);
   }
 });
 
@@ -5860,16 +5909,27 @@ test('direct-message recipient probe accepts only a unique active-thread header 
     assert.deepEqual(Array.from(gmailMatchingNameResult.strongIdentityCandidates), ['Alice']);
     assert.deepEqual(Array.from(gmailWrongRecipientResult.strongIdentityCandidates), [],
       `${prefix}: mismatched Gmail recipient chip authorized dispatch`);
+    assert.deepEqual(JSON.parse(JSON.stringify(gmailWrongRecipientResult.observedRecipientCandidates)), [
+      { identity: 'alice@example.com', role: 'to' },
+    ], `${prefix}: mismatched Gmail recipient chip was not preserved as an observed candidate`);
     assert.deepEqual(Array.from(gmailMatchingSetResult.strongIdentityCandidates), ['Bob', 'alice@example.com'],
       `${prefix}: exact authorized Gmail recipient set was rejected`);
     assert.deepEqual(Array.from(gmailExtraRecipientResult.strongIdentityCandidates), [],
       `${prefix}: an unreviewed extra Gmail recipient authorized dispatch`);
+    assert.deepEqual(JSON.parse(JSON.stringify(gmailExtraRecipientResult.observedRecipientCandidates)), [
+      { identity: 'alice@example.com', role: 'to' },
+      { identity: 'bob@example.com', role: 'to' },
+    ], `${prefix}: extra Gmail recipient chips were not preserved as observed candidates`);
     assert.deepEqual(JSON.parse(JSON.stringify(gmailMatchingRoleResult.strongRecipientCandidates)), [
       { identity: 'alice@example.com', role: 'to' },
       { identity: 'Bob', role: 'bcc' },
     ], `${prefix}: exact Gmail To/BCC authorization was rejected`);
     assert.deepEqual(Array.from(gmailWrongRoleResult.strongRecipientCandidates), [],
       `${prefix}: moving a Gmail BCC recipient into To authorized dispatch`);
+    assert.deepEqual(JSON.parse(JSON.stringify(gmailWrongRoleResult.observedRecipientCandidates)), [
+      { identity: 'alice@example.com', role: 'to' },
+      { identity: 'bob@example.com', role: 'bcc' },
+    ], `${prefix}: Gmail role mismatch did not preserve observed candidates`);
     assert.equal(gmailManyRecipientsResult.strongRecipientCandidates.length, 12,
       `${prefix}: Gmail probe truncated 12 supported recipients to 8`);
     assert.equal(gmailManyRecipientsResult.strongIdentityCandidates.length, 12);

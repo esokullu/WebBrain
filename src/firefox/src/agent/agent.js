@@ -15407,11 +15407,13 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
   }
 
   _messageRecipientCandidates(probe = {}) {
-    const values = Array.isArray(probe.strongRecipientCandidates)
+    const values = Array.isArray(probe.strongRecipientCandidates) && probe.strongRecipientCandidates.length > 0
       ? probe.strongRecipientCandidates
-      : (Array.isArray(probe.strongIdentityCandidates)
-        ? probe.strongIdentityCandidates
-        : []);
+      : (Array.isArray(probe.observedRecipientCandidates) && probe.observedRecipientCandidates.length > 0
+        ? probe.observedRecipientCandidates
+        : (Array.isArray(probe.strongIdentityCandidates)
+          ? probe.strongIdentityCandidates
+          : []));
     return normalizeMessageTarget({ target_kind: 'named', recipients: values })?.recipients || [];
   }
 

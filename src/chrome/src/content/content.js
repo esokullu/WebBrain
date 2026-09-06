@@ -5052,6 +5052,7 @@
       const strongIdentities = [];
       const strongRecipients = [];
       const strongSeen = new Set();
+      const observedRecipientCandidates = [];
       const gmailRecipientMode = params.adapterName === 'gmail';
       const inConversationHeaderBand = (el) => {
         if (headerBandBottom <= 0) return false;
@@ -5171,6 +5172,13 @@
         })();
         gmailComposeRoot = composeRoot;
         const recipients = collectGmailRecipients(composeRoot);
+        for (const [recipientKey, recipient] of recipients) {
+          const emailKey = recipientKey.slice(recipientKey.indexOf(':') + 1);
+          const identity = recipient.aliases.get(emailKey) || [...recipient.aliases.values()][0] || recipient.identity || '';
+          if (identity) {
+            observedRecipientCandidates.push({ identity, role: recipient.role });
+          }
+        }
         // Match the complete authorized To/CC/BCC set. Each expected identity
         // must resolve to exactly one distinct chip and no additional chip may
         // remain; duplicate display names therefore fail closed.
@@ -5234,7 +5242,11 @@
           addStrongIdentity(el);
           if (strongIdentities.length >= 8) break;
         }
-        for (const identity of strongIdentities) strongRecipients.push({ identity, role: 'to' });
+        for (const identity of strongIdentities) {
+          const item = { identity, role: 'to' };
+          strongRecipients.push(item);
+          observedRecipientCandidates.push(item);
+        }
       }
 
       const composerText = (() => {
@@ -5309,12 +5321,22 @@
         identityCandidates: strongIdentities.slice(0, 16),
         strongIdentityCandidates: strongIdentities.slice(0, 16),
         strongRecipientCandidates: strongRecipients.slice(0, 16),
+        observedRecipientCandidates: observedRecipientCandidates.slice(0, 16),
         ...(messageRecipientDispatchToken
           ? { messageRecipientDispatchBinding: { token: messageRecipientDispatchToken } }
           : {}),
       };
     } catch (error) {
-      return { success: false, messageSend: null, conclusive: false, identityCandidates: [], error: error?.message || String(error) };
+      return {
+        success: false,
+        messageSend: null,
+        conclusive: false,
+        identityCandidates: [],
+        strongIdentityCandidates: [],
+        strongRecipientCandidates: [],
+        observedRecipientCandidates: [],
+        error: error?.message || String(error),
+      };
     }
   }
 
