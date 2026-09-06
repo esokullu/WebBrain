@@ -86289,6 +86289,8 @@ test('social publication workflow follows the live X or Bluesky destination and 
         'independent affirmative clause after negated non-publish clause separated by comma was wrongly rejected'],
       ['Do not post on Bluesky, post this on X', ['twitter'],
         'independent affirmative publish clause separated by comma from negated publish clause was wrongly rejected'],
+      ['Publish on Bluesky; read https://x.com/home', ['bluesky'],
+        'unrelated publication command in prior clause was wrongly attributed to read-only social URL'],
     ]) {
       assert.deepEqual(
         [...agent._trustedSocialPublishTargetAdapters({ taskText })],
@@ -87407,6 +87409,65 @@ test('classifier fallback leaves metadata requirements incomplete and unresolved
       field: 'body',
       value: 'Hello from fallback',
     }], AgentClass.name + ': fallback should extract body requirement');
+  }
+});
+
+test('attachment requirement parser ignores numbers in specific attachment filenames', () => {
+  for (const AgentClass of [AgentCh, AgentFx]) {
+    const agent = new AgentClass({});
+    const req1 = agent._parseWorkflowAttachmentRequirement('quarterly-chart-2.png');
+    assert.equal(req1.expectedCount, 1, AgentClass.name + ': quarterly-chart-2.png should expect 1 attachment');
+    assert.equal(req1.isGeneric, false, AgentClass.name + ': quarterly-chart-2.png should not be generic');
+
+    const req2 = agent._parseWorkflowAttachmentRequirement('photo-2024-12.jpg');
+    assert.equal(req2.expectedCount, 1, AgentClass.name + ': photo-2024-12.jpg should expect 1 attachment');
+    assert.equal(req2.isGeneric, false, AgentClass.name + ': photo-2024-12.jpg should not be generic');
+
+    const req3 = agent._parseWorkflowAttachmentRequirement('2 attachments');
+    assert.equal(req3.expectedCount, 2, AgentClass.name + ': 2 attachments should expect 2 attachments');
+    assert.equal(req3.isGeneric, true, AgentClass.name + ': 2 attachments should be generic');
+
+    const req4 = agent._parseWorkflowAttachmentRequirement('2枚');
+    assert.equal(req4.expectedCount, 2, AgentClass.name + ': 2枚 should expect 2 attachments');
+    assert.equal(req4.isGeneric, true, AgentClass.name + ': 2枚 should be generic');
+  }
+});
+
+test('partially classified metadata retains incomplete state despite extracted body', async () => {
+  for (const [index, AgentClass] of [AgentCh, AgentFx].entries()) {
+    const agent = new AgentClass({});
+    const tabId = 9880 + index;
+    const siteWorkflow = agent._resolvePlannerSiteWorkflow('https://x.com/home', {
+      request_kind: 'execute',
+      site_job: 'publish-post',
+    });
+    const guard = agent._startPlanExecutionGuard(tabId, 'act', {
+      requestKind: 'execute',
+      requiresStateChange: true,
+      requiresSubmission: true,
+      siteWorkflow,
+    });
+    const partialProvider = {
+      chat: async () => ({
+        content: JSON.stringify({
+          workflowFields: [
+            { field: 'body', value: 'Hello world' },
+            { field: 'attachment' }, // omitted value -> discarded
+          ],
+        }),
+      }),
+    };
+    await agent._classifyProgressIntentWithProvider(tabId, {
+      provider: partialProvider,
+      taskText: 'Publish this on X: Hello world with quarterly-chart-2.png',
+      pageScope: 'https://x.com/home',
+    });
+    assert.equal(guard.workflowMetadataRequirementsIncomplete, true,
+      AgentClass.name + ': partial classifier output should mark workflowMetadataRequirementsIncomplete as true');
+    assert.notEqual(guard.workflowMetadataRequirementsResolved, true,
+      AgentClass.name + ': partial classifier output should not mark workflowMetadataRequirementsResolved as true');
+    assert.equal(guard.workflowMetadataRequirements?.length, 1,
+      AgentClass.name + ': valid body field should be preserved');
   }
 });
 

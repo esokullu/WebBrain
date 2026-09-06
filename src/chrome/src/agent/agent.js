@@ -2370,6 +2370,15 @@ export class Agent extends LoopDetector {
     const videoCountMatch = text.match(new RegExp(`(?:^|[\\s,;and+])(${countPrefix})\\s+(?:videos?|clips?|recordings?|gifs?|animated[-_ ]gifs?|vidéo|vidéos|動画|视频|影片|видео)`, 'i'));
     const expectedVideoCount = videoCountMatch ? parseCountWord(videoCountMatch[1]) : 0;
 
+    let isGeneric = false;
+    if (CJK_GENERIC_ATTACHMENT_REGEX.test(text)) {
+      isGeneric = true;
+    } else {
+      const nonPunctuation = text.replace(/[\s\-_,.:;!?/\\()]+/g, ' ').trim();
+      const words = nonPunctuation ? nonPunctuation.split(/\s+/) : [];
+      isGeneric = words.length > 0 && words.every(w => /^\d+$/.test(w) || GENERIC_ATTACHMENT_WORDS.has(w) || CJK_GENERIC_ATTACHMENT_REGEX.test(w));
+    }
+
     let expectedCount = 1;
     if (expectedImageCount > 0 && expectedVideoCount > 0) {
       expectedCount = expectedImageCount + expectedVideoCount;
@@ -2378,20 +2387,14 @@ export class Agent extends LoopDetector {
     } else if (expectedVideoCount > 0) {
       expectedCount = expectedVideoCount;
     } else {
-      const generalCountMatch = text.match(new RegExp(`\\b(${countPrefix})\\b`, 'i')) || text.match(/([一二两三四五六七八九十])/);
+      const genericNounCountMatch = text.match(new RegExp(`(?:^|[\\s,;and+])(${countPrefix})\\s+(?:attachments?|files?|media|uploads?|pieces?|items?|assets?|enclosures?|documents?|fichiers?|archivos?|dateien?|allegati?|anexos?|вложения?|вложение)`, 'i'))
+        || text.match(new RegExp(`(?:^|[\\s,;and+])(${countPrefix})\\s*(?:枚|つ|本|张|條|条|个|個|장)`, 'i'));
+      const generalCountMatch = genericNounCountMatch
+        || (isGeneric && (text.match(new RegExp(`\\b(${countPrefix})\\b`, 'i')) || text.match(/([一二两三四五六七八九十])/)));
       if (generalCountMatch) {
         const parsedNum = parseCountWord(generalCountMatch[1]);
         if (parsedNum > 0) expectedCount = parsedNum;
       }
-    }
-
-    let isGeneric = false;
-    if (CJK_GENERIC_ATTACHMENT_REGEX.test(text)) {
-      isGeneric = true;
-    } else {
-      const nonPunctuation = text.replace(/[\s\-_,.:;!?/\\()]+/g, ' ').trim();
-      const words = nonPunctuation ? nonPunctuation.split(/\s+/) : [];
-      isGeneric = words.length > 0 && words.every(w => /^\d+$/.test(w) || GENERIC_ATTACHMENT_WORDS.has(w) || CJK_GENERIC_ATTACHMENT_REGEX.test(w));
     }
 
     return { isGeneric, expectedCount, expectedImageCount, expectedVideoCount, wantsImage, wantsVideo, wantsGif, normalized: text };
@@ -15026,11 +15029,21 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         match.index + match[0].length + 60,
       );
       const beforeClauses = this._socialPublicationClauses(before);
-      const lastBeforeClause = beforeClauses[beforeClauses.length - 1];
+      let lastBeforeClause = beforeClauses[beforeClauses.length - 1];
+      if (lastBeforeClause && !lastBeforeClause.text.trim()) {
+        if (lastBeforeClause.delim === ':' && beforeClauses.length > 1) {
+          lastBeforeClause = beforeClauses[beforeClauses.length - 2];
+        } else {
+          lastBeforeClause = null;
+        }
+      }
       if (lastBeforeClause?.isNegated) continue;
+      const afterClauses = this._socialPublicationClauses(after);
+      const firstAfterClause = afterClauses.find(c => c.text.trim().length > 0);
       const governed = /\/(?:compose|intent|i\/flow)\//.test(url)
-        || this._socialPublicationCommandIn(before)
-        || (SOCIAL_PUBLISH_DESTINATION_LEAD.test(before) && this._socialPublicationCommandIn(after));
+        || this._socialPublicationCommandIn(lastBeforeClause?.text || '')
+        || (SOCIAL_PUBLISH_DESTINATION_LEAD.test(lastBeforeClause?.text || '')
+          && this._socialPublicationCommandIn(firstAfterClause?.text || ''));
       if (!governed) continue;
       const workflow = resolveAdapterWorkflowJob(url, 'publish-post');
       if (workflow?.job && workflow.adapterName === destination) targets.add(destination);
@@ -22236,8 +22249,8 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
             }
           }
           guard.workflowMetadataRequirements = details.items;
-          guard.workflowMetadataRequirementsIncomplete = details.incomplete && details.items.length === 0;
-          guard.workflowMetadataRequirementsResolved = true;
+          guard.workflowMetadataRequirementsIncomplete = details.incomplete === true;
+          guard.workflowMetadataRequirementsResolved = details.incomplete !== true;
         }
       }
       if (siteWorkflow?.job?.template === 'form') {
