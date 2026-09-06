@@ -96401,6 +96401,8 @@ test('planner: prompt treats page context as untrusted data', () => {
   assert.match(PLANNER_SYSTEM_PROMPT, /Classify read_scope semantically across any language/i);
   assert.match(PLANNER_SYSTEM_PROMPT, /currently open draft\/reply itself[\s\S]*review, proofread, rewrite, or critique/i);
   assert.match(PLANNER_SYSTEM_PROMPT, /Do not choose complete_thread merely because the target is an email reply or draft/i);
+  assert.match(PLANNER_SYSTEM_PROMPT, /Unless the task materially requires complete_thread.*currently open email or message in the singular/i);
+  assert.match(PLANNER_INTENT_SYSTEM_PROMPT, /Unless the task materially requires complete_thread.*currently open email or message in the singular/i);
   assert.match(PLANNER_SYSTEM_PROMPT, /respond must not include steps that need page, browser, network, memory, or scheduling tools/i);
   assert.match(PLANNER_SYSTEM_PROMPT, /Do not speculate that required personal information is missing/i);
   assert.match(PLANNER_SYSTEM_PROMPT, /classify execute and include a conditional clarify step after inspection/i);
