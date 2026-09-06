@@ -4336,6 +4336,17 @@
             ].map(value => compact(value, 240)).find(value => /@/.test(value)) || '';
             if (!email) continue;
             const aliases = new Map();
+            const addAlias = (val) => {
+              const alias = compact(val, 240);
+              const normalized = normalizedIdentity(alias);
+              if (alias && normalized && !aliases.has(normalized)) aliases.set(normalized, alias);
+              const angleMatch = alias.match(/^([^<@]+)<[^>]+>$/);
+              if (angleMatch) {
+                const nameOnly = compact(angleMatch[1], 240);
+                const normName = normalizedIdentity(nameOnly);
+                if (nameOnly && normName && !aliases.has(normName)) aliases.set(normName, nameOnly);
+              }
+            };
             for (const value of [
               email,
               el.getAttribute?.('name'),
@@ -4344,9 +4355,7 @@
               el.innerText,
               el.textContent,
             ]) {
-              const alias = compact(value, 240);
-              const normalized = normalizedIdentity(alias);
-              if (alias && normalized && !aliases.has(normalized)) aliases.set(normalized, alias);
+              addAlias(value);
             }
             const key = normalizedIdentity(email);
             if (!key) continue;
@@ -4379,7 +4388,8 @@
           const emailKey = recipientKey.slice(recipientKey.indexOf(':') + 1);
           const identity = recipient.aliases.get(emailKey) || [...recipient.aliases.values()][0] || recipient.identity || '';
           if (identity) {
-            observedRecipientCandidates.push({ identity, role: recipient.role });
+            const aliasList = Array.from(new Set([identity, ...recipient.aliases.values()])).filter(Boolean);
+            observedRecipientCandidates.push({ identity, role: recipient.role, aliases: aliasList });
           }
         }
         // Match the complete authorized To/CC/BCC set. Each expected identity
@@ -4446,8 +4456,8 @@
           if (strongIdentities.length >= 8) break;
         }
         for (const identity of strongIdentities) {
-          const item = { identity, role: 'to' };
-          strongRecipients.push(item);
+          const item = { identity, role: 'to', aliases: [identity] };
+          strongRecipients.push({ identity, role: 'to' });
           observedRecipientCandidates.push(item);
         }
       }

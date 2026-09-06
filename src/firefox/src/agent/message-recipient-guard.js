@@ -159,16 +159,30 @@ export function answerNamesAllObservedRecipients(normalizedAnswer, observedCandi
   if (!answer || !Array.isArray(observedCandidates) || observedCandidates.length === 0) {
     return false;
   }
-  const uniqueIdentities = [...new Set(
-    observedCandidates
-      .map(c => normalizeRecipientIdentity(typeof c === 'string' ? c : (c?.identity ?? c?.recipient)))
-      .filter(Boolean)
-  )];
-  if (uniqueIdentities.length === 0) return false;
+  const candidateGroups = [];
+  const seenCanonical = new Set();
+  for (const c of observedCandidates) {
+    const canonical = normalizeRecipientIdentity(typeof c === 'string' ? c : (c?.identity ?? c?.recipient));
+    if (!canonical || seenCanonical.has(canonical)) continue;
+    seenCanonical.add(canonical);
+    const aliasList = [
+      canonical,
+      ...(Array.isArray(c?.aliases) ? c.aliases.map(normalizeRecipientIdentity) : []),
+    ].filter(Boolean);
+    candidateGroups.push([...new Set(aliasList)]);
+  }
+  if (candidateGroups.length === 0) return false;
 
   const candidateSpans = [];
-  for (const identity of uniqueIdentities) {
-    const spans = findCandidateAnswerSpans(answer, identity);
+  for (const aliases of candidateGroups) {
+    const spans = [];
+    for (const alias of aliases) {
+      for (const span of findCandidateAnswerSpans(answer, alias)) {
+        if (!spans.some(s => s.start === span.start && s.end === span.end)) {
+          spans.push(span);
+        }
+      }
+    }
     if (spans.length === 0) return false;
     candidateSpans.push(spans);
   }
@@ -237,7 +251,15 @@ export function clarificationAuthorizesRecipientRole(clarifyContext, answer, can
       ].filter(Boolean).map(s => String(s).trim())
     : [];
 
-  const normId = normalizeRecipientIdentity(candidateIdentity);
+  const candidate = typeof candidateIdentity === 'object' && candidateIdentity !== null
+    ? candidateIdentity
+    : { identity: candidateIdentity };
+  const rawId = candidate.identity ?? candidate.recipient ?? candidateIdentity;
+  const normId = normalizeRecipientIdentity(rawId);
+  const candidateAliases = [
+    normId,
+    ...(Array.isArray(candidate.aliases) ? candidate.aliases.map(normalizeRecipientIdentity) : []),
+  ].filter(Boolean);
 
   function snippetHasExplicitRole(snippet, roleToCheck) {
     if (!snippet) return false;
@@ -269,19 +291,22 @@ export function clarificationAuthorizesRecipientRole(clarifyContext, answer, can
     const clauses = text.split(clauseDelimiters).map(s => s.trim()).filter(Boolean);
     let matchedClause = false;
     for (const clause of clauses) {
-      if (normId && answerNamesIdentity(clause, normId)) {
+      if (candidateAliases.some(alias => answerNamesIdentity(clause, alias))) {
         matchedClause = true;
         if (snippetHasExplicitRole(clause, role)) return true;
       }
     }
     if (!matchedClause) {
-      if (normId && answerNamesIdentity(text, normId)) {
-        const spans = findCandidateAnswerSpans(text, normId);
-        for (const span of spans) {
-          const window = text.slice(Math.max(0, span.start - 40), Math.min(text.length, span.end + 40));
-          if (snippetHasExplicitRole(window, role)) return true;
+      const matchingAliases = candidateAliases.filter(alias => answerNamesIdentity(text, alias));
+      if (matchingAliases.length > 0) {
+        for (const alias of matchingAliases) {
+          const spans = findCandidateAnswerSpans(text, alias);
+          for (const span of spans) {
+            const window = text.slice(Math.max(0, span.start - 40), Math.min(text.length, span.end + 40));
+            if (snippetHasExplicitRole(window, role)) return true;
+          }
         }
-      } else if (!normId || clauses.length <= 1) {
+      } else if (candidateAliases.length === 0 || clauses.length <= 1) {
         if (snippetHasExplicitRole(text, role)) return true;
       }
     }
@@ -328,9 +353,18 @@ export function resolveClarifiedRecipients(observedCandidates, previousTarget, c
     const identity = compact(legacy ? candidate : (candidate?.identity ?? candidate?.recipient), 240);
     const observedRole = compact(legacy ? 'to' : candidate?.role, 12).toLowerCase() || 'to';
     const norm = normalizeRecipientIdentity(identity);
-    const previousRole = previousRolesByIdentity.get(norm);
+    let previousRole = previousRolesByIdentity.get(norm);
+    if (!previousRole && Array.isArray(candidate?.aliases)) {
+      for (const alias of candidate.aliases) {
+        const normAlias = normalizeRecipientIdentity(alias);
+        if (normAlias && previousRolesByIdentity.has(normAlias)) {
+          previousRole = previousRolesByIdentity.get(normAlias);
+          break;
+        }
+      }
+    }
     if (previousRole && previousRole !== observedRole) {
-      const authorized = clarificationAuthorizesRecipientRole(clarifyContext, answer, identity, observedRole);
+      const authorized = clarificationAuthorizesRecipientRole(clarifyContext, answer, candidate, observedRole);
       return {
         identity,
         role: authorized ? observedRole : previousRole,

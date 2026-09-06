@@ -15414,7 +15414,28 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         : (Array.isArray(probe.strongIdentityCandidates)
           ? probe.strongIdentityCandidates
           : []));
-    return normalizeMessageTarget({ target_kind: 'named', recipients: values })?.recipients || [];
+    const recipients = normalizeMessageTarget({ target_kind: 'named', recipients: values })?.recipients || [];
+    if (recipients.length > 0) {
+      const allSources = [
+        ...(Array.isArray(probe.observedRecipientCandidates) ? probe.observedRecipientCandidates : []),
+        ...(Array.isArray(values) ? values : []),
+      ];
+      const aliasesByIdentity = new Map();
+      for (const val of allSources) {
+        if (val && typeof val === 'object' && Array.isArray(val.aliases) && val.aliases.length > 0) {
+          const key = `${val.role || 'to'}:${normalizeRecipientIdentity(val.identity || val.recipient)}`;
+          aliasesByIdentity.set(key, val.aliases);
+        }
+      }
+      if (aliasesByIdentity.size > 0) {
+        return recipients.map(r => {
+          const key = `${r.role}:${normalizeRecipientIdentity(r.identity)}`;
+          const aliases = aliasesByIdentity.get(key);
+          return aliases ? { ...r, aliases } : r;
+        });
+      }
+    }
+    return recipients;
   }
 
   async _pinActiveConversationMessagingTarget(tabId, messaging, pageUrl = '') {
@@ -15641,7 +15662,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     if (purpose === 'message_recipient' || purpose === 'recipient_change') return true;
     if (purpose === 'research_escalation') return false;
 
-    // Check if the clarify question, reason, or options explicitly mention any observed candidate identity
+    // Check if the clarify question, reason, or options explicitly mention any observed candidate identity or alias
     if (Array.isArray(observedCandidates) && observedCandidates.length > 0) {
       const allCandidateText = [
         context.question,
@@ -15650,7 +15671,11 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       ].filter(Boolean).join(' ');
       for (const candidate of observedCandidates) {
         const id = typeof candidate === 'string' ? candidate : (candidate?.identity ?? candidate?.recipient);
-        if (id && answerNamesIdentity(allCandidateText, id)) {
+        const candidateAliases = [
+          id,
+          ...(Array.isArray(candidate?.aliases) ? candidate.aliases : []),
+        ].filter(Boolean);
+        if (candidateAliases.some(alias => answerNamesIdentity(allCandidateText, alias))) {
           return true;
         }
       }
