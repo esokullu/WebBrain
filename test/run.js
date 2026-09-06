@@ -86196,6 +86196,12 @@ test('social publication workflow follows the live X or Bluesky destination and 
         'a read verb further from the noun did not disqualify it'],
       ['Read the summary and publish it on https://x.com/home', ['twitter'],
         'a publish command in its own clause was lost to an earlier read verb'],
+      ['Inspect https://x.com/compose/post but do not publish anything; submit findings in the survey', [],
+        'negation following a composer route was ignored'],
+      ['Find market share on X, then submit it in the survey', [],
+        'noun use of share was treated as publication intent'],
+      ['Share our update on X, then submit it in the survey', ['twitter'],
+        'valid publication command with share was not recognized'],
       // Bare platforms use the same multilingual verbs as URLs, not English-only.
       ['Publícalo en X', ['twitter'],
         'a Spanish bare platform destination was missed'],
@@ -87430,6 +87436,60 @@ test('attachment requirement parser ignores numbers in specific attachment filen
     const req4 = agent._parseWorkflowAttachmentRequirement('2枚');
     assert.equal(req4.expectedCount, 2, AgentClass.name + ': 2枚 should expect 2 attachments');
     assert.equal(req4.isGeneric, true, AgentClass.name + ': 2枚 should be generic');
+  }
+});
+
+test('attachment requirement parser treats conjunction-based requirements as generic', () => {
+  for (const AgentClass of [AgentCh, AgentFx]) {
+    const agent = new AgentClass({});
+    const req = agent._parseWorkflowAttachmentRequirement('an image and a video');
+    assert.equal(req.isGeneric, true, AgentClass.name + ': an image and a video should be generic');
+    assert.equal(req.expectedCount, 2, AgentClass.name + ': should expect 2 attachments');
+    assert.equal(req.expectedImageCount, 1, AgentClass.name + ': should expect 1 image');
+    assert.equal(req.expectedVideoCount, 1, AgentClass.name + ': should expect 1 video');
+
+    const verified = agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'an image and a video' },
+      { attachments: [{ type: 'image', src: 'pic.png' }, { type: 'video', src: 'vid.mp4' }] }
+    );
+    assert.equal(verified, true, AgentClass.name + ': image plus video should satisfy generic conjunction requirement');
+  }
+});
+
+test('post body extraction preserves nested quotation marks and does not overwrite full body with prefix', async () => {
+  for (const [index, AgentClass] of [AgentCh, AgentFx].entries()) {
+    const agent = new AgentClass({});
+    const taskText = 'Post “He said "hello" today” on X';
+    const extracted = agent._extractWorkflowTaskBody(taskText);
+    assert.equal(extracted, 'He said "hello" today', AgentClass.name + ': should extract body containing nested quotes');
+
+    const tabId = 9890 + index;
+    const siteWorkflow = agent._resolvePlannerSiteWorkflow('https://x.com/home', {
+      request_kind: 'execute',
+      site_job: 'publish-post',
+    });
+    const guard = agent._startPlanExecutionGuard(tabId, 'act', {
+      requestKind: 'execute',
+      requiresStateChange: true,
+      requiresSubmission: true,
+      siteWorkflow,
+    });
+    const provider = {
+      chat: async () => ({
+        content: JSON.stringify({
+          workflowFields: [
+            { field: 'body', value: 'He said "hello" today' },
+          ],
+        }),
+      }),
+    };
+    await agent._classifyProgressIntentWithProvider(tabId, {
+      provider,
+      taskText,
+      pageScope: 'https://x.com/home',
+    });
+    assert.equal(guard.workflowMetadataRequirements?.[0]?.value, 'He said "hello" today',
+      AgentClass.name + ': should retain complete classified body without prefix truncation');
   }
 });
 

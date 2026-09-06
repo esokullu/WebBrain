@@ -236,12 +236,12 @@ const SOCIAL_PUBLISH_VERBS = new RegExp(
 // this on <feed>" is not the word but the clause: a publish word that a read
 // verb already governs is naming content, not asking for a publication.
 const SOCIAL_READ_VERBS = new RegExp(
-  `(?<![${SOCIAL_WORD_EDGE}])(?:read|reads|reading|open|opens|opening|view|views|viewing|check|checks|checking|browse|browses|browsing|scan|scans|scanning|skim|skims|skimming|summarise|summarize|summarises|summarizes|summarising|summarizing|review|reviews|reviewing|fetch|fetches|fetching|extract|extracts|extracting|collect|collects|collecting|gather|gathers|gathering|monitor|monitors|monitoring|watch|watches|watching|analyse|analyze|analyses|analyzes|analysing|analyzing|lee|leer|revisa|revisar|consulta|consultar|lis|lire|lisez|consulte|consulter|lesen|lies|pr\u00fcfe|pr\u00fcfen|leggi|leggere|oku|okuyun|incele|inceleyin|\u0447\u0438\u0442\u0430\u0439|\u043f\u0440\u043e\u0447\u0438\u0442\u0430\u0439|\u043f\u0440\u043e\u0447\u0442\u0438|\u043f\u0440\u043e\u0441\u043c\u043e\u0442\u0440\u0438|\u043f\u043e\u0441\u043c\u043e\u0442\u0440\u0438)(?![${SOCIAL_WORD_EDGE}])`
-  + '|\u9605\u8bfb|\u95b1\u8b80|\u8bfb|\u8b80|\u67e5\u770b|\u6d4f\u89c8|\u700f\u89bd|\u8aad\u3093\u3067|\u8aad\u3080|\u8aad\u307f|\uc77d\uace0|\uc77d\uc5b4|\uc77d\uc740',
+  `(?<![${SOCIAL_WORD_EDGE}])(?:read|reads|reading|open|opens|opening|view|views|viewing|check|checks|checking|browse|browses|browsing|scan|scans|scanning|skim|skims|skimming|summarise|summarize|summarises|summarizes|summarising|summarizing|review|reviews|reviewing|fetch|fetches|fetching|extract|extracts|extracting|collect|collects|collecting|gather|gathers|gathering|monitor|monitors|monitoring|watch|watches|watching|analyse|analyze|analyses|analyzes|analysing|analyzing|find|finds|finding|found|search|searches|searching|searched|lookup|look\\s+up|looking\\s+up|looked\\s+up|inspect|inspects|inspecting|inspected|query|queries|querying|queried|explore|explores|exploring|investigate|investigates|investigating|audit|audits|auditing|discover|discovers|discovering|track|tracks|tracking|calculate|calculates|calculating|determine|determines|determining|compute|computes|computing|lee|leer|revisa|revisar|consulta|consultar|lis|lire|lisez|consulte|consulter|trouve|trouver|cherche|chercher|trova|trovare|cerca|cercare|busca|buscar|encuentra|encontrar|lesen|lies|pr\u00fcfe|pr\u00fcfen|such|suchen|finde|finden|leggi|leggere|oku|okuyun|incele|inceleyin|bul|bulun|ara|aray\u0131n|\u0447\u0438\u0442\u0430\u0439|\u043f\u0440\u043e\u0447\u0438\u0442\u0430\u0439|\u043f\u0440\u043e\u0447\u0442\u0438|\u043f\u0440\u043e\u0441\u043c\u043e\u0442\u0440\u0438|\u043f\u043e\u0441\u043c\u043e\u0442\u0440\u0438|\u043d\u0430\u0439\u0442\u0438|\u043d\u0430\u0439\u0434\u0438|\u043d\u0430\u0439\u0434\u0438\u0442\u0435|\u0438\u0449\u0438|\u0438\u0449\u0438\u0442\u0435)(?![${SOCIAL_WORD_EDGE}])`
+  + '|\u9605\u8bfb|\u95b1\u8b80|\u8bfb|\u8b80|\u67e5\u770b|\u6d4f\u89c8|\u700f\u89bd|\u8aad\u3093\u3067|\u8aad\u3080|\u8aad\u307f|\uc77d\uace0|\uc77d\uc5b4|\uc77d\uc740|\u63a2\u3059|\u691c\u7d22|\u67e5\u627e|\u627e|\u63a2\u7d22|\ucc3e\uae30|\ucc3e\uc544',
   'iu',
 );
 const SOCIAL_NOUN_LIKE_PUBLISH = new RegExp(
-  '^(?:posts?|tweets?|skeets?|publica[c\u00e7][i\u00ed]?[o\u00f3]n(?:es)?|publica[c\u00e7][a\u00e3]o|publica[c\u00e7][o\u00f5]es|publication|publications|\u6295\u7a3f|\u63a8\u6587)$',
+  '^(?:posts?|tweets?|skeets?|shares?|publica[c\u00e7][i\u00ed]?[o\u00f3]n(?:es)?|publica[c\u00e7][a\u00e3]o|publica[c\u00e7][o\u00f5]es|publication|publications|\u6295\u7a3f|\u63a8\u6587)$',
   'iu',
 );
 const SOCIAL_NEGATION = new RegExp(
@@ -273,7 +273,10 @@ const GENERIC_ATTACHMENT_WORDS = new Set([
   'video', 'videos', 'clip', 'clips', 'recording', 'recordings',
   'gif', 'gifs', 'animated',
   'file', 'files', 'graphic', 'graphics',
+  'item', 'items', 'piece', 'pieces', 'upload', 'uploads', 'asset', 'assets',
+  'enclosure', 'enclosures', 'document', 'documents', 'documento', 'documentos',
   'a', 'an', 'the', 'of', 'in', 'with', 'some', 'any',
+  'and', 'or', 'plus', 'also', 'as', 'well',
   'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten',
   'single', 'multiple', 'both',
   'de', 'du', 'des', 'el', 'la', 'los', 'las', 'der', 'die', 'das', 'di', 'il', 'lo', 'gli', 'le',
@@ -282,8 +285,10 @@ const GENERIC_ATTACHMENT_WORDS = new Set([
   'ein', 'eine', 'einen', 'einer', 'zwei', 'drei', 'vier', 'fünf', 'um', 'uma', 'dois', 'duas', 'três',
   'imagen', 'imagenes', 'imágenes', 'foto', 'fotos', 'vidéo', 'vidéos', 'bild', 'bilder',
   'fichier', 'fichiers', 'archivo', 'archivos', 'datei', 'dateien', 'allegato', 'allegati', 'anexo', 'anexos',
+  'et', 'ou', 'y', 'e', 'und', 'oder', 'ed', 've', 'veya', 'ile',
   'один', 'одна', 'одно', 'два', 'две', 'три', 'четыре', 'пять',
   'вложения', 'вложение', 'фотографии', 'фотография', 'изображения', 'изображение', 'видео',
+  'и', 'или', 'плюс',
 ]);
 
 const CJK_GENERIC_ATTACHMENT_REGEX = /^[0-9一二两三四五六七八九十添付画像写真動画メディア已上传附件图片照片视频媒体枚つの本张條条个個장での\s\-_,.:;!?/\\()]+$/u;
@@ -2374,7 +2379,7 @@ export class Agent extends LoopDetector {
     if (CJK_GENERIC_ATTACHMENT_REGEX.test(text)) {
       isGeneric = true;
     } else {
-      const nonPunctuation = text.replace(/[\s\-_,.:;!?/\\()]+/g, ' ').trim();
+      const nonPunctuation = text.replace(/[\s\-_,.:;!?/\\()&+/]+/g, ' ').trim();
       const words = nonPunctuation ? nonPunctuation.split(/\s+/) : [];
       isGeneric = words.length > 0 && words.every(w => /^\d+$/.test(w) || GENERIC_ATTACHMENT_WORDS.has(w) || CJK_GENERIC_ATTACHMENT_REGEX.test(w));
     }
@@ -14977,6 +14982,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       const after = targetText.slice(publish.index + publish[0].length);
       if (SOCIAL_POST_NEGATION.test(after.trim())) return false;
       if (SOCIAL_NOUN_LIKE_PUBLISH.test(publish[0]) && SOCIAL_READ_VERBS.test(after)) return false;
+      if (/^shares?$/i.test(publish[0]) && /(?<![\p{L}\p{N}_])(?:market|mind|revenue|profit|traffic|audience|wallet|fair|lion's|stock|equity|file|screen|time)\s+$/iu.test(before)) return false;
       return true;
     });
   }
@@ -15040,7 +15046,12 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       if (lastBeforeClause?.isNegated) continue;
       const afterClauses = this._socialPublicationClauses(after);
       const firstAfterClause = afterClauses.find(c => c.text.trim().length > 0);
-      const governed = /\/(?:compose|intent|i\/flow)\//.test(url)
+      const isComposer = /\/(?:compose|intent|i\/flow)\//.test(url);
+      const firstAfterNegatesPublish = firstAfterClause?.isNegated
+        && (isComposer
+          || SOCIAL_PUBLISH_VERBS.test(firstAfterClause.maskedText || firstAfterClause.text));
+      if (firstAfterNegatesPublish) continue;
+      const governed = (isComposer && !firstAfterClause?.isNegated)
         || this._socialPublicationCommandIn(lastBeforeClause?.text || '')
         || (SOCIAL_PUBLISH_DESTINATION_LEAD.test(lastBeforeClause?.text || '')
           && this._socialPublicationCommandIn(firstAfterClause?.text || ''));
@@ -15078,6 +15089,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           const afterVerbText = targetText.slice(verbIndex + verbWord.length);
           if (SOCIAL_POST_NEGATION.test(afterVerbText.trim())) continue;
           if (SOCIAL_NOUN_LIKE_PUBLISH.test(verbWord) && SOCIAL_READ_VERBS.test(afterVerbText)) continue;
+          if (/^shares?$/i.test(verbWord) && /(?<![\p{L}\p{N}_])(?:market|mind|revenue|profit|traffic|audience|wallet|fair|lion's|stock|equity|file|screen|time)\s+$/iu.test(beforeVerbClause)) continue;
           const afterVerb = clause.text.slice(verbIndex, verbIndex + verbWord.length + 60);
           const beforeVerb = clause.text.slice(Math.max(0, verbIndex - 60), verbIndex);
           platformPattern.lastIndex = 0;
@@ -22130,9 +22142,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     for (const text of candidates) {
       let body = '';
       // 1. Quoted body: Post "..." on X, Tweet "...", Publish "...", etc.
-      const quotedMatch = text.match(/(?:publish(?:ed|ing|es)?|post(?:ed|ing|s)?|tweet(?:ed|ing|s)?|skeet(?:ed|ing|s)?|share|sharing|update)[\s\S]*?(?:["“「『«]([\s\S]+?)["”」』»])/i);
-      if (quotedMatch && quotedMatch[1]?.trim()) {
-        body = quotedMatch[1].trim();
+      const quotedMatch = text.match(/(?:publish(?:ed|ing|es)?|post(?:ed|ing|s)?|tweet(?:ed|ing|s)?|skeet(?:ed|ing|s)?|share|sharing|update)[\s\S]*?(?:“([\s\S]+?)”|「([\s\S]+?)」|『([\s\S]+?)』|«([\s\S]+?)»|"([\s\S]+?)")/i);
+      const matchedContent = quotedMatch ? (quotedMatch[1] || quotedMatch[2] || quotedMatch[3] || quotedMatch[4] || quotedMatch[5]) : null;
+      if (matchedContent && matchedContent.trim()) {
+        body = matchedContent.trim();
       } else {
         // Single-quoted body (not contractions)
         const singleQuoteMatch = text.match(/(?:publish(?:ed|ing|es)?|post(?:ed|ing|s)?|tweet(?:ed|ing|s)?|skeet(?:ed|ing|s)?|share|sharing|update)[\s\S]*?(?:(?<!\p{L})'([\s\S]+?)'(?!\p{L}))/iu);
@@ -22143,8 +22156,9 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           const colonMatch = text.match(/(?:publish(?:ing|es)?|post(?:ing|s)?|tweet(?:ing|s)?|message|update)[\s\S]*?(?<!https?|ftp|sftp):(?!\/\/)\s*([\s\S]+)$/i);
           if (colonMatch && colonMatch[1]?.trim()) {
             let candidateBody = colonMatch[1].trim();
-            const innerQuote = candidateBody.match(/^["“「『«]([\s\S]+)["”」』»]$/) || candidateBody.match(/^'([\s\S]+)'$/);
-            if (innerQuote) candidateBody = innerQuote[1].trim();
+            const innerQuote = candidateBody.match(/^(?:“([\s\S]+)”|「([\s\S]+)」|『([\s\S]+)』|«([\s\S]+)»|"([\s\S]+)"|'([\s\S]+)')$/);
+            const innerContent = innerQuote ? (innerQuote[1] || innerQuote[2] || innerQuote[3] || innerQuote[4] || innerQuote[5] || innerQuote[6]) : null;
+            if (innerContent) candidateBody = innerContent.trim();
             if (candidateBody) body = candidateBody;
           }
         }
@@ -22237,8 +22251,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
             if (bodyReq) {
               if (extractedBody.length > (bodyReq.value || '').length
                   || bodyReq.value === '[from task]'
-                  || extractedBody.includes(bodyReq.value)
-                  || bodyReq.value.includes(extractedBody)) {
+                  || extractedBody.includes(bodyReq.value)) {
                 bodyReq.value = this._workflowMetadataValue(extractedBody, 25000);
               }
             } else if (siteWorkflow?.job?.id === 'publish-post' || siteWorkflow?.job?.id === 'publish-content') {
