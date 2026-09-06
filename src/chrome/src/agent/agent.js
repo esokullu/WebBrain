@@ -1856,11 +1856,14 @@ export class Agent extends LoopDetector {
     // no evidence) cannot be proven to be a non-submit, so it must clear the
     // same binding gate as an observed submit. Non-submit-capable tools keep
     // the early exit, as do clicks the probe resolved to an editable field
-    // (focusing it cannot submit); the positively identified reversible
-    // dialog launcher is exempted below.
+    // (focusing it cannot submit) or to a pure navigation link such as the
+    // blob page's Edit control (navigating cannot submit or mutate fields);
+    // the positively identified reversible dialog launcher is exempted below.
     const resolvedEditableTarget = (name === 'click' || name === 'click_ax' || name === 'iframe_click')
       && detectedSubmit?.resolvedEditableTarget === true;
-    const inconclusiveSubmitCapable = !looksLikeSubmit && !resolvedEditableTarget
+    const resolvedNavigationTarget = (name === 'click' || name === 'click_ax' || name === 'iframe_click')
+      && detectedSubmit?.resolvedNavigationTarget === true;
+    const inconclusiveSubmitCapable = !looksLikeSubmit && !resolvedEditableTarget && !resolvedNavigationTarget
       && this._isFormValidationCandidate(name, args);
     if (!looksLikeSubmit && !inconclusiveSubmitCapable) return null;
     const detectedFields = [
@@ -18684,6 +18687,21 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           resolvedEditableTarget: true,
         };
       }
+      // Explicit negative: the probe resolved the click target to a pure
+      // navigation link, proving activation only navigates. Propagated like
+      // the editable flag so the gate can pass it without verified proofs.
+      const resolvedNavigation = (Array.isArray(rawResults) ? rawResults : [])
+        .find(item => item && item.isSubmit !== true && item.resolvedNavigationTarget === true);
+      if (resolvedNavigation
+          && (name === 'click' || name === 'click_ax' || name === 'iframe_click')) {
+        return {
+          isSubmit: false,
+          host: normalizeHost(resolvedNavigation.host || resolvedNavigation.url || args?.urlFilter || currentUrl) || 'this site',
+          tool: name,
+          reason: String(resolvedNavigation.reason || 'click target is a navigation link').slice(0, 200),
+          resolvedNavigationTarget: true,
+        };
+      }
     } catch {
       // Fall through to explicit-argument fallbacks below.
     }
@@ -19106,6 +19124,26 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         return false;
       }
     };
+    // Explicit negative for the commit gate: activation on a pure navigation
+    // control can neither submit a form nor mutate field values, so it needs
+    // no verified proofs (the later commit click still does). Strictly
+    // positive only: an anchor with a navigating href, free of activation
+    // handlers. Anything with a handler, a submit classification, an
+    // unresolvable target, or a script-executing href stays inconclusive
+    // (fail-closed): javascript:/data:/vbscript: hrefs run code rather than
+    // navigate. type=button stays gated per the submit-candidate posture.
+    const isNavigationLinkTarget = (el) => {
+      try {
+        if (!el || el.nodeType !== 1) return false;
+        if (el.hasAttribute?.('onclick') || el.hasAttribute?.('data-action')) return false;
+        if (String(el.tagName || '').toLowerCase() !== 'a') return false;
+        const href = String(el.getAttribute?.('href') || '').trim();
+        if (!href || /^(?:javascript|data|vbscript)\s*:/i.test(href)) return false;
+        return !isSubmitControl(el);
+      } catch {
+        return false;
+      }
+    };
     const formForSubmitControl = (el) => {
       const target = labelControlFor(el) || el;
       const candidate = target?.closest?.('button,input') || target;
@@ -19282,6 +19320,18 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           tool: toolName,
           reason: 'click target resolves to an editable field',
           resolvedEditableTarget: true,
+        };
+      }
+      if (target
+          && (toolName === 'click' || toolName === 'click_ax' || toolName === 'iframe_click')
+          && isNavigationLinkTarget(target)) {
+        return {
+          isSubmit: false,
+          host,
+          url,
+          tool: toolName,
+          reason: 'click target resolves to a navigation link',
+          resolvedNavigationTarget: true,
         };
       }
     } catch {}

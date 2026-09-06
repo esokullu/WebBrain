@@ -76009,6 +76009,58 @@ test('GitHub edit-file workflow fails closed when submit detection is inconclusi
   }
 });
 
+test('GitHub edit-file workflow passes resolved navigation links', async () => {
+  for (const rel of [
+    'src/chrome/src/agent/agent.js',
+    'src/firefox/src/agent/agent.js',
+  ]) {
+    const source = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    assert.match(source, /const isNavigationLinkTarget = \(el\) => \{/,
+      `${rel}: navigation-link probe is missing`);
+    assert.match(source, /resolvedNavigationTarget: true/,
+      `${rel}: navigation resolution is not propagated`);
+    assert.match(source, /javascript\|data\|vbscript/,
+      `${rel}: script-executing hrefs are not excluded from navigation`);
+  }
+  const editUrl = 'https://github.com/Example/Repo/edit/main/docs/plan.md';
+  for (const [label, AgentClass, tabId] of [
+    ['chrome', AgentCh, 9512],
+    ['firefox', AgentFx, 9513],
+  ]) {
+    const agent = new AgentClass({});
+    agent._planExecutionGuards.set(tabId, {
+      enabled: true,
+      siteWorkflow: { adapterName: 'github', job: { id: 'edit-file-and-commit' } },
+      workflowMetadataRequirements: [],
+      workflowMetadataRequirementsResolved: true,
+    });
+    agent._currentUrl = async () => editUrl;
+    agent._workflowSubmitBindingForAttempt = () => ({ metadataRequirementsIncomplete: true });
+    // The blob page's Edit control resolves to a pure navigation link: it
+    // cannot submit or mutate fields, so it passes without a binding (which
+    // cannot exist before the /edit route is even reached).
+    assert.equal(await agent._workflowPreSubmitDispatchBlock(
+      tabId, 'click_ax', { ref_id: 'ref_edit_link' },
+      { isSubmit: false, resolvedNavigationTarget: true },
+    ), null, `${label}: resolved navigation link stayed blocked`);
+    // Unresolved clicks stay fail-closed.
+    assert.equal((await agent._workflowPreSubmitDispatchBlock(
+      tabId, 'click_ax', { ref_id: 'ref_edit_link' }, null,
+    ))?.noDispatch, true, `${label}: unresolved click escaped the commit guard`);
+    // A submit-looking label still takes the binding path even with the
+    // flag: positive navigation evidence only lifts the inconclusive gate.
+    assert.equal((await agent._workflowPreSubmitDispatchBlock(
+      tabId, 'click', { text: 'Commit changes' },
+      { isSubmit: false, resolvedNavigationTarget: true },
+    ))?.noDispatch, true, `${label}: label-classified submit bypassed the binding`);
+    // The flag is click-scoped: Enter stays blocked.
+    assert.equal((await agent._workflowPreSubmitDispatchBlock(
+      tabId, 'press_keys', { key: 'Enter' },
+      { isSubmit: false, resolvedNavigationTarget: true },
+    ))?.noDispatch, true, `${label}: flagged Enter escaped the commit guard`);
+  }
+});
+
 test('GitHub edit-file workflow blocks compound submit actions on existing bindings', async () => {
   const editUrl = 'https://github.com/Example/Repo/edit/main/docs/plan.md';
   for (const [label, AgentClass, tabId] of [
