@@ -1285,10 +1285,20 @@
   function isSingleMessageGmailThread(conversationRoot) {
     if (!conversationRoot || typeof conversationRoot.querySelectorAll !== 'function') return false;
     try {
-      const gmailMessages = conversationRoot.querySelectorAll('.adn,.ads,[data-message-id]');
-      if (gmailMessages.length) return gmailMessages.length === 1;
-      const semanticMessages = conversationRoot.querySelectorAll('[role="article"]');
-      if (semanticMessages.length) return semanticMessages.length === 1;
+      const gmailMessages = Array.from(conversationRoot.querySelectorAll('.adn,.ads,[data-message-id]'));
+      if (gmailMessages.length) {
+        const topLevelGmailMessages = gmailMessages.filter(msg => (
+          !msg.closest?.('.a3s,.ii') && (!msg.parentElement || !msg.parentElement.closest?.('.adn,.ads,[data-message-id]'))
+        ));
+        return topLevelGmailMessages.length === 1;
+      }
+      const semanticMessages = Array.from(conversationRoot.querySelectorAll('[role="article"]'));
+      if (semanticMessages.length) {
+        const topLevelSemantic = semanticMessages.filter(msg => (
+          !msg.closest?.('.a3s,.ii') && (!msg.parentElement || !msg.parentElement.closest?.('[role="article"]'))
+        ));
+        return topLevelSemantic.length === 1;
+      }
     } catch (e) {}
     return false;
   }

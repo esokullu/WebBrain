@@ -449,6 +449,21 @@ export function resolveClarifiedRecipients(observedCandidates, previousTarget, c
     .map((r, idx) => ({ ...r, idx }))
     .filter(r => !matchedPreviousIndices.has(r.idx));
 
+  // Match replacements to compatible observed recipient slots first to avoid
+  // swapping roles when multiple recipients with different roles are replaced.
+  for (let i = 0; i < rawList.length; i++) {
+    if (candidatePreviousRoles.has(i)) continue;
+    const candidate = rawList[i];
+    const legacy = typeof candidate === 'string' || typeof candidate === 'number';
+    const observedRole = compact(legacy ? 'to' : candidate?.role, 12).toLowerCase() || 'to';
+    const matchIdx = remainingPrevious.findIndex(r => r.role === observedRole);
+    if (matchIdx !== -1) {
+      const [matched] = remainingPrevious.splice(matchIdx, 1);
+      candidatePreviousRoles.set(i, matched.role);
+    }
+  }
+
+  // Assign any remaining unmatched replacement candidates by restrictive rank (bcc > cc > to).
   const roleRank = { bcc: 3, cc: 2, to: 1 };
   remainingPrevious.sort((a, b) => (roleRank[b.role] || 0) - (roleRank[a.role] || 0));
 

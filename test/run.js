@@ -5012,6 +5012,28 @@ test('direct-message recipient guard uses structured intent and exact active ide
       ],
       'answer with negated role for Alice and affirmative role for Bob must preserve Alice as BCC and Bob as To',
     );
+    assert.deepEqual(
+      helper.resolveClarifiedRecipients(
+        [
+          { identity: 'bob@example.com', role: 'to', aliases: ['bob@example.com', 'Bob'] },
+          { identity: 'dan@example.com', role: 'bcc', aliases: ['dan@example.com', 'Dan'] },
+        ],
+        {
+          target_kind: 'named',
+          recipients: [
+            { identity: 'alice@example.com', role: 'to' },
+            { identity: 'carol@example.com', role: 'bcc' },
+          ],
+        },
+        null,
+        'Bob and Dan',
+      ),
+      [
+        { identity: 'bob@example.com', role: 'to' },
+        { identity: 'dan@example.com', role: 'bcc' },
+      ],
+      'replacement recipients must match compatible observed slots instead of swapping roles',
+    );
 
     assert.equal(helper.messageTargetMatchesObservedIdentities(
       { target_kind: 'named', recipients: ['Alice', 'bob@example.com'] },
@@ -11112,6 +11134,7 @@ test('accessibility-tree schema and prompts preserve exact whole-document contin
   assert.match(chromeSource, /function gmailConversationExpansionControlState\(control\) \{[\s\S]*?jsname === 'xvWlrc'[\s\S]*?jsname === 'tRarif'[\s\S]*?name === 'Collapse all'[\s\S]*?name === 'Expand all'/, 'Gmail expansion detection still depends exclusively on English labels');
   assert.match(chromeSource, /closest\('\[role="listitem"\],\[role="article"\],\.adn,\.ads'\)/, 'message-body controls can spoof Gmail expansion evidence');
   assert.match(chromeSource, /return \(scanned && isSingleMessageGmailThread\(conversationRoot\)\) \? 'not_applicable' : null;/, 'Gmail expansion detection cannot report a thread with nothing to expand');
+  assert.match(chromeSource, /!msg\.closest\?\.\('\.a3s,\.ii'\)[\s\S]*?!msg\.parentElement\.closest\?\.\('\.adn,\.ads,\[data-message-id\]'\)/, 'single-message thread detection must filter out nested descendants and message-body elements');
 
   for (const [label, getTools, prompt] of [
     ['chrome', getToolsForModeCh, SYSTEM_PROMPT_ASK_CH],
