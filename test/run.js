@@ -4971,6 +4971,16 @@ test('direct-message recipient guard uses structured intent and exact active ide
       false,
       'negated single-clause answer without candidate spans must not authorize To',
     );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Do not forward Alice to To', 'Alice', 'to'),
+      false,
+      'negated delivery-role phrase "Do not forward Alice to To" must not authorize To for Alice',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Forward Alice to To', 'Alice', 'to'),
+      true,
+      'affirmative phrase "Forward Alice to To" must authorize To for Alice',
+    );
     assert.deepEqual(
       helper.resolveClarifiedRecipients(
         [
