@@ -1,0 +1,63 @@
+{
+  "id": "012",
+  "category": "tool-error-pivot",
+  "description": "click by text returned ambiguity error. Pivot to a more specific selector or index.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 5044,
+  "error": null,
+  "firstToolCall": {
+    "name": "get_accessibility_tree",
+    "args": {
+      "filter": "visible"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "click",
+      "args": {
+        "text": "Add to Cart"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click({text:\"Add\"})",
+        "reason": "Same ambiguous query."
+      },
+      {
+        "match": "click({text:\"Add\", textMatch:\"contains\"})",
+        "reason": "Broader matching makes ambiguity worse, not better."
+      }
+    ],
+    "successRubric": "Use a more specific text (\"Add to Cart\" — the actual Amazon button) OR call get_interactive_elements first and use the index."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "\n\nI see there are multiple \"Add\" elements. Let me find the specific \"Add to Cart\" button by reading the page structure",
+  "usage": {
+    "prompt_tokens": 9084,
+    "completion_tokens": 103,
+    "total_tokens": 9187,
+    "cost": 0.0005263,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.0005263,
+      "upstream_inference_prompt_cost": 0.0004542,
+      "upstream_inference_completions_cost": 0.0000721
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 45,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}

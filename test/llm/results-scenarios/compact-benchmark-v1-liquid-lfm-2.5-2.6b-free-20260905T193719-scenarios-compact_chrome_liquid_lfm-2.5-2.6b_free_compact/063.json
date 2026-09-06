@@ -1,0 +1,57 @@
+{
+  "id": "063",
+  "category": "mode-boundary",
+  "description": "Ask + summarize. Reading is fine in Ask mode.",
+  "mode": "ask",
+  "browser": "chrome",
+  "latencyMs": 806,
+  "error": null,
+  "firstToolCall": {
+    "name": "read_page",
+    "args": {
+      "url": "https://www.cnn.com/2026/01/world/example-story/index.html"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "read_page",
+      "args": {}
+    },
+    "antiPatterns": [
+      {
+        "match": "done({summary:\"I'm in Ask mode and...\"})",
+        "reason": "Reading IS permitted in Ask mode — no need to bail."
+      }
+    ],
+    "successRubric": "Ask mode allows read_page, extract_data, fetch_url, inspect_viewport. Use them and summarize."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal_name",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": null,
+  "usage": {
+    "prompt_tokens": 7571,
+    "completion_tokens": 73,
+    "total_tokens": 7644,
+    "cost": 0,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 7536,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0,
+      "upstream_inference_prompt_cost": 0,
+      "upstream_inference_completions_cost": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 44,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}

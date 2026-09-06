@@ -1,0 +1,30 @@
+{
+  "id": "064",
+  "category": "mode-boundary",
+  "description": "Act + simple question. Act allows read; no need to be ceremonious.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 304,
+  "error": "HTTP 429: {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-min. \",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"20\",\"X-RateLimit-Remaining\":\"0\",\"X-RateLimit-Reset\":\"1788626340000\"},\"limit_source\":\"openrouter_free_tier_per_minute\",\"remedy_hint\":\"Slow down requests to free models, or retry after the per-minute window resets.\",\"provider_name\":null}},\"user_id\":\"user_3AbNCAJijEuArTpJ0g3wyO8p3KK\"}",
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "read_page",
+      "args": {}
+    },
+    "antiPatterns": [
+      {
+        "match": "clarify({question:\"...\"})",
+        "reason": "Clear request, no ambiguity."
+      }
+    ],
+    "successRubric": "Read the page and call done with a summary. Don't over-think."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "error",
+  "scoreNote": null,
+  "finishReason": null,
+  "content": null,
+  "usage": null
+}

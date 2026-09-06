@@ -1,0 +1,46 @@
+{
+  "id": "002",
+  "category": "loop-bad-url",
+  "description": "Auto-completed AMO URL hit a 404. Should pivot rather than retry.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 9152,
+  "error": null,
+  "firstToolCall": {
+    "name": "navigate",
+    "args": {
+      "url": "https://addons.mozilla.org/en-US/firefox/"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "navigate",
+      "args": {
+        "url": "https://addons.mozilla.org/en-US/firefox/search/?q=tabby+cat"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "navigate({url:\"https://addons.mozilla.org/en-US/firefox/addon/tabby-cat-extension/\"})",
+        "reason": "Same URL that just 404ed."
+      },
+      {
+        "match": "navigate({url:\"https://addons.mozilla.org/en-US/firefox/addon/tabby-cat/\"})",
+        "reason": "Acceptable single retry with corrected slug, but only once; flagged as anti-pattern only if combined with no fallback plan."
+      }
+    ],
+    "successRubric": "Acceptable: search AMO for \"tabby cat\" to find the real slug, OR clarify with user. Trying ONE slug variant is fine; looping on the same slug is the failure."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal_name",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The navigation attempt to the Tabby Cat extension page failed with a 404 error. The URL redirected to an error page. This means the direct link to the addon page on addons.mozilla.org is not working.\n\nLet me try a different approach - maybe I should search for the Tabby Cat extension page using a different URL pattern or try to access it through a different method.\n\nThe addons.mozilla.org URL structure for extensions is typically:\nhttps://addons.mozilla.org/en-US/firefox/addon/{extension-name}/\n\nBut this returned a 404. Let me try to access the main addons page first to see if it's accessible, and then try alternative approaches.\n\nActually, looking at the error more carefully - it says \"Page not found\" and redirected to https://addons.mozilla.org/error. This suggests the specific addon page URL might be incorrect or the addon has been removed.\n\nLet me try a few things:\n1. First, check if the main addons page is accessible\n2. Try alternative URLs for Tabby Cat\n\nActually, I should be more systematic. The user wants me to \"open the firefox tabby cat extension page\". The URL provided was about:home which redirected to New Tab. Then I tried to navigate to the Tabby Cat addon page directly.\n\nThe 404 error suggests the addon page is not found at that URL. This could mean:\n- The addon has been removed from the addons.mozilla.org site\n- The URL structure has changed\n- There's a temporary issue\n\nLet me try to access the main addons page first to see if it's working, and then try to find the Tabby Cat extension through other means.\n\nActually, I should try a different approach. The addons.mozilla.org site might have changed its URL structure. Let me try:\n\n1. https://addons.mozilla.org/en-US/firefox/addon/tabby-cat-extension/ (already tried - 404)\n2. Maybe the extension name is different? Tabby Cat might be called something else on the addons site.\n\nLet me try searching for it. But first, let me check if the main addons page is accessible.</think>The direct navigation to the Tabby Cat extension page returned a 404 error. Let me try accessing the main addons page first to verify the site is accessible, and then try alternative approaches.",
+  "usage": {
+    "prompt_tokens": 9881,
+    "total_tokens": 10417,
+    "completion_tokens": 536,
+    "prompt_tokens_details": null
+  }
+}

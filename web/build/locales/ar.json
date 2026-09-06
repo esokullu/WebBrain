@@ -335,6 +335,7 @@
   "social.mastodon_label": "WebBrain على Mastodon",
   "social.bluesky_label": "WebBrain على Bluesky",
   "social.discord_label": "WebBrain على Discord",
+  "social.huggingface_label": "WebBrain على Hugging Face",
   "footer.copyright_html": "© 2026 WebBrain. بناه <a href=\"https://emresokullu.com\" target=\"_blank\">Emre Sokullu</a> و<a href=\"https://github.com/webbrain-one/webbrain/graphs/contributors\" target=\"_blank\">المساهمون</a>.",
   "footer.link_github": "GitHub",
   "footer.link_privacy": "سياسة الخصوصية",

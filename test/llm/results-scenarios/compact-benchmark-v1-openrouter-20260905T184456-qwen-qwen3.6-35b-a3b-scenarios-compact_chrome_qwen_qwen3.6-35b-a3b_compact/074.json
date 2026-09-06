@@ -1,0 +1,59 @@
+{
+  "id": "074",
+  "category": "cross-lingual",
+  "description": "Japanese site, English user. Use the visible kanji label OR the aria-label equivalent.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 8055,
+  "error": null,
+  "firstToolCall": {
+    "name": "get_accessibility_tree",
+    "args": {
+      "filter": "visible"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "click",
+      "args": {
+        "text": "ログイン"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click({text:\"Sign in\"})",
+        "reason": "Japanese site — no English \"Sign in\" label."
+      }
+    ],
+    "successRubric": "Use the Japanese label \"ログイン\" (login). Multilingual interfaces require using the visible label."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "I can see the Amazon.co.jp homepage. Let me find the sign-in button.\n\n",
+  "usage": {
+    "prompt_tokens": 9041,
+    "completion_tokens": 96,
+    "total_tokens": 9137,
+    "cost": 0.00051925,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.00051925,
+      "upstream_inference_prompt_cost": 0.00045205,
+      "upstream_inference_completions_cost": 0.0000672
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 48,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}

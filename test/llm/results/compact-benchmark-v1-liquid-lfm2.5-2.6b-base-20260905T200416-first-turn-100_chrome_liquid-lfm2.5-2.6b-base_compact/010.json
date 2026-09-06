@@ -1,0 +1,29 @@
+{
+  "id": "010",
+  "user": "go to amazon",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 1936,
+  "error": null,
+  "firstToolCall": {
+    "name": "navigate",
+    "args": {
+      "url": "https://www.amazon.com",
+      "force": false
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "finishReason": "tool_calls",
+  "content": "The user wants to go to Amazon. I need to navigate to the Amazon website. Let me use the navigate tool to go to amazon.com.\n\nActually, looking at the context, the current page is \"about:home\" which is a new tab. The user wants to go to Amazon.\n\nI should use the navigate tool to go to amazon.com.</think>",
+  "usage": {
+    "prompt_tokens": 9724,
+    "total_tokens": 9815,
+    "completion_tokens": 91,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

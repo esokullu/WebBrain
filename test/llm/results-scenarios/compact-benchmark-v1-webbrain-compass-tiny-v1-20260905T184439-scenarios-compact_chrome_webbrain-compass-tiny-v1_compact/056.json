@@ -1,0 +1,35 @@
+{
+  "id": "056",
+  "category": "stale-refid",
+  "description": "Used index from get_interactive_elements after a navigation. Indices are tied to the call that produced them.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 1944,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "get_interactive_elements",
+      "args": {}
+    },
+    "antiPatterns": [
+      {
+        "match": "click({index:1})",
+        "reason": "Reuse of stale index — system prompt explicitly forbids this."
+      }
+    ],
+    "successRubric": "After navigation, indices reset. Call get_interactive_elements again before using an index."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "no_tool",
+  "scoreNote": null,
+  "finishReason": "stop",
+  "content": "The previous attempt to click index 1 failed because the page state changed or the indices are not stable. I need to re-read the current page to get the correct interactive elements.</think><|tool_call_start|>[get_interactive_elements()]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9868,
+    "total_tokens": 9914,
+    "completion_tokens": 46,
+    "prompt_tokens_details": null
+  }
+}

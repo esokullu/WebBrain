@@ -1,0 +1,65 @@
+{
+  "id": "041",
+  "category": "counter-polarity",
+  "description": "Mastodon char counter shows \"-14\" — text is 14 over the 500 limit. Must shorten.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 2944,
+  "error": null,
+  "firstToolCall": {
+    "name": "get_accessibility_tree",
+    "args": {
+      "filter": "all"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "set_field",
+      "args": {
+        "ref_id": "ref_8",
+        "clear": true,
+        "text": "<shortened text>"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click({text:\"Gönder\"})",
+        "reason": "Submitting an over-limit post will be rejected."
+      },
+      {
+        "match": "click({text:\"Send\"})",
+        "reason": "Same."
+      }
+    ],
+    "successRubric": "Recognize \"-14\" means 14 chars over limit (Mastodon convention). Shorten the text and try again. Do not submit."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": null,
+  "usage": {
+    "prompt_tokens": 9956,
+    "completion_tokens": 174,
+    "total_tokens": 10130,
+    "cost": 0.001972172,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 9408,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.001972172,
+      "upstream_inference_prompt_cost": 0.001528472,
+      "upstream_inference_completions_cost": 0.0004437
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 160,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}

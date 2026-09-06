@@ -1,0 +1,32 @@
+{
+  "id": "076",
+  "category": "cross-lingual",
+  "description": "Chinese site. The agent must use 搜索 (search) not English.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 306,
+  "error": "HTTP 429: {\"error\":{\"message\":\"Rate limit exceeded: free-models-per-min. \",\"code\":429,\"metadata\":{\"headers\":{\"X-RateLimit-Limit\":\"20\",\"X-RateLimit-Remaining\":\"0\",\"X-RateLimit-Reset\":\"1788626400000\"},\"limit_source\":\"openrouter_free_tier_per_minute\",\"remedy_hint\":\"Slow down requests to free models, or retry after the per-minute window resets.\",\"provider_name\":null}},\"user_id\":\"user_3AbNCAJijEuArTpJ0g3wyO8p3KK\"}",
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "click_ax",
+      "args": {
+        "ref_id": "ref_5"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click({text:\"Search\"})",
+        "reason": "Chinese UI — search input has placeholder 搜索, not \"Search\"."
+      }
+    ],
+    "successRubric": "Click the Chinese searchbox via ref_id. Then type the query."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "error",
+  "scoreNote": null,
+  "finishReason": null,
+  "content": null,
+  "usage": null
+}

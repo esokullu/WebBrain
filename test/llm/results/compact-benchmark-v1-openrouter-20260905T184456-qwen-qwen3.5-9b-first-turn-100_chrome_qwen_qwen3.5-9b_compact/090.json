@@ -1,0 +1,40 @@
+{
+  "id": "090",
+  "user": "switch to my netflix tab",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 5666,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "finishReason": "stop",
+  "content": "I don't have the ability to switch between browser tabs directly. I can only interact with the current tab.\n\nHowever, I can help you in a couple of ways:\n\n1. **Navigate the current tab to Netflix** - I can take you to netflix.com right now if you'd like\n2. **You manually switch tabs** - You can click on your Netflix tab in your browser's tab bar\n\nWhich would you prefer? If you want me to navigate to Netflix, just say so and I'll do that immediately.",
+  "usage": {
+    "prompt_tokens": 9752,
+    "completion_tokens": 243,
+    "total_tokens": 9995,
+    "cost": 0.00101165,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 9504,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.00101165,
+      "upstream_inference_prompt_cost": 0.0009752,
+      "upstream_inference_completions_cost": 0.00003645
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 157,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

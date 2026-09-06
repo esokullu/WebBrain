@@ -1,0 +1,39 @@
+{
+  "id": "046",
+  "category": "counter-polarity",
+  "description": "Reddit title field — 320 chars typed, 300 char limit. Shorten.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 9900,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "set_field",
+      "args": {
+        "ref_id": "ref_title",
+        "clear": true,
+        "text": "<300-char-or-less title>"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click({text:\"Submit\"})",
+        "reason": "Title is over 300 — will be rejected."
+      }
+    ],
+    "successRubric": "320/300 means over by 20. Shorten title before submitting."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "no_tool",
+  "scoreNote": null,
+  "finishReason": "stop",
+  "content": "The user is trying to submit a Reddit post. The URL is `https://www.reddit.com/submit?type=LINK` and the title is \"Submit\". \n\nLooking at the page content, I can see:\n- The title field shows \"Submit\" with red underline (indicating it's too long for Reddit's 320 character limit)\n- The form has a title input with value \"<320 char title>\"\n- The page shows \"320 / 300\" which seems to indicate character count\n\nThe user wants to submit their post. However, the title \"Submit\" is too short (it should be around 300 characters for Reddit). But wait - the user is actually trying to submit a post, and the title is \"Submit\" which is the title they want to use.\n\nActually, looking more carefully at the context - the user message is \"submit my post\" and the page is a Reddit submission form. The title field shows \"Submit\" with red underline (too short for Reddit's 320 char limit).\n\nThe user wants to submit their post. But the title \"Submit\" is too short. However, the user might just want to proceed with the submission as-is, or they might need to adjust the title.\n\nLet me check if there's a way to submit the form. The page shows a form with a title input. To submit, I would need to click the submit button or fill out the form and submit.\n\nBut wait - the user's message is \"submit my post\" which is very brief. They might just want to proceed with the submission.\n\nHowever, looking at the page content more carefully:\n- The title field shows \"Submit\" with red underline (too short for 320 char limit)\n- The form has a title input with value \"<320 char title>\"\n\nThe user might need to:\n1. Adjust the title to be around 300 characters\n2. Submit the form\n\nBut the user's message is very short - just \"submit my post\". This could mean they want to proceed with the submission as-is, or they're testing the system.\n\nGiven the context and the page showing a Reddit submission form with a title that's too short, I should probably:\n1. Acknowledge the submission attempt\n2. Note that the title \"Submit\" is too short for Reddit (needs ~300 characters)\n3. Ask if they want to adjust the title and submit\n\nActually, looking at the instructions more carefully - I should use the tools to interact with the page. The form has a title input. To submit, I might need to click the submit button or fill out the form.\n\nBut the user's message is just \"submit my post\" - this is ambiguous. They might want me to:\n- Click the submit button (if it exists)\n- Or fill out the form and submit\n\nLooking at the page structure from the read_page result, I can see:\n- A form with a title input\n- The title field shows \"Submit\" with red underline\n\nThere's no explicit \"submit\" button visible in the form data. The form might be designed to be submitted via a link or by clicking a button that's not shown in the initial read.\n\nGiven the ambiguity and the fact that the title is too short, I should:\n1. Inform the user about the submission attempt\n2. Point out that the title \"Submit\" is too short for Reddit (needs ~300 characters)\n3. Ask if they want to adjust the title and submit\n\nActually, I realize I should first try to submit the form if possible. But looking at the tools, I don't see a direct \"submit_form\" tool. The available tools are for interacting with the page (click, type, etc.) and for reading data.\n\nTo submit the form, I would likely need to:\n1. Fill out the form (title, etc.)\n2. Click the submit button\n\nBut the title is already filled with \"Submit\" which is too short. The user might need to change it.\n\nGiven the constraints, I think the best approach is to:\n1. Acknowledge the user's intent to submit\n2. Explain the issue with the title length\n3. Offer to help adjust the title and submit\n\nLet me craft a response that addresses these points.</think>I can see you're trying to submit a Reddit post. The form shows a title field with \"Submit\" (red underline, indicating it's too short for Reddit's 320-character limit).\n\nTo proceed with the submission, you'll need to:\n1. Adjust the title to be around 300 characters (Reddit's limit)\n2. Submit the form\n\nWould you like me to help you adjust the title and then submit the post? If so, please provide the new title text you'd like to use (around 300 characters).",
+  "usage": {
+    "prompt_tokens": 9807,
+    "total_tokens": 10796,
+    "completion_tokens": 989,
+    "prompt_tokens_details": null
+  }
+}

@@ -2715,6 +2715,11 @@ test('research escalation is opt-in, tier-complete when enabled, and absent othe
     for (const field of researchOnlyClarifyFields) {
       assert.ok(actClarify.function.parameters.properties[field], `${label}: enabled Act clarification lost ${field}`);
     }
+    assert.deepEqual(
+      actClarify.function.parameters.properties.purpose.enum,
+      ['research_escalation', 'message_recipient', 'recipient_change'],
+      `${label}: clarify purpose did not expose recipient purposes`,
+    );
     assert.deepEqual(actClarify.function.parameters.required, ['question']);
     assert.doesNotMatch(actClarify.function.description, /not a generic clarification tool/i);
 
@@ -4661,6 +4666,39 @@ test('direct-message recipient guard uses structured intent and exact active ide
     assert.equal(helper.recipientMatchesObservedIdentity('Team', 'Team-Sales'), false);
     assert.equal(helper.recipientMatchesObservedIdentity('Alice', 'Search results for Alice'), false);
     assert.equal(helper.recipientMatchesObservedIdentity('Alice', 'Malice'), false);
+    assert.equal(helper.answerNamesIdentity('Li', 'Li'), true);
+    assert.equal(helper.answerNamesIdentity('Lisa', 'Li'), false);
+    assert.equal(helper.answerNamesIdentity('王', '王'), true);
+    assert.equal(helper.answerNamesIdentity('王小明', '王'), false);
+    assert.equal(helper.answerNamesIdentity('请发送给王小明', '王小明'), true, 'natural Chinese sentence must match CJK recipient');
+    assert.equal(helper.answerNamesIdentity('请发送给王小明', '王'), false, 'sub-fragment of CJK name must not match short identity');
+    assert.equal(helper.answerNamesAllObservedRecipients(
+      'Send to Ann Smith',
+      [{ identity: 'Ann' }, { identity: 'Ann Smith' }],
+    ), false, 'a single mention must not satisfy both a prefix candidate and full name');
+    assert.equal(helper.answerNamesAllObservedRecipients(
+      'Send to Ann and Ann Smith',
+      [{ identity: 'Ann' }, { identity: 'Ann Smith' }],
+    ), true, 'distinct mentions for both candidates must succeed');
+    assert.equal(helper.answerNamesAllObservedRecipients(
+      'user@example.co.uk',
+      [{ identity: 'user@example.co' }, { identity: 'user@example.co.uk' }],
+    ), false, 'a single mention must not satisfy both .co and .co.uk');
+    assert.equal(helper.answerNamesAllObservedRecipients(
+      'user@example.co and user@example.co.uk',
+      [{ identity: 'user@example.co' }, { identity: 'user@example.co.uk' }],
+    ), true, 'distinct mentions for both domain variants must succeed');
+    const twelveCandidates = Array.from({ length: 12 }, (_, i) => ({
+      identity: `colleague-user-${i + 1}@enterprise-company-domain.com`,
+      role: i === 0 ? 'to' : 'cc',
+    }));
+    const twelveAnswer = `Please reply all to: ${twelveCandidates.map(c => c.identity).join(', ')}`;
+    assert.ok(twelveAnswer.length > 240, 'reply all answer must exceed 240 chars to test truncation avoidance');
+    assert.equal(
+      helper.answerNamesAllObservedRecipients(twelveAnswer, twelveCandidates),
+      true,
+      'long multi-recipient reply all answer (>240 chars) must match all candidates without truncation',
+    );
     assert.equal(helper.messageTargetMatchesObservedIdentities(
       { target_kind: 'named', recipients: ['迷你世界皓宸'] },
       ['迷你世界皓宸'],
@@ -4689,6 +4727,402 @@ test('direct-message recipient guard uses structured intent and exact active ide
         { identity: 'bob@example.com', role: 'to' },
       ],
     ), false, 'moving a BCC recipient into To must fail closed');
+
+    // Role authorization and resolution tests:
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Send to Alice', 'Alice', 'to'),
+      false,
+      'prepositional "to" must not explicitly authorize the To delivery role',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'To: Alice', 'Alice', 'to'),
+      true,
+      'explicit "To:" label must authorize the To delivery role',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Alice (To)', 'Alice', 'to'),
+      true,
+      'parenthesized "(To)" label must authorize the To delivery role',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Send to Alice as To', 'Alice', 'to'),
+      true,
+      '"as To" must authorize the To delivery role',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Put Alice in the To field', 'Alice', 'to'),
+      true,
+      '"To field" must authorize the To delivery role',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'CC: Alice', 'Alice', 'cc'),
+      true,
+      'explicit "CC:" must authorize the CC delivery role',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'BCC: Alice', 'Alice', 'bcc'),
+      true,
+      'explicit "BCC:" must authorize the BCC delivery role',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'To: Bob, BCC: Alice', 'Alice', 'to'),
+      false,
+      'multi-recipient clause must not attribute another recipient\'s To role to Alice',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'To: Bob, BCC: Alice', 'Alice', 'bcc'),
+      true,
+      'multi-recipient clause must attribute BCC role to Alice',
+    );
+
+    const prevBccTarget = { target_kind: 'named', recipients: [{ identity: 'alice@example.com', role: 'bcc' }] };
+    const observedToCandidates = [{ identity: 'alice@example.com', role: 'to' }];
+    assert.deepEqual(
+      helper.resolveClarifiedRecipients(observedToCandidates, prevBccTarget, null, 'alice@example.com'),
+      [{ identity: 'alice@example.com', role: 'bcc' }],
+      'identity-only answer must retain previously authorized bcc role',
+    );
+    assert.deepEqual(
+      helper.resolveClarifiedRecipients(observedToCandidates, prevBccTarget, null, 'Send to alice@example.com'),
+      [{ identity: 'alice@example.com', role: 'bcc' }],
+      'prepositional "to" answer must retain previously authorized bcc role',
+    );
+    assert.deepEqual(
+      helper.resolveClarifiedRecipients(observedToCandidates, prevBccTarget, null, 'To: alice@example.com'),
+      [{ identity: 'alice@example.com', role: 'to' }],
+      'explicit "To:" answer must update to the authorized To role',
+    );
+
+    const modelAuthoredRoleContext = {
+      question: 'Should Alice move from BCC to To?',
+      reason: 'Recipient is in To in composer',
+      options: ['Move Alice from BCC to To', 'Keep Alice as BCC'],
+      purpose: 'recipient_change',
+    };
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(modelAuthoredRoleContext, 'No, keep Alice as BCC', 'Alice', 'to'),
+      false,
+      'model-authored question mentioning "from BCC to To" must not authorize role change when user rejects or does not authorize',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(modelAuthoredRoleContext, 'Alice', 'Alice', 'to'),
+      false,
+      'bare identity answer under model-authored role question must not authorize role change',
+    );
+    assert.deepEqual(
+      helper.resolveClarifiedRecipients(observedToCandidates, prevBccTarget, modelAuthoredRoleContext, 'No, keep Alice as BCC'),
+      [{ identity: 'alice@example.com', role: 'bcc' }],
+      'user answer rejecting role change under model-authored context must retain previously authorized bcc role',
+    );
+    assert.deepEqual(
+      helper.resolveClarifiedRecipients(observedToCandidates, prevBccTarget, modelAuthoredRoleContext, 'alice@example.com'),
+      [{ identity: 'alice@example.com', role: 'bcc' }],
+      'bare identity answer under model-authored role question must retain previously authorized bcc role',
+    );
+    assert.deepEqual(
+      helper.resolveClarifiedRecipients(observedToCandidates, prevBccTarget, modelAuthoredRoleContext, 'Move Alice to To'),
+      [{ identity: 'alice@example.com', role: 'to' }],
+      'user answer explicitly authorizing To role must update to To role',
+    );
+    assert.deepEqual(
+      helper.resolveClarifiedRecipients(observedToCandidates, prevBccTarget, modelAuthoredRoleContext, 'Move Alice from BCC to To'),
+      [{ identity: 'alice@example.com', role: 'to' }],
+      'user answer selecting option to move from BCC to To must update to To role',
+    );
+
+    const obsBob = [{ identity: 'bob@example.com', role: 'to', aliases: ['bob@example.com', 'Bob'] }];
+    assert.deepEqual(
+      helper.resolveClarifiedRecipients(obsBob, prevBccTarget, modelAuthoredRoleContext, 'Bob'),
+      [{ identity: 'bob@example.com', role: 'bcc' }],
+      'replacing BCC recipient with Bob via bare answer Bob must preserve BCC role',
+    );
+    assert.deepEqual(
+      helper.resolveClarifiedRecipients(obsBob, prevBccTarget, modelAuthoredRoleContext, 'To: Bob'),
+      [{ identity: 'bob@example.com', role: 'to' }],
+      'explicit To: Bob answer when replacing recipient must authorize To role',
+    );
+
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Keep Alice as BCC while putting Bob in To', 'Alice', 'to'),
+      false,
+      'Alice must not be authorized as To when user says Keep Alice as BCC while putting Bob in To',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Keep Alice as BCC while putting Bob in To', 'Alice', 'bcc'),
+      true,
+      'Alice must be authorized as BCC when user says Keep Alice as BCC while putting Bob in To',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Keep Alice as BCC while putting Bob in To', 'Bob', 'to'),
+      true,
+      'Bob must be authorized as To when user says Keep Alice as BCC while putting Bob in To',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Keep Alice as BCC while putting Bob in To', 'Bob', 'bcc'),
+      false,
+      'Bob must not be authorized as BCC when user says Keep Alice as BCC while putting Bob in To',
+    );
+    assert.deepEqual(
+      helper.resolveClarifiedRecipients(
+        [
+          { identity: 'alice@example.com', role: 'to', aliases: ['alice@example.com', 'Alice'] },
+          { identity: 'bob@example.com', role: 'to', aliases: ['bob@example.com', 'Bob'] },
+        ],
+        {
+          target_kind: 'named',
+          recipients: [
+            { identity: 'alice@example.com', role: 'bcc' },
+            { identity: 'carol@example.com', role: 'to' },
+          ],
+        },
+        null,
+        'Keep Alice as BCC while putting Bob in To',
+      ),
+      [
+        { identity: 'alice@example.com', role: 'bcc' },
+        { identity: 'bob@example.com', role: 'to' },
+      ],
+      'multi-recipient answer associating roles to different recipients must resolve each recipient to their authorized role',
+    );
+
+    // Grouped role authorization tests:
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Put Alice and Bob in BCC', 'Alice', 'bcc'),
+      true,
+      'Alice in grouped answer Put Alice and Bob in BCC must be authorized as BCC',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Put Alice and Bob in BCC', 'Alice', 'to'),
+      false,
+      'Alice in grouped answer Put Alice and Bob in BCC must not be authorized as To',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Put Alice and Bob in BCC', 'Bob', 'bcc'),
+      true,
+      'Bob in grouped answer Put Alice and Bob in BCC must be authorized as BCC',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Put Alice and Bob in BCC', 'Bob', 'to'),
+      false,
+      'Bob in grouped answer Put Alice and Bob in BCC must not be authorized as To',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'To: Alice and Bob', 'Alice', 'to'),
+      true,
+      'Alice in grouped prefix answer To: Alice and Bob must be authorized as To',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'To: Alice and Bob', 'Bob', 'to'),
+      true,
+      'Bob in grouped prefix answer To: Alice and Bob must be authorized as To',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'To: Alice and Bob', 'Bob', 'bcc'),
+      false,
+      'Bob in grouped prefix answer To: Alice and Bob must not be authorized as BCC',
+    );
+    assert.deepEqual(
+      helper.resolveClarifiedRecipients(
+        [
+          { identity: 'alice@example.com', role: 'bcc', aliases: ['alice@example.com', 'Alice'] },
+          { identity: 'bob@example.com', role: 'bcc', aliases: ['bob@example.com', 'Bob'] },
+        ],
+        {
+          target_kind: 'named',
+          recipients: [
+            { identity: 'alice@example.com', role: 'to' },
+            { identity: 'bob@example.com', role: 'to' },
+          ],
+        },
+        null,
+        'Put Alice and Bob in BCC',
+      ),
+      [
+        { identity: 'alice@example.com', role: 'bcc' },
+        { identity: 'bob@example.com', role: 'bcc' },
+      ],
+      'grouped role answer Put Alice and Bob in BCC must rebind both recipients to BCC',
+    );
+
+    // Negated delivery-role rejection tests:
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Do not move Alice to To', 'Alice', 'to'),
+      false,
+      'negated delivery-role phrase "Do not move Alice to To" must not authorize To for Alice',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, "Don't put Alice in To", 'Alice', 'to'),
+      false,
+      'negated delivery-role phrase "Don\'t put Alice in To" must not authorize To for Alice',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Never put Alice in BCC', 'Alice', 'bcc'),
+      false,
+      'negated delivery-role phrase "Never put Alice in BCC" must not authorize BCC for Alice',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Not To: Alice', 'Alice', 'to'),
+      false,
+      'negated prefix role "Not To: Alice" must not authorize To for Alice',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Do not move Alice and Bob to To', 'Alice', 'to'),
+      false,
+      'negated grouped role "Do not move Alice and Bob to To" must not authorize To for Alice',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Do not move Alice and Bob to To', 'Bob', 'to'),
+      false,
+      'negated grouped role "Do not move Alice and Bob to To" must not authorize To for Bob',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, '不要把Alice设为To', 'Alice', 'to'),
+      false,
+      'Chinese negated role "不要把Alice设为To" must not authorize To for Alice',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, '别把Alice移到To', 'Alice', 'to'),
+      false,
+      'Chinese negated role "别把Alice移到To" must not authorize To for Alice',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Do not move to To', 'Alice', 'to'),
+      false,
+      'negated single-clause answer without candidate spans must not authorize To',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Do not forward Alice to To', 'Alice', 'to'),
+      false,
+      'negated delivery-role phrase "Do not forward Alice to To" must not authorize To for Alice',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Forward Alice to To', 'Alice', 'to'),
+      true,
+      'affirmative phrase "Forward Alice to To" must authorize To for Alice',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'To: Alice; actually BCC: Alice', 'Alice', 'to'),
+      false,
+      'conflicting role phrase "To: Alice; actually BCC: Alice" must not authorize To for Alice',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'To: Alice; actually BCC: Alice', 'Alice', 'bcc'),
+      false,
+      'conflicting role phrase "To: Alice; actually BCC: Alice" must not authorize BCC for Alice',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Do not, under any circumstances, put Alice in To', 'Alice', 'to'),
+      false,
+      'emphasized denial across commas "Do not, under any circumstances, put Alice in To" must not authorize To for Alice',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Do not put anyone in To, especially Alice in To', 'Alice', 'to'),
+      false,
+      'comma following negated role phrase "Do not put anyone in To, especially Alice in To" must retain negation',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Do not put anyone in To, including Alice in To', 'Alice', 'to'),
+      false,
+      'comma following negated role phrase "Do not put anyone in To, including Alice in To" must retain negation',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Do not put anyone in CC, especially Alice in To', 'Alice', 'to'),
+      true,
+      'denial of CC must not negate affirmative role in To',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Do not put Bob in To, Alice in To', 'Alice', 'to'),
+      true,
+      'denial naming a different recipient must not negate Alice in To',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Do not put Bob in To, put Alice in To', 'Alice', 'to'),
+      true,
+      'denial naming Bob followed by affirmative verb must authorize Alice in To',
+    );
+    assert.deepEqual(
+      helper.resolveClarifiedRecipients(
+        [
+          { identity: 'alice@example.com', role: 'to', aliases: ['alice@example.com', 'Alice'] },
+        ],
+        {
+          target_kind: 'named',
+          recipients: [
+            { identity: 'alice@example.com', role: 'bcc' },
+          ],
+        },
+        null,
+        'To: Alice; actually BCC: Alice',
+      ),
+      [
+        { identity: 'alice@example.com', role: 'bcc' },
+      ],
+      'conflicting role mention "To: Alice; actually BCC: Alice" must reject rebinding and preserve prior BCC role',
+    );
+    assert.deepEqual(
+      helper.resolveClarifiedRecipients(
+        [
+          { identity: 'alice@example.com', role: 'to', aliases: ['alice@example.com', 'Alice'] },
+        ],
+        {
+          target_kind: 'named',
+          recipients: [
+            { identity: 'alice@example.com', role: 'bcc' },
+          ],
+        },
+        null,
+        'Do not move Alice to To',
+      ),
+      [
+        { identity: 'alice@example.com', role: 'bcc' },
+      ],
+      'negated role answer "Do not move Alice to To" must preserve previously authorized BCC role',
+    );
+    assert.deepEqual(
+      helper.resolveClarifiedRecipients(
+        [
+          { identity: 'alice@example.com', role: 'to', aliases: ['alice@example.com', 'Alice'] },
+          { identity: 'bob@example.com', role: 'to', aliases: ['bob@example.com', 'Bob'] },
+        ],
+        {
+          target_kind: 'named',
+          recipients: [
+            { identity: 'alice@example.com', role: 'bcc' },
+            { identity: 'bob@example.com', role: 'to' },
+          ],
+        },
+        null,
+        'Do not move Alice to To, keep Bob in To',
+      ),
+      [
+        { identity: 'alice@example.com', role: 'bcc' },
+        { identity: 'bob@example.com', role: 'to' },
+      ],
+      'answer with negated role for Alice and affirmative role for Bob must preserve Alice as BCC and Bob as To',
+    );
+    assert.deepEqual(
+      helper.resolveClarifiedRecipients(
+        [
+          { identity: 'bob@example.com', role: 'to', aliases: ['bob@example.com', 'Bob'] },
+          { identity: 'dan@example.com', role: 'bcc', aliases: ['dan@example.com', 'Dan'] },
+        ],
+        {
+          target_kind: 'named',
+          recipients: [
+            { identity: 'alice@example.com', role: 'to' },
+            { identity: 'carol@example.com', role: 'bcc' },
+          ],
+        },
+        null,
+        'Bob and Dan',
+      ),
+      [
+        { identity: 'bob@example.com', role: 'to' },
+        { identity: 'dan@example.com', role: 'bcc' },
+      ],
+      'replacement recipients must match compatible observed slots instead of swapping roles',
+    );
+
     assert.equal(helper.messageTargetMatchesObservedIdentities(
       { target_kind: 'named', recipients: ['Alice', 'bob@example.com'] },
       ['Alice'],
@@ -4974,6 +5408,539 @@ test('direct-message recipient guard uses structured intent and exact active ide
       assert.equal(unsafe?.noDispatch, true, `${label}: ${unsafeTool} bypassed recipient verification`);
       assert.equal(unsafe?.reasonCode, 'recipient_unverifiable_dispatch_path');
     }
+
+    // A read-only plan cannot bypass the recipient guard on an inconclusive click.
+    // Planner flags describe requested intent, not DOM effects: an unclassified
+    // control might be a Send button, so only a conclusively non-send action may proceed.
+    agent._planExecutionGuards.set(tabId, {
+      messaging: null, requiresSubmission: false, requiresStateChange: false,
+    });
+    probe = { success: true, conclusive: false, messageSend: null, identityCandidates: [] };
+    const readOnlyInconclusive = await agent._messageRecipientGuardBlock(
+      tabId,
+      'click_ax',
+      { ref_id: 'ref_expand_all' },
+      'https://mail.google.com/mail/u/0/#inbox/thread-1',
+      {},
+    );
+    assert.equal(readOnlyInconclusive?.blocked, true,
+      `${label}: read-only plan allowed an inconclusive click to bypass recipient guard`);
+    assert.equal(readOnlyInconclusive?.reasonCode, 'message_send_classification_inconclusive',
+      `${label}: inconclusive click did not fail closed`);
+
+    // The same read-only plan must still not deliver an actual message.
+    probe = {
+      success: true,
+      conclusive: true,
+      composerAvailable: true,
+      messageSend: true,
+      messageBody: 'Hello Alice',
+      messageBodyBaselineCount: 0,
+      identityCandidates: ['alice@example.com'],
+      strongIdentityCandidates: ['alice@example.com'],
+      messageRecipientDispatchBinding: { token: `read-only-send-${label}` },
+    };
+    const readOnlySend = await agent._messageRecipientGuardBlock(
+      tabId,
+      'click_ax',
+      { ref_id: 'ref_send' },
+      'https://mail.google.com/mail/u/0/#inbox/thread-1',
+      {},
+    );
+    assert.equal(readOnlySend?.blocked, true,
+      `${label}: read-only plan dispatched a conclusive message send`);
+    assert.equal(readOnlySend?.reasonCode, 'authorized_recipient_missing');
+
+    // A read-only plan must never stage recipient consent: an answer to a recipient
+    // clarify must not elevate a read-only plan into a send-capable one.
+    assert.equal(
+      agent._planExecutionGuards.get(tabId)?.observedRecipientCandidates,
+      null,
+      `${label}: read-only plan staged recipient candidates`,
+    );
+    assert.equal(
+      agent._planExecutionGuards.get(tabId)?.pendingRecipientAuthorization,
+      false,
+      `${label}: read-only plan staged pendingRecipientAuthorization`,
+    );
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'Reply to Alice (alice@example.com)'),
+      false,
+      `${label}: clarify answer elevated a read-only plan into an authorized sender`,
+    );
+    assert.equal(agent._planExecutionGuards.get(tabId)?.messaging, null);
+
+    // A plan without messaging authorization (e.g. submitting a LinkedIn application)
+    // must never stage recipient consent even when requiresSubmission and requiresStateChange
+    // are true: a recipient clarify must not authorize sending when the plan never requested it.
+    agent._planExecutionGuards.set(tabId, {
+      messaging: null,
+      requiresSubmission: true,
+      requiresStateChange: true,
+    });
+    const unrelatedSubmissionSendBlock = await agent._messageRecipientGuardBlock(
+      tabId,
+      'click_ax',
+      { ref_id: 'ref_send' },
+      'https://mail.google.com/mail/u/0/#inbox/thread-1',
+      {},
+    );
+    assert.equal(unrelatedSubmissionSendBlock?.blocked, true);
+    assert.equal(unrelatedSubmissionSendBlock?.reasonCode, 'authorized_recipient_missing');
+    assert.equal(
+      agent._planExecutionGuards.get(tabId)?.observedRecipientCandidates,
+      null,
+      `${label}: plan without messaging authorization staged recipient candidates`,
+    );
+    assert.equal(
+      agent._planExecutionGuards.get(tabId)?.pendingRecipientAuthorization,
+      false,
+      `${label}: plan without messaging authorization staged pendingRecipientAuthorization`,
+    );
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'Reply to Alice (alice@example.com)'),
+      false,
+      `${label}: clarify answer elevated an unrelated plan into an authorized sender`,
+    );
+    assert.equal(agent._planExecutionGuards.get(tabId)?.messaging, null);
+
+    // A messaging-authorized plan does stage consent for the clarify it asks for,
+    // and binds to the page-observed candidate rather than model-authored option text.
+    agent._planExecutionGuards.set(tabId, {
+      messaging: { target_kind: 'active_conversation', recipients: [] },
+      messagingConversationScope: 'thread-authorized',
+      requiresSubmission: true,
+      requiresStateChange: true,
+    });
+    const authorizedSendBlock = await agent._messageRecipientGuardBlock(
+      tabId,
+      'click_ax',
+      { ref_id: 'ref_send' },
+      'https://mail.google.com/mail/u/0/#inbox/thread-1',
+      {},
+    );
+    assert.equal(authorizedSendBlock?.blocked, true);
+    assert.deepEqual(
+      agent._planExecutionGuards.get(tabId)?.observedRecipientCandidates,
+      [{ identity: 'alice@example.com', role: 'to' }],
+      `${label}: blocked guard did not retain page-observed recipient candidates`,
+    );
+    assert.equal(agent._planExecutionGuards.get(tabId)?.pendingRecipientAuthorization, true,
+      `${label}: blocked guard did not stage consent for the clarify it asks for`);
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'Reply to Alice (alice@example.com)'),
+      true,
+      `${label}: a user answer naming an observed identity did not authorize it`,
+    );
+    assert.deepEqual(agent._planExecutionGuards.get(tabId)?.messaging, {
+      target_kind: 'named', recipients: [{ identity: 'alice@example.com', role: 'to' }],
+    }, `${label}: clarify authorization did not reach the recipient guard`);
+
+    const clarifyGuardState = candidates => ({
+      messaging: { target_kind: 'active_conversation', recipients: [] },
+      requiresSubmission: true,
+      requiresStateChange: true,
+      pendingRecipientAuthorization: true,
+      observedRecipientCandidates: candidates,
+    });
+    const aliceOnly = () => clarifyGuardState([{ identity: 'alice@example.com', role: 'to' }]);
+
+    agent._planExecutionGuards.set(tabId, aliceOnly());
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'Send it to mallory@evil.example'),
+      false,
+      `${label}: a recipient absent from the page was authorized by answer text alone`,
+    );
+    assert.deepEqual(agent._planExecutionGuards.get(tabId)?.messaging, {
+      target_kind: 'active_conversation', recipients: [],
+    });
+    // A failed match must consume the staged consent, not park it for whatever
+    // unrelated answer arrives next.
+    assert.equal(agent._planExecutionGuards.get(tabId)?.observedRecipientCandidates, null,
+      `${label}: a non-matching answer left recipient consent pending`);
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'alice@example.com'),
+      false,
+      `${label}: a later clarify inherited consent staged for an earlier one`,
+    );
+
+    // A timed-out or auto-selected clarify must consume staged consent without binding.
+    agent._planExecutionGuards.set(tabId, clarifyGuardState([{ identity: 'alice@example.com', role: 'to' }]));
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'alice@example.com', 'timeout'),
+      false,
+      `${label}: timed-out clarify bound a recipient`,
+    );
+    assert.equal(agent._planExecutionGuards.get(tabId)?.pendingRecipientAuthorization, false,
+      `${label}: timed-out clarify left pendingRecipientAuthorization true`);
+    assert.equal(agent._planExecutionGuards.get(tabId)?.observedRecipientCandidates, null,
+      `${label}: timed-out clarify left observedRecipientCandidates intact`);
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'alice@example.com'),
+      false,
+      `${label}: subsequent clarify inherited consent from timed-out clarify`,
+    );
+
+    agent._planExecutionGuards.set(tabId, clarifyGuardState([{ identity: 'alice@example.com', role: 'to' }]));
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'alice@example.com', 'auto'),
+      false,
+      `${label}: auto-selected clarify bound a recipient`,
+    );
+    assert.equal(agent._planExecutionGuards.get(tabId)?.pendingRecipientAuthorization, false,
+      `${label}: auto-selected clarify left pendingRecipientAuthorization true`);
+    assert.equal(agent._planExecutionGuards.get(tabId)?.observedRecipientCandidates, null,
+      `${label}: auto-selected clarify left observedRecipientCandidates intact`);
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'alice@example.com'),
+      false,
+      `${label}: subsequent clarify inherited consent from auto clarify`,
+    );
+
+    // Multi-recipient threads (e.g. Reply all): an answer naming all observed recipients
+    // authorizes the full recipient set.
+    agent._planExecutionGuards.set(tabId, clarifyGuardState([
+      { identity: 'alice@example.com', role: 'to' },
+      { identity: 'bob@example.com', role: 'to' },
+    ]));
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'alice@example.com and bob@example.com'),
+      true,
+      `${label}: an answer naming all observed recipients was rejected`,
+    );
+    assert.deepEqual(agent._planExecutionGuards.get(tabId)?.messaging, {
+      target_kind: 'named',
+      recipients: [
+        { identity: 'alice@example.com', role: 'to' },
+        { identity: 'bob@example.com', role: 'to' },
+      ],
+    }, `${label}: clarify authorization did not set full recipient set`);
+
+    // But naming only a subset of the observed recipients authorizes nothing.
+    agent._planExecutionGuards.set(tabId, clarifyGuardState([
+      { identity: 'alice@example.com', role: 'to' },
+      { identity: 'bob@example.com', role: 'to' },
+    ]));
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'Send it to alice@example.com'),
+      false,
+      `${label}: an incomplete recipient subset authorized a send target`,
+    );
+    assert.deepEqual(agent._planExecutionGuards.get(tabId)?.messaging, {
+      target_kind: 'active_conversation', recipients: [],
+    });
+
+    // Consent is staged for exactly one clarify. Without that scope, an answer
+    // to an unrelated question that merely mentions someone on the page would
+    // authorize sending to them.
+    agent._planExecutionGuards.set(tabId, {
+      messaging: { target_kind: 'active_conversation', recipients: [] },
+      requiresSubmission: true,
+      requiresStateChange: true,
+      observedRecipientCandidates: [{ identity: 'alice@example.com', role: 'to' }],
+    });
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'The one from alice@example.com'),
+      false,
+      `${label}: an unstaged clarify answer authorized a send target`,
+    );
+
+    // A display name's letters turning up inside an ordinary word is not the
+    // user naming that person.
+    agent._planExecutionGuards.set(tabId, clarifyGuardState([{ identity: 'Ann', role: 'to' }]));
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'I cannot decide'),
+      false,
+      `${label}: an incidental letter fragment authorized a recipient`,
+    );
+    agent._planExecutionGuards.set(tabId, clarifyGuardState([{ identity: 'Ann', role: 'to' }]));
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'Send it to Ann, please'),
+      true,
+      `${label}: a short identity the user actually named was rejected`,
+    );
+
+    // Short identities (< 3 chars) require exact full-string match to avoid substring false positives.
+    agent._planExecutionGuards.set(tabId, clarifyGuardState([{ identity: 'Li', role: 'to' }]));
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'Lisa'),
+      false,
+      `${label}: a prefix matching a short identity authorized the recipient`,
+    );
+    agent._planExecutionGuards.set(tabId, clarifyGuardState([{ identity: 'Li', role: 'to' }]));
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'Li'),
+      true,
+      `${label}: an exact match for a short identity was rejected`,
+    );
+
+    // Multi-recipient prefix collision resolution: non-overlapping distinct spans are required.
+    agent._planExecutionGuards.set(tabId, clarifyGuardState([
+      { identity: 'Ann', role: 'to' },
+      { identity: 'Ann Smith', role: 'to' },
+    ]));
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'Send to Ann Smith'),
+      false,
+      `${label}: a single mention satisfied both prefix candidate and full name in agent binding`,
+    );
+    agent._planExecutionGuards.set(tabId, clarifyGuardState([
+      { identity: 'Ann', role: 'to' },
+      { identity: 'Ann Smith', role: 'to' },
+    ]));
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'Send to Ann and Ann Smith'),
+      true,
+      `${label}: distinct mentions for prefix and full name were rejected`,
+    );
+
+    // Clarification context validation: unrelated clarify question must not authorize recipient,
+    // and must consume the staged consent.
+    agent._planExecutionGuards.set(tabId, clarifyGuardState([{ identity: 'alice@example.com', role: 'to' }]));
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'alice@example.com', 'user', {
+        question: 'Should I book the flight to New York?',
+      }),
+      false,
+      `${label}: unrelated clarify question authorized a send target`,
+    );
+    assert.equal(agent._planExecutionGuards.get(tabId)?.pendingRecipientAuthorization, false,
+      `${label}: unrelated clarify left pendingRecipientAuthorization true`);
+    assert.equal(agent._planExecutionGuards.get(tabId)?.observedRecipientCandidates, null,
+      `${label}: unrelated clarify left observedRecipientCandidates intact`);
+
+    // Valid message_recipient clarification context authorizes candidate.
+    agent._planExecutionGuards.set(tabId, clarifyGuardState([{ identity: 'alice@example.com', role: 'to' }]));
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'alice@example.com', 'user', {
+        question: 'Who should I send the message to?',
+        purpose: 'message_recipient',
+      }),
+      true,
+      `${label}: valid recipient clarification context was rejected`,
+    );
+
+    // Natural recipient question without explicit purpose (e.g. "Which contact should receive this message?").
+    agent._planExecutionGuards.set(tabId, clarifyGuardState([{ identity: 'alice@example.com', role: 'to' }]));
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'alice@example.com', 'user', {
+        question: 'Which contact should receive this message?',
+      }),
+      true,
+      `${label}: natural recipient question ("Which contact should receive this message?") was rejected`,
+    );
+
+    // Natural-language Chinese answer for CJK recipient.
+    agent._planExecutionGuards.set(tabId, clarifyGuardState([{ identity: '王小明', role: 'to' }]));
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, '请发送给王小明', 'user', {
+        question: '请确认要发送给哪位联系人？',
+      }),
+      true,
+      `${label}: natural Chinese clarification question/answer was rejected`,
+    );
+
+    // Multi-recipient Reply-all answer exceeding 240 characters.
+    const twelveAgentCandidates = Array.from({ length: 12 }, (_, i) => ({
+      identity: `colleague-user-${i + 1}@enterprise-company-domain.com`,
+      role: i === 0 ? 'to' : 'cc',
+    }));
+    const twelveAgentAnswer = `Send to: ${twelveAgentCandidates.map(c => c.identity).join(', ')}`;
+    assert.ok(twelveAgentAnswer.length > 240);
+    agent._planExecutionGuards.set(tabId, clarifyGuardState(twelveAgentCandidates));
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, twelveAgentAnswer, 'user', {
+        question: 'Who should receive this reply?',
+        purpose: 'message_recipient',
+      }),
+      true,
+      `${label}: multi-recipient reply-all answer exceeding 240 chars was rejected`,
+    );
+
+    // Recipient-change clarification check: when a target was already set, an explicit
+    // recipient_change context is required.
+    const recipientChangeGuardState = (candidates) => ({
+      messaging: { target_kind: 'named', recipients: [{ identity: 'bob@example.com', role: 'to' }] },
+      requiresSubmission: true,
+      requiresStateChange: true,
+      pendingRecipientAuthorization: 'recipient_change',
+      observedRecipientCandidates: candidates,
+    });
+
+    agent._planExecutionGuards.set(tabId, recipientChangeGuardState([{ identity: 'alice@example.com', role: 'to' }]));
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'alice@example.com', 'user', {
+        question: 'Who should I send the message to?',
+        purpose: 'message_recipient',
+      }),
+      false,
+      `${label}: standard recipient clarification authorized a recipient change`,
+    );
+
+    agent._planExecutionGuards.set(tabId, recipientChangeGuardState([{ identity: 'alice@example.com', role: 'to' }]));
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'alice@example.com', 'user', {
+        question: 'Do you want to switch recipient to Alice instead?',
+        purpose: 'recipient_change',
+      }),
+      true,
+      `${label}: explicit recipient change clarification was rejected`,
+    );
+    assert.deepEqual(agent._planExecutionGuards.get(tabId)?.messaging, {
+      target_kind: 'named',
+      recipients: [{ identity: 'alice@example.com', role: 'to' }],
+    }, `${label}: recipient change did not update target`);
+
+    // A mislabeled question with purpose: 'recipient_change' but lacking recipient-change semantics
+    // must never authorize changing the recipient.
+    agent._planExecutionGuards.set(tabId, recipientChangeGuardState([{ identity: 'alice@example.com', role: 'to' }]));
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'alice@example.com', 'user', {
+        question: 'Which colleague should present?',
+        purpose: 'recipient_change',
+      }),
+      false,
+      `${label}: mislabeled clarification question with purpose: recipient_change authorized recipient change`,
+    );
+
+    // A mislabeled question with purpose: 'message_recipient' must never authorize a standard recipient either.
+    agent._planExecutionGuards.set(tabId, clarifyGuardState([{ identity: 'alice@example.com', role: 'to' }]));
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'alice@example.com', 'user', {
+        question: 'Which colleague should present?',
+        purpose: 'message_recipient',
+      }),
+      false,
+      `${label}: mislabeled clarification question with purpose: message_recipient authorized recipient`,
+    );
+
+    // Role preservation during recipient-change clarification:
+    // A plan authorizing Alice as BCC when composer exposes Alice as To must retain BCC
+    // on an identity-only answer, preventing unauthorized exposure on next send.
+    const bccPlanState = {
+      messaging: { target_kind: 'named', recipients: [{ identity: 'alice@example.com', role: 'bcc' }] },
+      requiresSubmission: true,
+      requiresStateChange: true,
+      pendingRecipientAuthorization: 'recipient_change',
+      observedRecipientCandidates: [{ identity: 'alice@example.com', role: 'to' }],
+    };
+
+    agent._planExecutionGuards.set(tabId, { ...bccPlanState });
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'alice@example.com', 'user', {
+        question: 'Do you want to send to Alice instead?',
+        purpose: 'recipient_change',
+      }),
+      true,
+      `${label}: identity-confirmed clarify answer bound`,
+    );
+    assert.deepEqual(agent._planExecutionGuards.get(tabId)?.messaging, {
+      target_kind: 'named',
+      recipients: [{ identity: 'alice@example.com', role: 'bcc' }],
+    }, `${label}: identity-only answer must retain previously authorized BCC role`);
+
+    // Explicit role authorization in answer ("To: alice@example.com") updates the role to To.
+    agent._planExecutionGuards.set(tabId, { ...bccPlanState });
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'To: alice@example.com', 'user', {
+        question: 'Do you want to switch Alice to To?',
+        purpose: 'recipient_change',
+      }),
+      true,
+      `${label}: explicit role change clarification bound`,
+    );
+    assert.deepEqual(agent._planExecutionGuards.get(tabId)?.messaging, {
+      target_kind: 'named',
+      recipients: [{ identity: 'alice@example.com', role: 'to' }],
+    }, `${label}: explicit role answer must adopt the authorized To role`);
+
+    // Gmail recipient mismatch preserves observed candidates and stages recipient_change:
+    // When composer chips differ from the plan's authorized target, strongRecipientCandidates
+    // is empty, but observedRecipientCandidates carries the observed chips.
+    // The mismatch blocks dispatch, stages 'recipient_change', and clarification rebinds the target.
+    const mismatchPlanState = {
+      messaging: { target_kind: 'named', recipients: [{ identity: 'alice@example.com', role: 'to' }] },
+      requiresSubmission: true,
+      requiresStateChange: true,
+    };
+    agent._planExecutionGuards.set(tabId, { ...mismatchPlanState });
+    probe = {
+      success: true,
+      conclusive: true,
+      composerAvailable: true,
+      messageSend: true,
+      messageBody: 'Hello Bob',
+      messageBodyBaselineCount: 0,
+      strongRecipientCandidates: [],
+      observedRecipientCandidates: [{ identity: 'bob@example.com', role: 'to' }],
+    };
+    const mismatchSendBlock = await agent._messageRecipientGuardBlock(
+      tabId,
+      'click_ax',
+      { ref_id: 'ref_send' },
+      'https://mail.google.com/mail/u/0/#inbox/thread-1',
+      {},
+    );
+    assert.equal(mismatchSendBlock?.blocked, true, `${label}: mismatched Gmail recipient allowed dispatch`);
+    assert.equal(mismatchSendBlock?.reasonCode, 'active_recipient_unverified');
+    assert.equal(agent._planExecutionGuards.get(tabId)?.pendingRecipientAuthorization, 'recipient_change',
+      `${label}: mismatched Gmail recipient did not stage recipient_change authorization`);
+    assert.deepEqual(agent._planExecutionGuards.get(tabId)?.observedRecipientCandidates, [
+      { identity: 'bob@example.com', role: 'to' },
+    ], `${label}: mismatched Gmail recipient did not preserve observed candidates in guard`);
+
+    // Clarification answer naming the observed candidate successfully rebinds target:
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'Send to bob@example.com', 'user', {
+        question: 'The composer is addressed to Bob. Should I send to bob@example.com instead?',
+        purpose: 'recipient_change',
+      }),
+      true,
+      `${label}: clarify answer failed to rebind observed mismatched recipient`,
+    );
+    assert.deepEqual(agent._planExecutionGuards.get(tabId)?.messaging, {
+      target_kind: 'named',
+      recipients: [{ identity: 'bob@example.com', role: 'to' }],
+    }, `${label}: target was not rebound to clarified recipient`);
+
+    // Gmail display alias authorizes canonical email address on clarification:
+    agent._planExecutionGuards.set(tabId, { ...mismatchPlanState });
+    probe = {
+      success: true,
+      conclusive: true,
+      composerAvailable: true,
+      messageSend: true,
+      messageBody: 'Hello Bob',
+      messageBodyBaselineCount: 0,
+      strongRecipientCandidates: [],
+      observedRecipientCandidates: [
+        { identity: 'bob@example.com', role: 'to', aliases: ['bob@example.com', 'Bob'] },
+      ],
+    };
+    await agent._messageRecipientGuardBlock(
+      tabId,
+      'click_ax',
+      { ref_id: 'ref_send' },
+      'https://mail.google.com/mail/u/0/#inbox/thread-1',
+      {},
+    );
+    assert.deepEqual(agent._planExecutionGuards.get(tabId)?.observedRecipientCandidates, [
+      { identity: 'bob@example.com', role: 'to', aliases: ['bob@example.com', 'Bob'] },
+    ], `${label}: observed candidate with display aliases was not preserved in guard`);
+
+    // User answers with display name 'Bob' instead of full email 'bob@example.com':
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'Bob', 'user', {
+        question: 'The composer is addressed to Bob. Should I send to Bob instead?',
+        purpose: 'recipient_change',
+      }),
+      true,
+      `${label}: display name clarify answer failed to authorize candidate with matching alias`,
+    );
+    assert.deepEqual(agent._planExecutionGuards.get(tabId)?.messaging, {
+      target_kind: 'named',
+      recipients: [{ identity: 'bob@example.com', role: 'to' }],
+    }, `${label}: target was not rebound to canonical address when authorized via display alias`);
   }
 });
 
@@ -5392,16 +6359,27 @@ test('direct-message recipient probe accepts only a unique active-thread header 
     assert.deepEqual(Array.from(gmailMatchingNameResult.strongIdentityCandidates), ['Alice']);
     assert.deepEqual(Array.from(gmailWrongRecipientResult.strongIdentityCandidates), [],
       `${prefix}: mismatched Gmail recipient chip authorized dispatch`);
+    assert.deepEqual(JSON.parse(JSON.stringify(gmailWrongRecipientResult.observedRecipientCandidates)), [
+      { identity: 'alice@example.com', role: 'to', aliases: ['alice@example.com', 'Alice'] },
+    ], `${prefix}: mismatched Gmail recipient chip was not preserved as an observed candidate`);
     assert.deepEqual(Array.from(gmailMatchingSetResult.strongIdentityCandidates), ['Bob', 'alice@example.com'],
       `${prefix}: exact authorized Gmail recipient set was rejected`);
     assert.deepEqual(Array.from(gmailExtraRecipientResult.strongIdentityCandidates), [],
       `${prefix}: an unreviewed extra Gmail recipient authorized dispatch`);
+    assert.deepEqual(JSON.parse(JSON.stringify(gmailExtraRecipientResult.observedRecipientCandidates)), [
+      { identity: 'alice@example.com', role: 'to', aliases: ['alice@example.com', 'Alice'] },
+      { identity: 'bob@example.com', role: 'to', aliases: ['bob@example.com', 'Bob'] },
+    ], `${prefix}: extra Gmail recipient chips were not preserved as observed candidates`);
     assert.deepEqual(JSON.parse(JSON.stringify(gmailMatchingRoleResult.strongRecipientCandidates)), [
       { identity: 'alice@example.com', role: 'to' },
       { identity: 'Bob', role: 'bcc' },
     ], `${prefix}: exact Gmail To/BCC authorization was rejected`);
     assert.deepEqual(Array.from(gmailWrongRoleResult.strongRecipientCandidates), [],
       `${prefix}: moving a Gmail BCC recipient into To authorized dispatch`);
+    assert.deepEqual(JSON.parse(JSON.stringify(gmailWrongRoleResult.observedRecipientCandidates)), [
+      { identity: 'alice@example.com', role: 'to', aliases: ['alice@example.com', 'Alice'] },
+      { identity: 'bob@example.com', role: 'bcc', aliases: ['bob@example.com', 'Bob'] },
+    ], `${prefix}: Gmail role mismatch did not preserve observed candidates`);
     assert.equal(gmailManyRecipientsResult.strongRecipientCandidates.length, 12,
       `${prefix}: Gmail probe truncated 12 supported recipients to 8`);
     assert.equal(gmailManyRecipientsResult.strongIdentityCandidates.length, 12);
@@ -9132,6 +10110,29 @@ test('whole-thread reads require deterministic terminal page coverage in both br
     assert.equal(gmailState.expansionConfirmed, true, `${label}: fresh Collapse all evidence was not recorded`);
     assert.equal(runtime.readCompletenessBlock(gmailState), null, `${label}: expanded, fully paged trusted Gmail thread remained blocked`);
 
+    // A single-message thread exposes neither Expand all nor Collapse all, so
+    // Gmail reports 'not_applicable'. Treating that as "not checked yet" left
+    // done() permanently blocked on a thread that was already fully read.
+    let singleMessageState = runtime.createReadCompletenessState(`${label}-gmail-single-message`, true, true, 'gmail');
+    const singleMessageArgs = {
+      filter: 'all', maxDepth: 15, maxChars: 12000, ref_id: gmailRootRef, page: 1,
+    };
+    singleMessageState = runtime.recordReadCompleteness(singleMessageState, 'get_accessibility_tree', singleMessageArgs, {
+      pageContent: 'main\n listitem "Chaitanya Surneddi <yourchaitu@gmail.com>"',
+      page: 1,
+      totalChars: 1200,
+      hasMore: false,
+      truncated: false,
+      continuationArgs: null,
+      conversationRootRefId: gmailRootRef,
+      conversationExpansionState: 'not_applicable',
+      treeRevision: gmailRevisionA,
+    });
+    assert.equal(singleMessageState.expansionConfirmed, true, `${label}: a thread with nothing to expand was treated as unverified`);
+    assert.equal(singleMessageState.complete, true, `${label}: single-message Gmail thread never reached complete coverage`);
+    assert.equal(runtime.readCompletenessBlock(singleMessageState, 6000, { mode: 'act' }), null, `${label}: single-message Gmail thread stayed blocked behind an Expand all that does not exist`);
+    assert.equal(runtime.readCompletenessLimitation(singleMessageState, 'ask'), null, `${label}: Ask reported a collapsed-thread limitation with nothing collapsed`);
+
     // Reproduce the Gmail trace where the model carried a document/subtree
     // revision into page 1. Page 1 is a fresh snapshot boundary, so that stale
     // revision must not keep the accepted page ledger permanently empty.
@@ -10211,6 +11212,61 @@ test('trace UI: unknown kinds render a placeholder instead of the generic note v
   }
 });
 
+test('Gmail expansion detection separates nothing-to-expand from not-yet-checked', () => {
+  for (const prefix of ['src/chrome', 'src/firefox']) {
+    const source = fs.readFileSync(path.join(ROOT, prefix, 'src/content/accessibility-tree.js'), 'utf8');
+    const start = source.indexOf('function gmailConversationExpansionControlState(');
+    const end = source.indexOf('function findGmailConversationExpandAll(', start);
+    assert.ok(start >= 0 && end > start, `${prefix}: expansion detection should remain independently testable`);
+
+    const control = (name, attributes = {}) => ({
+      getAttribute: key => attributes[key] || '',
+      closest: () => null,
+      __name: name,
+    });
+    const rootWith = (controls, messages = [{}]) => ({
+      querySelectorAll: selector => {
+        if (typeof selector === 'string' && (selector.includes('button') || selector.includes('[role="button"]'))) {
+          return controls;
+        }
+        return messages;
+      },
+    });
+
+    const build = ({ route = true, visible = () => true } = {}) => {
+      const factory = new Function(
+        'isGmailConversationRoute', 'isVisible', 'getAccessibleName',
+        `${source.slice(start, end)}\nreturn detectGmailConversationExpansionState;`,
+      );
+      return factory(() => route, visible, el => el?.__name || '');
+    };
+
+    const detect = build();
+    // A single-message thread exposes neither control. That is proof there is
+    // nothing collapsed, not an unfinished check.
+    assert.equal(detect(rootWith([control('Reply'), control('Print all')])), 'not_applicable',
+      `${prefix}: a thread with no expansion control did not report not_applicable`);
+    assert.equal(detect(rootWith([control('Reply'), control('Print all')], [{}, {}])), null,
+      `${prefix}: multi-message thread missing controls should not report not_applicable`);
+    assert.equal(detect(rootWith([control('Reply'), control('Print all')], [])), null,
+      `${prefix}: thread with unknown message structure should not report not_applicable`);
+    assert.equal(detect(rootWith([control('Expand all')])), 'collapsed',
+      `${prefix}: a collapsed thread was misreported`);
+    assert.equal(detect(rootWith([control('Collapse all')])), 'expanded',
+      `${prefix}: an expanded thread was misreported`);
+    assert.equal(detect(rootWith([control('x', { jsname: 'tRarif' })])), 'collapsed',
+      `${prefix}: localized collapsed markup was misreported`);
+
+    // Off a conversation route, or when the scan itself throws, the detector
+    // must stay silent rather than claim there is nothing to expand.
+    assert.equal(build({ route: false })(rootWith([])), null,
+      `${prefix}: expansion state was reported outside a conversation route`);
+    const throwing = build({ visible: () => { throw new Error('detached'); } });
+    assert.equal(throwing(rootWith([control('Reply')])), null,
+      `${prefix}: an aborted scan reported nothing-to-expand`);
+  }
+});
+
 test('accessibility-tree schema and prompts preserve exact whole-document continuations', () => {
   const chromeSource = fs.readFileSync(path.join(ROOT, 'src/chrome/src/content/accessibility-tree.js'), 'utf8');
   const firefoxSource = fs.readFileSync(path.join(ROOT, 'src/firefox/src/content/accessibility-tree.js'), 'utf8');
@@ -10229,6 +11285,8 @@ test('accessibility-tree schema and prompts preserve exact whole-document contin
   assert.match(chromeSource, /conversationExpansionState/, 'Gmail expansion evidence is not returned as structured metadata');
   assert.match(chromeSource, /function gmailConversationExpansionControlState\(control\) \{[\s\S]*?jsname === 'xvWlrc'[\s\S]*?jsname === 'tRarif'[\s\S]*?name === 'Collapse all'[\s\S]*?name === 'Expand all'/, 'Gmail expansion detection still depends exclusively on English labels');
   assert.match(chromeSource, /closest\('\[role="listitem"\],\[role="article"\],\.adn,\.ads'\)/, 'message-body controls can spoof Gmail expansion evidence');
+  assert.match(chromeSource, /return \(scanned && isSingleMessageGmailThread\(conversationRoot\)\) \? 'not_applicable' : null;/, 'Gmail expansion detection cannot report a thread with nothing to expand');
+  assert.match(chromeSource, /!msg\.closest\?\.\('\.a3s,\.ii'\)[\s\S]*?!msg\.parentElement\.closest\?\.\('\.adn,\.ads,\[data-message-id\]'\)/, 'single-message thread detection must filter out nested descendants and message-body elements');
 
   for (const [label, getTools, prompt] of [
     ['chrome', getToolsForModeCh, SYSTEM_PROMPT_ASK_CH],
@@ -47881,18 +48939,22 @@ test('selection shortcut is shipped, enabled by default, and keeps browser-speci
   const chromeBg = fs.readFileSync(path.join(ROOT, 'src/chrome/src/background.js'), 'utf8');
   const chromeStart = chromeBg.indexOf("if (msg?.type !== 'WB_SELECTION_SHORTCUT_SUBMIT') return;");
   const chromeEnd = chromeBg.indexOf('// (See the panel visibility comment', chromeStart);
-  const chromeHandler = chromeBg.slice(chromeStart, chromeEnd);
+  const chromePromptStart = chromeBg.indexOf('function queueSelectionShortcutPrompt(');
+  const chromeHandler = chromeBg.slice(chromePromptStart, chromeEnd);
   const chromeOpen = chromeHandler.indexOf('openSidePanelForContextMenu(tab);');
   const chromeSave = chromeHandler.indexOf('await contextMenuStorage.save(tab.id, payload);');
   assert.notEqual(chromeStart, -1, 'chrome: selection shortcut listener missing');
+  assert.notEqual(chromePromptStart, -1, 'chrome: shared selection prompt handler missing');
   assert.equal(chromeOpen !== -1 && chromeSave !== -1 && chromeOpen < chromeSave, true, 'chrome: side panel must open before prompt storage awaits');
   assert.match(chromeHandler, /requiresManualOpen: false/, 'chrome: successful shortcut response should not require manual opening');
 
   const firefoxBg = fs.readFileSync(path.join(ROOT, 'src/firefox/src/background.js'), 'utf8');
   const firefoxStart = firefoxBg.indexOf("if (msg?.type !== 'WB_SELECTION_SHORTCUT_SUBMIT') return;");
   const firefoxEnd = firefoxBg.indexOf('// Forget the per-window mapping', firefoxStart);
-  const firefoxHandler = firefoxBg.slice(firefoxStart, firefoxEnd);
+  const firefoxPromptStart = firefoxBg.indexOf('function queueFirefoxSelectionShortcutPrompt(');
+  const firefoxHandler = firefoxBg.slice(firefoxPromptStart, firefoxEnd);
   assert.notEqual(firefoxStart, -1, 'firefox: selection shortcut listener missing');
+  assert.notEqual(firefoxPromptStart, -1, 'firefox: shared selection prompt handler missing');
   assert.doesNotMatch(firefoxHandler, /openSidebarForContextMenu\(/, 'firefox: injected page click must not attempt restricted sidebar opening');
   assert.match(firefoxHandler, /requiresManualOpen: true/, 'firefox: shortcut response should request the manual-open hint');
   assert.match(firefoxHandler, /await contextMenuStorage\.save\(tab\.id, payload\);[\s\S]*?notifySidePanelOfContextMenuPrompt\(payload\);/, 'firefox: shortcut should persist before notifying the sidebar');
@@ -85871,6 +86933,91 @@ test('YouTube metadata success requires exact app-classified post-save readback'
   }
 });
 
+test('completion evidence still requires the reported document to be the observed one', () => {
+  for (const AgentClass of [AgentCh, AgentFx]) {
+    const agent = new AgentClass({ getVisionProvider: async () => null });
+    const tabId = 8801;
+    const pageState = { relevantFormCount: 0, successMessages: [] };
+    const postUrl = 'https://bsky.app/profile/webbrain-one.bsky.social/post/3mutnbiq6d22s';
+    const submitState = (overrides = {}) => ({
+      originatingUrl: 'https://bsky.app/',
+      currentUrl: postUrl,
+      submitLike: true,
+      dispatched: true,
+      documentChanged: true,
+      formValidationFailed: false,
+      completionSignalObserved: false,
+      observedAfterSubmit: true,
+      ...overrides,
+    });
+
+    // The supported route for a single-page app publish: read the resulting
+    // page, which moves currentUrl to it, then call done from there. This is
+    // what the job-free completion block now tells the model to do.
+    agent._completionSubmitStates.set(tabId, submitState());
+    assert.equal(
+      agent._completionSubmissionEvidence(tabId, pageState, postUrl).verifiedFinalSubmit,
+      true,
+      `${AgentClass.name}: reading the resulting page did not produce completion evidence`,
+    );
+
+    // Reaching a page that merely looks like a published resource proves
+    // nothing on its own. Without a payload check there is no way to tell the
+    // resource this run published from a pre-existing one, so an unobserved
+    // destination must not stand in for the submitted document.
+    agent._completionSubmitStates.set(tabId, submitState({ currentUrl: 'https://bsky.app/' }));
+    assert.equal(
+      agent._completionSubmissionEvidence(tabId, pageState, postUrl).verifiedFinalSubmit,
+      false,
+      `${AgentClass.name}: an unobserved post-shaped URL stood in for the submitted document`,
+    );
+    assert.equal(
+      agent._completionSubmissionEvidence(tabId, pageState, 'https://bsky.app/home').verifiedFinalSubmit,
+      false,
+      `${AgentClass.name}: an unrelated same-origin route stood in for the submitted document`,
+    );
+
+    // The rest of the contract is unchanged.
+    agent._completionSubmitStates.set(tabId, submitState({ observedAfterSubmit: false }));
+    assert.equal(
+      agent._completionSubmissionEvidence(tabId, pageState, postUrl).verifiedFinalSubmit,
+      false,
+      `${AgentClass.name}: a submit with no observation after it was accepted`,
+    );
+    agent._completionSubmitStates.set(tabId, submitState({
+      currentUrl: 'https://bsky.app/',
+      documentChanged: false,
+    }));
+    assert.equal(
+      agent._completionSubmissionEvidence(tabId, pageState, 'https://bsky.app/').verifiedFinalSubmit,
+      false,
+      `${AgentClass.name}: an unchanged page after a submit-like click counted as completion`,
+    );
+  }
+});
+
+test('a submit block names a workflow job only when one was selected', () => {
+  for (const relPath of [
+    'src/chrome/src/agent/agent.js',
+    'src/firefox/src/agent/agent.js',
+  ]) {
+    const source = fs.readFileSync(path.join(ROOT, relPath), 'utf8');
+    // With no site workflow selected there is no job contract to point at.
+    // The old `|| 'workflow'` fallback sent the model looking for the terminal
+    // state of a job that never existed, which it could not produce.
+    assert.doesNotMatch(
+      source,
+      /The selected \$\{state\.siteWorkflow\?\.job\?\.id \|\| 'workflow'\} job requires terminal evidence/,
+      `${relPath}: the submit block still invents a workflow job when none was selected`,
+    );
+    assert.match(
+      source,
+      /This task requires a submit\/send\/publish\/commit action, and the page state read at completion does not yet show it took effect\./,
+      `${relPath}: missing the job-free submit recovery instruction`,
+    );
+  }
+});
+
 test('adapter workflow execution policy is bounded and mirrored', () => {
   const selected = resolveAdapterWorkflowJob(
     'https://forms.cloud.microsoft/pages/responsepage.aspx?id=x',
@@ -93750,7 +94897,12 @@ test('Chrome click paths suppress native file choosers and redirect to upload_fi
     assert.match(source, /const installPageShowPickerGuard = \(\) =>/, `${relPath}: missing page-world showPicker bridge handshake`);
     assert.match(source, /webbrain:file-picker-guard-arm/, `${relPath}: missing page-world showPicker arm event`);
     assert.match(source, /webbrain:file-picker-guard-blocked/, `${relPath}: missing page-world blocked result event`);
-    assert.match(source, /cleanupPageShowPickerGuard\?\.\(!!state\.blocked\)/, `${relPath}: delayed programmatic guard should survive an empty consume`);
+    // The page-world guard must outlive the consume in BOTH directions. An app
+    // that retries its upload affordance on a timer would otherwise open a real
+    // OS chooser on the retry — one nothing can close, which then sits on
+    // screen for the rest of the run while upload_file attaches the file.
+    assert.match(source, /cleanupPageShowPickerGuard\?\.\(false\)/, `${relPath}: delayed programmatic guard should survive a consume whether or not it intercepted`);
+    assert.doesNotMatch(source, /cleanupPageShowPickerGuard\?\.\(!!state\.blocked\)/, `${relPath}: an interception must not disarm the guard that stops the retry`);
     assert.match(source, /clickWithoutNativeFilePicker\(\(\) => el\.click\(\)\)/, `${relPath}: synthetic clicks should use the chooser guard`);
     assert.match(source, /_filePickerGuardId:\s*filePickerGuard\.guardId/, `${relPath}: click response should return without waiting on the unloading document`);
     assert.match(source, /'consume_file_picker_guard':\s*\(\) => consumeFilePickerGuard/, `${relPath}: missing deferred guard result handshake`);
@@ -97045,6 +98197,8 @@ test('planner: prompt treats page context as untrusted data', () => {
   assert.match(PLANNER_SYSTEM_PROMPT, /Classify read_scope semantically across any language/i);
   assert.match(PLANNER_SYSTEM_PROMPT, /currently open draft\/reply itself[\s\S]*review, proofread, rewrite, or critique/i);
   assert.match(PLANNER_SYSTEM_PROMPT, /Do not choose complete_thread merely because the target is an email reply or draft/i);
+  assert.match(PLANNER_SYSTEM_PROMPT, /Unless the task materially requires complete_thread.*currently open email or message in the singular/i);
+  assert.match(PLANNER_INTENT_SYSTEM_PROMPT, /Unless the task materially requires complete_thread.*currently open email or message in the singular/i);
   assert.match(PLANNER_SYSTEM_PROMPT, /respond must not include steps that need page, browser, network, memory, or scheduling tools/i);
   assert.match(PLANNER_SYSTEM_PROMPT, /Do not speculate that required personal information is missing/i);
   assert.match(PLANNER_SYSTEM_PROMPT, /classify execute and include a conditional clarify step after inspection/i);

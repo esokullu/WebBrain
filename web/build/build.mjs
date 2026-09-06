@@ -235,6 +235,7 @@ const STRIPE_SUBSCRIBE_URL = 'https://buy.stripe.com/bJebJ13at2kc5XP7eY8g00a';
 const MASTODON_PROFILE_URL = 'https://mastoturk.org/@webbrain';
 const BLUESKY_PROFILE_URL = 'https://bsky.app/profile/webbrain-one.bsky.social';
 const DISCORD_INVITE_URL = 'https://discord.gg/cgC325ssfw';
+const HUGGINGFACE_PROFILE_URL = 'https://huggingface.co/webbrain-one';
 
 function escHtml(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({
@@ -586,6 +587,7 @@ async function main() {
       'social.mastodon_url': MASTODON_PROFILE_URL,
       'social.bluesky_url': BLUESKY_PROFILE_URL,
       'social.discord_url': DISCORD_INVITE_URL,
+      'social.huggingface_url': HUGGINGFACE_PROFILE_URL,
     };
 
     const { html, missing } = applyTemplate(template, dict, locale);

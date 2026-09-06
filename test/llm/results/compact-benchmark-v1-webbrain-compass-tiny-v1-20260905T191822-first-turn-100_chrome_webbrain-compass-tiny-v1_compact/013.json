@@ -1,0 +1,28 @@
+{
+  "id": "013",
+  "user": "open the about config page",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 2894,
+  "error": null,
+  "firstToolCall": {
+    "name": "navigate",
+    "args": {
+      "url": "about:config"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "finishReason": "tool_calls",
+  "content": "The user wants me to open the about config page. The current page is about:home with title \"New Tab\". I need to navigate to the about config page.\n\nLet me use the navigate tool to go to the about config page. The URL would be about:config.</think>",
+  "usage": {
+    "prompt_tokens": 9725,
+    "total_tokens": 9795,
+    "completion_tokens": 70,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

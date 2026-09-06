@@ -1,0 +1,61 @@
+{
+  "id": "076",
+  "category": "cross-lingual",
+  "description": "Chinese site. The agent must use 搜索 (search) not English.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 5049,
+  "error": null,
+  "firstToolCall": {
+    "name": "set_field",
+    "args": {
+      "ref_id": "ref_5",
+      "submit": true,
+      "text": "lo-fi study"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "click_ax",
+      "args": {
+        "ref_id": "ref_5"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click({text:\"Search\"})",
+        "reason": "Chinese UI — search input has placeholder 搜索, not \"Search\"."
+      }
+    ],
+    "successRubric": "Click the Chinese searchbox via ref_id. Then type the query."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "\n\nI can see the search box on Bilibili. Let me click on it and search for \"lo-fi",
+  "usage": {
+    "prompt_tokens": 9057,
+    "completion_tokens": 82,
+    "total_tokens": 9139,
+    "cost": 0.00051025,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.00051025,
+      "upstream_inference_prompt_cost": 0.00045285,
+      "upstream_inference_completions_cost": 0.0000574
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 1,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}

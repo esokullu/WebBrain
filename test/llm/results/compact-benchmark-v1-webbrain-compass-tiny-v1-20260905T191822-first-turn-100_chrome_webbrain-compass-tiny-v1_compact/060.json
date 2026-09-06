@@ -1,0 +1,28 @@
+{
+  "id": "060",
+  "user": "find 3 wireless earbuds under $100",
+  "mode": "act",
+  "tab": {
+    "url": "https://www.amazon.com/",
+    "title": "Amazon.com"
+  },
+  "latencyMs": 1710,
+  "error": null,
+  "firstToolCall": {
+    "name": "click_ax",
+    "args": {
+      "ref_id": "ref_1234567890"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "finishReason": "tool_calls",
+  "content": "The user wants me to find 3 wireless earbuds under $100 on Amazon. I should use the search functionality on Amazon to find relevant products. Let me search for wireless earbuds under $100.</think>",
+  "usage": {
+    "prompt_tokens": 9844,
+    "total_tokens": 9906,
+    "completion_tokens": 62,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

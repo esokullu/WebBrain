@@ -1,0 +1,21 @@
+{
+  "runTag": "compact-benchmark-v1-liquid-lfm-2.5-2.6b-free-20260905T193719-smoke",
+  "model": "liquid/lfm-2.5-2.6b:free",
+  "browser": "chrome",
+  "base": "https://openrouter.ai/api/v1",
+  "saveRequest": false,
+  "tier": "compact",
+  "modeOverride": null,
+  "chatTemplateCompat": "off",
+  "structuredToolsSent": true,
+  "reasoningEffort": null,
+  "freeze": null,
+  "cases": 5,
+  "totalLatencyMs": 3655,
+  "errors": 0,
+  "withToolCall": 5,
+  "withToolCallFromContent": 0,
+  "byTool": {
+    "get_accessibility_tree": 5
+  }
+}

@@ -335,6 +335,7 @@
   "social.mastodon_label": "Mastodon-এ WebBrain",
   "social.bluesky_label": "Bluesky-এ WebBrain",
   "social.discord_label": "Discord-এ WebBrain",
+  "social.huggingface_label": "Hugging Face-এ WebBrain",
   "footer.copyright_html": "© 2026 WebBrain। <a href=\"https://emresokullu.com\" target=\"_blank\">এমরে সোকুল্লু</a> ও <a href=\"https://github.com/webbrain-one/webbrain/graphs/contributors\" target=\"_blank\">অবদানকারীদের</a> দ্বারা নির্মিত.",
   "footer.link_github": "GitHub",
   "footer.link_privacy": "গোপনীয়তা নীতি",

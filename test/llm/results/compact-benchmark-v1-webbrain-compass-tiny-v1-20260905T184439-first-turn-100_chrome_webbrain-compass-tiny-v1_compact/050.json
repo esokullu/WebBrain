@@ -1,0 +1,23 @@
+{
+  "id": "050",
+  "user": "reply to this",
+  "mode": "act",
+  "tab": {
+    "url": "https://mail.google.com/mail/u/0/#inbox/abc123",
+    "title": "Invoice from Acme — Gmail"
+  },
+  "latencyMs": 2993,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "finishReason": "stop",
+  "content": "The user wants me to reply to the invoice from Acme that's currently open in Gmail. The invoice is titled \"Invoice from Acme\" and the sender is Acme.\n\nI should:\n1. Reply to the invoice\n2. Ask for clarification on what the invoice is for\n3. Request the invoice amount and due date\n4. Ask for the invoice number\n5. Keep the tone professional and helpful\n\nI should not:\n- Click Send\n- Make assumptions about the invoice\n- Provide a specific amount or due date\n- Send the invoice to anyone\n\nLet me draft a professional reply.</think><|tool_call_start|>[click_ax(ref_id='ref_1')]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 10501,
+    "total_tokens": 10643,
+    "completion_tokens": 142,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

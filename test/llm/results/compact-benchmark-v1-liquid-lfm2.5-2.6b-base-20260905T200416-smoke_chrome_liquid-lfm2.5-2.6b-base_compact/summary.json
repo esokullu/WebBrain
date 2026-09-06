@@ -1,0 +1,23 @@
+{
+  "runTag": "compact-benchmark-v1-liquid-lfm2.5-2.6b-base-20260905T200416-smoke",
+  "model": "liquid-lfm2.5-2.6b-base",
+  "browser": "chrome",
+  "base": "http://127.0.0.1:8325/v1",
+  "saveRequest": false,
+  "tier": "compact",
+  "modeOverride": null,
+  "chatTemplateCompat": "off",
+  "structuredToolsSent": true,
+  "reasoningEffort": null,
+  "freeze": null,
+  "cases": 5,
+  "totalLatencyMs": 8808,
+  "errors": 0,
+  "withToolCall": 5,
+  "withToolCallFromContent": 0,
+  "byTool": {
+    "navigate": 2,
+    "read_page": 2,
+    "fetch_url": 1
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "id": "013",
+  "category": "tool-error-pivot",
+  "description": "click returned overlay-blocked. Dismiss the overlay, don't force the click.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 5729,
+  "error": null,
+  "firstToolCall": {
+    "name": "get_accessibility_tree",
+    "args": {
+      "filter": "visible"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "press_keys",
+      "args": {
+        "key": "Escape"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click({text:\"Add to Cart\"})",
+        "reason": "Will hit the overlay again."
+      },
+      {
+        "match": "click({x:_,y:_})",
+        "reason": "Force-clicking with coords hits the overlay per the error message."
+      }
+    ],
+    "successRubric": "Dismiss the overlay first — Escape, click the close button, or complete the modal. THEN retry the cart click."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "Let me check what's blocking the button",
+  "usage": {
+    "prompt_tokens": 9092,
+    "completion_tokens": 67,
+    "total_tokens": 9159,
+    "cost": 0.0005015,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.0005015,
+      "upstream_inference_prompt_cost": 0.0004546,
+      "upstream_inference_completions_cost": 0.0000469
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 27,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}

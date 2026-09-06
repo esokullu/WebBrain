@@ -1,0 +1,52 @@
+{
+  "id": "001",
+  "category": "loop-bad-url",
+  "description": "Hallucinated URL (mastodon.turk) resolved to an error page. The agent must re-evaluate, not retry.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 3930,
+  "error": null,
+  "firstToolCall": {
+    "name": "get_accessibility_tree",
+    "args": {
+      "filter": "all",
+      "maxDepth": 10,
+      "maxChars": 6000,
+      "ref_id": "",
+      "page": 1,
+      "tree_revision": "",
+      "continuationArgs": {}
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "clarify",
+      "args": {
+        "question": "I navigated to mastodon.turk but the page title is \"Server not found\" — that doesn't look like a real Mastodon instance. Is the URL actually mastoturk.org, or something else?"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "navigate({url:\"https://mastodon.turk\"})",
+        "reason": "Retrying the exact same broken URL — the failure mode observed in gpt-4o trace 9ckqpf."
+      },
+      {
+        "match": "fetch_url({url:\"https://mastodon.turk\"})",
+        "reason": "Same URL via a different tool — still a retry."
+      }
+    ],
+    "successRubric": "Must recognize \"Server not found\" title means the URL is dead. Acceptable: clarify with user, search for real URL, OR try ONE plausible variant like mastoturk.org. Anti-pattern: any retry of mastodon.turk through any tool."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The user is asking if the MastoTurk page has loaded. I should check the current page context to see if it's loaded.</think>",
+  "usage": {
+    "prompt_tokens": 9855,
+    "total_tokens": 9923,
+    "completion_tokens": 68,
+    "prompt_tokens_details": null
+  }
+}

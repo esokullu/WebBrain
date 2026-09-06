@@ -1,0 +1,59 @@
+{
+  "id": "042",
+  "category": "counter-polarity",
+  "description": "Mastodon counter shows \"251\" (positive) — 251 chars remaining. Safe to submit.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 4701,
+  "error": null,
+  "firstToolCall": {
+    "name": "click_ax",
+    "args": {
+      "ref_id": "ref_10"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "click",
+      "args": {
+        "text": "Gönder"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "set_field({ref_id:\"ref_8\", clear:true, text:\"...\"})",
+        "reason": "Shortening again — but 251 means 251 remaining, not 251 over. gpt-4o xpx9t9 misread this exact case."
+      }
+    ],
+    "successRubric": "Positive number on the counter = chars REMAINING (Mastodon). 251 means safe. Submit via click on \"Gönder\"."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "\n\nNow I'll click the \"Gönder\" (Post) button to publish.",
+  "usage": {
+    "prompt_tokens": 9155,
+    "completion_tokens": 116,
+    "total_tokens": 9271,
+    "cost": 0.00053895,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.00053895,
+      "upstream_inference_prompt_cost": 0.00045775,
+      "upstream_inference_completions_cost": 0.0000812
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 65,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}

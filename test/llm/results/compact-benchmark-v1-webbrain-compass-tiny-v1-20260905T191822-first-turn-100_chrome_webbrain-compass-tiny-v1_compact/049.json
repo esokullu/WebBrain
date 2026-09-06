@@ -1,0 +1,30 @@
+{
+  "id": "049",
+  "user": "compose an email to alice@example.com",
+  "mode": "act",
+  "tab": {
+    "url": "https://mail.google.com/mail/u/0/#inbox",
+    "title": "Inbox (3) — Gmail"
+  },
+  "latencyMs": 2641,
+  "error": null,
+  "firstToolCall": {
+    "name": "set_field",
+    "args": {
+      "ref_id": "ref_1",
+      "text": "Hi Alice,\n\nI hope you’re doing well. I wanted to reach out and see if there’s anything I can help you with.\n\nBest regards,\n[Your Name]",
+      "clear": true
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "finishReason": "tool_calls",
+  "content": "The user wants me to compose an email to alice@example.com. I need to use the compose email tool with the recipient's email address. I should not send the email yet - I should compose it first and then ask the user to confirm before sending.</think>",
+  "usage": {
+    "prompt_tokens": 10503,
+    "total_tokens": 10612,
+    "completion_tokens": 109,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

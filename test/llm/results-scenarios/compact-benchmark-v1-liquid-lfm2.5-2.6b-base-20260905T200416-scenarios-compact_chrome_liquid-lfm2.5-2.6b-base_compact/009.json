@@ -1,0 +1,42 @@
+{
+  "id": "009",
+  "category": "loop-bad-url",
+  "description": "Tenant URL but no auth/permission — refresh or retry won't help.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 2104,
+  "error": null,
+  "firstToolCall": {
+    "name": "read_page",
+    "args": {
+      "url": "https://my-tenant.notion.site/"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "done",
+      "args": {
+        "summary": "The Notion workspace at my-tenant.notion.site is saying \"You don't have access\". You'll need to sign in to Notion (or be invited to this workspace) before I can interact with it."
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "navigate({url:\"https://my-tenant.notion.site/\"})",
+        "reason": "Refreshing won't produce a different result."
+      }
+    ],
+    "successRubric": "Report the access wall to the user, do not loop."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The user is trying to access their Notion workspace at \"my-tenant.notion.site/\". The navigation was successful, but the page title says \"You don't have access\" - which suggests the user might not have the proper permissions or the workspace might be private.\n\nLet me try to access the page directly to see what's happening. I'll use the read_page tool to get more information about the page content.</think>",
+  "usage": {
+    "prompt_tokens": 9841,
+    "total_tokens": 9950,
+    "completion_tokens": 109,
+    "prompt_tokens_details": null
+  }
+}

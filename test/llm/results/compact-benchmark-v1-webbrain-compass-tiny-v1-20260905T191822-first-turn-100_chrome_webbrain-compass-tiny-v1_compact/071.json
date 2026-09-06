@@ -1,0 +1,31 @@
+{
+  "id": "071",
+  "user": "send it",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 1621,
+  "error": null,
+  "firstToolCall": {
+    "name": "read_page",
+    "args": {
+      "filter": "all",
+      "maxChars": 6000,
+      "continuationArgs": {},
+      "hasMore": false
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "finishReason": "tool_calls",
+  "content": "The user wants me to send the current page content. The current page is about:home with the title \"New Tab\". I should use the `read_page` tool to get the current page content, then present it to the user.</think>",
+  "usage": {
+    "prompt_tokens": 9722,
+    "total_tokens": 9795,
+    "completion_tokens": 73,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

@@ -1,0 +1,23 @@
+{
+  "id": "020",
+  "user": "look up \"javascript closures\" on stackoverflow",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 2651,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "finishReason": "stop",
+  "content": "The user wants me to look up \"javascript closures\" on Stack Overflow. I should use the search tool to find this information.</think><|tool_call_start|>[get_accessibility_tree(filter='all', maxDepth=10, maxChars=6000, ref_id='', page=1, tree_revision='', continuationArgs={})]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9731,
+    "total_tokens": 9800,
+    "completion_tokens": 69,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

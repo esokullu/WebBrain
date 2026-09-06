@@ -1,0 +1,214 @@
+:root {
+  color-scheme: light dark;
+  --reader-bg: #525659;
+  --toolbar-bg: rgba(31, 32, 35, .96);
+  --toolbar-text: #f4f4f5;
+  --toolbar-muted: #c5c7ca;
+  --toolbar-border: rgba(255, 255, 255, .18);
+  --page-shadow: 0 2px 14px rgba(0, 0, 0, .36);
+  --status-bg: rgba(24, 24, 28, .9);
+  --status-color: #f5f5f5;
+  --accent: #6c63ff;
+}
+
+* { box-sizing: border-box; }
+
+[hidden], .sr-only { display: none !important; }
+
+html, body { width: 100%; height: 100%; }
+
+body {
+  margin: 0;
+  overflow: hidden;
+  background: var(--reader-bg);
+  color: var(--toolbar-text);
+  font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+button, input { font: inherit; }
+
+button:focus-visible, input:focus-visible {
+  outline: 3px solid rgba(154, 148, 255, .78);
+  outline-offset: 2px;
+}
+
+.pdf-header {
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 7px 12px;
+  background: var(--toolbar-bg);
+  border-bottom: 1px solid var(--toolbar-border);
+}
+
+.pdf-title {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--toolbar-muted);
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+#pdf-title { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+
+.pdf-badge {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 30px;
+  border: 1px solid rgba(255, 120, 120, .55);
+  border-radius: 5px;
+  color: #ffd5d5;
+  background: rgba(215, 55, 55, .28);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .04em;
+}
+
+.pdf-controls {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.control-group { display: flex; align-items: center; gap: 5px; }
+
+.pdf-controls button,
+.page-control input,
+.search-control input {
+  min-height: 32px;
+  border: 1px solid var(--toolbar-border);
+  border-radius: 5px;
+  color: var(--toolbar-text);
+  background: rgba(255, 255, 255, .08);
+}
+
+.pdf-controls button { min-width: 32px; padding: 5px 9px; cursor: pointer; }
+.pdf-controls button:hover:not(:disabled) { background: rgba(255, 255, 255, .17); }
+.pdf-controls button:disabled, .pdf-controls input:disabled { opacity: .45; cursor: not-allowed; }
+
+.page-control { display: flex; align-items: center; gap: 6px; color: var(--toolbar-muted); }
+.page-control input { width: 52px; padding: 4px 5px; text-align: center; }
+.page-control strong { color: var(--toolbar-text); }
+
+.search-control {
+  min-width: 170px;
+  max-width: 310px;
+  margin-inline-start: auto;
+  display: flex;
+  gap: 5px;
+}
+
+.search-control input { min-width: 0; width: 100%; padding: 5px 8px; }
+
+.pdf-stage {
+  position: relative;
+  height: calc(100vh - 52px);
+  overflow: auto;
+  padding: 24px 24px 48px;
+  background-color: var(--reader-bg);
+  overscroll-behavior: contain;
+}
+
+.pdf-status {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  width: fit-content;
+  max-width: min(560px, calc(100vw - 48px));
+  margin: 0 auto 16px;
+  padding: 8px 12px;
+  border-radius: 7px;
+  color: var(--status-color);
+  background: var(--status-bg);
+  text-align: center;
+}
+
+.pdf-status[data-kind="error"] { background: #7f1d1d; }
+.pdf-status[data-kind="warning"] { background: #704d11; }
+.pdf-status[data-kind="success"] { background: #14532d; }
+
+.pdf-pages { display: grid; justify-items: center; gap: 24px; }
+
+.pdf-page {
+  position: relative;
+  flex: 0 0 auto;
+  background: #fff;
+  box-shadow: var(--page-shadow);
+  /* PDF.js sizes the text layer with round(down, <calc>, var(--scale-round-*)).
+     Leaving these undefined makes that declaration invalid at computed-value
+     time, which silently drops the rotation-aware sizing it depends on. */
+  --scale-round-x: 1px;
+  --scale-round-y: 1px;
+}
+
+.pdf-canvas, .pdf-text-layer { position: absolute; inset: 0; }
+.pdf-canvas { display: block; }
+
+.pdf-text-layer {
+  overflow: hidden;
+  color: transparent;
+  cursor: text;
+  line-height: 1;
+  opacity: .22;
+  text-size-adjust: none;
+  transform-origin: 0 0;
+  user-select: text;
+  forced-color-adjust: none;
+}
+
+.pdf-text-layer span, .pdf-text-layer br {
+  position: absolute;
+  color: transparent;
+  white-space: pre;
+  transform-origin: 0 0;
+}
+
+/* PDF.js publishes each span's geometry as custom properties and expects the
+   embedding stylesheet to turn them into a real font size and horizontal
+   stretch. Without these rules every span inherits the body font, so the
+   invisible selectable boxes drift away from the glyphs on the canvas. */
+.pdf-text-layer span:not([data-webbrain-ocr]), .pdf-text-layer br {
+  font-size: calc(var(--total-scale-factor, 1) * var(--font-height, 1px));
+  transform: rotate(var(--rotate, 0deg)) scaleX(var(--scale-x, 1));
+}
+
+/* PDF.js stamps the layer with the page's total rotation and leaves the
+   counter-rotation to CSS. */
+.pdf-text-layer[data-main-rotation="90"] { transform: rotate(90deg) translateY(-100%); }
+.pdf-text-layer[data-main-rotation="180"] { transform: rotate(180deg) translate(-100%, -100%); }
+.pdf-text-layer[data-main-rotation="270"] { transform: rotate(270deg) translateX(-100%); }
+
+.pdf-text-layer span.markedContent { top: 0; height: 0; }
+
+/* PDF.js appends a scratch measuring canvas to <body>; keep it out of layout. */
+.hiddenCanvasElement {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+.pdf-text-layer ::selection { background: rgba(92, 91, 242, .45); }
+
+@media print {
+  body { overflow: visible; background: #fff; color: #000; }
+  .pdf-header, .pdf-status { display: none !important; }
+  .pdf-stage { height: auto; overflow: visible; padding: 0; background: #fff; }
+  .pdf-pages { display: block; }
+  .pdf-page { margin: 0 auto; break-after: page; box-shadow: none; }
+  .pdf-page:last-child { break-after: auto; }
+}
+
+@media (max-width: 900px) {
+  .pdf-title { display: none; }
+  .pdf-controls { overflow-x: auto; }
+  .search-control { margin-inline-start: 0; min-width: 160px; }
+}

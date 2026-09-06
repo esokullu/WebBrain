@@ -50,10 +50,157 @@ export function normalizeRecipientIdentity(value) {
   }
 }
 
+export function normalizeRecipientAnswer(value) {
+  const text = String(value ?? '')
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/[\u200b-\u200d\ufeff]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!text) return '';
+  try {
+    return text.normalize('NFKC').toLocaleLowerCase();
+  } catch {
+    return text.toLowerCase();
+  }
+}
+
 export function recipientMatchesObservedIdentity(recipient, observedIdentity) {
   const expected = normalizeRecipientIdentity(recipient);
   const observed = normalizeRecipientIdentity(observedIdentity);
   return !!expected && observed === expected;
+}
+
+const IDENTITY_WORD_CHAR = /[\p{L}\p{N}]/u;
+
+let cachedWordSegmenter = null;
+
+function getWordSegmenter() {
+  if (cachedWordSegmenter) return cachedWordSegmenter;
+  if (typeof Intl !== 'undefined' && typeof Intl.Segmenter === 'function') {
+    try {
+      cachedWordSegmenter = new Intl.Segmenter(undefined, { granularity: 'word' });
+    } catch {
+      cachedWordSegmenter = null;
+    }
+  }
+  return cachedWordSegmenter;
+}
+
+export function getWordBoundaries(text) {
+  const boundaries = new Set([0, text.length]);
+  const segmenter = getWordSegmenter();
+  if (segmenter) {
+    try {
+      for (const seg of segmenter.segment(text)) {
+        boundaries.add(seg.index);
+        boundaries.add(seg.index + seg.segment.length);
+      }
+    } catch {
+      // fallback
+    }
+  }
+  return boundaries;
+}
+
+/**
+ * Return all start/end spans where normalizedIdentity occurs in normalizedAnswer
+ * at word boundaries (including script-aware segmentation for unsegmented scripts),
+ * or as an exact full-string match for short identities (< 3 chars).
+ */
+export function findCandidateAnswerSpans(normalizedAnswer, normalizedIdentity) {
+  const answer = normalizeRecipientAnswer(normalizedAnswer);
+  const identity = normalizeRecipientIdentity(normalizedIdentity);
+  if (!identity || !answer) return [];
+  if (identity.length < 3) {
+    return answer === identity ? [{ start: 0, end: answer.length }] : [];
+  }
+  const boundaries = getWordBoundaries(answer);
+  const spans = [];
+  for (let at = answer.indexOf(identity); at >= 0; at = answer.indexOf(identity, at + 1)) {
+    const end = at + identity.length;
+    const before = at > 0 ? answer[at - 1] : '';
+    const after = answer[end] || '';
+    const charBoundary = (!before || !IDENTITY_WORD_CHAR.test(before))
+      && (!after || !IDENTITY_WORD_CHAR.test(after));
+    const segmentBoundary = boundaries.has(at) && boundaries.has(end);
+    if (charBoundary || segmentBoundary) {
+      spans.push({ start: at, end });
+    }
+  }
+  return spans;
+}
+
+/**
+ * Does the user's answer actually name this identity, rather than merely
+ * containing its letters?
+ *
+ * A bare substring test authorizes on accidents: the observed display name
+ * "Ann" is inside "I cannot decide". Requiring the match to sit against a
+ * non-alphanumeric neighbour or a string edge keeps an incidental fragment
+ * from standing in for the user naming someone. Identities shorter than 3
+ * characters accept exact equality to authorize short names without loose
+ * substring false positives.
+ */
+export function answerNamesIdentity(normalizedAnswer, normalizedIdentity) {
+  return findCandidateAnswerSpans(normalizedAnswer, normalizedIdentity).length > 0;
+}
+
+/**
+ * Verify that each observed recipient identity is matched by a distinct,
+ * non-overlapping span in the user's answer.
+ *
+ * When one observed identity is a boundary-delimited prefix of another
+ * (e.g. "Ann" and "Ann Smith", or "user@example.co" and "user@example.co.uk"),
+ * a single mention must not satisfy both candidates. A distinct span is
+ * required for each observed recipient identity.
+ */
+export function answerNamesAllObservedRecipients(normalizedAnswer, observedCandidates) {
+  const answer = normalizeRecipientAnswer(normalizedAnswer);
+  if (!answer || !Array.isArray(observedCandidates) || observedCandidates.length === 0) {
+    return false;
+  }
+  const candidateGroups = [];
+  const seenCanonical = new Set();
+  for (const c of observedCandidates) {
+    const canonical = normalizeRecipientIdentity(typeof c === 'string' ? c : (c?.identity ?? c?.recipient));
+    if (!canonical || seenCanonical.has(canonical)) continue;
+    seenCanonical.add(canonical);
+    const aliasList = [
+      canonical,
+      ...(Array.isArray(c?.aliases) ? c.aliases.map(normalizeRecipientIdentity) : []),
+    ].filter(Boolean);
+    candidateGroups.push([...new Set(aliasList)]);
+  }
+  if (candidateGroups.length === 0) return false;
+
+  const candidateSpans = [];
+  for (const aliases of candidateGroups) {
+    const spans = [];
+    for (const alias of aliases) {
+      for (const span of findCandidateAnswerSpans(answer, alias)) {
+        if (!spans.some(s => s.start === span.start && s.end === span.end)) {
+          spans.push(span);
+        }
+      }
+    }
+    if (spans.length === 0) return false;
+    candidateSpans.push(spans);
+  }
+
+  function search(index, usedSpans) {
+    if (index >= candidateSpans.length) return true;
+    for (const span of candidateSpans[index]) {
+      const overlaps = usedSpans.some(used => !(span.end <= used.start || used.end <= span.start));
+      if (!overlaps) {
+        usedSpans.push(span);
+        if (search(index + 1, usedSpans)) return true;
+        usedSpans.pop();
+      }
+    }
+    return false;
+  }
+
+  return search(0, []);
 }
 
 export function messageTargetMatchesObservedIdentities(target, candidates) {
@@ -80,3 +227,332 @@ export function messageTargetMatchesObservedIdentities(target, candidates) {
   return expected.size === recipients.size
     && [...expected].every(key => recipients.has(key));
 }
+
+/**
+ * Does the user answer explicitly authorize targetRole (to, cc, or bcc) for
+ * candidateIdentity?
+ *
+ * Role authorization must come strictly from the user's answer, never from
+ * the clarification context (question, reason, or options) which are
+ * model-authored and cannot supply recipient authorization.
+ *
+ * For 'bcc' and 'cc', explicit mentions of BCC or CC in the answer authorize the role.
+ * Each role label is strictly associated with its intended recipient rather than
+ * accepted anywhere in a shared multi-recipient sentence or clause.
+ *
+ * For 'bcc' and 'cc', explicit mentions of BCC or CC attached to the recipient
+ * identity in the answer authorize the role.
+ * For 'to', because "to" is also a ubiquitous preposition ("send to Alice"),
+ * an explicit role label ("To: Alice", "Alice (To)", "as To", "in To", "to To", "To field")
+ * or localized role indicator ("收件人", "主送") attached to the recipient identity
+ * is required in the user's answer.
+ */
+export function clarificationAuthorizesRecipientRole(clarifyContext, answer, candidateIdentity, targetRole) {
+  const role = String(targetRole || '').trim().toLowerCase();
+  if (!MESSAGE_RECIPIENT_ROLES.has(role)) return false;
+
+  const answerText = String(answer ?? '').trim();
+  if (!answerText) return false;
+
+  const candidate = typeof candidateIdentity === 'object' && candidateIdentity !== null
+    ? candidateIdentity
+    : { identity: candidateIdentity };
+  const rawId = candidate.identity ?? candidate.recipient ?? candidateIdentity;
+  const normId = normalizeRecipientIdentity(rawId);
+  const candidateAliases = [
+    normId,
+    ...(Array.isArray(candidate.aliases) ? candidate.aliases.map(normalizeRecipientIdentity) : []),
+  ].filter(Boolean);
+
+  function snippetHasExplicitRole(snippet, roleToCheck) {
+    if (!snippet) return false;
+    const transitionMatch = snippet.match(/\b(?:from\s+(to|cc|bcc)\s+to\s+(to|cc|bcc)|(to|cc|bcc)\s*(?:->|=>|→)\s*(to|cc|bcc))\b/i);
+    if (transitionMatch) {
+      const targetRole = (transitionMatch[2] || transitionMatch[4]).toLowerCase();
+      return roleToCheck === targetRole;
+    }
+    if (roleToCheck === 'bcc') {
+      return /\b(?:bcc|blind\s+carbon\s+copy)\b|密送|暗送/i.test(snippet);
+    }
+    if (roleToCheck === 'cc') {
+      return /\b(?:cc|carbon\s+copy)\b|抄送/i.test(snippet);
+    }
+    if (roleToCheck === 'to') {
+      if (/\bto\s*[:：]/i.test(snippet)) return true;
+      if (/[(\[【]\s*to\s*[)\]】]/i.test(snippet)) return true;
+      if (/\b(?:as|in|into|role|field|to)\s+to\b/i.test(snippet)) return true;
+      if (/\bto\s+(?:field|role|recipient)\b/i.test(snippet)) return true;
+      if (/\bfrom\s+(?:bcc|cc)\s+to\s+to\b/i.test(snippet)) return true;
+      if (/\b(?:bcc|cc)\s*(?:->|=>|→)\s*to\b/i.test(snippet)) return true;
+      if (/(?:作为|设为)?(?:收件人|主送)/i.test(snippet)) return true;
+      const trimmed = snippet.trim();
+      if (/^(?:to|as\s+to)$/i.test(trimmed)) return true;
+      return false;
+    }
+    return false;
+  }
+
+  function hasNegation(text) {
+    if (!text) return false;
+    const str = String(text).replace(/\bno\s+(?:problem|worries)\b/gi, ' ');
+    const negationRe = /\b(?:\w+n['’]t|not|no|never|neither|nor|dont|doesnt|didnt|wont|cant|cannot|shouldnt|mustnt|isnt|arent|wasnt|werent|avoid\w*|prohibit\w*|disallow\w*|refus\w*|reject\w*|stop\w*|prevent\w*|without)\b|不要|别|不能|不可|不得|不用|不是|不行|不准|决不|绝不|不应|不该|禁止|严禁|请勿|非|勿|免|未|不(?:设|加|放|移|作|把|给)/i;
+    return negationRe.test(str);
+  }
+
+  function prefixHasNegation(fullPrefix, prefix, roleToCheck = null) {
+    if (hasNegation(prefix)) return true;
+    if (!fullPrefix) return false;
+    const boundaryRe = /[;\n\r|]|(?:\b(?:but|however|yet|instead\s+of|rather\s+than|whereas|while|whilst)\b)|(?:而不是|而非)/gi;
+    let lastBoundary = 0;
+    let m;
+    while ((m = boundaryRe.exec(fullPrefix)) !== null) {
+      lastBoundary = m.index + m[0].length;
+    }
+    const segment = fullPrefix.slice(lastBoundary);
+    const parts = segment.split(/[,，]/);
+    let relevantStart = 0;
+    const generalRecipientRe = /\b(?:anyone|anybody|any\s+one|no\s*one|nobody|someone|somebody|people|persons?|users?|recipients?|contacts?|others?|everyone|everybody|either|neither|all|any|team|group|members?)\b|谁|任何人|大家|所有人|团队|群组|成员/i;
+    const continuationRe = /^\s*(?:\b(?:especially|particularly|including|specifically|mainly|even|let\s+alone|much\s+less|not\s+to\s+mention)\b|尤其是|特别[是地]?|包括|更不用说|更别提)/i;
+
+    for (let i = 0; i < parts.length - 1; i++) {
+      const part = parts[i];
+      const partHasNeg = hasNegation(part);
+      const partHasRole = roleWordsRe.test(part);
+
+      if (partHasRole) {
+        if (!partHasNeg) {
+          relevantStart = parts.slice(0, i + 1).join(',').length + 1;
+        } else {
+          if (roleToCheck && !snippetHasExplicitRole(part, roleToCheck)) {
+            relevantStart = parts.slice(0, i + 1).join(',').length + 1;
+          } else {
+            const remainingPrefix = parts.slice(i + 1).join(',');
+            const namesOtherRecipient = candidateAliases.length > 0
+              && !candidateAliases.some(alias => answerNamesIdentity(part, alias))
+              && !generalRecipientRe.test(part);
+            if (namesOtherRecipient && !continuationRe.test(remainingPrefix)) {
+              relevantStart = parts.slice(0, i + 1).join(',').length + 1;
+            }
+          }
+        }
+      }
+    }
+    const relevantPrefix = segment.slice(relevantStart);
+    return hasNegation(relevantPrefix);
+  }
+
+  function isPrecededByNegatedCoordGroup(fullPrefix) {
+    const coordTrailingRe = /(?:[,;，；和]|(?:\s+(?:\b(?:and|or)\b|以及|与|及)\s*))\s*$/i;
+    if (!coordTrailingRe.test(fullPrefix)) return false;
+    const lastDelimiterIdx = Math.max(
+      fullPrefix.lastIndexOf(';'),
+      fullPrefix.lastIndexOf('；'),
+      fullPrefix.lastIndexOf('\n'),
+      fullPrefix.lastIndexOf('|'),
+    );
+    const relevantPrefix = lastDelimiterIdx >= 0 ? fullPrefix.slice(lastDelimiterIdx + 1) : fullPrefix;
+    if (roleWordsRe.test(relevantPrefix)) return false;
+    return hasNegation(relevantPrefix);
+  }
+
+  const prefixPatterns = {
+    to: /(?:\bto\s*[:：]|\b(?:as|in|into|to)\s+(?:the\s+)?to(?:\s+(?:field|role|recipient))?\s*[:：,]?(?:\s+(?:put|move|set|send|keep|leave|add|place))?|(?:作为|设为)?(?:收件人|主送)\s*[:：]?)\s*$/i,
+    cc: /(?:\b(?:cc|carbon\s+copy)\s*[:：]|\b(?:as|in|into)\s+(?:the\s+)?(?:cc|carbon\s+copy)(?:\s+(?:field|role|recipient))?\s*[:：,]?(?:\s+(?:put|move|set|send|keep|leave|add|place))?|(?:作为|设为)?抄送\s*[:：]?)\s*$/i,
+    bcc: /(?:\b(?:bcc|blind\s+carbon\s+copy)\s*[:：]|\b(?:as|in|into)\s+(?:the\s+)?(?:bcc|blind\s+carbon\s+copy)(?:\s+(?:field|role|recipient))?\s*[:：,]?(?:\s+(?:put|move|set|send|keep|leave|add|place))?|(?:作为|设为)?(?:密送|暗送)\s*[:：]?)\s*$/i,
+  };
+
+  const suffixPatterns = {
+    to: /^\s*(?:[:：]\s*to\b|[(\[【]\s*to\s*[)\]】]|(?:->|=>|→)\s*to\b|(?:(?:is|should\s+be|remains?|stays?|needs?\s+to\s+be)\s+)?(?:as|in|into|to)\s+(?:the\s+)?to(?:\s+(?:field|role|recipient))?\b|(?:from\s+(?:bcc|cc)\s+to\s+to\b)|to\s+(?:field|role|recipient)\b|(?:作为|设为)?(?:收件人|主送))/i,
+    cc: /^\s*(?:[:：]\s*(?:cc|carbon\s+copy)\b|[(\[【]\s*(?:cc|carbon\s+copy)\s*[)\]】]|(?:->|=>|→)\s*(?:cc|carbon\s+copy)\b|(?:(?:is|should\s+be|remains?|stays?|needs?\s+to\s+be)\s+)?(?:as|in|into|to)\s+(?:the\s+)?(?:cc|carbon\s+copy)(?:\s+(?:field|role|recipient))?\b|(?:from\s+(?:to|bcc)\s+to\s+cc\b)|(?:cc|carbon\s+copy)\s+(?:field|role|recipient)\b|(?:作为|设为)?抄送)/i,
+    bcc: /^\s*(?:[:：]\s*(?:bcc|blind\s+carbon\s+copy)\b|[(\[【]\s*(?:bcc|blind\s+carbon\s+copy)\s*[)\]】]|(?:->|=>|→)\s*(?:bcc|blind\s+carbon\s+copy)\b|(?:(?:is|should\s+be|remains?|stays?|needs?\s+to\s+be)\s+)?(?:as|in|into|to)\s+(?:the\s+)?(?:bcc|blind\s+carbon\s+copy)(?:\s+(?:field|role|recipient))?\b|(?:from\s+(?:to|cc)\s+to\s+bcc\b)|(?:bcc|blind\s+carbon\s+copy)\s+(?:field|role|recipient)\b|(?:作为|设为)?(?:密送|暗送))/i,
+  };
+
+  const delimiterRe = /[,;，；\n\r|/]|(?:\s*\b(?:and|or|while|whilst|but|whereas|yet|however|instead\s+of|rather\s+than|as\s+well\s+as)\b\s*)|(?:\s*(?:而不是|而非)\s*)|(?:\s+(?:以及|与|及|而|但是|但)\s*)/gi;
+  const roleWordsRe = /\b(?:to|cc|bcc|carbon\s+copy|blind\s+carbon\s+copy)\b|收件人|主送|抄送|密送|暗送/i;
+
+  function testRole(roleToCheck) {
+    let hasSpans = false;
+    for (const alias of candidateAliases) {
+      const spans = findCandidateAnswerSpans(answerText, alias);
+      if (spans.length > 0) {
+        hasSpans = true;
+        for (const span of spans) {
+          let clauseStart = 0;
+          delimiterRe.lastIndex = 0;
+          let m;
+          while ((m = delimiterRe.exec(answerText)) !== null) {
+            if (m.index < span.start) {
+              clauseStart = m.index + m[0].length;
+            } else {
+              break;
+            }
+          }
+
+          let clauseEnd = answerText.length;
+          delimiterRe.lastIndex = span.end;
+          const mAfter = delimiterRe.exec(answerText);
+          if (mAfter) {
+            clauseEnd = mAfter.index;
+          }
+
+          const prefix = answerText.slice(clauseStart, span.start);
+          const suffix = answerText.slice(span.end, clauseEnd);
+          const fullPrefix = answerText.slice(0, span.start);
+
+          if (prefixPatterns[roleToCheck].test(prefix)) {
+            if (!prefixHasNegation(fullPrefix, prefix, roleToCheck)) {
+              return true;
+            }
+          }
+
+          const suffixMatch = suffix.match(suffixPatterns[roleToCheck]);
+          if (suffixMatch) {
+            if (!prefixHasNegation(fullPrefix, prefix, roleToCheck) && !hasNegation(suffixMatch[0]) && !isPrecededByNegatedCoordGroup(fullPrefix)) {
+              return true;
+            }
+          }
+
+          // Grouped role suffix: e.g. Put Alice and Bob in BCC / 把Alice和Bob设为密送
+          const fullSuffix = answerText.slice(span.end);
+          const coordMatch = fullSuffix.match(/^(?:\s*(?:[,;，；和]|(?:\s+(?:\b(?:and|or)\b|以及|与|及)\s*))\s*[^,;，；\n\r|/]+?)+?(\s*(?:(?:as|in|into|to)\s+(?:the\s+)?(?:to|cc|bcc|blind\s+carbon\s+copy|carbon\s+copy)(?:\s+(?:field|role|recipient))?\b|[(\[【]\s*(?:to|cc|bcc)\s*[)\]】]|\s*[:：]\s*(?:to|cc|bcc)\b|(?:作为|设为)?(?:收件人|主送|抄送|密送|暗送)))/i);
+          if (coordMatch) {
+            const intervening = fullSuffix.slice(0, coordMatch.index + coordMatch[0].length - coordMatch[1].length);
+            const rolePart = coordMatch[1];
+            if (!roleWordsRe.test(intervening) && suffixPatterns[roleToCheck].test(rolePart)) {
+              if (!prefixHasNegation(fullPrefix, prefix, roleToCheck) && !hasNegation(intervening) && !hasNegation(rolePart) && !isPrecededByNegatedCoordGroup(fullPrefix)) {
+                return true;
+              }
+            }
+          }
+
+          // Grouped role prefix: e.g. To: Alice and Bob
+          const prefixCoordMatch = fullPrefix.match(/(?:(\b(?:to|cc|bcc)\s*[:：]|(?:作为|设为)?(?:收件人|主送|抄送|密送|暗送)\s*[:：]?)\s*[^,;，；\n\r|/]+(?:\s*(?:[,;，；和]|(?:\s+(?:\b(?:and|or)\b|以及|与|及)\s*))\s*[^,;，；\n\r|/]+)*\s*(?:[,;，；和]|(?:\s+(?:\b(?:and|or)\b|以及|与|及)\s*))\s*)$/i);
+          if (prefixCoordMatch) {
+            const roleLeader = prefixCoordMatch[1];
+            const intervening = prefixCoordMatch[0].slice(roleLeader.length);
+            if (!roleWordsRe.test(intervening) && prefixPatterns[roleToCheck].test(roleLeader)) {
+              const beforeLeader = fullPrefix.slice(0, fullPrefix.length - prefixCoordMatch[0].length);
+              if (!prefixHasNegation(beforeLeader, beforeLeader, roleToCheck) && !hasNegation(roleLeader) && !hasNegation(intervening)) {
+                return true;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    if (!hasSpans) {
+      delimiterRe.lastIndex = 0;
+      const hasMultipleClauses = delimiterRe.test(answerText);
+      if (!hasMultipleClauses && snippetHasExplicitRole(answerText, roleToCheck)) {
+        if (!hasNegation(answerText)) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  if (!testRole(role)) return false;
+
+  // Reject answers that authorize multiple conflicting roles for this recipient.
+  for (const otherRole of MESSAGE_RECIPIENT_ROLES) {
+    if (otherRole !== role && testRole(otherRole)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Resolve observed recipient candidates against previously authorized recipients
+ * and clarification context/answer.
+ *
+ * Preserves previously authorized delivery roles (such as 'bcc') both when an
+ * observed recipient's role is changed and when previously authorized recipients
+ * are replaced by new identities (e.g. replacing BCC Alice with Bob). An observed
+ * candidate only adopts a different delivery role when the user's answer affirmatively
+ * authorizes that role for that specific recipient.
+ */
+export function resolveClarifiedRecipients(observedCandidates, previousTarget, clarifyContext, answer) {
+  const previous = normalizeMessageTarget(previousTarget);
+  const previousRecipients = previous?.recipients || [];
+  const rawList = Array.isArray(observedCandidates) ? observedCandidates : [];
+
+  const matchedPreviousIndices = new Set();
+  const candidatePreviousRoles = new Map();
+
+  for (let i = 0; i < rawList.length; i++) {
+    const candidate = rawList[i];
+    const legacy = typeof candidate === 'string' || typeof candidate === 'number';
+    const identity = compact(legacy ? candidate : (candidate?.identity ?? candidate?.recipient), 240);
+    const norm = normalizeRecipientIdentity(identity);
+    const candidateAliases = [
+      norm,
+      ...(Array.isArray(candidate?.aliases) ? candidate.aliases.map(normalizeRecipientIdentity) : []),
+    ].filter(Boolean);
+
+    for (let p = 0; p < previousRecipients.length; p++) {
+      if (matchedPreviousIndices.has(p)) continue;
+      const prevNorm = normalizeRecipientIdentity(previousRecipients[p].identity);
+      if (candidateAliases.includes(prevNorm)) {
+        candidatePreviousRoles.set(i, previousRecipients[p].role);
+        matchedPreviousIndices.add(p);
+        break;
+      }
+    }
+  }
+
+  const remainingPrevious = previousRecipients
+    .map((r, idx) => ({ ...r, idx }))
+    .filter(r => !matchedPreviousIndices.has(r.idx));
+
+  // Match replacements to compatible observed recipient slots first to avoid
+  // swapping roles when multiple recipients with different roles are replaced.
+  for (let i = 0; i < rawList.length; i++) {
+    if (candidatePreviousRoles.has(i)) continue;
+    const candidate = rawList[i];
+    const legacy = typeof candidate === 'string' || typeof candidate === 'number';
+    const observedRole = compact(legacy ? 'to' : candidate?.role, 12).toLowerCase() || 'to';
+    const matchIdx = remainingPrevious.findIndex(r => r.role === observedRole);
+    if (matchIdx !== -1) {
+      const [matched] = remainingPrevious.splice(matchIdx, 1);
+      candidatePreviousRoles.set(i, matched.role);
+    }
+  }
+
+  // Assign any remaining unmatched replacement candidates by restrictive rank (bcc > cc > to).
+  const roleRank = { bcc: 3, cc: 2, to: 1 };
+  remainingPrevious.sort((a, b) => (roleRank[b.role] || 0) - (roleRank[a.role] || 0));
+
+  for (let i = 0; i < rawList.length; i++) {
+    if (candidatePreviousRoles.has(i)) continue;
+    if (remainingPrevious.length > 0) {
+      const replaced = remainingPrevious.shift();
+      candidatePreviousRoles.set(i, replaced.role);
+    }
+  }
+
+  return rawList.map((candidate, i) => {
+    const legacy = typeof candidate === 'string' || typeof candidate === 'number';
+    const identity = compact(legacy ? candidate : (candidate?.identity ?? candidate?.recipient), 240);
+    const observedRole = compact(legacy ? 'to' : candidate?.role, 12).toLowerCase() || 'to';
+    const previousRole = candidatePreviousRoles.get(i);
+
+    const authorizedRoles = ['to', 'cc', 'bcc'].filter(r => (
+      clarificationAuthorizesRecipientRole(clarifyContext, answer, candidate, r)
+    ));
+    const authorizedRole = authorizedRoles.length === 1 ? authorizedRoles[0] : null;
+
+    if (authorizedRole) {
+      return { identity, role: authorizedRole };
+    }
+    if (previousRole) {
+      return { identity, role: previousRole };
+    }
+    return { identity, role: observedRole };
+  });
+}
+

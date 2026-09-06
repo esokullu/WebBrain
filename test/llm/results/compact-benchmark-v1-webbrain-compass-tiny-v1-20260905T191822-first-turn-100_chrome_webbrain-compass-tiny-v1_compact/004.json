@@ -1,0 +1,28 @@
+{
+  "id": "004",
+  "user": "open my github",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 3189,
+  "error": null,
+  "firstToolCall": {
+    "name": "navigate",
+    "args": {
+      "url": "https://github.com/"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "finishReason": "tool_calls",
+  "content": "The user wants to open GitHub. I should use the navigate tool to open the GitHub website.</think>",
+  "usage": {
+    "prompt_tokens": 9723,
+    "total_tokens": 9758,
+    "completion_tokens": 35,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

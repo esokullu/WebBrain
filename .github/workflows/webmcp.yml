@@ -7,6 +7,7 @@ on:
       - "package.json"
       - "package-lock.json"
       - "src/chrome/**"
+      - "test/pdf-mime-handler-e2e.mjs"
       - "test/fixtures/webmcp-*.html"
       - "test/webmcp-e2e.mjs"
   push:
@@ -17,6 +18,7 @@ on:
       - "package.json"
       - "package-lock.json"
       - "src/chrome/**"
+      - "test/pdf-mime-handler-e2e.mjs"
       - "test/fixtures/webmcp-*.html"
       - "test/webmcp-e2e.mjs"
   workflow_dispatch:
@@ -44,6 +46,11 @@ jobs:
 
       - name: Report Chrome version
         run: google-chrome --version
+
+      - name: Run PDF MIME handler regression
+        env:
+          WEBMCP_CHROME_PATH: /usr/bin/google-chrome
+        run: npm run test:pdf-mime-handler
 
       - name: Run real Chrome WebMCP smoke test
         env:

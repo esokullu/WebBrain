@@ -1,0 +1,40 @@
+{
+  "id": "011",
+  "category": "tool-error-pivot",
+  "description": "inspect_viewport returned \"no vision capability\". Must pivot to AX tree, not retry the capture.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 2326,
+  "error": null,
+  "firstToolCall": {
+    "name": "read_page",
+    "args": {}
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "get_accessibility_tree",
+      "args": {
+        "filter": "visible"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "inspect_viewport({})",
+        "reason": "Retrying a tool that just declared it cannot work — gpt-4o trace xpx9t9 made this mistake."
+      }
+    ],
+    "successRubric": "Pivot to a text-based inspection tool (get_accessibility_tree, read_page, or get_interactive_elements). The error message even names the alternatives — use one of them."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The page context says the title is \"MastoTurk\" and the URL is https://mastoturk.org/publish. The user is asking how many characters the post has so far.\n\nI need to read the page content to count the characters. Let me use `read_page` to get the current page content.</think>",
+  "usage": {
+    "prompt_tokens": 9825,
+    "total_tokens": 9898,
+    "completion_tokens": 73,
+    "prompt_tokens_details": null
+  }
+}

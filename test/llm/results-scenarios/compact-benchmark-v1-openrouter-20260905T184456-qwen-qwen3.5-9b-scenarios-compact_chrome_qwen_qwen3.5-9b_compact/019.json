@@ -1,0 +1,52 @@
+{
+  "id": "019",
+  "category": "tool-error-pivot",
+  "description": "download_files returned 404 on guessed raw URL. Read the folder to enumerate real filenames.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 2676,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "read_page",
+      "args": {}
+    },
+    "antiPatterns": [
+      {
+        "match": "download_files({urls:[\"https://github.com/acme/widgets/raw/main/dist/widgets-linux-amd64.zip\"]})",
+        "reason": "Guessing slug variants is the loop pattern."
+      }
+    ],
+    "successRubric": "Read the dist folder listing to find the actual zip filename. Then download the real URL."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "empty",
+  "scoreNote": null,
+  "finishReason": "stop",
+  "content": null,
+  "usage": {
+    "prompt_tokens": 9847,
+    "completion_tokens": 56,
+    "total_tokens": 9903,
+    "cost": 0.0009931,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 9504,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.0009931,
+      "upstream_inference_prompt_cost": 0.0009847,
+      "upstream_inference_completions_cost": 0.0000084
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 61,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "id": "032",
+  "category": "truncation-cascade",
+  "description": "After read_page truncated, agent re-fetched a different Wikipedia endpoint and that also truncated. Should now answer from what it has.",
+  "mode": "ask",
+  "browser": "chrome",
+  "latencyMs": 2220,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "done",
+      "args": {
+        "summary": "Closures originated in the 1960s in the context of evaluating λ-calculus expressions, and were first fully implemented as a programming-language feature in 1970 in PAL."
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "fetch_url({url:\"https://en.m.wikipedia.org/...\"})",
+        "reason": "Third re-fetch of the same content with a different endpoint — xiaomi-mimo did exactly this."
+      },
+      {
+        "match": "read_page({})",
+        "reason": "Re-reading the same page."
+      }
+    ],
+    "successRubric": "Both fetches returned the answer in their visible portion. Stop fetching, call done. Two truncated reads of the same content rarely improves the answer."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal_name",
+  "scoreNote": "prose answer credited as done (terminal tool; summary not arg-matched)",
+  "finishReason": "stop",
+  "content": "The Wikipedia page says that closures were first fully implemented in 1970 as a language feature in the PAL programming language. However, the concept was developed in the 1960s for the λ-calculus.\n\nThe question asks when closures first appeared in a programming language. The most accurate answer based on the Wikipedia article is 1970 with PAL.</think><|tool_call_start|>[done(summary='Closures were first fully implemented as a language feature in **1970**, in the **PAL programming language**. The concept had been developed earlier in the 1960s for the λ-calculus.')]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 7775,
+    "total_tokens": 7902,
+    "completion_tokens": 127,
+    "prompt_tokens_details": null
+  }
+}

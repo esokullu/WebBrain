@@ -1,0 +1,40 @@
+{
+  "id": "084",
+  "user": "explain javascript closures in 2 sentences",
+  "mode": "act",
+  "tab": {
+    "url": "about:home",
+    "title": "New Tab"
+  },
+  "latencyMs": 3240,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "finishReason": "stop",
+  "content": "JavaScript closures are functions that \"close over\" their lexical scope, meaning inner functions retain access to variables from the surrounding (outer) function even after that outer function has completed execution. This allows closures to maintain private state and enable patterns like data encapsulation, callbacks with captured context, and function factories where inner functions preserve references to variables defined in their defining scope.",
+  "usage": {
+    "prompt_tokens": 9729,
+    "completion_tokens": 454,
+    "total_tokens": 10183,
+    "cost": 0,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 9712,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0,
+      "upstream_inference_prompt_cost": 0,
+      "upstream_inference_completions_cost": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 376,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

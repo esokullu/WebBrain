@@ -1,0 +1,42 @@
+{
+  "id": "076",
+  "category": "cross-lingual",
+  "description": "Chinese site. The agent must use 搜索 (search) not English.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 1592,
+  "error": null,
+  "firstToolCall": {
+    "name": "find_text",
+    "args": {
+      "text": "lo-fi study"
+    }
+  },
+  "toolCallSource": "tool_calls",
+  "expected": {
+    "idealNextToolCall": {
+      "name": "click_ax",
+      "args": {
+        "ref_id": "ref_5"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click({text:\"Search\"})",
+        "reason": "Chinese UI — search input has placeholder 搜索, not \"Search\"."
+      }
+    ],
+    "successRubric": "Click the Chinese searchbox via ref_id. Then type the query."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "other",
+  "scoreNote": null,
+  "finishReason": "tool_calls",
+  "content": "The page content shows a searchbox with ref_5. The user wants to search for \"lo-fi study\" on the Bilibili page. Let me use the find_text tool to search for \"lo-fi study\" on the current page.</think>",
+  "usage": {
+    "prompt_tokens": 9768,
+    "total_tokens": 9832,
+    "completion_tokens": 64,
+    "prompt_tokens_details": null
+  }
+}

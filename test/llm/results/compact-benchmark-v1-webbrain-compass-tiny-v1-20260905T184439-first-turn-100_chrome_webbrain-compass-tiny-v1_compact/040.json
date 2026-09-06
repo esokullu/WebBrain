@@ -1,0 +1,23 @@
+{
+  "id": "040",
+  "user": "clear the search box",
+  "mode": "act",
+  "tab": {
+    "url": "https://www.google.com/search?q=foo",
+    "title": "foo - Google Search"
+  },
+  "latencyMs": 2007,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "finishReason": "stop",
+  "content": "The user wants me to clear the Google search box. I should use the `click` tool with `text: \"\"` to clear the input field.</think><|tool_call_start|>[click(text='')]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 10026,
+    "total_tokens": 10067,
+    "completion_tokens": 41,
+    "prompt_tokens_details": null
+  },
+  "attempts": 1,
+  "retryErrors": []
+}

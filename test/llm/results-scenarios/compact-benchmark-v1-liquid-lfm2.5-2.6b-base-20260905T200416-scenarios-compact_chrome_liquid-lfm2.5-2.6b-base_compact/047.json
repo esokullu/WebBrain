@@ -1,0 +1,41 @@
+{
+  "id": "047",
+  "category": "counter-polarity",
+  "description": "SO requires MINIMUM 20 chars in body. Currently 15 — too short. Add more.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 12096,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "clarify",
+      "args": {
+        "question": "Your body is only 15 characters but Stack Overflow requires at least 30. Want me to wait while you expand it, or should I add a generic explanation?"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click({text:\"Post Your Question\"})",
+        "reason": "Will be rejected — body too short."
+      },
+      {
+        "match": "set_field({ref_id:\"...\", text:\"thanks for any help\"})",
+        "reason": "Inventing body content for the user."
+      }
+    ],
+    "successRubric": "Length is below the MIN, not max. Don't submit. Either clarify or report. Definitely don't invent body text."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "ideal_name",
+  "scoreNote": "prose answer credited as clarify (terminal tool; summary not arg-matched)",
+  "finishReason": "stop",
+  "content": "The user wants me to post a question on Stack Overflow. The current page context shows a Stack Overflow question page where the text says \"Post Your Question\" after a validation error (body must be at least 30 characters; you entered 15).\n\nThe user is asking me to \"post this question\" - meaning they want me to create a new Stack Overflow question post.\n\nHowever, looking at the available tools, I don't see a direct \"create new question\" or \"post question\" tool. The tools are focused on reading, interacting with existing pages, and managing progress/notes.\n\nLet me check the tools again:\n- get_accessibility_tree\n- click_ax\n- set_field\n- type_ax\n- set_checked\n- find_text\n- press_keys\n- scroll\n- navigate\n- read_page\n- get_window_info\n- inspect_viewport\n- extract_data\n- wait_for_element\n- fetch_url\n- upload_file\n- navigate (already listed)\n- click (already listed)\n- type_text\n- done\n- clarify\n- progress_update\n- progress_read\n\nNone of these tools allow creating a new Stack Overflow question. The closest would be using the browser tools to navigate to the Stack Overflow page and then create a question, but that would require the user to actually do it.\n\nActually, looking more carefully at the task - the user says \"post this question\" and the context shows a Stack Overflow page with \"Post Your Question\" prompt. This seems like the user wants me to help them post a question on Stack Overflow.\n\nBut I don't have a tool to create new questions on external sites. The tools are for interacting with the current page (which appears to be a Stack Overflow question page).\n\nWait - maybe I should use the `click` or `click_ax` tools to interact with the page? But those are for clicking elements on the current page, not for creating new content.\n\nActually, looking at the page content again: \"body must be at least 30 characters; you entered 15. ... Post Your Question\"\n\nThis looks like a validation error from a form, and the page is prompting the user to \"Post Your Question\". This might be a test page or a specific scenario.\n\nGiven that I don't have a tool to create new Stack Overflow questions, and the user is asking me to \"post this question\", I should probably:\n\n1. Acknowledge the context\n2. Explain that I don't have the capability to create new Stack Overflow questions directly\n3. Offer to help in other ways, such as:\n   - Reading the page content more carefully\n   - Using the tools to interact with the page (though this won't create a new question)\n   - Helping the user understand what they need to do to post a question\n\nActually, wait - let me reconsider. The user might be testing my ability to work with the Stack Overflow page context. Perhaps the \"post this question\" is a command for me to execute on the page.\n\nBut looking at the available tools, none of them can create a new question on Stack Overflow. The tools are for reading, interacting with existing elements, and managing progress.\n\nGiven this limitation, I should be honest with the user about what I can and cannot do. I can read the page and understand the context, but I cannot create a new Stack Overflow question.\n\nHowever, I notice that the page content says \"Post Your Question\" - this might be a prompt for the user to actually create a question. Perhaps the user is asking me to help them by posting a question on their behalf?\n\nBut I don't have the ability to create new content on external sites. The tools I have are for interacting with the current page (which appears to be a Stack Overflow question page).\n\nGiven all this, I think the best approach is to:\n1. Acknowledge the context (Stack Overflow page with \"Post Your Question\" prompt)\n2. Explain that I don't have the capability to create new Stack Overflow questions directly\n3. Offer to help the user understand what they need to do to post a question (e.g., fill in the form with at least 30 characters in the body)\n\nActually, looking more carefully at the page content: \"body must be at least 30 characters; you entered 15. ... Post Your Question\"\n\nThis suggests that the user was trying to post a question but the body was only 15 characters, which is less than the required 30 characters. The page is now prompting them to \"Post Your Question\" again.\n\nSo the user's request \"post this question\" might be them trying to complete the task of posting a question, but they need to fix the body length first.\n\nGiven this understanding, I should help the user by:\n1. Explaining that the body needs to be at least 30 characters\n2. Suggesting they update their question body to meet this requirement\n3. Once they have a valid body, they can proceed to post the question\n\nBut I still don't have a tool to actually create the question. The user would need to do that themselves on the Stack Overflow site.\n\nSo my response should be helpful but realistic about my capabilities.</think>I can see the context - you're on a Stack Overflow question page where the system is prompting you to \"Post Your Question\" because the body was only 15 characters (the minimum required is 30).\n\nUnfortunately, I don't have the capability to create or post new questions on external websites like Stack Overflow. My tools are designed for reading pages, interacting with existing elements on the current page, and managing progress within this session.\n\n**What you need to do:**\n1. Update your question body to be at least 30 characters long\n2. Then click \"Post Your Question\" again on the page\n\nOnce your question meets the minimum length requirement, you should be able to successfully post it. Is there anything else I can help you with regarding this page or any other task?",
+  "usage": {
+    "prompt_tokens": 9773,
+    "total_tokens": 11017,
+    "completion_tokens": 1244,
+    "prompt_tokens_details": null
+  }
+}

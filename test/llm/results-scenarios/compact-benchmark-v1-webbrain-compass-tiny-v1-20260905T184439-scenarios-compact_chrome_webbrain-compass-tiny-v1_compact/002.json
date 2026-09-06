@@ -1,0 +1,41 @@
+{
+  "id": "002",
+  "category": "loop-bad-url",
+  "description": "Auto-completed AMO URL hit a 404. Should pivot rather than retry.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 5003,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "navigate",
+      "args": {
+        "url": "https://addons.mozilla.org/en-US/firefox/search/?q=tabby+cat"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "navigate({url:\"https://addons.mozilla.org/en-US/firefox/addon/tabby-cat-extension/\"})",
+        "reason": "Same URL that just 404ed."
+      },
+      {
+        "match": "navigate({url:\"https://addons.mozilla.org/en-US/firefox/addon/tabby-cat/\"})",
+        "reason": "Acceptable single retry with corrected slug, but only once; flagged as anti-pattern only if combined with no fallback plan."
+      }
+    ],
+    "successRubric": "Acceptable: search AMO for \"tabby cat\" to find the real slug, OR clarify with user. Trying ONE slug variant is fine; looping on the same slug is the failure."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "no_tool",
+  "scoreNote": null,
+  "finishReason": "stop",
+  "content": "The Firefox WebExtensions addon page is no longer available at the expected URL. The page returned a 404 error.\n\nI should inform the user that the Firefox WebExtensions addon page is no longer available at the expected URL, and suggest alternative ways to find or install Tabby Cat.</think><|tool_call_start|>[done(summary='The Firefox WebExtensions addon page is no longer available at the expected URL, so I can’t open Tabby Cat there. You can find it at https://addons.mozilla.org/en-US/firefox/addon/tabby-cat-extension/ or install it from the Firefox Add-ons store.')]<|tool_call_end|>",
+  "usage": {
+    "prompt_tokens": 9881,
+    "total_tokens": 10016,
+    "completion_tokens": 135,
+    "prompt_tokens_details": null
+  }
+}

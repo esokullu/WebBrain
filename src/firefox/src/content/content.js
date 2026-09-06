@@ -1505,11 +1505,18 @@
     if (!state.settled) return { success: true, settled: false, filePickerBlocked: false };
     if (state.cleanupTimer) clearTimeout(state.cleanupTimer);
     document.removeEventListener('click', state.guard, true);
-    // If nothing was observed, stop content-side observation but leave the
-    // page-world programmatic click/showPicker guard active until its own
-    // short TTL. This suppresses longer debounces without blocking the tool
-    // response or intercepting a user's direct native input click.
-    state.cleanupPageShowPickerGuard?.(!!state.blocked);
+    // Stop content-side observation, but leave the page-world programmatic
+    // click/showPicker guard active until its own short TTL. This suppresses
+    // longer debounces without blocking the tool response or intercepting a
+    // user's direct native input click.
+    //
+    // This has to hold most of all when something WAS blocked. An app that
+    // routes an upload affordance through a file input often retries on a
+    // timer, and disarming here on the strength of the first interception left
+    // that retry unguarded — it opened a real OS chooser that nothing can
+    // close, and it stayed on screen through the rest of the run while
+    // upload_file attached the file directly.
+    state.cleanupPageShowPickerGuard?.(false);
     _filePickerGuardStates.delete(guardId);
     if (state.blocked) {
       return { ...filePickerBlockedResponse(state.blocked), settled: true };
@@ -4255,6 +4262,7 @@
       const strongIdentities = [];
       const strongRecipients = [];
       const strongSeen = new Set();
+      const observedRecipientCandidates = [];
       const gmailRecipientMode = params.adapterName === 'gmail';
       const inConversationHeaderBand = (el) => {
         if (headerBandBottom <= 0) return false;
@@ -4335,6 +4343,17 @@
             ].map(value => compact(value, 240)).find(value => /@/.test(value)) || '';
             if (!email) continue;
             const aliases = new Map();
+            const addAlias = (val) => {
+              const alias = compact(val, 240);
+              const normalized = normalizedIdentity(alias);
+              if (alias && normalized && !aliases.has(normalized)) aliases.set(normalized, alias);
+              const angleMatch = alias.match(/^([^<@]+)<[^>]+>$/);
+              if (angleMatch) {
+                const nameOnly = compact(angleMatch[1], 240);
+                const normName = normalizedIdentity(nameOnly);
+                if (nameOnly && normName && !aliases.has(normName)) aliases.set(normName, nameOnly);
+              }
+            };
             for (const value of [
               email,
               el.getAttribute?.('name'),
@@ -4343,9 +4362,7 @@
               el.innerText,
               el.textContent,
             ]) {
-              const alias = compact(value, 240);
-              const normalized = normalizedIdentity(alias);
-              if (alias && normalized && !aliases.has(normalized)) aliases.set(normalized, alias);
+              addAlias(value);
             }
             const key = normalizedIdentity(email);
             if (!key) continue;
@@ -4374,6 +4391,14 @@
         })();
         gmailComposeRoot = composeRoot;
         const recipients = collectGmailRecipients(composeRoot);
+        for (const [recipientKey, recipient] of recipients) {
+          const emailKey = recipientKey.slice(recipientKey.indexOf(':') + 1);
+          const identity = recipient.aliases.get(emailKey) || [...recipient.aliases.values()][0] || recipient.identity || '';
+          if (identity) {
+            const aliasList = Array.from(new Set([identity, ...recipient.aliases.values()])).filter(Boolean);
+            observedRecipientCandidates.push({ identity, role: recipient.role, aliases: aliasList });
+          }
+        }
         // Match the complete authorized To/CC/BCC set. Each expected identity
         // must resolve to exactly one distinct chip and no additional chip may
         // remain; duplicate display names therefore fail closed.
@@ -4437,7 +4462,11 @@
           addStrongIdentity(el);
           if (strongIdentities.length >= 8) break;
         }
-        for (const identity of strongIdentities) strongRecipients.push({ identity, role: 'to' });
+        for (const identity of strongIdentities) {
+          const item = { identity, role: 'to', aliases: [identity] };
+          strongRecipients.push({ identity, role: 'to' });
+          observedRecipientCandidates.push(item);
+        }
       }
 
       const composerText = (() => {
@@ -4512,12 +4541,22 @@
         identityCandidates: strongIdentities.slice(0, 16),
         strongIdentityCandidates: strongIdentities.slice(0, 16),
         strongRecipientCandidates: strongRecipients.slice(0, 16),
+        observedRecipientCandidates: observedRecipientCandidates.slice(0, 16),
         ...(messageRecipientDispatchToken
           ? { messageRecipientDispatchBinding: { token: messageRecipientDispatchToken } }
           : {}),
       };
     } catch (error) {
-      return { success: false, messageSend: null, conclusive: false, identityCandidates: [], error: error?.message || String(error) };
+      return {
+        success: false,
+        messageSend: null,
+        conclusive: false,
+        identityCandidates: [],
+        strongIdentityCandidates: [],
+        strongRecipientCandidates: [],
+        observedRecipientCandidates: [],
+        error: error?.message || String(error),
+      };
     }
   }
 

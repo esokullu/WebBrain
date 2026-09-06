@@ -1,0 +1,56 @@
+{
+  "id": "044",
+  "category": "counter-polarity",
+  "description": "X counter shows \"-5\" — over by 5. Shorten before posting.",
+  "mode": "act",
+  "browser": "chrome",
+  "latencyMs": 7348,
+  "error": null,
+  "firstToolCall": null,
+  "toolCallSource": null,
+  "expected": {
+    "idealNextToolCall": {
+      "name": "set_field",
+      "args": {
+        "ref_id": "ref_textarea",
+        "clear": true,
+        "text": "<shortened text>"
+      }
+    },
+    "antiPatterns": [
+      {
+        "match": "click({text:\"Post\"})",
+        "reason": "Will be rejected — text is 5 over."
+      }
+    ],
+    "successRubric": "Negative on X's counter = over by N chars. Shorten before submit."
+  },
+  "matchedAntiPattern": null,
+  "verdict": "no_tool",
+  "scoreNote": null,
+  "finishReason": "stop",
+  "content": "\n\nI see you're on the X compose page, but I don't see the draft content you want me to post. Could you please provide the text of the draft you'd like me to post?",
+  "usage": {
+    "prompt_tokens": 9069,
+    "completion_tokens": 134,
+    "total_tokens": 9203,
+    "cost": 0.00054725,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.00054725,
+      "upstream_inference_prompt_cost": 0.00045345,
+      "upstream_inference_completions_cost": 0.0000938
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 91,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  }
+}

@@ -5,7 +5,9 @@
  * the background owns prompt construction and untrusted-content wrapping.
  */
 (function () {
-  if (window.top !== window || window.__webbrainSelectionShortcutInjected) return;
+  const shortcutConfig = globalThis.__webbrainSelectionShortcutConfig;
+  if ((window.top !== window && shortcutConfig?.allowNestedFrame !== true)
+      || window.__webbrainSelectionShortcutInjected) return;
   window.__webbrainSelectionShortcutInjected = true;
 
   const api = globalThis.browser || globalThis.chrome;
@@ -13,7 +15,15 @@
 
   const STORAGE_KEY = 'selectionShortcutEnabled';
   const LOCALE_STORAGE_KEY = 'wbLocale';
-  const SUBMIT_MESSAGE = 'WB_SELECTION_SHORTCUT_SUBMIT';
+  const SUBMIT_MESSAGE = typeof shortcutConfig?.submitMessage === 'string'
+    && shortcutConfig.submitMessage.trim()
+    ? shortcutConfig.submitMessage.trim()
+    : 'WB_SELECTION_SHORTCUT_SUBMIT';
+  const SUBMIT_FIELDS = shortcutConfig?.submitFields
+    && typeof shortcutConfig.submitFields === 'object'
+    && !Array.isArray(shortcutConfig.submitFields)
+    ? { ...shortcutConfig.submitFields }
+    : {};
   const LOCALIZATION_MESSAGE = 'WB_SELECTION_SHORTCUT_LOCALIZATION';
   const GAP = 8;
   const BUTTON_SIZE = 44;
@@ -515,6 +525,7 @@ host.lang = localization.locale;
     if (action === 'custom' && !String(customQuestion || '').trim()) return;
     if (action === 'translate' && !isSupportedTranslationLanguage(language)) return;
     const request = {
+      ...SUBMIT_FIELDS,
       type: SUBMIT_MESSAGE,
       action,
       selectionText: snapshot.text,
