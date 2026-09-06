@@ -4708,6 +4708,72 @@ test('direct-message recipient guard uses structured intent and exact active ide
         { identity: 'bob@example.com', role: 'to' },
       ],
     ), false, 'moving a BCC recipient into To must fail closed');
+
+    // Role authorization and resolution tests:
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Send to Alice', 'Alice', 'to'),
+      false,
+      'prepositional "to" must not explicitly authorize the To delivery role',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'To: Alice', 'Alice', 'to'),
+      true,
+      'explicit "To:" label must authorize the To delivery role',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Alice (To)', 'Alice', 'to'),
+      true,
+      'parenthesized "(To)" label must authorize the To delivery role',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Send to Alice as To', 'Alice', 'to'),
+      true,
+      '"as To" must authorize the To delivery role',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'Put Alice in the To field', 'Alice', 'to'),
+      true,
+      '"To field" must authorize the To delivery role',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'CC: Alice', 'Alice', 'cc'),
+      true,
+      'explicit "CC:" must authorize the CC delivery role',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'BCC: Alice', 'Alice', 'bcc'),
+      true,
+      'explicit "BCC:" must authorize the BCC delivery role',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'To: Bob, BCC: Alice', 'Alice', 'to'),
+      false,
+      'multi-recipient clause must not attribute another recipient\'s To role to Alice',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(null, 'To: Bob, BCC: Alice', 'Alice', 'bcc'),
+      true,
+      'multi-recipient clause must attribute BCC role to Alice',
+    );
+
+    const prevBccTarget = { target_kind: 'named', recipients: [{ identity: 'alice@example.com', role: 'bcc' }] };
+    const observedToCandidates = [{ identity: 'alice@example.com', role: 'to' }];
+    assert.deepEqual(
+      helper.resolveClarifiedRecipients(observedToCandidates, prevBccTarget, null, 'alice@example.com'),
+      [{ identity: 'alice@example.com', role: 'bcc' }],
+      'identity-only answer must retain previously authorized bcc role',
+    );
+    assert.deepEqual(
+      helper.resolveClarifiedRecipients(observedToCandidates, prevBccTarget, null, 'Send to alice@example.com'),
+      [{ identity: 'alice@example.com', role: 'bcc' }],
+      'prepositional "to" answer must retain previously authorized bcc role',
+    );
+    assert.deepEqual(
+      helper.resolveClarifiedRecipients(observedToCandidates, prevBccTarget, null, 'To: alice@example.com'),
+      [{ identity: 'alice@example.com', role: 'to' }],
+      'explicit "To:" answer must update to the authorized To role',
+    );
+
     assert.equal(helper.messageTargetMatchesObservedIdentities(
       { target_kind: 'named', recipients: ['Alice', 'bob@example.com'] },
       ['Alice'],
@@ -5336,6 +5402,46 @@ test('direct-message recipient guard uses structured intent and exact active ide
       target_kind: 'named',
       recipients: [{ identity: 'alice@example.com', role: 'to' }],
     }, `${label}: recipient change did not update target`);
+
+    // Role preservation during recipient-change clarification:
+    // A plan authorizing Alice as BCC when composer exposes Alice as To must retain BCC
+    // on an identity-only answer, preventing unauthorized exposure on next send.
+    const bccPlanState = {
+      messaging: { target_kind: 'named', recipients: [{ identity: 'alice@example.com', role: 'bcc' }] },
+      requiresSubmission: true,
+      requiresStateChange: true,
+      pendingRecipientAuthorization: 'recipient_change',
+      observedRecipientCandidates: [{ identity: 'alice@example.com', role: 'to' }],
+    };
+
+    agent._planExecutionGuards.set(tabId, { ...bccPlanState });
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'alice@example.com', 'user', {
+        question: 'Do you want to send to Alice instead?',
+        purpose: 'recipient_change',
+      }),
+      true,
+      `${label}: identity-confirmed clarify answer bound`,
+    );
+    assert.deepEqual(agent._planExecutionGuards.get(tabId)?.messaging, {
+      target_kind: 'named',
+      recipients: [{ identity: 'alice@example.com', role: 'bcc' }],
+    }, `${label}: identity-only answer must retain previously authorized BCC role`);
+
+    // Explicit role authorization in answer ("To: alice@example.com") updates the role to To.
+    agent._planExecutionGuards.set(tabId, { ...bccPlanState });
+    assert.equal(
+      agent._bindClarifiedMessageRecipient(tabId, 'To: alice@example.com', 'user', {
+        question: 'Do you want to switch Alice to To?',
+        purpose: 'recipient_change',
+      }),
+      true,
+      `${label}: explicit role change clarification bound`,
+    );
+    assert.deepEqual(agent._planExecutionGuards.get(tabId)?.messaging, {
+      target_kind: 'named',
+      recipients: [{ identity: 'alice@example.com', role: 'to' }],
+    }, `${label}: explicit role answer must adopt the authorized To role`);
   }
 });
 

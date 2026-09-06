@@ -213,3 +213,133 @@ export function messageTargetMatchesObservedIdentities(target, candidates) {
   return expected.size === recipients.size
     && [...expected].every(key => recipients.has(key));
 }
+
+/**
+ * Does the clarification context or user answer explicitly authorize targetRole
+ * (to, cc, or bcc) for candidateIdentity?
+ *
+ * For 'bcc' and 'cc', explicit mentions of BCC or CC in the text surrounding
+ * the recipient identity or in the answer authorize the role.
+ * For 'to', because "to" is also a ubiquitous preposition ("send to Alice"),
+ * an explicit role label ("To: Alice", "Alice (To)", "as To", "in To", "To field")
+ * or localized role indicator ("收件人", "主送") is required.
+ */
+export function clarificationAuthorizesRecipientRole(clarifyContext, answer, candidateIdentity, targetRole) {
+  const role = String(targetRole || '').trim().toLowerCase();
+  if (!MESSAGE_RECIPIENT_ROLES.has(role)) return false;
+
+  const answerText = String(answer ?? '').trim();
+  const contextTexts = clarifyContext && typeof clarifyContext === 'object'
+    ? [
+        clarifyContext.question,
+        clarifyContext.reason,
+        ...(Array.isArray(clarifyContext.options) ? clarifyContext.options : []),
+      ].filter(Boolean).map(s => String(s).trim())
+    : [];
+
+  const normId = normalizeRecipientIdentity(candidateIdentity);
+
+  function snippetHasExplicitRole(snippet, roleToCheck) {
+    if (!snippet) return false;
+    if (roleToCheck === 'bcc') {
+      return /\b(?:bcc|blind\s+carbon\s+copy)\b|密送|暗送/i.test(snippet);
+    }
+    if (roleToCheck === 'cc') {
+      return /\b(?:cc|carbon\s+copy)\b|抄送/i.test(snippet);
+    }
+    if (roleToCheck === 'to') {
+      if (/\bto\s*[:：]/i.test(snippet)) return true;
+      if (/[(\[【]\s*to\s*[)\]】]/i.test(snippet)) return true;
+      if (/\b(?:as|in|into|role|field)\s+to\b/i.test(snippet)) return true;
+      if (/\bto\s+(?:field|role|recipient)\b/i.test(snippet)) return true;
+      if (/\bfrom\s+(?:bcc|cc)\s+to\s+to\b/i.test(snippet)) return true;
+      if (/\b(?:bcc|cc)\s*(?:->|=>|→)\s*to\b/i.test(snippet)) return true;
+      if (/(?:作为|设为)?(?:收件人|主送)/i.test(snippet)) return true;
+      const trimmed = snippet.trim();
+      if (/^(?:to|as\s+to)$/i.test(trimmed)) return true;
+      return false;
+    }
+    return false;
+  }
+
+  const clauseDelimiters = /[,;\n\r|/]|(?:\s+(?:and|or|以及|与|及)\s+)/i;
+
+  function textAuthorizesRoleForIdentity(text) {
+    if (!text) return false;
+    const clauses = text.split(clauseDelimiters).map(s => s.trim()).filter(Boolean);
+    let matchedClause = false;
+    for (const clause of clauses) {
+      if (normId && answerNamesIdentity(clause, normId)) {
+        matchedClause = true;
+        if (snippetHasExplicitRole(clause, role)) return true;
+      }
+    }
+    if (!matchedClause) {
+      if (normId && answerNamesIdentity(text, normId)) {
+        const spans = findCandidateAnswerSpans(text, normId);
+        for (const span of spans) {
+          const window = text.slice(Math.max(0, span.start - 40), Math.min(text.length, span.end + 40));
+          if (snippetHasExplicitRole(window, role)) return true;
+        }
+      } else if (!normId || clauses.length <= 1) {
+        if (snippetHasExplicitRole(text, role)) return true;
+      }
+    }
+    return false;
+  }
+
+  if (answerText && textAuthorizesRoleForIdentity(answerText)) {
+    return true;
+  }
+
+  for (const contextText of contextTexts) {
+    if (contextText && textAuthorizesRoleForIdentity(contextText)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Resolve observed recipient candidates against previously authorized recipients
+ * and clarification context/answer.
+ *
+ * When an observed candidate was already authorized with a different role (for
+ * example, authorized as 'bcc' while the composer exposes 'to'), require the
+ * clarification to explicitly authorize each changed To/CC/BCC role, or retain
+ * the previously authorized role when only the identity was confirmed.
+ */
+export function resolveClarifiedRecipients(observedCandidates, previousTarget, clarifyContext, answer) {
+  const previous = normalizeMessageTarget(previousTarget);
+  const previousRolesByIdentity = new Map();
+  if (previous?.recipients) {
+    for (const r of previous.recipients) {
+      const norm = normalizeRecipientIdentity(r.identity);
+      if (norm && r.role) {
+        previousRolesByIdentity.set(norm, r.role);
+      }
+    }
+  }
+
+  const rawList = Array.isArray(observedCandidates) ? observedCandidates : [];
+  return rawList.map(candidate => {
+    const legacy = typeof candidate === 'string' || typeof candidate === 'number';
+    const identity = compact(legacy ? candidate : (candidate?.identity ?? candidate?.recipient), 240);
+    const observedRole = compact(legacy ? 'to' : candidate?.role, 12).toLowerCase() || 'to';
+    const norm = normalizeRecipientIdentity(identity);
+    const previousRole = previousRolesByIdentity.get(norm);
+    if (previousRole && previousRole !== observedRole) {
+      const authorized = clarificationAuthorizesRecipientRole(clarifyContext, answer, identity, observedRole);
+      return {
+        identity,
+        role: authorized ? observedRole : previousRole,
+      };
+    }
+    return {
+      identity,
+      role: observedRole,
+    };
+  });
+}
+

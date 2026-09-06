@@ -43,7 +43,7 @@ import {
   workflowControlLabelIsRequested,
   workflowRequiredRowsAreProcessed,
 } from './adapter-workflow-evidence.js';
-import { answerNamesAllObservedRecipients, answerNamesIdentity, messageTargetMatchesObservedIdentities, normalizeMessageTarget, normalizeRecipientAnswer, normalizeRecipientIdentity } from './message-recipient-guard.js';
+import { answerNamesAllObservedRecipients, answerNamesIdentity, messageTargetMatchesObservedIdentities, normalizeMessageTarget, normalizeRecipientAnswer, normalizeRecipientIdentity, resolveClarifiedRecipients } from './message-recipient-guard.js';
 import {
   fetchUrl,
   executeHttpSkillTool,
@@ -17880,7 +17880,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         ...(Array.isArray(context.options) ? context.options : []),
       ].filter(Boolean).join(' ').toLowerCase();
       const changeWord = /(change|switch|different|instead|update|replace|another|new|更改|更换|切换|替换|换成)/i.test(text);
-      const targetWord = /(recipient|conversation|contact|send to|person|address|target|someone else|收件人|联系人|发送)/i.test(text);
+      const targetWord = /(recipient|conversation|contact|send to|person|address|target|someone else|\b(?:to|cc|bcc|role|field)\b|收件人|联系人|发送)/i.test(text);
       return changeWord && targetWord;
     }
     if (purpose === 'message_recipient' || purpose === 'recipient_change') return true;
@@ -17962,7 +17962,8 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     const normalizedAnswer = normalizeRecipientAnswer(answer);
     if (!normalizedAnswer) return false;
     if (!answerNamesAllObservedRecipients(normalizedAnswer, observed)) return false;
-    const target = normalizeMessageTarget({ target_kind: 'named', recipients: observed });
+    const resolvedRecipients = resolveClarifiedRecipients(observed, guard.messaging, clarifyContext, answer);
+    const target = normalizeMessageTarget({ target_kind: 'named', recipients: resolvedRecipients });
     if (!target) return false;
     guard.messaging = target;
     return true;
