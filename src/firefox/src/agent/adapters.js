@@ -16233,6 +16233,37 @@ const ADAPTERS = [
 - Search has filters (People, Posts, Jobs, Companies) as tabs at the top.`,
   },
   {
+    name: 'bluesky',
+    category: 'general',
+    revision: 1,
+    regions: ['global'],
+    jobs: ['publish-post'],
+    workflow: {
+      schema: ADAPTER_WORKFLOW_SCHEMA,
+      jobs: {
+        'publish-post': {
+          description: 'Prepare, publish, and verify a Bluesky post.',
+          template: 'publish',
+          stateChange: true,
+          requiresSubmission: true,
+          requiresLedger: false,
+          stages: ['access_gate', 'fill', 'review', 'commit', 'verify', 'deliver'],
+          successEvidence: ['The reviewed post appears under the intended handle at a stable /profile/<handle>/post/<id> URL.'],
+          partialEvidence: ['The verified composer text, attached media, and exact account, validation, or publication blocker are reported.'],
+        },
+      },
+    },
+    matches: (url) => /^https?:\/\/(www\.)?bsky\.app\//.test(url),
+    notes: `
+- The composer opens from "Compose new post" (also the "New Post" button on wider layouts) and renders as a dialog over the current feed; the URL does not change while it is open.
+- The post body is a contenteditable rich-text editor, not a textarea. Use set_field / type_ax against the composer textbox ref rather than clicking into it by coordinates.
+- Images attach through a hidden <input type=file> behind "Add media to post" / "Add images". Do NOT click that control to open an OS file dialog — call upload_file with the file input's selector and the downloadId or absolute path, which attaches the file without any dialog.
+- Bluesky enforces a 300-character graphene limit and shows a live counter; a post over the limit leaves "Post" disabled rather than reporting an error.
+- Alt text is a separate per-image control. Add it only when the user asked for it.
+- "Post" (labelled "Publish post") commits. There is no <form> submit: the composer closes and the new post is inserted into the feed via XHR, so a closed composer alone is not proof.
+- Report publication only after the post is reachable at its own /profile/<handle>/post/<id> URL under the intended handle, with the requested text and any attached image visible there.`,
+  },
+  {
     name: 'reddit',
     category: 'general',
     matches: (url) => /^https?:\/\/(www\.|old\.|new\.)?reddit\.com\//.test(url),

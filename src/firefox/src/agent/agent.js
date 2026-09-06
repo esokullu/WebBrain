@@ -1356,6 +1356,14 @@ export class Agent extends LoopDetector {
     return null;
   }
 
+  _sameUrlOrigin(a, b) {
+    try {
+      return new URL(String(a || '')).origin === new URL(String(b || '')).origin;
+    } catch (_) {
+      return false;
+    }
+  }
+
   _completionSubmissionEvidence(tabId, pageState, pageUrl = '') {
     if (!pageState) return { verifiedFinalSubmit: false, liveSignals: [], relevantForms: 0 };
     const relevantForms = Number(pageState.relevantFormCount || 0);
@@ -1363,17 +1371,36 @@ export class Agent extends LoopDetector {
       ? pageState.successMessages.filter(text => this._completionTextSignalsSuccess(text, { allowBare: true }))
       : [];
     const submit = this._completionSubmitStates.get(tabId);
-    const currentDocumentMatchesSubmit = !!(
-      submit?.currentUrl
-      && this._normalizeUrl(pageUrl || pageState.url || '') === this._normalizeUrl(submit.currentUrl)
+    const observedUrl = pageUrl || pageState.url || '';
+    const normalizedObserved = this._normalizeUrl(observedUrl);
+    const normalizedOriginating = this._normalizeUrl(submit?.originatingUrl || '');
+    // pageState comes from a live read of the document performed for this very
+    // check, so the probe is itself an observation of the page after the
+    // submit. Single-page apps confirm a publish by navigating to the new
+    // resource, and the tools that navigate are not in the observation set, so
+    // insisting on an earlier read made the verification step the reason the
+    // evidence was rejected.
+    const observedAfterSubmit = !!submit
+      && (submit.observedAfterSubmit === true || !!normalizedObserved);
+    const documentChanged = !!submit && (
+      submit.documentChanged === true
+      || (!!normalizedOriginating && !!normalizedObserved && normalizedOriginating !== normalizedObserved)
+    );
+    // What this needs to establish is that the page being reported belongs to
+    // the site that was submitted to, so another site's submit cannot stand in
+    // for this one. Demanding the exact document the last read saw punished
+    // the very navigation the completion guard asks for.
+    const currentDocumentMatchesSubmit = !!submit && (
+      (!!submit.currentUrl && this._normalizeUrl(submit.currentUrl) === normalizedObserved)
+      || this._sameUrlOrigin(observedUrl, submit.originatingUrl || submit.currentUrl || '')
     );
     const observedSuccessSignal = !!submit?.completionSignalObserved || liveSignals.length > 0;
     const verifiedSubmit = !!(
       submit?.dispatched
-      && submit.observedAfterSubmit
+      && observedAfterSubmit
       && !submit.formValidationFailed
       && currentDocumentMatchesSubmit
-      && (submit.documentChanged || observedSuccessSignal)
+      && (documentChanged || observedSuccessSignal)
     );
     return {
       submit,
@@ -1966,6 +1993,13 @@ export class Agent extends LoopDetector {
       && /^\/video\/\d+$/i.test(path)
     ) {
       return `douyin:${host}${path}`;
+    }
+    if (
+      siteWorkflow?.adapterName === 'bluesky'
+      && host === 'bsky.app'
+      && /^\/profile\/[^/]+\/post\/[^/]+$/i.test(path)
+    ) {
+      return `bluesky:${host}${path}`;
     }
     return '';
   }
@@ -20079,7 +20113,12 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           : missingRequiredDownload
           ? '[PLAN EXECUTION BLOCK: This task requires a file to be downloaded before it can finish successfully. Finding a URL, link, button, or media source is only read evidence. Use an authorized tool call with the DOWNLOAD capability and verify that it returned successful download evidence. If permission is denied or no file can be saved, call done with outcome partial or failed and explain the limitation; do not claim the file was downloaded.]'
           : missingRequiredSubmission
-          ? `[PLAN EXECUTION BLOCK: The selected ${state.siteWorkflow?.job?.id || 'workflow'} job requires terminal evidence for its own submit/send/publish/commit contract. Filling fields, another site's submit, or an unrelated success signal is not completion. Dispatch the intended action and observe the job-specific terminal state (for example recipient-bound sent state, saved/published resource, form confirmation, or paid/ticket-issued transaction) before calling done again. If that cannot be verified, use outcome partial or failed and report the exact blocker.]`
+          ? (state.siteWorkflow?.job?.id
+            ? `[PLAN EXECUTION BLOCK: The selected ${state.siteWorkflow.job.id} job requires terminal evidence for its own submit/send/publish/commit contract. Filling fields, another site's submit, or an unrelated success signal is not completion. Dispatch the intended action and observe the job-specific terminal state (for example recipient-bound sent state, saved/published resource, form confirmation, or paid/ticket-issued transaction) before calling done again. If that cannot be verified, use outcome partial or failed and report the exact blocker.]`
+            // No site workflow was selected, so there is no job contract to
+            // point at. Naming one sent the model looking for the terminal
+            // state of something that does not exist.
+            : '[PLAN EXECUTION BLOCK: This task requires a submit/send/publish/commit action, and the page state read at completion does not yet show it took effect. Read the page that resulted from the action — the published item, the confirmation, or the changed state — in the same browser tab, then call done from there. If the action cannot be confirmed, use outcome partial or failed and report the exact blocker.]')
           : forbiddenSubmission
           ? `[PLAN EXECUTION BLOCK: The selected ${state.siteWorkflow?.job?.id || 'workflow'} job prepares the form and leaves it unsubmitted, but a submit action was dispatched. Do not submit again or try to undo it by submitting anything else. Call done with outcome partial or failed, state plainly that the form was submitted without authorization, and report what the page shows now.]`
           : missingJobEvidence
@@ -23821,7 +23860,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
                   .map(link => {
                     try { return new URL(link.getAttribute('href') || link.href || '', location.href).href; } catch { return ''; }
                   })
-                  .filter(url => /linkedin\\.com\\/(?:feed\\/update|posts)\\/|github\\.com\\/[^/]+\\/[^/]+\\/releases\\/tag\\/|douyin\\.com\\/video\\/\\d+/i.test(url))
+                  .filter(url => /linkedin\\.com\\/(?:feed\\/update|posts)\\/|github\\.com\\/[^/]+\\/[^/]+\\/releases\\/tag\\/|douyin\\.com\\/video\\/\\d+|bsky\\.app\\/profile\\/[^/]+\\/post\\//i.test(url))
                   .slice(0, 200);
                 return {
                   url: location.href,
