@@ -394,7 +394,14 @@ export function advanceChatSession(value, rawSnapshot, now = Date.now()) {
         : session.state === 'waiting_for_transfer'
           ? 'schedule_resume'
           : 'observe';
-  return { session, snapshot, events, newMessages: newMessages.slice(-MAX_NEW_MESSAGES), nextAction };
+  return {
+    session,
+    snapshot,
+    events,
+    newMessages: newMessages.slice(-MAX_NEW_MESSAGES),
+    newMessagesTruncated: newMessages.length > MAX_NEW_MESSAGES,
+    nextAction,
+  };
 }
 
 export function decideChatSend(value, rawSnapshot, text, now = Date.now()) {

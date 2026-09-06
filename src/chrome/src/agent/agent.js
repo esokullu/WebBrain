@@ -17664,14 +17664,19 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       ...(message?.author ? { author: String(message.author).slice(0, 80) } : {}),
       ...(message?.timestamp ? { timestamp: String(message.timestamp).slice(0, 40) } : {}),
     }));
+    let deltaTruncated = advanced.newMessagesTruncated === true;
     // Keep the model-facing delta below the normal 8k tool-result envelope.
     // Drop oldest entries first, then trim one oversized message and mark it.
-    while (JSON.stringify(newMessages).length > 5000 && newMessages.length > 1) newMessages.shift();
+    while (JSON.stringify(newMessages).length > 5000 && newMessages.length > 1) {
+      newMessages.shift();
+      deltaTruncated = true;
+    }
     if (JSON.stringify(newMessages).length > 5000 && newMessages.length === 1) {
       const message = newMessages[0];
       const excess = JSON.stringify(newMessages).length - 5000;
       message.text = message.text.slice(0, Math.max(0, message.text.length - excess - 32));
       message.truncated = true;
+      deltaTruncated = true;
     }
     const events = (Array.isArray(advanced.events) ? advanced.events : []).map(event => (
       Array.isArray(event?.messages)
@@ -17685,6 +17690,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       nextAction: advanced.nextAction,
       events,
       newMessages,
+      ...(deltaTruncated ? { deltaTruncated: true } : {}),
       pendingOutbound: !!advanced.session.pendingOutbound,
       userInput: advanced.session.userInput,
       resolutionEvidence: advanced.snapshot.resolutionEvidence,

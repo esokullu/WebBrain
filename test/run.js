@@ -5175,6 +5175,7 @@ test('model-callable chat tools bind the thread, send once, and require outgoing
     });
     assert.ok(JSON.stringify(boundedView).length <= 8000, `${label}: chat workflow view exceeded the model tool-result envelope`);
     assert.equal(boundedView.newMessages.at(-1).truncated, true, `${label}: oversized chat delta was not marked truncated`);
+    assert.equal(boundedView.deltaTruncated, true, `${label}: dropped chat delta entries were not disclosed`);
     const sent = await agent._sendChatWorkflow(tabId, {
       thread_key: 'case-42',
       composer_ref: 'composer-1',
