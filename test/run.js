@@ -86139,6 +86139,10 @@ test('social publication workflow follows the live X or Bluesky destination and 
       // "post" and "posts" are nouns as often as commands. The clause decides.
       ['Read posts on https://x.com/home, then submit a summary in the survey', [],
         'the noun "posts" was read as a publish command'],
+      ['Posts to read on X, then submit a summary in the survey', [],
+        'noun-like publish token followed by read intent was treated as a publish command'],
+      ['Tweets to read on X, then summarize them', [],
+        'tweets followed by read intent was treated as a publish command'],
       ['Read the post on https://x.com/home and submit a summary in the survey', [],
         'a read verb governing "post" did not disqualify it'],
       ['Check the latest posts on https://x.com/home then fill the form', [],
@@ -86231,7 +86235,11 @@ test('X and Bluesky same-route publication accepts only one new permalink with t
       accountIdentity: 'twitter:webbrain',
       wrongAccountUrl: 'https://x.com/notwebbrain/status/4444444444444444444',
       displayedRepoUrl: 'github.com/webbrain-one/…',
-      repoLink: { href: 'https://t.co/abc123', text: 'github.com/webbrain-one/…' },
+      repoLink: {
+        href: 'https://t.co/abc123',
+        text: 'github.com/webbrain-one/…',
+        expandedUrl: 'https://github.com/webbrain-one/webbrain',
+      },
     },
     {
       adapterName: 'bluesky',
@@ -86627,6 +86635,76 @@ test('X and Bluesky same-route publication accepts only one new permalink with t
           fixture.feedUrl,
           submit,
         ), false, AgentClass.name + ': Premium body with mismatched suffix past 10k chars was accepted');
+      }
+
+      const staleFooterState = {
+        ...exactPageState,
+        workflowResourceRecords: [
+          {
+            ...exactPageState.workflowResourceRecords[0],
+            bodyText: productionNormalizedBody + '\nstale footer text',
+            text: 'WebBrain\n' + productionNormalizedBody + '\nstale footer text\n2m',
+          },
+        ],
+      };
+      assert.equal(agent._workflowPublishedResourcePayloadMatch(
+        {
+          ...submit.workflowBinding,
+          publishedResourceIdentity: fixture.expectedIdentity,
+          preDispatchPublicationAccountIdentity: fixture.accountIdentity,
+          preDispatchPublicationAccountIdentityComplete: true,
+        },
+        guard,
+        staleFooterState,
+        fixture.feedUrl,
+        submit,
+      ), false, AgentClass.name + ': bodyText with stale footer was accepted instead of requiring complete equality');
+
+      const exactBodyTextState = {
+        ...exactPageState,
+        workflowResourceRecords: [
+          {
+            ...exactPageState.workflowResourceRecords[0],
+            bodyText: productionNormalizedBody,
+            text: 'WebBrain\n' + productionNormalizedBody + '\n2m',
+          },
+        ],
+      };
+      assert.equal(agent._workflowPublishedResourcePayloadMatch(
+        {
+          ...submit.workflowBinding,
+          publishedResourceIdentity: fixture.expectedIdentity,
+          preDispatchPublicationAccountIdentity: fixture.accountIdentity,
+          preDispatchPublicationAccountIdentityComplete: true,
+        },
+        guard,
+        exactBodyTextState,
+        fixture.feedUrl,
+        submit,
+      ), true, AgentClass.name + ': exact bodyText was rejected');
+
+      if (fixture.adapterName === 'twitter') {
+        const ambiguousLinkPageState = {
+          ...exactPageState,
+          workflowResourceRecords: [
+            {
+              ...exactPageState.workflowResourceRecords[0],
+              links: [{ href: 'https://t.co/ambiguous', text: 'github.com/webbrain-one/…' }],
+            },
+          ],
+        };
+        assert.equal(agent._workflowPublishedResourcePayloadMatch(
+          {
+            ...submit.workflowBinding,
+            publishedResourceIdentity: fixture.expectedIdentity,
+            preDispatchPublicationAccountIdentity: fixture.accountIdentity,
+            preDispatchPublicationAccountIdentityComplete: true,
+          },
+          guard,
+          ambiguousLinkPageState,
+          fixture.feedUrl,
+          submit,
+        ), false, AgentClass.name + ': ambiguous truncated URL label without full URL proof was accepted');
       }
 
       assert.equal(agent._workflowTerminalEvidenceFromDone(

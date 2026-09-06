@@ -240,6 +240,10 @@ const SOCIAL_READ_VERBS = new RegExp(
   + '|\u9605\u8bfb|\u95b1\u8b80|\u8bfb|\u8b80|\u67e5\u770b|\u6d4f\u89c8|\u700f\u89bd|\u8aad\u3093\u3067|\u8aad\u3080|\u8aad\u307f|\uc77d\uace0|\uc77d\uc5b4|\uc77d\uc740',
   'iu',
 );
+const SOCIAL_NOUN_LIKE_PUBLISH = new RegExp(
+  '^(?:posts?|tweets?|skeets?|publica[c\u00e7][i\u00ed]?[o\u00f3]n(?:es)?|publica[c\u00e7][a\u00e3]o|publica[c\u00e7][o\u00f5]es|publication|publications|\u6295\u7a3f|\u63a8\u6587)$',
+  'iu',
+);
 const SOCIAL_CLAUSE_BREAK = new RegExp('[.!?;:,\\n]|(?<![\\p{L}\\p{N}_])(?:and|then|but|or|after|before|y|luego|puis|et|ensuite|und|dann|poi|sonra|ve|затем|и)(?![\\p{L}\\p{N}_])|然后|然後|接着|そして|それから|、|。', 'iu');
 
 // "On <url>, publish this" names a destination just as plainly as
@@ -2193,8 +2197,18 @@ export class Agent extends LoopDetector {
 
   _workflowSocialLinkMatchesRequested(link, requested) {
     if (!link || !requested) return false;
-    return ['href', 'text', 'title', 'ariaLabel', 'expandedUrl']
-      .some(field => this._workflowSocialDisplayedUrlMatchesRequested(link[field], requested));
+    const expected = this._workflowSocialDisplayUrl(requested);
+    if (!expected) return false;
+    return ['expandedUrl', 'title', 'ariaLabel', 'href', 'text'].some((field) => {
+      const value = link[field];
+      if (!value) return false;
+      const observed = this._workflowSocialDisplayUrl(value);
+      if (!observed) return false;
+      if (observed === expected) return true;
+      const hasEllipsis = /(?:\u2026|\.{3})$/.test(observed);
+      if (hasEllipsis) return false;
+      return observed === expected;
+    });
   }
 
   // A card also renders the author name, timestamp, and controls, so matching
@@ -2207,11 +2221,17 @@ export class Agent extends LoopDetector {
   }
 
   _workflowSocialPublishedBodyObserved(requirement, record) {
-    const authoredText = this._workflowSocialAuthoredText(record);
-    if (this._workflowPublishedPayloadValueObserved(requirement, { pageText: authoredText })) return true;
     const expectedBody = this._workflowMessageBody(requirement?.value);
-    let observedBody = this._workflowMessageBody(authoredText);
-    if (!expectedBody || !observedBody) return false;
+    if (!expectedBody) return false;
+    const authoredText = this._workflowSocialAuthoredText(record);
+    const observedBody = this._workflowMessageBody(authoredText);
+    if (!observedBody) return false;
+    const hasDedicatedAuthoredText = !!this._workflowMessageBody(record?.bodyText);
+    if (hasDedicatedAuthoredText) {
+      if (observedBody === expectedBody) return true;
+    } else {
+      if (this._workflowPublishedPayloadValueObserved(requirement, { pageText: authoredText })) return true;
+    }
     const links = Array.isArray(record?.links) ? record.links : [];
     // "!", ";" and ":" are valid path characters, so a URL like
     // https://en.wikipedia.org/wiki/Yahoo! is not punctuated, it just ends
@@ -2257,6 +2277,9 @@ export class Agent extends LoopDetector {
       comparableExpected = replaceFirst(comparableExpected, requested, marker);
       comparableObserved = replaceFirst(comparableObserved, displayed, marker);
       if (!comparableExpected || !comparableObserved) return false;
+    }
+    if (hasDedicatedAuthoredText) {
+      return comparableExpected === comparableObserved;
     }
     return this._workflowPublishedPayloadValueObserved(
       { ...requirement, value: comparableExpected },
@@ -14744,7 +14767,12 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
   _socialPublicationCommandIn(text) {
     return String(text || '').split(SOCIAL_CLAUSE_BREAK).some((clause) => {
       const publish = clause ? clause.match(SOCIAL_PUBLISH_VERBS) : null;
-      return !!publish && !SOCIAL_READ_VERBS.test(clause.slice(0, publish.index));
+      if (!publish) return false;
+      const before = clause.slice(0, publish.index);
+      if (SOCIAL_READ_VERBS.test(before)) return false;
+      const after = clause.slice(publish.index + publish[0].length);
+      if (SOCIAL_NOUN_LIKE_PUBLISH.test(publish[0]) && SOCIAL_READ_VERBS.test(after)) return false;
+      return true;
     });
   }
 
@@ -14825,7 +14853,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         for (const verb of clause.matchAll(verbPattern)) {
           const verbIndex = verb.index ?? 0;
           if (SOCIAL_READ_VERBS.test(clause.slice(0, verbIndex))) continue;
-          const afterVerb = clause.slice(verbIndex, verbIndex + (verb[0]?.length ?? 0) + 60);
+          const verbWord = verb[0] || '';
+          const afterVerbText = clause.slice(verbIndex + verbWord.length);
+          if (SOCIAL_NOUN_LIKE_PUBLISH.test(verbWord) && SOCIAL_READ_VERBS.test(afterVerbText)) continue;
+          const afterVerb = clause.slice(verbIndex, verbIndex + verbWord.length + 60);
           const beforeVerb = clause.slice(Math.max(0, verbIndex - 60), verbIndex);
           platformPattern.lastIndex = 0;
           if (platformPattern.test(afterVerb) || platformPattern.test(beforeVerb)) return true;
