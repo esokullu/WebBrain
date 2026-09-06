@@ -4774,6 +4774,43 @@ test('direct-message recipient guard uses structured intent and exact active ide
       'explicit "To:" answer must update to the authorized To role',
     );
 
+    const modelAuthoredRoleContext = {
+      question: 'Should Alice move from BCC to To?',
+      reason: 'Recipient is in To in composer',
+      options: ['Move Alice from BCC to To', 'Keep Alice as BCC'],
+      purpose: 'recipient_change',
+    };
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(modelAuthoredRoleContext, 'No, keep Alice as BCC', 'Alice', 'to'),
+      false,
+      'model-authored question mentioning "from BCC to To" must not authorize role change when user rejects or does not authorize',
+    );
+    assert.equal(
+      helper.clarificationAuthorizesRecipientRole(modelAuthoredRoleContext, 'Alice', 'Alice', 'to'),
+      false,
+      'bare identity answer under model-authored role question must not authorize role change',
+    );
+    assert.deepEqual(
+      helper.resolveClarifiedRecipients(observedToCandidates, prevBccTarget, modelAuthoredRoleContext, 'No, keep Alice as BCC'),
+      [{ identity: 'alice@example.com', role: 'bcc' }],
+      'user answer rejecting role change under model-authored context must retain previously authorized bcc role',
+    );
+    assert.deepEqual(
+      helper.resolveClarifiedRecipients(observedToCandidates, prevBccTarget, modelAuthoredRoleContext, 'alice@example.com'),
+      [{ identity: 'alice@example.com', role: 'bcc' }],
+      'bare identity answer under model-authored role question must retain previously authorized bcc role',
+    );
+    assert.deepEqual(
+      helper.resolveClarifiedRecipients(observedToCandidates, prevBccTarget, modelAuthoredRoleContext, 'Move Alice to To'),
+      [{ identity: 'alice@example.com', role: 'to' }],
+      'user answer explicitly authorizing To role must update to To role',
+    );
+    assert.deepEqual(
+      helper.resolveClarifiedRecipients(observedToCandidates, prevBccTarget, modelAuthoredRoleContext, 'Move Alice from BCC to To'),
+      [{ identity: 'alice@example.com', role: 'to' }],
+      'user answer selecting option to move from BCC to To must update to To role',
+    );
+
     assert.equal(helper.messageTargetMatchesObservedIdentities(
       { target_kind: 'named', recipients: ['Alice', 'bob@example.com'] },
       ['Alice'],

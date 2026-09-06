@@ -229,27 +229,24 @@ export function messageTargetMatchesObservedIdentities(target, candidates) {
 }
 
 /**
- * Does the clarification context or user answer explicitly authorize targetRole
- * (to, cc, or bcc) for candidateIdentity?
+ * Does the user answer explicitly authorize targetRole (to, cc, or bcc) for
+ * candidateIdentity?
  *
- * For 'bcc' and 'cc', explicit mentions of BCC or CC in the text surrounding
- * the recipient identity or in the answer authorize the role.
+ * Role authorization must come strictly from the user's answer, never from
+ * the clarification context (question, reason, or options) which are
+ * model-authored and cannot supply recipient authorization.
+ *
+ * For 'bcc' and 'cc', explicit mentions of BCC or CC in the answer authorize the role.
  * For 'to', because "to" is also a ubiquitous preposition ("send to Alice"),
- * an explicit role label ("To: Alice", "Alice (To)", "as To", "in To", "To field")
- * or localized role indicator ("收件人", "主送") is required.
+ * an explicit role label ("To: Alice", "Alice (To)", "as To", "in To", "to To", "To field")
+ * or localized role indicator ("收件人", "主送") is required in the user's answer.
  */
 export function clarificationAuthorizesRecipientRole(clarifyContext, answer, candidateIdentity, targetRole) {
   const role = String(targetRole || '').trim().toLowerCase();
   if (!MESSAGE_RECIPIENT_ROLES.has(role)) return false;
 
   const answerText = String(answer ?? '').trim();
-  const contextTexts = clarifyContext && typeof clarifyContext === 'object'
-    ? [
-        clarifyContext.question,
-        clarifyContext.reason,
-        ...(Array.isArray(clarifyContext.options) ? clarifyContext.options : []),
-      ].filter(Boolean).map(s => String(s).trim())
-    : [];
+  if (!answerText) return false;
 
   const candidate = typeof candidateIdentity === 'object' && candidateIdentity !== null
     ? candidateIdentity
@@ -272,7 +269,7 @@ export function clarificationAuthorizesRecipientRole(clarifyContext, answer, can
     if (roleToCheck === 'to') {
       if (/\bto\s*[:：]/i.test(snippet)) return true;
       if (/[(\[【]\s*to\s*[)\]】]/i.test(snippet)) return true;
-      if (/\b(?:as|in|into|role|field)\s+to\b/i.test(snippet)) return true;
+      if (/\b(?:as|in|into|role|field|to)\s+to\b/i.test(snippet)) return true;
       if (/\bto\s+(?:field|role|recipient)\b/i.test(snippet)) return true;
       if (/\bfrom\s+(?:bcc|cc)\s+to\s+to\b/i.test(snippet)) return true;
       if (/\b(?:bcc|cc)\s*(?:->|=>|→)\s*to\b/i.test(snippet)) return true;
@@ -313,17 +310,7 @@ export function clarificationAuthorizesRecipientRole(clarifyContext, answer, can
     return false;
   }
 
-  if (answerText && textAuthorizesRoleForIdentity(answerText)) {
-    return true;
-  }
-
-  for (const contextText of contextTexts) {
-    if (contextText && textAuthorizesRoleForIdentity(contextText)) {
-      return true;
-    }
-  }
-
-  return false;
+  return textAuthorizesRoleForIdentity(answerText);
 }
 
 /**
