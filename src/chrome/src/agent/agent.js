@@ -1649,6 +1649,15 @@ export class Agent extends LoopDetector {
       ? pageState.successMessages.filter(text => this._completionTextSignalsSuccess(text, { allowBare: true }))
       : [];
     const submit = this._completionSubmitStates.get(tabId);
+    // The document reported at completion must be the one the last post-submit
+    // read saw. Loosening this to same-origin was tried and withdrawn twice:
+    // without a payload check there is nothing here that distinguishes the
+    // resource this run published from any other page on the site, so an
+    // unrelated route — or a pre-existing post that merely looks like a
+    // published resource — could stand in for a publish that never happened.
+    // A single-page app that navigates to confirm its own publish is steered
+    // by the completion block instead: it says to read the resulting page in
+    // the same tab and call done from there, which satisfies this directly.
     const currentDocumentMatchesSubmit = !!(
       submit?.currentUrl
       && this._normalizeUrl(pageUrl || pageState.url || '') === this._normalizeUrl(submit.currentUrl)
@@ -22630,7 +22639,12 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           : missingRequiredDownload
           ? '[PLAN EXECUTION BLOCK: This task requires a file to be downloaded before it can finish successfully. Finding a URL, link, button, or media source is only read evidence. Use an authorized tool call with the DOWNLOAD capability and verify that it returned successful download evidence. If permission is denied or no file can be saved, call done with outcome partial or failed and explain the limitation; do not claim the file was downloaded.]'
           : missingRequiredSubmission
-          ? `[PLAN EXECUTION BLOCK: The selected ${state.siteWorkflow?.job?.id || 'workflow'} job requires terminal evidence for its own submit/send/publish/commit contract. Filling fields, another site's submit, or an unrelated success signal is not completion. Dispatch the intended action and observe the job-specific terminal state (for example recipient-bound sent state, saved/published resource, form confirmation, or paid/ticket-issued transaction) before calling done again. If that cannot be verified, use outcome partial or failed and report the exact blocker.]`
+          ? (state.siteWorkflow?.job?.id
+            ? `[PLAN EXECUTION BLOCK: The selected ${state.siteWorkflow.job.id} job requires terminal evidence for its own submit/send/publish/commit contract. Filling fields, another site's submit, or an unrelated success signal is not completion. Dispatch the intended action and observe the job-specific terminal state (for example recipient-bound sent state, saved/published resource, form confirmation, or paid/ticket-issued transaction) before calling done again. If that cannot be verified, use outcome partial or failed and report the exact blocker.]`
+            // No site workflow was selected, so there is no job contract to
+            // point at. Naming one sent the model looking for the terminal
+            // state of something that does not exist.
+            : '[PLAN EXECUTION BLOCK: This task requires a submit/send/publish/commit action, and the page state read at completion does not yet show it took effect. Read the page that resulted from the action — the published item, the confirmation, or the changed state — in the same browser tab, then call done from there. If the action cannot be confirmed, use outcome partial or failed and report the exact blocker.]')
           : forbiddenSubmission
           ? `[PLAN EXECUTION BLOCK: The selected ${state.siteWorkflow?.job?.id || 'workflow'} job prepares the form and leaves it unsubmitted, but a submit action was dispatched. Do not submit again or try to undo it by submitting anything else. Call done with outcome partial or failed, state plainly that the form was submitted without authorization, and report what the page shows now.]`
           : missingJobEvidence
