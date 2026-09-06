@@ -245,7 +245,7 @@ const SOCIAL_CLAUSE_BREAK = new RegExp('[.!?;:,\\n]|(?<![\\p{L}\\p{N}_])(?:and|t
 // "publish this on <url>", but only when the URL is presented as a place.
 const SOCIAL_PUBLISH_DESTINATION_LEAD = new RegExp(
   '(?:^|[\\s,;:(\\[\'"])(?:on|onto|to|via|en|\u00e0|au|auf|su|em|na|para|\u0432|\u043d\u0430)\\s+$'
-  + '|[\u3067\u306b\u4e0a]\\s*$',
+  + '|[\u3067\u306b\u4e0a\u5728\u5230\u81f3]\\s*$',
   'iu',
 );
 
@@ -1991,6 +1991,7 @@ export class Agent extends LoopDetector {
       ['passenger', ['passenger', 'traveller', 'traveler', 'yolcu', '乘客', '乗客', '승객']],
       ['seat_class', ['seat class', 'seat', 'class', 'berth', 'koltuk', '座位', '席', '좌석']],
       ['account', ['account', 'profile', 'handle', 'username', 'publishing account', 'posting account']],
+      ['attachment', ['attachment', 'attachments', 'attach', 'attached', 'media', 'medias', 'image', 'images', 'photo', 'photos', 'picture', 'pictures', 'pic', 'pics', 'video', 'videos', 'clip', 'clips', 'file', 'files', 'pièce jointe', 'pièces jointes', 'médias', 'adjunto', 'adjuntos', 'medios', 'imagen', 'imágenes', 'foto', 'fotos', 'anexo', 'anexos', 'mídia', 'mídias', 'imagem', 'imagens', 'anhang', 'anhänge', 'medien', 'bild', 'bilder', 'allegato', 'allegati', 'immagine', 'immagini', 'ek', 'ekler', 'medya', 'görsel', 'resim', '添付', '添付ファイル', '画像', '写真', '動画', 'メディア', '첨부', '첨부파일', '이미지', '사진', '동영상', '미디어', '附件', '图片', '圖片', '照片', '相片', '视频', '視頻', '影片', '媒体', '媒體', 'вложение', 'вложения', 'медиа', 'изображение', 'изображения', 'фото', 'видео']],
       ['subject', ['subject', 'subject line', 'email subject', 'sujet', 'objet', 'asunto', 'assunto', 'betreff', 'oggetto', 'konu', '件名', '主题', '主旨']],
       ['body', ['body', 'post', 'post body', 'post text', 'composer']],
       ['title', ['title', 'titre', 'título', 'titulo', 'titel', 'titolo', 'başlık', 'タイトル', '제목', '标题', '標題', 'название']],
@@ -2237,6 +2238,63 @@ export class Agent extends LoopDetector {
     );
   }
 
+  _workflowSocialPublishedAttachmentObserved(requirement, record) {
+    const rawAttachments = Array.isArray(record?.attachments)
+      ? record.attachments
+      : (Array.isArray(record?.media) ? record.media : []);
+    if (!rawAttachments.length) return false;
+    const want = this._workflowMetadataValue(requirement?.value);
+    if (!want) return true;
+
+    const normalized = want.toLowerCase();
+    const isGeneric = /^(?:true|yes|1|attached|attachment|attachments|media|image|images|photo|photos|picture|pictures|video|videos|file|files)$/i.test(normalized)
+      || /^(?:添付|画像|写真|動画|メディア|已上传|附件|图片|照片|视频|媒体)$/u.test(normalized);
+
+    const wantsVideo = /\b(?:video|mp4|mov|webm|mkv|clip|recording)\b|(?:動画|视频|影片|видео)/i.test(normalized);
+    const wantsImage = /\b(?:image|images|photo|photos|picture|pictures|pic|pics|png|jpg|jpeg|gif|webp)\b|(?:画像|写真|图片|照片|圖片|изображение|фото)/i.test(normalized);
+
+    const attachmentType = att => (typeof att === 'string' ? att : att?.type || att?.kind || '');
+
+    if (wantsVideo) {
+      const hasVideo = rawAttachments.some(att => {
+        const type = attachmentType(att);
+        if (type === 'video') return true;
+        const src = String(att?.src || att?.url || '');
+        return /\.(?:mp4|mov|webm|mkv)(?:[?#]|$)/i.test(src);
+      });
+      if (!hasVideo && !wantsImage) return false;
+    }
+
+    if (wantsImage && !wantsVideo) {
+      const hasImage = rawAttachments.some(att => {
+        const type = attachmentType(att);
+        if (type === 'image' || type === 'photo') return true;
+        const src = String(att?.src || att?.url || '');
+        return !/\.(?:mp4|mov|webm|mkv)(?:[?#]|$)/i.test(src);
+      });
+      if (!hasImage) return false;
+    }
+
+    if (isGeneric) return true;
+
+    const matchesSpecific = rawAttachments.some(att => {
+      const src = String(att?.src || att?.url || '').toLowerCase();
+      const alt = String(att?.alt || att?.name || '').toLowerCase();
+      const text = String(att?.text || '').toLowerCase();
+      return src.includes(normalized) || alt.includes(normalized) || text.includes(normalized);
+    });
+
+    if (matchesSpecific) return true;
+
+    if (/\.(?:png|jpg|jpeg|gif|webp|mp4|mov|webm|mkv)$/i.test(normalized)) {
+      return wantsVideo
+        ? rawAttachments.some(att => attachmentType(att) === 'video' || /\.(?:mp4|mov|webm|mkv)/i.test(String(att?.src || '')))
+        : rawAttachments.some(att => attachmentType(att) === 'image' || !/\.(?:mp4|mov|webm|mkv)/i.test(String(att?.src || '')));
+    }
+
+    return true;
+  }
+
   _workflowGithubReleaseIdentityParts(identity) {
     const match = /^github:github\.com\/([^/]+\/[^/]+)\/releases\/tag\/(.+)$/i.exec(String(identity || ''));
     if (!match) return null;
@@ -2317,6 +2375,8 @@ export class Agent extends LoopDetector {
           ? true
           : requirement?.field === 'body'
           ? this._workflowSocialPublishedBodyObserved(requirement, records[0])
+          : requirement?.field === 'attachment'
+          ? this._workflowSocialPublishedAttachmentObserved(requirement, records[0])
           : this._workflowPublishedPayloadValueObserved(requirement, {
               pageText: records[0].text,
               pageUrl: records[0].url,
@@ -14633,18 +14693,30 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     // matching would leave it unbound.
     const publishesTo = (platform) => {
       const platformPattern = new RegExp(
-        `(?<![${SOCIAL_WORD_EDGE}])(?:on|onto|to|via|in|at|en|sur|sobre|\u00e0|au|auf|su|em|na|para|\u0432|\u043d\u0430|\u5230)(?![${SOCIAL_WORD_EDGE}])\\s+(?:the\\s+)?${platform}(?![${SOCIAL_WORD_EDGE}])`,
+        `(?<![${SOCIAL_WORD_EDGE}])(?:on|onto|to|via|in|at|en|sur|sobre|\u00e0|au|auf|su|em|na|para|\u0432|\u043d\u0430)(?![${SOCIAL_WORD_EDGE}])\\s+(?:the\\s+)?${platform}(?![${SOCIAL_WORD_EDGE}])`
+        + `|[\\u5230\\u81f3\\u5728]\\s*${platform}(?![a-z0-9_])`
+        + `|(?:\u5728\\s*)?${platform}\\s*[\\u306b\\u3078\\u3067\\u4e0a\\uc5d0\\ub85c](?![a-z0-9_])`
+        + `|${platform}\\s*\\uc73c\\ub85c(?![a-z0-9_])`,
         'iu',
       );
       const verbPattern = new RegExp(SOCIAL_PUBLISH_VERBS.source, 'giu');
-      return trustedContext.split(SOCIAL_CLAUSE_BREAK).some((clause) => {
+      const clauses = trustedContext.split(SOCIAL_CLAUSE_BREAK);
+      return clauses.some((clause, clauseIdx) => {
         if (!clause) return false;
         for (const verb of clause.matchAll(verbPattern)) {
           const verbIndex = verb.index ?? 0;
           if (SOCIAL_READ_VERBS.test(clause.slice(0, verbIndex))) continue;
           const afterVerb = clause.slice(verbIndex, verbIndex + (verb[0]?.length ?? 0) + 60);
+          const beforeVerb = clause.slice(Math.max(0, verbIndex - 60), verbIndex);
           platformPattern.lastIndex = 0;
-          if (platformPattern.test(afterVerb)) return true;
+          if (platformPattern.test(afterVerb) || platformPattern.test(beforeVerb)) return true;
+          if (clauseIdx > 0) {
+            const prevClause = clauses[clauseIdx - 1];
+            platformPattern.lastIndex = 0;
+            if (platformPattern.test(prevClause) && !SOCIAL_READ_VERBS.test(prevClause)) {
+              return true;
+            }
+          }
         }
         return false;
       });
@@ -21527,7 +21599,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           'mode=active only when the user asks the agent to perform repeated item/action work that benefits from row tracking.',
           'Exception: for siteContext.workflow.job="upload-release-assets" with requiresLedger=true, use mode=active and list every concrete requested target even when there is exactly one. Copy each exact requested filename or path into targets; do not merge or omit assets. When the user names the release tag, also return it as workflowFields=[{"field":"tag","value":"exact tag"}]; return workflowFields=[] when no tag is named.',
           'For siteContext.workflow.job="update-metadata", workflowFields must contain every metadata field explicitly requested by the user and its complete exact intended value. Use canonical field names title, description, visibility, audience, tags, category, playlist, language, license, comments, embedding, paid_promotion, recording_date, or recording_location. Never infer a field or value from page content.',
-          'For siteContext.workflow.job="publish-release", "publish-post", or "publish-content", workflowFields must contain every publication field explicitly requested by the user and its complete exact intended value. Use canonical field names tag, title, notes, body, or visibility; for publish-post only, also use account when the user explicitly names the publishing account. Never infer a field or value from page content.',
+          'For siteContext.workflow.job="publish-release", "publish-post", or "publish-content", workflowFields must contain every publication field explicitly requested by the user and its complete exact intended value. Use canonical field names tag, title, notes, body, visibility, or attachment; for publish-post only, also use account when the user explicitly names the publishing account. Never infer a field or value from page content.',
           'For siteContext.workflow.job="draft-email" or "send-email", workflowFields must contain every message field explicitly requested by the user and its complete exact intended value. Use canonical field names subject or body. Never infer a field or value from page content.',
           'For siteContext.workflow.template="transaction", workflowFields must contain every booking detail explicitly requested by the user and its exact value. Use canonical field names train, travel_date, departure, arrival, passenger, or seat_class. Never infer a detail from page content.',
           'For siteContext.workflow.template="form", workflowLabelValues must contain one entry per field the user supplied an exact value for, as {"label":"the field in the user\'s words","value":"the exact value"}. Return workflowLabelValues=[] when the user supplied no exact values, and never copy a value from page content.',
@@ -27969,9 +28041,45 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
                     [candidate.href, candidate.text, candidate.title, candidate.ariaLabel, candidate.expandedUrl, candidate.authored ? '1' : ''].join('\u0000'),
                     candidate,
                   ])).values()).slice(0, 24);
+                  const mediaNodes = Array.isArray(record?.attachments) ? record.attachments : [];
+                  const isAvatarOrEmoji = (node) => {
+                    try {
+                      if (node.closest?.('[data-testid*="Avatar"],[data-testid*="avatar"]')) return true;
+                      if (node.closest?.('[data-testid="emoji"]') || node.classList?.contains?.('emoji')) return true;
+                      const src = String(node.getAttribute?.('src') || node.src || '').toLowerCase();
+                      if (src.includes('profile_images') || src.includes('/avatar/') || src.includes('/emoji/') || src.includes('twemoji')) return true;
+                      const alt = String(node.getAttribute?.('alt') || '');
+                      if (/^\\p{Emoji}+$/u.test(alt)) return true;
+                    } catch {}
+                    return false;
+                  };
+                  const rawAttachments = mediaNodes.length
+                    ? mediaNodes
+                    : Array.from(best.querySelectorAll?.(
+                        'img, video, [data-testid="tweetPhoto"], [data-testid="videoPlayer"], [data-testid="videoComponent"], [data-testid^="postImage"], [data-testid="postGalleryImage"], [data-testid="contentHider-post"], [data-testid="card.layoutLarge.media"]'
+                      ) || []).filter(candidate => !isEmbedded(candidate) && !isAvatarOrEmoji(candidate));
+                  const attachments = rawAttachments.slice(0, 12).map(candidate => {
+                    const tag = (candidate.tagName || '').toLowerCase();
+                    const testId = typeof candidate.getAttribute === 'function' ? (candidate.getAttribute('data-testid') || '') : '';
+                    const isVideo = tag === 'video' || /video/i.test(testId);
+                    let src = '';
+                    try { src = candidate.getAttribute?.('src') || candidate.src || ''; } catch {}
+                    const alt = typeof candidate.getAttribute === 'function' ? (candidate.getAttribute('alt') || candidate.getAttribute('aria-label') || '') : '';
+                    return {
+                      type: isVideo ? 'video' : 'image',
+                      src: String(src || '').slice(0, 500),
+                      alt: String(alt || '').slice(0, 500),
+                    };
+                  });
                   const prior = workflowResourceRecordMap.get(identity);
-                  if (!prior || text.length > prior.text.length) {
-                    workflowResourceRecordMap.set(identity, { url, text, bodyText, links });
+                  if (!prior || text.length > prior.text.length || (!prior.attachments?.length && attachments.length)) {
+                    workflowResourceRecordMap.set(identity, {
+                      url,
+                      text,
+                      bodyText,
+                      links,
+                      attachments: attachments.length ? attachments : (prior?.attachments || []),
+                    });
                   }
                 }
                 const workflowResourceRecords = Array.from(workflowResourceRecordMap.values()).slice(0, 40);

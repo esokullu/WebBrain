@@ -258,12 +258,12 @@ export function classifyCompletionForm({
  * post-text elements are reported too, because a card also carries the author
  * name, timestamp, and controls, and a short requested body can equal one of
  * those lines instead of anything the post actually says.
- * Returns { root, excluded, authored }.
+ * Returns { root, excluded, authored, attachments }.
  * Keep this function self-contained because Agent serializes it into the page.
  */
 export function publicationResourceRecordRoot(link, identity, publicationResourceIdentity) {
   if (!link || typeof publicationResourceIdentity !== 'function') {
-    return { root: link || null, excluded: [], authored: [] };
+    return { root: link || null, excluded: [], authored: [], attachments: [] };
   }
   const value = String(identity || '');
   const cardSelector = value.startsWith('twitter:')
@@ -324,6 +324,49 @@ export function publicationResourceRecordRoot(link, identity, publicationResourc
     }
   };
 
+  const authoredMediaNodesIn = (card, excluded) => {
+    try {
+      const candidates = Array.from(card.querySelectorAll([
+        'img',
+        'video',
+        '[data-testid="tweetPhoto"]',
+        '[data-testid="videoPlayer"]',
+        '[data-testid="videoComponent"]',
+        '[data-testid^="postImage"]',
+        '[data-testid="postGalleryImage"]',
+        '[data-testid="contentHider-post"]',
+        '[data-testid="card.layoutLarge.media"]',
+      ].join(','))).filter(node => !excluded.some(entry => entry === node || entry.contains?.(node)));
+      const isAvatarOrEmoji = (node) => {
+        try {
+          if (node.closest?.('[data-testid*="Avatar"],[data-testid*="avatar"]')) return true;
+          if (node.closest?.('[data-testid="emoji"]') || node.classList?.contains?.('emoji')) return true;
+          const src = String(node.getAttribute?.('src') || node.src || '').toLowerCase();
+          if (src.includes('profile_images') || src.includes('/avatar/') || src.includes('/emoji/') || src.includes('twemoji')) return true;
+          const alt = String(node.getAttribute?.('alt') || '');
+          if (/^\p{Emoji}+$/u.test(alt)) return true;
+        } catch {}
+        return false;
+      };
+      return candidates.filter(node => {
+        const tag = (node.tagName || '').toLowerCase();
+        const testId = typeof node.getAttribute === 'function' ? (node.getAttribute('data-testid') || '') : '';
+        if (tag !== 'img' && tag !== 'video'
+            && !testId.includes('tweetPhoto')
+            && !testId.includes('video')
+            && !testId.includes('postImage')
+            && !testId.includes('postGalleryImage')
+            && !testId.includes('contentHider-post')
+            && !testId.includes('card.layoutLarge.media')) {
+          return false;
+        }
+        return !isAvatarOrEmoji(node);
+      }).slice(0, 12);
+    } catch {
+      return [];
+    }
+  };
+
   if (cardSelector) {
     try {
       const card = link.closest?.(cardSelector) || null;
@@ -333,7 +376,12 @@ export function publicationResourceRecordRoot(link, identity, publicationResourc
       // subtree carrying no post body at all.
       if (card && String(card.innerText || '').trim()) {
         const excluded = embeddedResourcesIn(card);
-        return { root: card, excluded, authored: authoredTextNodesIn(card, excluded) };
+        return {
+          root: card,
+          excluded,
+          authored: authoredTextNodesIn(card, excluded),
+          attachments: authoredMediaNodesIn(card, excluded),
+        };
       }
     } catch {}
   }
@@ -349,7 +397,7 @@ export function publicationResourceRecordRoot(link, identity, publicationResourc
     if (resourceIdentities.size > 1) break;
     best = node;
   }
-  return { root: best, excluded: [], authored: [] };
+  return { root: best, excluded: [], authored: [], attachments: authoredMediaNodesIn(best, []) };
 }
 
 export function isCompletionActionTool(name, args = {}) {

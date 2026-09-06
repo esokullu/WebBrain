@@ -23511,6 +23511,40 @@ test('publication resource records keep the owning social card when it embeds an
       `${label}: a long post fell out of its own card and lost its body`);
     assert.deepEqual(longRecord.authored, [longBody],
       `${label}: the app's own post-text element was not reported`);
+
+    // Post media attachments are captured while avatars and emojis are excluded.
+    const avatarNode = {
+      tagName: 'img',
+      getAttribute: name => (name === 'src' ? 'https://pbs.twimg.com/profile_images/123/avatar.jpg' : null),
+      closest: () => null,
+    };
+    const emojiNode = {
+      tagName: 'img',
+      getAttribute: name => (name === 'data-testid' ? 'emoji' : (name === 'src' ? 'https://abs.twimg.com/emoji/v2/svg/1f600.svg' : null)),
+      closest: selector => (selector.includes('emoji') ? emojiNode : null),
+    };
+    const photoNode = {
+      tagName: 'img',
+      getAttribute: name => (name === 'data-testid' ? 'tweetPhoto' : (name === 'src' ? 'https://pbs.twimg.com/media/pic.jpg' : null)),
+      closest: () => null,
+    };
+    const mediaCard = {
+      innerText: 'post with image',
+      querySelectorAll: selector => (
+        String(selector).includes('img')
+          ? [avatarNode, emojiNode, photoNode]
+          : [plainPermalink]
+      ),
+      contains: node => [plainPermalink, mediaCard, avatarNode, emojiNode, photoNode].includes(node),
+    };
+    const mediaPermalink = {
+      ...plainPermalink,
+      closest: () => mediaCard,
+    };
+    const mediaRecord = invariant.publicationResourceRecordRoot(mediaPermalink, identity, identityOf);
+    assert.equal(mediaRecord.root, mediaCard);
+    assert.deepEqual(mediaRecord.attachments, [photoNode],
+      `${label}: media attachments failed to include photo or failed to filter avatar/emoji`);
   }
 
   for (const [label, rel] of [
@@ -84847,7 +84881,7 @@ test('publication workflows classify and bind requested payload fields', async (
     ], `${AgentClass.name}: trusted publication payload fields were not retained`);
     const prompt = agent._progressIntentClassifierMessages(taskText, classifierContext)[0].content;
     assert.match(prompt, /publish-release/);
-    assert.match(prompt, /\bcanonical field names tag, title, notes, body, or visibility\b/);
+    assert.match(prompt, /\bcanonical field names tag, title, notes, body, visibility, or attachment\b/);
     assert.match(prompt, /for publish-post only, also use account/);
   }
 });
@@ -85051,6 +85085,38 @@ test('social publication workflow follows the live X or Bluesky destination and 
         'a Spanish bare Bluesky destination was missed'],
       ['Publiez ceci sur Bluesky', ['bluesky'],
         'a French bare platform destination was missed'],
+      ['发布到X', ['twitter'],
+        'an unspaced Chinese bare X destination was missed'],
+      ['发布至X', ['twitter'],
+        'a Chinese bare X destination with 至 was missed'],
+      ['发布在X', ['twitter'],
+        'a Chinese bare X destination with 在 was missed'],
+      ['发布到X并在完成后通知我', ['twitter'],
+        'an unspaced Chinese bare X destination followed by unspaced Chinese text was missed'],
+      ['发布到Bluesky', ['bluesky'],
+        'an unspaced Chinese bare Bluesky destination was missed'],
+      ['发布在Bluesky', ['bluesky'],
+        'a Chinese bare Bluesky destination with 在 was missed'],
+      ['在X上发布这条消息', ['twitter'],
+        'a leading Chinese bare X destination with 在...上 was missed'],
+      ['在X发布这条消息', ['twitter'],
+        'a leading Chinese bare X destination with 在 was missed'],
+      ['Xに投稿してください', ['twitter'],
+        'a Japanese bare X destination with に was missed'],
+      ['Xへ投稿してください', ['twitter'],
+        'a Japanese bare X destination with へ was missed'],
+      ['Xで投稿してください', ['twitter'],
+        'a Japanese bare X destination with で was missed'],
+      ['X에 게시해주세요', ['twitter'],
+        'a Korean bare X destination with 에 was missed'],
+      ['Blueskyに投稿してください', ['bluesky'],
+        'a Japanese bare Bluesky destination was missed'],
+      ['Bluesky에 게시해주세요', ['bluesky'],
+        'a Korean bare Bluesky destination was missed'],
+      ['在X上阅读推文', [],
+        'a Chinese read command was wrongly treated as a publish destination'],
+      ['发布到xbox', [],
+        'a word containing x was wrongly treated as X platform'],
     ]) {
       assert.deepEqual(
         [...agent._trustedSocialPublishTargetAdapters({ taskText })],
@@ -85135,6 +85201,10 @@ test('X and Bluesky same-route publication accepts only one new permalink with t
         fixture.accountIdentity,
       );
       assert.equal(agent._workflowMetadataFieldKey('Publishing account'), 'account');
+      for (const alias of ['attachment', 'attachments', 'media', 'image', 'photo', 'video', '添付', '附件', '사진']) {
+        assert.equal(agent._workflowMetadataFieldKey(alias), 'attachment',
+          `${AgentClass.name}: ${alias} was not recognized as attachment field`);
+      }
       const firstLongUrl = 'https://github.com/webbrain-one/webbrain/issues/100';
       const secondLongUrl = 'https://github.com/webbrain-one/webbrain/issues/200';
       const repeatedDisplayUrl = 'github.com/webbrain-one/webbrain/…';
@@ -85302,6 +85372,96 @@ test('X and Bluesky same-route publication accepts only one new permalink with t
         fixture.feedUrl,
         submit,
       ), false, AgentClass.name + ': requested account hid a conflicting active account at dispatch');
+      assert.equal(agent._workflowPublishedResourcePayloadMatch(
+        {
+          ...submit.workflowBinding,
+          metadataRequirements: [
+            ...submit.workflowBinding.metadataRequirements,
+            { field: 'attachment', value: 'image' },
+          ],
+          publishedResourceIdentity: fixture.expectedIdentity,
+          preDispatchPublicationAccountIdentity: fixture.accountIdentity,
+          preDispatchPublicationAccountIdentityComplete: true,
+        },
+        guard,
+        exactPageState,
+        fixture.feedUrl,
+        submit,
+      ), false, AgentClass.name + ': post without attachments satisfied attachment requirement');
+
+      const pageStateWithImage = {
+        ...exactPageState,
+        workflowResourceRecords: [
+          {
+            ...exactPageState.workflowResourceRecords[0],
+            attachments: [
+              { type: 'image', src: 'https://pbs.twimg.com/media/xyz.jpg', alt: 'screenshot' },
+            ],
+          },
+        ],
+      };
+      assert.equal(agent._workflowPublishedResourcePayloadMatch(
+        {
+          ...submit.workflowBinding,
+          metadataRequirements: [
+            ...submit.workflowBinding.metadataRequirements,
+            { field: 'attachment', value: 'image' },
+          ],
+          publishedResourceIdentity: fixture.expectedIdentity,
+          preDispatchPublicationAccountIdentity: fixture.accountIdentity,
+          preDispatchPublicationAccountIdentityComplete: true,
+        },
+        guard,
+        pageStateWithImage,
+        fixture.feedUrl,
+        submit,
+      ), true, AgentClass.name + ': post with matching image attachment was rejected');
+
+      assert.equal(agent._workflowPublishedResourcePayloadMatch(
+        {
+          ...submit.workflowBinding,
+          metadataRequirements: [
+            ...submit.workflowBinding.metadataRequirements,
+            { field: 'attachment', value: 'video' },
+          ],
+          publishedResourceIdentity: fixture.expectedIdentity,
+          preDispatchPublicationAccountIdentity: fixture.accountIdentity,
+          preDispatchPublicationAccountIdentityComplete: true,
+        },
+        guard,
+        pageStateWithImage,
+        fixture.feedUrl,
+        submit,
+      ), false, AgentClass.name + ': image attachment satisfied video requirement');
+
+      const pageStateWithVideo = {
+        ...exactPageState,
+        workflowResourceRecords: [
+          {
+            ...exactPageState.workflowResourceRecords[0],
+            attachments: [
+              { type: 'video', src: 'https://video.twimg.com/media/clip.mp4', alt: 'demo clip' },
+            ],
+          },
+        ],
+      };
+      assert.equal(agent._workflowPublishedResourcePayloadMatch(
+        {
+          ...submit.workflowBinding,
+          metadataRequirements: [
+            ...submit.workflowBinding.metadataRequirements,
+            { field: 'attachment', value: 'video' },
+          ],
+          publishedResourceIdentity: fixture.expectedIdentity,
+          preDispatchPublicationAccountIdentity: fixture.accountIdentity,
+          preDispatchPublicationAccountIdentityComplete: true,
+        },
+        guard,
+        pageStateWithVideo,
+        fixture.feedUrl,
+        submit,
+      ), true, AgentClass.name + ': post with matching video attachment was rejected');
+
       assert.equal(agent._workflowTerminalEvidenceFromDone(
         tabId,
         exactPageState,
