@@ -1,0 +1,151 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-09-07T12:46:18.540Z",
+  "id": "015",
+  "model": "webbrain-vl-3-450m-winner-3750",
+  "endpoint": "http://127.0.0.1:8335/v1/chat/completions",
+  "promptMode": "production",
+  "question": {
+    "schemaVersion": 1,
+    "id": "015",
+    "difficulty": {
+      "level": 1,
+      "slug": "easy",
+      "label": "Easy"
+    },
+    "category": "map-and-travel",
+    "title": "Nearby cafés",
+    "image": "images/015.png",
+    "question": "Which map item is selected, what detail is shown, and how many pins are visible? Focus on the “Nearby cafés” screen.",
+    "defaultPromptMode": "production"
+  },
+  "image": {
+    "path": "images/015.png",
+    "bytes": 102353,
+    "sha256": "18a9a726b9cf133e8c716795366bb5b45ece8f504576b8379a0b54b49f4a8c9e"
+  },
+  "request": {
+    "systemPrompt": "You are the vision subsystem of a web-automation agent. A screenshot of the current browser viewport is attached. Describe what is on screen so the planning agent can decide its next action.\n\nFormat — keep it terse, structured, no flowery prose:\n\n1) Page purpose: one line (e.g. \"GitHub repo issue list\", \"Gmail compose\", \"Stripe checkout form\").\n2) Visible text: list the EXACT strings on buttons, links, headings, tabs, and menu items. Quote them verbatim. Do not paraphrase.\n3) Inputs: list each visible form field with its label, placeholder, current value, and whether it is focused/disabled.\n4) State signals: loading spinners, toasts, modals, error banners, success messages, CAPTCHAs, cookie/consent banners, overlays.\n5) Blockers: anything that would prevent the next likely action (overlay, disabled submit, missing data, auth prompt).\n6) Unknowns: if you cannot read something clearly, say so. Do not guess numbers, names, or identifiers.\n\nRules: no prose intro, no conclusion, no \"this screenshot shows...\", no layout description unless it matters (e.g. \"left nav is collapsed\"). If the page is blank or still loading, say that in one line and stop.",
+    "userText": "Describe this screenshot of the current browser viewport for a web-automation agent. Follow the format in the system prompt.",
+    "foldSystem": false,
+    "temperature": 0,
+    "maxTokens": 800,
+    "chatTemplateKwargs": {
+      "enable_thinking": false,
+      "think": false,
+      "thinking": false
+    }
+  },
+  "response": {
+    "status": 200,
+    "content": "1) Page purpose: Map navigation and location-based service interface.\n2) Visible text: \"WebScene\", \"Home\", \"Workspace\", \"Activity\", \"Pine Café\", \"4 min walk\", \"Oak Corner\", \"View details\", \"River Point\", \"View details\", \"Central Stop\", \"View details\".\n3) Inputs: None visible.\n4) State signals: \"Nearby cafés\" is highlighted in a blue box.\n5) Blockers: None.\n6) Unknowns: The map's specific coordinates for the \"Central Stop\" are not visible.",
+    "reasoningChars": 0,
+    "usage": {
+      "prompt_tokens": 1103,
+      "completion_tokens": 123,
+      "total_tokens": 1226
+    },
+    "timings": null
+  },
+  "latencyMs": {
+    "headers": 3133,
+    "total": 3133
+  },
+  "score": {
+    "success": true,
+    "ratio": 0.875,
+    "earned": 7,
+    "possible": 8,
+    "threshold": 0.72,
+    "sectionCount": 6,
+    "criticalFailures": [],
+    "dimensions": {
+      "page_purpose": {
+        "earned": 1,
+        "possible": 1,
+        "ratio": 1
+      },
+      "visible_text": {
+        "earned": 0,
+        "possible": 1,
+        "ratio": 0
+      },
+      "visual_reasoning": {
+        "earned": 4,
+        "possible": 4,
+        "ratio": 1
+      }
+    },
+    "checks": [
+      {
+        "id": "purpose",
+        "dimension": "page_purpose",
+        "section": 1,
+        "kind": "any",
+        "values": [
+          "map",
+          "tracking",
+          "route",
+          "hotel",
+          "café"
+        ],
+        "weight": 1,
+        "critical": false,
+        "passed": true,
+        "matched": [
+          "map"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "heading",
+        "dimension": "visible_text",
+        "section": 2,
+        "kind": "literal",
+        "value": "Nearby cafés",
+        "weight": 1,
+        "critical": false,
+        "caseSensitive": true,
+        "passed": false,
+        "matched": [],
+        "scopeFound": true
+      },
+      {
+        "id": "selection",
+        "dimension": "visual_reasoning",
+        "section": null,
+        "kind": "all",
+        "values": [
+          "Pine Café",
+          "4 min walk"
+        ],
+        "weight": 3,
+        "critical": true,
+        "passed": true,
+        "matched": [
+          "Pine Café",
+          "4 min walk"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "pin-count",
+        "dimension": "visual_reasoning",
+        "section": null,
+        "kind": "any",
+        "values": [
+          "2",
+          "two"
+        ],
+        "weight": 1,
+        "critical": false,
+        "passed": true,
+        "matched": [
+          "2"
+        ],
+        "scopeFound": true
+      }
+    ]
+  },
+  "error": null
+}

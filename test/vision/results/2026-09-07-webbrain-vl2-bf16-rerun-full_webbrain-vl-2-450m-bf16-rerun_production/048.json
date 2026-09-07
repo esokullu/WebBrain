@@ -1,0 +1,187 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-09-07T13:09:21.446Z",
+  "id": "048",
+  "model": "webbrain-vl-2-450m-bf16-rerun",
+  "endpoint": "http://127.0.0.1:8335/v1/chat/completions",
+  "promptMode": "production",
+  "question": {
+    "schemaVersion": 1,
+    "id": "048",
+    "difficulty": {
+      "level": 3,
+      "slug": "intermediate",
+      "label": "Intermediate"
+    },
+    "category": "consent-banner",
+    "title": "Your privacy",
+    "image": "images/048.png",
+    "question": "Which consent overlay is present and what exact choices does it offer? Focus on the “Your privacy” screen.",
+    "defaultPromptMode": "production"
+  },
+  "image": {
+    "path": "images/048.png",
+    "bytes": 163274,
+    "sha256": "02c2fcbc8f49d620c17daaefe00870413ef59c6b0ad6f46e5d147c01a3a102e5"
+  },
+  "request": {
+    "systemPrompt": "You are the vision subsystem of a web-automation agent. A screenshot of the current browser viewport is attached. Describe what is on screen so the planning agent can decide its next action.\n\nFormat — keep it terse, structured, no flowery prose:\n\n1) Page purpose: one line (e.g. \"GitHub repo issue list\", \"Gmail compose\", \"Stripe checkout form\").\n2) Visible text: list the EXACT strings on buttons, links, headings, tabs, and menu items. Quote them verbatim. Do not paraphrase.\n3) Inputs: list each visible form field with its label, placeholder, current value, and whether it is focused/disabled.\n4) State signals: loading spinners, toasts, modals, error banners, success messages, CAPTCHAs, cookie/consent banners, overlays.\n5) Blockers: anything that would prevent the next likely action (overlay, disabled submit, missing data, auth prompt).\n6) Unknowns: if you cannot read something clearly, say so. Do not guess numbers, names, or identifiers.\n\nRules: no prose intro, no conclusion, no \"this screenshot shows...\", no layout description unless it matters (e.g. \"left nav is collapsed\"). If the page is blank or still loading, say that in one line and stop.",
+    "userText": "Describe this screenshot of the current browser viewport for a web-automation agent. Follow the format in the system prompt.",
+    "foldSystem": false,
+    "temperature": 0,
+    "maxTokens": 800,
+    "chatTemplateKwargs": {
+      "enable_thinking": false,
+      "think": false,
+      "thinking": false
+    }
+  },
+  "response": {
+    "status": 200,
+    "content": "1) Page purpose: Web-scene homepage displaying a \"Field Notes\" section with a long-form article.\n2) Visible text: \"Web-Scene\", \"Home\", \"Workspace\", \"Activity\", \"Field Notes\", \"Independent stories about design, technology, and cities.\", \"A long-form article continues underneath the privacy surface.\", \"Your privacy\", \"Personalized ads are currently off.\", \"Allow selected\", \"Continue without accepting\".\n3) Inputs: None visible.\n4) State signals: \"Allow selected\" and \"Continue without accepting\" buttons are visible and appear to be interactive.\n5) Blockers: None.\n6) Unknowns: None.",
+    "reasoningChars": 0,
+    "usage": {
+      "prompt_tokens": 1103,
+      "completion_tokens": 142,
+      "total_tokens": 1245
+    },
+    "timings": null
+  },
+  "latencyMs": {
+    "headers": 1962,
+    "total": 1962
+  },
+  "score": {
+    "success": false,
+    "ratio": 0.6,
+    "earned": 6,
+    "possible": 10,
+    "threshold": 0.72,
+    "sectionCount": 6,
+    "criticalFailures": [
+      "consent-signal"
+    ],
+    "dimensions": {
+      "page_purpose": {
+        "earned": 0,
+        "possible": 1,
+        "ratio": 0
+      },
+      "visible_text": {
+        "earned": 4,
+        "possible": 4,
+        "ratio": 1
+      },
+      "state_signals": {
+        "earned": 0,
+        "possible": 2,
+        "ratio": 0
+      },
+      "blockers": {
+        "earned": 0,
+        "possible": 1,
+        "ratio": 0
+      }
+    },
+    "checks": [
+      {
+        "id": "purpose",
+        "dimension": "page_purpose",
+        "section": 1,
+        "kind": "any",
+        "values": [
+          "privacy",
+          "cookie",
+          "consent",
+          "video"
+        ],
+        "weight": 1,
+        "critical": false,
+        "passed": false,
+        "matched": [],
+        "scopeFound": true
+      },
+      {
+        "id": "title",
+        "dimension": "visible_text",
+        "section": 2,
+        "kind": "literal",
+        "value": "Your privacy",
+        "weight": 2,
+        "critical": true,
+        "caseSensitive": true,
+        "passed": true,
+        "matched": [
+          "Your privacy"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "choice-1",
+        "dimension": "visible_text",
+        "section": 2,
+        "kind": "literal",
+        "value": "Allow selected",
+        "weight": 1,
+        "critical": true,
+        "caseSensitive": true,
+        "passed": true,
+        "matched": [
+          "Allow selected"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "choice-2",
+        "dimension": "visible_text",
+        "section": 2,
+        "kind": "literal",
+        "value": "Continue without accepting",
+        "weight": 1,
+        "critical": false,
+        "caseSensitive": true,
+        "passed": true,
+        "matched": [
+          "Continue without accepting"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "consent-signal",
+        "dimension": "state_signals",
+        "section": 4,
+        "kind": "any",
+        "values": [
+          "cookie",
+          "consent",
+          "privacy",
+          "overlay",
+          "banner"
+        ],
+        "weight": 2,
+        "critical": true,
+        "passed": false,
+        "matched": [],
+        "scopeFound": true
+      },
+      {
+        "id": "consent-blocker",
+        "dimension": "blockers",
+        "section": 5,
+        "kind": "any",
+        "values": [
+          "cookie",
+          "consent",
+          "overlay",
+          "blocked"
+        ],
+        "weight": 1,
+        "critical": false,
+        "passed": false,
+        "matched": [],
+        "scopeFound": true
+      }
+    ]
+  },
+  "error": null
+}

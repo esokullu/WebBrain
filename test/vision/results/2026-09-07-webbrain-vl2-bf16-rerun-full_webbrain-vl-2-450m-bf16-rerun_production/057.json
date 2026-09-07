@@ -1,0 +1,173 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-09-07T13:09:37.609Z",
+  "id": "057",
+  "model": "webbrain-vl-2-450m-bf16-rerun",
+  "endpoint": "http://127.0.0.1:8335/v1/chat/completions",
+  "promptMode": "production",
+  "question": {
+    "schemaVersion": 1,
+    "id": "057",
+    "difficulty": {
+      "level": 3,
+      "slug": "intermediate",
+      "label": "Intermediate"
+    },
+    "category": "multilingual-ocr",
+    "title": "お支払い",
+    "image": "images/057.png",
+    "question": "Read the non-English heading, field label/value, action, and visible status exactly as rendered. Focus on the “お支払い” screen.",
+    "defaultPromptMode": "production"
+  },
+  "image": {
+    "path": "images/057.png",
+    "bytes": 108576,
+    "sha256": "1aa0ab56cddcc07d34dc49739705b8f7c86b776f9d77ec0273a8ce43a89c2e8a"
+  },
+  "request": {
+    "systemPrompt": "You are the vision subsystem of a web-automation agent. A screenshot of the current browser viewport is attached. Describe what is on screen so the planning agent can decide its next action.\n\nFormat — keep it terse, structured, no flowery prose:\n\n1) Page purpose: one line (e.g. \"GitHub repo issue list\", \"Gmail compose\", \"Stripe checkout form\").\n2) Visible text: list the EXACT strings on buttons, links, headings, tabs, and menu items. Quote them verbatim. Do not paraphrase.\n3) Inputs: list each visible form field with its label, placeholder, current value, and whether it is focused/disabled.\n4) State signals: loading spinners, toasts, modals, error banners, success messages, CAPTCHAs, cookie/consent banners, overlays.\n5) Blockers: anything that would prevent the next likely action (overlay, disabled submit, missing data, auth prompt).\n6) Unknowns: if you cannot read something clearly, say so. Do not guess numbers, names, or identifiers.\n\nRules: no prose intro, no conclusion, no \"this screenshot shows...\", no layout description unless it matters (e.g. \"left nav is collapsed\"). If the page is blank or still loading, say that in one line and stop.",
+    "userText": "Describe this screenshot of the current browser viewport for a web-automation agent. Follow the format in the system prompt.",
+    "foldSystem": false,
+    "temperature": 0,
+    "maxTokens": 800,
+    "chatTemplateKwargs": {
+      "enable_thinking": false,
+      "think": false,
+      "thinking": false
+    }
+  },
+  "response": {
+    "status": 200,
+    "content": "1) Page purpose: Web-automation agent form for payment instruction.\n2) Visible text: \"Web Scene\", \"Home\", \"Workspace\", \"Activity\", \"お支払い\", \"カード番号\", \"有効期限を確認してください\", \"支払う\", \"支払う\".\n3) Inputs: label='カード番号', value='•••• 4242', invalid=true.\n4) State signals: Error message \"有効期限を確認してください\" displayed below the card number input.\n5) Blockers: Form validation error \"有効期限を確認してください\" prevents submission.\n6) Unknowns: None.",
+    "reasoningChars": 0,
+    "usage": {
+      "prompt_tokens": 1103,
+      "completion_tokens": 132,
+      "total_tokens": 1235
+    },
+    "timings": null
+  },
+  "latencyMs": {
+    "headers": 1838,
+    "total": 1838
+  },
+  "score": {
+    "success": true,
+    "ratio": 1,
+    "earned": 11,
+    "possible": 11,
+    "threshold": 0.72,
+    "sectionCount": 6,
+    "criticalFailures": [],
+    "dimensions": {
+      "page_purpose": {
+        "earned": 1,
+        "possible": 1,
+        "ratio": 1
+      },
+      "visible_text": {
+        "earned": 4,
+        "possible": 4,
+        "ratio": 1
+      },
+      "inputs": {
+        "earned": 2,
+        "possible": 2,
+        "ratio": 1
+      },
+      "state_signals": {
+        "earned": 2,
+        "possible": 2,
+        "ratio": 1
+      }
+    },
+    "checks": [
+      {
+        "id": "purpose",
+        "dimension": "page_purpose",
+        "section": 1,
+        "kind": "any",
+        "values": [
+          "sign",
+          "payment",
+          "order",
+          "security",
+          "login",
+          "checkout",
+          "settings"
+        ],
+        "weight": 1,
+        "critical": false,
+        "passed": true,
+        "matched": [
+          "payment"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "heading",
+        "dimension": "visible_text",
+        "section": 2,
+        "kind": "literal",
+        "value": "お支払い",
+        "weight": 2,
+        "critical": true,
+        "caseSensitive": true,
+        "passed": true,
+        "matched": [
+          "お支払い"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "button",
+        "dimension": "visible_text",
+        "section": 2,
+        "kind": "literal",
+        "value": "支払う",
+        "weight": 2,
+        "critical": true,
+        "caseSensitive": true,
+        "passed": true,
+        "matched": [
+          "支払う"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "input",
+        "dimension": "inputs",
+        "section": 3,
+        "kind": "all",
+        "values": [
+          "カード番号",
+          "•••• 4242"
+        ],
+        "weight": 2,
+        "critical": true,
+        "passed": true,
+        "matched": [
+          "カード番号",
+          "•••• 4242"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "status",
+        "dimension": "state_signals",
+        "section": 4,
+        "kind": "literal",
+        "value": "有効期限を確認してください",
+        "weight": 2,
+        "critical": true,
+        "caseSensitive": true,
+        "passed": true,
+        "matched": [
+          "有効期限を確認してください"
+        ],
+        "scopeFound": true
+      }
+    ]
+  },
+  "error": null
+}

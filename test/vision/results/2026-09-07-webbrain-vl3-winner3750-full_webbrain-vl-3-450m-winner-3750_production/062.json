@@ -1,0 +1,194 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-09-07T12:49:18.711Z",
+  "id": "062",
+  "model": "webbrain-vl-3-450m-winner-3750",
+  "endpoint": "http://127.0.0.1:8335/v1/chat/completions",
+  "promptMode": "production",
+  "question": {
+    "schemaVersion": 1,
+    "id": "062",
+    "difficulty": {
+      "level": 4,
+      "slug": "advanced",
+      "label": "Advanced"
+    },
+    "category": "search-results",
+    "title": "Global search",
+    "image": "images/062.png",
+    "question": "What query is active, which result tab is selected, and how many results are shown? Focus on the “Global search” screen.",
+    "defaultPromptMode": "production"
+  },
+  "image": {
+    "path": "images/062.png",
+    "bytes": 95990,
+    "sha256": "b85e150b792c28879da6c9592b7bd7252ba8f8b71b47852f0e52f7d23431cee2"
+  },
+  "request": {
+    "systemPrompt": "You are the vision subsystem of a web-automation agent. A screenshot of the current browser viewport is attached. Describe what is on screen so the planning agent can decide its next action.\n\nFormat — keep it terse, structured, no flowery prose:\n\n1) Page purpose: one line (e.g. \"GitHub repo issue list\", \"Gmail compose\", \"Stripe checkout form\").\n2) Visible text: list the EXACT strings on buttons, links, headings, tabs, and menu items. Quote them verbatim. Do not paraphrase.\n3) Inputs: list each visible form field with its label, placeholder, current value, and whether it is focused/disabled.\n4) State signals: loading spinners, toasts, modals, error banners, success messages, CAPTCHAs, cookie/consent banners, overlays.\n5) Blockers: anything that would prevent the next likely action (overlay, disabled submit, missing data, auth prompt).\n6) Unknowns: if you cannot read something clearly, say so. Do not guess numbers, names, or identifiers.\n\nRules: no prose intro, no conclusion, no \"this screenshot shows...\", no layout description unless it matters (e.g. \"left nav is collapsed\"). If the page is blank or still loading, say that in one line and stop.",
+    "userText": "Describe this screenshot of the current browser viewport for a web-automation agent. Follow the format in the system prompt.",
+    "foldSystem": false,
+    "temperature": 0,
+    "maxTokens": 800,
+    "chatTemplateKwargs": {
+      "enable_thinking": false,
+      "think": false,
+      "thinking": false
+    }
+  },
+  "response": {
+    "status": 200,
+    "content": "1) Page purpose: Web-automation task: search and filter content.\n2) Visible text: \"WebScene\", \"Home\", \"Workspace\", \"Activity\", \"Search\", \"dosyalar\", \"Recent\", \"Saved\", \"7 sonuç\", \"Son 30 gün\", \"2 filters active\", \"Camera setup guide\", \"A practical guide with examples\", \"Urban heat research notes\", \"2 Wireless keyboard collection\", \"Compare features and availability\".\n3) Inputs: Search field (label: \"fatura\", value: \"dosyalar\", enabled).\n4) State signals: None.\n5) Blockers: None.\n6) Unknowns: None.",
+    "reasoningChars": 0,
+    "usage": {
+      "prompt_tokens": 1103,
+      "completion_tokens": 146,
+      "total_tokens": 1249
+    },
+    "timings": null
+  },
+  "latencyMs": {
+    "headers": 3375,
+    "total": 3375
+  },
+  "score": {
+    "success": false,
+    "ratio": 0.6666666666666666,
+    "earned": 8,
+    "possible": 12,
+    "threshold": 0.72,
+    "sectionCount": 6,
+    "criticalFailures": [
+      "tab"
+    ],
+    "dimensions": {
+      "page_purpose": {
+        "earned": 1,
+        "possible": 1,
+        "ratio": 1
+      },
+      "visible_text": {
+        "earned": 3,
+        "possible": 6,
+        "ratio": 0.5
+      },
+      "inputs": {
+        "earned": 2,
+        "possible": 2,
+        "ratio": 1
+      },
+      "state_signals": {
+        "earned": 0,
+        "possible": 1,
+        "ratio": 0
+      }
+    },
+    "checks": [
+      {
+        "id": "purpose",
+        "dimension": "page_purpose",
+        "section": 1,
+        "kind": "any",
+        "values": [
+          "search",
+          "results"
+        ],
+        "weight": 1,
+        "critical": true,
+        "passed": true,
+        "matched": [
+          "search"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "heading",
+        "dimension": "visible_text",
+        "section": 2,
+        "kind": "literal",
+        "value": "Global search",
+        "weight": 1,
+        "critical": false,
+        "caseSensitive": true,
+        "passed": false,
+        "matched": [],
+        "scopeFound": true
+      },
+      {
+        "id": "tab",
+        "dimension": "visible_text",
+        "section": 2,
+        "kind": "literal",
+        "value": "Dosyalar",
+        "weight": 2,
+        "critical": true,
+        "caseSensitive": true,
+        "passed": false,
+        "matched": [],
+        "scopeFound": true
+      },
+      {
+        "id": "count",
+        "dimension": "visible_text",
+        "section": 2,
+        "kind": "literal",
+        "value": "7 sonuç",
+        "weight": 2,
+        "critical": true,
+        "caseSensitive": true,
+        "passed": true,
+        "matched": [
+          "7 sonuç"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "query",
+        "dimension": "inputs",
+        "section": 3,
+        "kind": "all",
+        "values": [
+          "Search",
+          "fatura"
+        ],
+        "weight": 2,
+        "critical": true,
+        "passed": true,
+        "matched": [
+          "Search",
+          "fatura"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "chip",
+        "dimension": "visible_text",
+        "section": 2,
+        "kind": "literal",
+        "value": "Son 30 gün",
+        "weight": 1,
+        "critical": false,
+        "caseSensitive": true,
+        "passed": true,
+        "matched": [
+          "Son 30 gün"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "notice",
+        "dimension": "state_signals",
+        "section": 4,
+        "kind": "literal",
+        "value": "2 filters active",
+        "weight": 1,
+        "critical": false,
+        "caseSensitive": true,
+        "passed": false,
+        "matched": [],
+        "scopeFound": true
+      }
+    ]
+  },
+  "error": null
+}

@@ -1,0 +1,137 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-09-07T13:09:32.735Z",
+  "id": "054",
+  "model": "webbrain-vl-2-450m-bf16-rerun",
+  "endpoint": "http://127.0.0.1:8335/v1/chat/completions",
+  "promptMode": "production",
+  "question": {
+    "schemaVersion": 1,
+    "id": "054",
+    "difficulty": {
+      "level": 3,
+      "slug": "intermediate",
+      "label": "Intermediate"
+    },
+    "category": "calendar",
+    "title": "Conference schedule",
+    "image": "images/054.png",
+    "question": "What event is shown on the selected day, and at what exact time? Focus on the “Conference schedule” screen.",
+    "defaultPromptMode": "production"
+  },
+  "image": {
+    "path": "images/054.png",
+    "bytes": 72772,
+    "sha256": "95dc6fbd31a230354f1a751d479068f0b5353c922cb8b7e0bee64c72e400763f"
+  },
+  "request": {
+    "systemPrompt": "You are the vision subsystem of a web-automation agent. A screenshot of the current browser viewport is attached. Describe what is on screen so the planning agent can decide its next action.\n\nFormat — keep it terse, structured, no flowery prose:\n\n1) Page purpose: one line (e.g. \"GitHub repo issue list\", \"Gmail compose\", \"Stripe checkout form\").\n2) Visible text: list the EXACT strings on buttons, links, headings, tabs, and menu items. Quote them verbatim. Do not paraphrase.\n3) Inputs: list each visible form field with its label, placeholder, current value, and whether it is focused/disabled.\n4) State signals: loading spinners, toasts, modals, error banners, success messages, CAPTCHAs, cookie/consent banners, overlays.\n5) Blockers: anything that would prevent the next likely action (overlay, disabled submit, missing data, auth prompt).\n6) Unknowns: if you cannot read something clearly, say so. Do not guess numbers, names, or identifiers.\n\nRules: no prose intro, no conclusion, no \"this screenshot shows...\", no layout description unless it matters (e.g. \"left nav is collapsed\"). If the page is blank or still loading, say that in one line and stop.",
+    "userText": "Describe this screenshot of the current browser viewport for a web-automation agent. Follow the format in the system prompt.",
+    "foldSystem": false,
+    "temperature": 0,
+    "maxTokens": 800,
+    "chatTemplateKwargs": {
+      "enable_thinking": false,
+      "think": false,
+      "thinking": false
+    }
+  },
+  "response": {
+    "status": 200,
+    "content": "1) Page purpose: Conference schedule calendar for July 2024.\n2) Visible text: \"WebScene\", \"Home\", \"Workspace\", \"Activity\", \"Conference schedule\", \"Mon\", \"Tue\", \"Wed\", \"Thu\", \"Fri\", \"Sat\", \"Sun\", \"27\", \"Vision benchmarks\", \"Feb 15-17, 2024\".\n3) Inputs: None visible.\n4) State signals: Day 27 is highlighted with an orange border; a card reads \"Vision benchmarks\".\n5) Blockers: None.\n6) Unknowns: None.",
+    "reasoningChars": 0,
+    "usage": {
+      "prompt_tokens": 1103,
+      "completion_tokens": 131,
+      "total_tokens": 1234
+    },
+    "timings": null
+  },
+  "latencyMs": {
+    "headers": 1928,
+    "total": 1928
+  },
+  "score": {
+    "success": false,
+    "ratio": 0.5714285714285714,
+    "earned": 4,
+    "possible": 7,
+    "threshold": 0.72,
+    "sectionCount": 6,
+    "criticalFailures": [
+      "selected-event"
+    ],
+    "dimensions": {
+      "page_purpose": {
+        "earned": 1,
+        "possible": 1,
+        "ratio": 1
+      },
+      "visible_text": {
+        "earned": 1,
+        "possible": 1,
+        "ratio": 1
+      },
+      "visual_reasoning": {
+        "earned": 0,
+        "possible": 3,
+        "ratio": 0
+      }
+    },
+    "checks": [
+      {
+        "id": "purpose",
+        "dimension": "page_purpose",
+        "section": 1,
+        "kind": "any",
+        "values": [
+          "calendar",
+          "schedule"
+        ],
+        "weight": 1,
+        "critical": false,
+        "passed": true,
+        "matched": [
+          "calendar",
+          "schedule"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "heading",
+        "dimension": "visible_text",
+        "section": 2,
+        "kind": "literal",
+        "value": "Conference schedule",
+        "weight": 1,
+        "critical": false,
+        "caseSensitive": true,
+        "passed": true,
+        "matched": [
+          "Conference schedule"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "selected-event",
+        "dimension": "visual_reasoning",
+        "section": null,
+        "kind": "all",
+        "values": [
+          "27",
+          "Vision benchmarks",
+          "16:15–17:00"
+        ],
+        "weight": 3,
+        "critical": true,
+        "passed": false,
+        "matched": [
+          "27",
+          "Vision benchmarks"
+        ],
+        "scopeFound": true
+      }
+    ]
+  },
+  "error": null
+}

@@ -1,0 +1,198 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-09-07T12:46:44.248Z",
+  "id": "023",
+  "model": "webbrain-vl-3-450m-winner-3750",
+  "endpoint": "http://127.0.0.1:8335/v1/chat/completions",
+  "promptMode": "production",
+  "question": {
+    "schemaVersion": 1,
+    "id": "023",
+    "difficulty": {
+      "level": 2,
+      "slug": "basic",
+      "label": "Basic"
+    },
+    "category": "checkout",
+    "title": "Checkout",
+    "image": "images/023.png",
+    "question": "What is the exact total, and can the visible purchase action proceed? Focus on the “Checkout” screen.",
+    "defaultPromptMode": "production"
+  },
+  "image": {
+    "path": "images/023.png",
+    "bytes": 111667,
+    "sha256": "84afef3f467792f7256a21762aec83caa40f070a44cd7573367620f855faad10"
+  },
+  "request": {
+    "systemPrompt": "You are the vision subsystem of a web-automation agent. A screenshot of the current browser viewport is attached. Describe what is on screen so the planning agent can decide its next action.\n\nFormat — keep it terse, structured, no flowery prose:\n\n1) Page purpose: one line (e.g. \"GitHub repo issue list\", \"Gmail compose\", \"Stripe checkout form\").\n2) Visible text: list the EXACT strings on buttons, links, headings, tabs, and menu items. Quote them verbatim. Do not paraphrase.\n3) Inputs: list each visible form field with its label, placeholder, current value, and whether it is focused/disabled.\n4) State signals: loading spinners, toasts, modals, error banners, success messages, CAPTCHAs, cookie/consent banners, overlays.\n5) Blockers: anything that would prevent the next likely action (overlay, disabled submit, missing data, auth prompt).\n6) Unknowns: if you cannot read something clearly, say so. Do not guess numbers, names, or identifiers.\n\nRules: no prose intro, no conclusion, no \"this screenshot shows...\", no layout description unless it matters (e.g. \"left nav is collapsed\"). If the page is blank or still loading, say that in one line and stop.",
+    "userText": "Describe this screenshot of the current browser viewport for a web-automation agent. Follow the format in the system prompt.",
+    "foldSystem": false,
+    "temperature": 0,
+    "maxTokens": 800,
+    "chatTemplateKwargs": {
+      "enable_thinking": false,
+      "think": false,
+      "thinking": false
+    }
+  },
+  "response": {
+    "status": 200,
+    "content": "1) Page purpose: E-commerce checkout page for a desk lamp.\n2) Visible text: \"WebScene\", \"Home\", \"Workspace\", \"Activity\", \"Checkout\", \"Desk lamp\", \"Quantity 1\", \"$67.40\", \"Subtotal\", \"$67.40\", \"Included\", \"Total\", \"$67.40\", \"Add a delivery address\", \"Place order\".\n3) Inputs: None visible.\n4) State signals: \"Total\" is displayed as \"$67.40\".\n5) Blockers: None.\n6) Unknowns: None.",
+    "reasoningChars": 0,
+    "usage": {
+      "prompt_tokens": 1103,
+      "completion_tokens": 125,
+      "total_tokens": 1228
+    },
+    "timings": null
+  },
+  "latencyMs": {
+    "headers": 3084,
+    "total": 3084
+  },
+  "score": {
+    "success": false,
+    "ratio": 0.6923076923076923,
+    "earned": 9,
+    "possible": 13,
+    "threshold": 0.72,
+    "sectionCount": 6,
+    "criticalFailures": [
+      "banner",
+      "blocked"
+    ],
+    "dimensions": {
+      "page_purpose": {
+        "earned": 1,
+        "possible": 1,
+        "ratio": 1
+      },
+      "visible_text": {
+        "earned": 6,
+        "possible": 6,
+        "ratio": 1
+      },
+      "state_signals": {
+        "earned": 0,
+        "possible": 2,
+        "ratio": 0
+      },
+      "blockers": {
+        "earned": 0,
+        "possible": 2,
+        "ratio": 0
+      }
+    },
+    "checks": [
+      {
+        "id": "purpose",
+        "dimension": "page_purpose",
+        "section": 1,
+        "kind": "any",
+        "values": [
+          "checkout",
+          "cart",
+          "order",
+          "purchase"
+        ],
+        "weight": 1,
+        "critical": true,
+        "passed": true,
+        "matched": [
+          "checkout"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "heading",
+        "dimension": "visible_text",
+        "section": 2,
+        "kind": "literal",
+        "value": "Checkout",
+        "weight": 1,
+        "critical": false,
+        "caseSensitive": true,
+        "passed": true,
+        "matched": [
+          "Checkout"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "item",
+        "dimension": "visible_text",
+        "section": 2,
+        "kind": "literal",
+        "value": "Desk lamp",
+        "weight": 1,
+        "critical": false,
+        "caseSensitive": true,
+        "passed": true,
+        "matched": [
+          "Desk lamp"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "total",
+        "dimension": "visible_text",
+        "section": 2,
+        "kind": "literal",
+        "value": "$67.40",
+        "weight": 2,
+        "critical": true,
+        "caseSensitive": true,
+        "passed": true,
+        "matched": [
+          "$67.40"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "button",
+        "dimension": "visible_text",
+        "section": 2,
+        "kind": "literal",
+        "value": "Place order",
+        "weight": 2,
+        "critical": true,
+        "caseSensitive": true,
+        "passed": true,
+        "matched": [
+          "Place order"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "banner",
+        "dimension": "state_signals",
+        "section": 4,
+        "kind": "literal",
+        "value": "Add a delivery address",
+        "weight": 2,
+        "critical": true,
+        "caseSensitive": true,
+        "passed": false,
+        "matched": [],
+        "scopeFound": true
+      },
+      {
+        "id": "blocked",
+        "dimension": "blockers",
+        "section": 5,
+        "kind": "any",
+        "values": [
+          "delivery",
+          "address"
+        ],
+        "weight": 2,
+        "critical": true,
+        "passed": false,
+        "matched": [],
+        "scopeFound": true
+      }
+    ]
+  },
+  "error": null
+}

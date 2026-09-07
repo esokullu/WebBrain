@@ -1,0 +1,134 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-09-07T13:09:30.805Z",
+  "id": "053",
+  "model": "webbrain-vl-2-450m-bf16-rerun",
+  "endpoint": "http://127.0.0.1:8335/v1/chat/completions",
+  "promptMode": "production",
+  "question": {
+    "schemaVersion": 1,
+    "id": "053",
+    "difficulty": {
+      "level": 3,
+      "slug": "intermediate",
+      "label": "Intermediate"
+    },
+    "category": "kanban-board",
+    "title": "Launch plan",
+    "image": "images/053.png",
+    "question": "Which column contains “Legal review”? Focus on the “Launch plan” screen.",
+    "defaultPromptMode": "production"
+  },
+  "image": {
+    "path": "images/053.png",
+    "bytes": 70022,
+    "sha256": "ca4c0ce5dacd50ffa1e3479eb9dfeb1b8e69a6cb0a9c7e922176f9d7c4a80860"
+  },
+  "request": {
+    "systemPrompt": "You are the vision subsystem of a web-automation agent. A screenshot of the current browser viewport is attached. Describe what is on screen so the planning agent can decide its next action.\n\nFormat — keep it terse, structured, no flowery prose:\n\n1) Page purpose: one line (e.g. \"GitHub repo issue list\", \"Gmail compose\", \"Stripe checkout form\").\n2) Visible text: list the EXACT strings on buttons, links, headings, tabs, and menu items. Quote them verbatim. Do not paraphrase.\n3) Inputs: list each visible form field with its label, placeholder, current value, and whether it is focused/disabled.\n4) State signals: loading spinners, toasts, modals, error banners, success messages, CAPTCHAs, cookie/consent banners, overlays.\n5) Blockers: anything that would prevent the next likely action (overlay, disabled submit, missing data, auth prompt).\n6) Unknowns: if you cannot read something clearly, say so. Do not guess numbers, names, or identifiers.\n\nRules: no prose intro, no conclusion, no \"this screenshot shows...\", no layout description unless it matters (e.g. \"left nav is collapsed\"). If the page is blank or still loading, say that in one line and stop.",
+    "userText": "Describe this screenshot of the current browser viewport for a web-automation agent. Follow the format in the system prompt.",
+    "foldSystem": false,
+    "temperature": 0,
+    "maxTokens": 800,
+    "chatTemplateKwargs": {
+      "enable_thinking": false,
+      "think": false,
+      "thinking": false
+    }
+  },
+  "response": {
+    "status": 200,
+    "content": "1) Page purpose: Web-scene landing page for a legal review service.\n2) Visible text: \"Web-scene\", \"Home\", \"Workspace\", \"Activity\", \"Launch plan\", \"Blocked\", \"1\", \"In review\", \"1\", \"Ready\", \"1\", \"Task\", \"Email campaign\".\n3) Inputs: None visible.\n4) State signals: \"Blocked\" status displayed in a light blue box.\n5) Blockers: None.\n6) Unknowns: None.",
+    "reasoningChars": 0,
+    "usage": {
+      "prompt_tokens": 1103,
+      "completion_tokens": 109,
+      "total_tokens": 1212
+    },
+    "timings": null
+  },
+  "latencyMs": {
+    "headers": 1621,
+    "total": 1621
+  },
+  "score": {
+    "success": true,
+    "ratio": 0.8571428571428571,
+    "earned": 6,
+    "possible": 7,
+    "threshold": 0.72,
+    "sectionCount": 6,
+    "criticalFailures": [],
+    "dimensions": {
+      "page_purpose": {
+        "earned": 0,
+        "possible": 1,
+        "ratio": 0
+      },
+      "visible_text": {
+        "earned": 1,
+        "possible": 1,
+        "ratio": 1
+      },
+      "visual_reasoning": {
+        "earned": 3,
+        "possible": 3,
+        "ratio": 1
+      }
+    },
+    "checks": [
+      {
+        "id": "purpose",
+        "dimension": "page_purpose",
+        "section": 1,
+        "kind": "any",
+        "values": [
+          "board",
+          "kanban",
+          "project",
+          "sprint",
+          "incident"
+        ],
+        "weight": 1,
+        "critical": false,
+        "passed": false,
+        "matched": [],
+        "scopeFound": true
+      },
+      {
+        "id": "heading",
+        "dimension": "visible_text",
+        "section": 2,
+        "kind": "literal",
+        "value": "Launch plan",
+        "weight": 1,
+        "critical": false,
+        "caseSensitive": true,
+        "passed": true,
+        "matched": [
+          "Launch plan"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "card-column",
+        "dimension": "visual_reasoning",
+        "section": null,
+        "kind": "all",
+        "values": [
+          "Legal review",
+          "Blocked"
+        ],
+        "weight": 3,
+        "critical": true,
+        "passed": true,
+        "matched": [
+          "Legal review",
+          "Blocked"
+        ],
+        "scopeFound": true
+      }
+    ]
+  },
+  "error": null
+}

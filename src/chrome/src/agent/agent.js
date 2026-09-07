@@ -44,6 +44,7 @@ import {
   workflowRequiredRowsAreProcessed,
 } from './adapter-workflow-evidence.js';
 import { answerNamesAllObservedRecipients, answerNamesIdentity, messageTargetMatchesObservedIdentities, normalizeMessageTarget, normalizeRecipientAnswer, normalizeRecipientIdentity, resolveClarifiedRecipients } from './message-recipient-guard.js';
+import { advanceChatSession, createChatSession, decideChatSend, markChatSendPending, normalizeChatSession, normalizeChatSnapshot, serializeChatSession } from './chat-workflow.js';
 import {
   fetchUrl,
   executeHttpSkillTool,
@@ -606,6 +607,7 @@ const HUMANIZER_SKILL_SITE_ADAPTERS = new Set([
 ]);
 const SET_CHECKED_VERIFY_DELAY_MS = 80;
 const COMPLETION_DOCUMENT_OBSERVATION_TOOLS = new Set([
+  'chat_observe',
   'auto_screenshot',
   'get_accessibility_tree',
   'read_page',
@@ -624,6 +626,7 @@ const COMPLETION_DOCUMENT_OBSERVATION_TOOLS = new Set([
   'full_page_screenshot',
 ]);
 const COMPLETION_DOCUMENT_URL_TOOLS = new Set([
+  'chat_observe',
   'auto_screenshot',
   'get_accessibility_tree',
   'read_page',
@@ -837,6 +840,7 @@ export class Agent extends LoopDetector {
     this.progressPageScopes = new Map(); // tabId -> normalized page identity for scoped progress task keys
     this.progressSessions = new Map(); // tabId -> active language-neutral progress intent/session
     this.progressExpectedItems = new Map(); // tabId -> planner-declared count/field contract
+    this.chatSessions = new Map(); // tabId -> in-memory support-chat workflow state
     this._progressSessionCounter = 0;
     this.conversationModes = new Map(); // tabId -> 'ask' | 'act' | 'dev'
     this._runModeOverrides = new Map(); // tabId -> effective mode for the active run only
@@ -13264,6 +13268,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
 
   async _hydrateFromSession(tabId) {
     const conversationInMemory = this.conversations.has(tabId);
+    const chatWorkflowInMemory = this.chatSessions.has(tabId);
     try {
       const key = this._convKey(tabId);
       const cloudflareKey = cloudflareManagedChallengeStorageKey(tabId);
@@ -13279,10 +13284,18 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         const cloudflareGate = cloudflareManagedChallengeGateState(cloudflareSignal);
         if (cloudflareGate) this._captchaGateStates.set(tabId, cloudflareGate);
       }
-      if (conversationInMemory) return;
       const entry = stored?.[key];
-      if (entry && Array.isArray(entry.messages) && entry.messages.length > 0) {
-        this.conversations.set(tabId, entry.messages);
+      if (conversationInMemory || chatWorkflowInMemory) {
+        if (!chatWorkflowInMemory && entry?.chatWorkflow && typeof entry.chatWorkflow === 'object') {
+          this.chatSessions.set(tabId, normalizeChatSession(entry.chatWorkflow));
+        }
+        return;
+      }
+      if (entry && ((Array.isArray(entry.messages) && entry.messages.length > 0) || entry.chatWorkflow)) {
+        if (Array.isArray(entry.messages) && entry.messages.length > 0) this.conversations.set(tabId, entry.messages);
+        if (entry.chatWorkflow && typeof entry.chatWorkflow === 'object') {
+          this.chatSessions.set(tabId, normalizeChatSession(entry.chatWorkflow));
+        }
         if (entry.mode) {
           this.conversationModes.set(tabId, entry.mode);
           this._conversationMode = entry.mode;
@@ -13396,7 +13409,8 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
 
   _conversationStorageEntry(tabId, options = {}) {
     const messages = this.conversations.get(tabId);
-    if (!messages) return null;
+    const chatWorkflow = this.chatSessions.get(tabId);
+    if (!messages && !chatWorkflow) return null;
     const conversationId = this.conversationIds.get(tabId) || null;
     const clarificationGuard = this._clarificationAuthorizationGuards.get(tabId);
     const persistedClarificationGuard = clarificationGuard?.source === 'timeout'
@@ -13421,11 +13435,13 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           },
         }
       : null;
-    const activeTaskBinding = this._activeTaskBinding(messages);
-    const serialized = serializeConversationForSession(messages, {
-      maxBytes: options.maxBytes || SESSION_CONVERSATION_BUDGET_BYTES,
-      preserveMessageIndices: activeTaskBinding.pinnedIndices,
-    });
+    const activeTaskBinding = messages ? this._activeTaskBinding(messages) : { pinnedIndices: [] };
+    const serialized = messages
+      ? serializeConversationForSession(messages, {
+          maxBytes: options.maxBytes || SESSION_CONVERSATION_BUDGET_BYTES,
+          preserveMessageIndices: activeTaskBinding.pinnedIndices,
+        })
+      : { messages: [], compacted: false, bytes: 2 };
     const captchaGateState = this._captchaGateStates.get(tabId) || null;
     return {
       mode: this.conversationModes.get(tabId) || 'ask',
@@ -13433,6 +13449,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       sessionSnapshotCompacted: serialized.compacted,
       sessionSnapshotBytes: serialized.bytes,
       conversationId,
+      chatWorkflow: chatWorkflow ? serializeChatSession(chatWorkflow) : null,
       workflowDraft: this._latestWorkflowDrafts.get(tabId) || null,
       submittedRunRequestId: this.submittedRunRequestIds.get(tabId) || null,
       progressLedger: this.progressLedgers.get(tabId) || [],
@@ -19204,6 +19221,333 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     }
   }
 
+  async _chatObservationParams(tabId) {
+    let pageUrl = '';
+    try { pageUrl = await this._currentUrl(tabId); } catch {}
+    let policy = null;
+    try { policy = getMessageRecipientGuardPolicy(pageUrl); } catch {}
+    return {
+      ...(policy?.adapterName ? { adapterName: policy.adapterName } : {}),
+      supportsRecipientSets: policy?.supportsRecipientSets === true,
+    };
+  }
+
+  _chatWorkflowView(advanced) {
+    const sourceMessages = Array.isArray(advanced.newMessages)
+      ? advanced.newMessages.slice(-20)
+      : [];
+    let newMessages = sourceMessages.map(message => ({
+      id: String(message?.id || '').slice(0, 80),
+      direction: String(message?.direction || 'unknown').slice(0, 20),
+      text: String(message?.text || ''),
+      ...(message?.author ? { author: String(message.author).slice(0, 80) } : {}),
+      ...(message?.timestamp ? { timestamp: String(message.timestamp).slice(0, 40) } : {}),
+    }));
+    let deltaTruncated = advanced.newMessagesTruncated === true;
+    // Keep the model-facing delta below the normal 8k tool-result envelope.
+    // Drop oldest entries first, then trim one oversized message and mark it.
+    while (JSON.stringify(newMessages).length > 5000 && newMessages.length > 1) {
+      newMessages.shift();
+      deltaTruncated = true;
+    }
+    if (JSON.stringify(newMessages).length > 5000 && newMessages.length === 1) {
+      const message = newMessages[0];
+      const excess = JSON.stringify(newMessages).length - 5000;
+      message.text = message.text.slice(0, Math.max(0, message.text.length - excess - 32));
+      message.truncated = true;
+      deltaTruncated = true;
+    }
+    const events = (Array.isArray(advanced.events) ? advanced.events : []).map(event => (
+      Array.isArray(event?.messages)
+        ? { ...event, messages: event.messages.slice(-20).map(id => String(id).slice(0, 80)) }
+        : event
+    ));
+    return {
+      schema: advanced.session.schema,
+      state: advanced.session.state,
+      threadKey: advanced.snapshot.threadKey,
+      nextAction: advanced.nextAction,
+      events,
+      newMessages,
+      ...(deltaTruncated ? { deltaTruncated: true } : {}),
+      pendingOutbound: !!advanced.session.pendingOutbound,
+      ...(advanced.session.pendingOutbound?.key
+        ? { pendingOutboundKey: advanced.session.pendingOutbound.key }
+        : {}),
+      userInput: advanced.session.userInput,
+      resolutionEvidence: advanced.snapshot.resolutionEvidence,
+    };
+  }
+
+  _chatObservationResult(observation, advanced) {
+    const source = observation && typeof observation === 'object' ? observation : {};
+    return {
+      success: source.success === true,
+      ...(source.schema ? { schema: source.schema } : {}),
+      ...(source.observedAt ? { observedAt: source.observedAt } : {}),
+      ...(source.url ? { url: source.url } : {}),
+      ...(source.conversationId ? { conversationId: source.conversationId } : {}),
+      ...(source.conversationIdentity ? { conversationIdentity: source.conversationIdentity } : {}),
+      threadKey: advanced.snapshot.threadKey,
+      composer: {
+        available: source.composer?.available === true,
+        ...(source.composer?.ref ? { ref: source.composer.ref } : {}),
+        ...(source.composer?.sendRef ? { sendRef: source.composer.sendRef } : {}),
+        empty: source.composer?.empty === true,
+      },
+      chatWorkflow: this._chatWorkflowView(advanced),
+    };
+  }
+
+  async _readChatObservation(tabId) {
+    try {
+      return await this._sendDevContentAction(
+        tabId,
+        'observe_chat',
+        await this._chatObservationParams(tabId),
+      );
+    } catch (error) {
+      return { success: false, error: error?.message || String(error) };
+    }
+  }
+
+  async _observeChatWorkflow(tabId, args = {}) {
+    const observation = await this._readChatObservation(tabId);
+    if (observation?.success !== true) return observation;
+    // chat_observe reports the normalized threadKey, so a key the model passes
+    // back must be compared against that same form — not against the raw
+    // content-script value, which normalization can still change.
+    const observedThreadKey = normalizeChatSnapshot(observation).threadKey;
+    let prior = this.chatSessions.get(tabId) || createChatSession();
+    const rebindThreadKey = String(args.rebind_thread_key || args.rebindThreadKey || '').trim();
+    const reconcilePending = args.reconcile_pending_outbound === true;
+    const pendingOutboundKey = String(args.pending_outbound_key || '').trim();
+    if (reconcilePending) {
+      if (!prior.pendingOutbound) {
+        return {
+          success: false,
+          noDispatch: true,
+          reason: 'pending_reconciliation_not_needed',
+          error: 'There is no pending outbound message to reconcile.',
+        };
+      }
+      if (!pendingOutboundKey || pendingOutboundKey !== prior.pendingOutbound.key) {
+        return {
+          success: false,
+          noDispatch: true,
+          reason: 'pending_reconciliation_mismatch',
+          error: 'Pending outbound reconciliation requires the exact pending_outbound_key from chatWorkflow.',
+        };
+      }
+      // Clearing an uncertain send is an explicit user-authorized decision;
+      // elapsed time alone is never evidence that dispatch failed.
+      prior = { ...prior, pendingOutbound: null };
+    }
+    if (rebindThreadKey) {
+      if (prior.stopReason !== 'thread_changed' || prior.pendingOutbound) {
+        return {
+          success: false,
+          noDispatch: true,
+          reason: 'thread_rebind_not_allowed',
+          error: 'Chat thread rebind requires a prior thread_changed pause with no pending outbound send.',
+        };
+      }
+      if (!observedThreadKey || rebindThreadKey !== observedThreadKey) {
+        return {
+          success: false,
+          noDispatch: true,
+          reason: 'thread_rebind_mismatch',
+          error: 'Chat thread rebind was rejected because the requested key does not match the current observation.',
+        };
+      }
+      prior = createChatSession({ threadKey: observedThreadKey });
+    }
+    const advanced = advanceChatSession(prior, observation);
+    this.chatSessions.set(tabId, advanced.session);
+    this._persist(tabId);
+    return this._chatObservationResult(observation, advanced);
+  }
+
+  async _sendChatWorkflow(tabId, args = {}, onUpdate = null, executionContext = null) {
+    const before = await this._readChatObservation(tabId);
+    if (before?.success !== true) return before;
+    const prior = this.chatSessions.get(tabId) || createChatSession();
+    const observed = advanceChatSession(prior, before);
+    const workflow = () => this._chatWorkflowView(observed);
+    if (observed.newMessages.some(message => message.direction === 'incoming')) {
+      return {
+        success: false,
+        noDispatch: true,
+        dispatched: false,
+        reason: 'chat_observe_required',
+        error: 'Chat send blocked because a new incoming message appeared since the last chat_observe. Observe that message delta before replying.',
+        chatWorkflow: workflow(),
+      };
+    }
+    this.chatSessions.set(tabId, observed.session);
+    this._persist(tabId);
+    const requestedThreadKey = String(args.thread_key || args.threadKey || '');
+    // chat_observe reported the normalized key, so match against that one.
+    const observedThreadKey = observed.snapshot.threadKey;
+    if (!requestedThreadKey || !observedThreadKey || requestedThreadKey !== observedThreadKey) {
+      return {
+        success: false,
+        noDispatch: true,
+        dispatched: false,
+        reason: 'thread_unverified',
+        error: 'Chat send blocked: pass the exact thread_key from a fresh chat_observe for the intended conversation.',
+        chatWorkflow: workflow(),
+      };
+    }
+    // The observed ref is the only trusted binding. Without it a caller-supplied
+    // ref would be typed into an unverified element, so require both and match.
+    const observedComposerRef = String(before.composer?.ref || '');
+    const requestedComposerRef = String(args.composer_ref || args.composerRef || '');
+    const composerRef = requestedComposerRef || observedComposerRef;
+    if (!observedComposerRef || composerRef !== observedComposerRef) {
+      return {
+        success: false,
+        noDispatch: true,
+        dispatched: false,
+        reason: 'composer_unverified',
+        error: 'Chat send blocked: the active composer ref is missing or changed. Re-observe the conversation before sending.',
+        chatWorkflow: workflow(),
+      };
+    }
+    const decision = decideChatSend(observed.session, before, args.text);
+    if (!decision.ok) {
+      return {
+        ...decision,
+        success: false,
+        noDispatch: true,
+        dispatched: false,
+        chatWorkflow: workflow(),
+      };
+    }
+
+    const dispatchArgs = {
+      ref_id: composerRef,
+      text: decision.text,
+      clear: true,
+      submit: true,
+    };
+    const sendContext = executionContext && typeof executionContext === 'object'
+      ? { ...executionContext }
+      : {};
+    let recipientBlock = null;
+    try {
+      recipientBlock = await this._messageRecipientGuardBlock(
+        tabId,
+        'set_field',
+        dispatchArgs,
+        before.url || '',
+        sendContext,
+      );
+    } catch (error) {
+      recipientBlock = {
+        success: false,
+        noDispatch: true,
+        dispatched: false,
+        messageRecipientGuard: true,
+        reasonCode: 'message_send_classification_inconclusive',
+        error: `Chat send blocked because recipient verification failed before dispatch: ${error?.message || String(error)}`,
+      };
+    }
+    if (recipientBlock) {
+      return {
+        ...recipientBlock,
+        chatWorkflow: workflow(),
+      };
+    }
+
+    const pending = markChatSendPending(observed.session, decision);
+    this.chatSessions.set(tabId, pending);
+    const pendingPersisted = await this._persistNow(tabId);
+    if (pendingPersisted !== true && pendingPersisted?.ok !== true) {
+      // Nothing was dispatched, so this pending record is provably false.
+      // Leaving it in place would refuse every later send with 'send_pending'
+      // until the user confirms an uncertain outcome that never happened.
+      this.chatSessions.set(tabId, observed.session);
+      return {
+        success: false,
+        noDispatch: true,
+        dispatched: false,
+        reason: 'chat_state_not_durable',
+        error: 'Chat send blocked because the pending outbound message could not be persisted safely. Retry after storage is available.',
+        chatWorkflow: workflow(),
+      };
+    }
+    let dispatch;
+    try {
+      dispatch = await this.executeTool(tabId, 'set_field', dispatchArgs, onUpdate, sendContext);
+    } catch (error) {
+      dispatch = {
+        success: false,
+        noDispatch: true,
+        dispatched: false,
+        error: error?.message || String(error),
+      };
+    }
+    // A dispatch that proves it never reached the page is not an uncertain
+    // send: keeping the pending record would strand the workflow behind an
+    // explicit user reconciliation for a message that was never typed.
+    let dispatchedSession = pending;
+    if (dispatch?.noDispatch === true && dispatch?.dispatched !== true) {
+      dispatchedSession = { ...pending, pendingOutbound: null };
+      this.chatSessions.set(tabId, dispatchedSession);
+      this._persist(tabId);
+    }
+
+    const after = await this._readChatObservation(tabId);
+    if (after?.success !== true) {
+      return {
+        ...this._chatObservationResult(after, {
+          session: dispatchedSession,
+          // `after` failed, so it carries no thread binding or evidence. Report
+          // the session's own so the model can still reconcile this send.
+          snapshot: {
+            threadKey: dispatchedSession.threadKey,
+            resolutionEvidence: dispatchedSession.resolutionEvidence,
+          },
+          events: [],
+          newMessages: [],
+          nextAction: 'observe',
+        }),
+        success: false,
+        sent: false,
+        dispatched: dispatch?.dispatched === true,
+        outcomeUnknown: dispatch?.dispatched !== false && dispatch?.noDispatch !== true,
+        verificationRequired: true,
+        messageKey: decision.messageKey,
+        error: 'Chat send was not independently verified after dispatch. Observe the conversation before retrying.',
+        dispatch,
+      };
+    }
+    const verifiedState = advanceChatSession(dispatchedSession, after);
+    this.chatSessions.set(tabId, verifiedState.session);
+    this._persist(tabId);
+    const previouslySeenIds = new Set(observed.session.seenMessageIds);
+    const outgoingVerified = verifiedState.snapshot.messages.some(message => (
+      message.direction === 'outgoing'
+        && message.text === decision.text
+        && !previouslySeenIds.has(message.id)
+    )) && verifiedState.session.pendingOutbound === null;
+    return {
+      ...this._chatObservationResult(after, verifiedState),
+      success: outgoingVerified,
+      sent: outgoingVerified,
+      dispatched: dispatch?.dispatched === true || dispatch?.success === true,
+      deliveryVerified: outgoingVerified,
+      verificationRequired: !outgoingVerified,
+      ...(outgoingVerified ? {} : {
+        outcomeUnknown: dispatch?.dispatched !== false && dispatch?.noDispatch !== true,
+        error: 'The composer action completed without a new matching outgoing bubble. Do not retry until chat_observe confirms the result.',
+      }),
+      messageKey: decision.messageKey,
+      dispatch,
+    };
+  }
+
   async _consumeMessageRecipientDispatchBinding(tabId, binding, params = {}) {
     if (!binding?.token) {
       return {
@@ -21507,6 +21851,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     this.progressPageScopes.delete(tabId);
     this.progressSessions.delete(tabId);
     this.progressExpectedItems.delete(tabId);
+    this.chatSessions.delete(tabId);
     this.selectionGroundingScopes.delete(tabId);
     this.selectionGroundingRestorationPendingTabs.delete(tabId);
     this.responseLanguagePolicies.delete(tabId);
@@ -21590,6 +21935,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     this.progressPageScopes.delete(tabId);
     this.progressSessions.delete(tabId);
     this.progressExpectedItems.delete(tabId);
+    this.chatSessions.delete(tabId);
     this.selectionGroundingScopes.delete(tabId);
     this.selectionGroundingRestorationPendingTabs.delete(tabId);
     this.mastodonStates.delete(tabId);
@@ -26630,6 +26976,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       files: [
         'src/content/rich-text-toolbar-heuristic.js',
         'src/content/accessibility-tree.js',
+        'src/content/chat-observation.js',
         'src/content/content.js',
         'src/content/agent-visual-indicator.js',
       ],
@@ -27847,6 +28194,8 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     if (name === 'done_json') {
       return handleDoneJson(this.cloudRunContexts.get(tabId), args);
     }
+    if (name === 'chat_observe') return this._observeChatWorkflow(tabId, args);
+    if (name === 'chat_send') return this._sendChatWorkflow(tabId, args, onUpdate, dispatchContext);
     if (name === 'beep') {
       const watch = this.scheduledRunPolicies.get(tabId)?.watch;
       if (watch?.beep !== true) {
@@ -28022,6 +28371,18 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           noDispatch: true,
           error: 'Scheduling is not available in this build.',
         };
+      }
+      if (this.chatSessions.has(tabId)) {
+        const chatStatePersisted = await this._persistNow(tabId);
+        if (chatStatePersisted !== true && chatStatePersisted?.ok !== true) {
+          return {
+            success: false,
+            dispatched: false,
+            noDispatch: true,
+            reason: 'chat_state_not_durable',
+            error: 'Resume scheduling blocked because the latest chat workflow state could not be persisted safely.',
+          };
+        }
       }
       let tab = null;
       try { tab = await chrome.tabs.get(tabId); } catch {}

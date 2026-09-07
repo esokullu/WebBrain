@@ -1,0 +1,134 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-09-07T12:49:59.379Z",
+  "id": "071",
+  "model": "webbrain-vl-3-450m-winner-3750",
+  "endpoint": "http://127.0.0.1:8335/v1/chat/completions",
+  "promptMode": "production",
+  "question": {
+    "schemaVersion": 1,
+    "id": "071",
+    "difficulty": {
+      "level": 4,
+      "slug": "advanced",
+      "label": "Advanced"
+    },
+    "category": "data-table",
+    "title": "Fatura listesi",
+    "image": "images/071.png",
+    "question": "Locate the target row and report its exact status without mixing it with neighboring rows. Focus on the “Fatura listesi” screen.",
+    "defaultPromptMode": "production"
+  },
+  "image": {
+    "path": "images/071.png",
+    "bytes": 84124,
+    "sha256": "6d05e6deaa76e5febe0ebd1970ffa5f321ad09b6cf3f65479c539d363b0f1172"
+  },
+  "request": {
+    "systemPrompt": "You are the vision subsystem of a web-automation agent. A screenshot of the current browser viewport is attached. Describe what is on screen so the planning agent can decide its next action.\n\nFormat — keep it terse, structured, no flowery prose:\n\n1) Page purpose: one line (e.g. \"GitHub repo issue list\", \"Gmail compose\", \"Stripe checkout form\").\n2) Visible text: list the EXACT strings on buttons, links, headings, tabs, and menu items. Quote them verbatim. Do not paraphrase.\n3) Inputs: list each visible form field with its label, placeholder, current value, and whether it is focused/disabled.\n4) State signals: loading spinners, toasts, modals, error banners, success messages, CAPTCHAs, cookie/consent banners, overlays.\n5) Blockers: anything that would prevent the next likely action (overlay, disabled submit, missing data, auth prompt).\n6) Unknowns: if you cannot read something clearly, say so. Do not guess numbers, names, or identifiers.\n\nRules: no prose intro, no conclusion, no \"this screenshot shows...\", no layout description unless it matters (e.g. \"left nav is collapsed\"). If the page is blank or still loading, say that in one line and stop.",
+    "userText": "Describe this screenshot of the current browser viewport for a web-automation agent. Follow the format in the system prompt.",
+    "foldSystem": false,
+    "temperature": 0,
+    "maxTokens": 800,
+    "chatTemplateKwargs": {
+      "enable_thinking": false,
+      "think": false,
+      "thinking": false
+    }
+  },
+  "response": {
+    "status": 200,
+    "content": "1) Page purpose: WebScape homepage displaying a list of locations with a filter button.\n2) Visible text: \"WebScene\", \"Home\", \"Workspace\", \"Activity\", \"Fatura listesi\", \"FATURA\", \"VADE\", \"DURUM\", \"Ödendi\", \"TR-8831\", \"18 Ağü\", \"21 Ağü\", \"Geçikmığ\".\n3) Inputs: None visible.\n4) State signals: \"Filter\" button is visible and appears to be enabled.\n5) Blockers: None.\n6) Unknowns: None.",
+    "reasoningChars": 0,
+    "usage": {
+      "prompt_tokens": 1103,
+      "completion_tokens": 132,
+      "total_tokens": 1235
+    },
+    "timings": null
+  },
+  "latencyMs": {
+    "headers": 2976,
+    "total": 2976
+  },
+  "score": {
+    "success": false,
+    "ratio": 0.42857142857142855,
+    "earned": 3,
+    "possible": 7,
+    "threshold": 0.72,
+    "sectionCount": 6,
+    "criticalFailures": [
+      "target-row"
+    ],
+    "dimensions": {
+      "page_purpose": {
+        "earned": 0,
+        "possible": 1,
+        "ratio": 0
+      },
+      "visible_text": {
+        "earned": 1,
+        "possible": 1,
+        "ratio": 1
+      },
+      "visual_reasoning": {
+        "earned": 0,
+        "possible": 3,
+        "ratio": 0
+      }
+    },
+    "checks": [
+      {
+        "id": "purpose",
+        "dimension": "page_purpose",
+        "section": 1,
+        "kind": "any",
+        "values": [
+          "table",
+          "orders",
+          "members",
+          "deployment",
+          "invoice",
+          "audit"
+        ],
+        "weight": 1,
+        "critical": false,
+        "passed": false,
+        "matched": [],
+        "scopeFound": true
+      },
+      {
+        "id": "heading",
+        "dimension": "visible_text",
+        "section": 2,
+        "kind": "literal",
+        "value": "Fatura listesi",
+        "weight": 1,
+        "critical": false,
+        "caseSensitive": true,
+        "passed": true,
+        "matched": [
+          "Fatura listesi"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "target-row",
+        "dimension": "visual_reasoning",
+        "section": null,
+        "kind": "all",
+        "values": [
+          "TR-8832",
+          "Gecikmiş"
+        ],
+        "weight": 3,
+        "critical": true,
+        "passed": false,
+        "matched": [],
+        "scopeFound": true
+      }
+    ]
+  },
+  "error": null
+}
