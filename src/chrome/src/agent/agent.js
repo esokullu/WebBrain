@@ -21347,6 +21347,15 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           const identity = await this._textMutationValueDigest(tabId, { locatorType: 'focused', ambiguous: false });
           if (identity?.fieldMeta) debtFieldMeta = identity.fieldMeta;
         } catch { /* identity stays as the result metadata */ }
+      } else if (!debtFieldMeta && target.locatorType === 'selector') {
+        // CDP-backed selector failures omit field metadata, which would
+        // leave the block-time distinctness escape without a baseline and
+        // block the rest of a multi-field form until navigation. Capture it
+        // live: the target element is right there.
+        try {
+          const identity = await this._textMutationValueDigest(tabId, target);
+          if (identity?.fieldMeta) debtFieldMeta = identity.fieldMeta;
+        } catch { /* identity-less debts stay fully blocking */ }
       }
       debts.set(target.key, {
         ...target,

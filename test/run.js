@@ -77164,6 +77164,72 @@ test('minted proofs carry the live digest scope', async () => {
   }
 });
 
+test('uncertain selector writes capture live metadata for distinctness', async () => {
+  const originalChrome = globalThis.chrome;
+  const originalBrowser = globalThis.browser;
+  try {
+    const pageUrl = 'https://example.test/form';
+    const fieldMetaA = { id: 'field-a', name: 'field-a', labelText: 'First' };
+    const fieldMetaB = { id: 'field-b', name: 'field-b', labelText: 'Second' };
+    for (const [label, AgentClass, tabId] of [
+      ['chrome', AgentCh, 9526],
+      ['firefox', AgentFx, 9527],
+    ]) {
+      const agent = new AgentClass({});
+      agent._lastAxScopes.set(tabId, { documentToken: 'doc-multi', pageUrl });
+      const tabs = {
+        captureMeta: false,
+        async sendMessage(_tabId, message) {
+          assert.equal(message.action, 'field_value_digest');
+          const selector = message.params?.selector;
+          // Record-time probes carry no expected text: live scope first,
+          // identity capture second.
+          if (selector === '#a' && message.params?.expected === undefined) {
+            if (!tabs.captureMeta) {
+              return { success: false, documentToken: 'doc-multi', refScopeUrl: pageUrl };
+            }
+            return { success: true, valueLength: 5, valueSha256: await agent._sha256Text('alpha'),
+              fieldMeta: fieldMetaA, documentToken: 'doc-multi', refScopeUrl: pageUrl };
+          }
+          if (selector === '#b') {
+            return { success: true, valueLength: 4, valueSha256: await agent._sha256Text('beta'), fieldMeta: fieldMetaB };
+          }
+          return { success: false, documentToken: 'doc-multi', refScopeUrl: pageUrl };
+        },
+      };
+      globalThis.chrome = { tabs };
+      globalThis.browser = { tabs };
+      // CDP-shaped failure: dispatched, uncertain, and no field metadata.
+      await agent._finalizeTextMutationResult(
+        tabId, 'type_text', { selector: '#a', text: 'alpha', clear: true },
+        { success: false, dispatched: true, verified: false },
+      );
+      assert.equal(agent._uncertainTextMutations.get(tabId)?.get('selector:doc-multi:#a')?.fieldMeta ?? null, null,
+        `${label}: debt unexpectedly carries identity without a capture source`);
+      // Same failure, but the live element answers the capture probe.
+      tabs.captureMeta = true;
+      await agent._finalizeTextMutationResult(
+        tabId, 'type_text', { selector: '#a', text: 'alpha', clear: true },
+        { success: false, dispatched: true, verified: false },
+      );
+      assert.deepEqual(agent._uncertainTextMutations.get(tabId)?.get('selector:doc-multi:#a')?.fieldMeta, fieldMetaA,
+        `${label}: record-time capture missed the selector identity`);
+      // The distinctness escape now fires for the other field.
+      const allowed = await agent._uncertainTextMutationBlock(
+        tabId, 'type_text', { selector: '#b', text: 'beta' },
+      );
+      assert.equal(allowed, null, `${label}: distinct selector field stayed blocked without debt metadata`);
+      assert.equal(agent._uncertainTextMutations.get(tabId)?.size, 1,
+        `${label}: distinct-field dispatch dropped the original debt`);
+    }
+  } finally {
+    if (originalChrome === undefined) delete globalThis.chrome;
+    else globalThis.chrome = originalChrome;
+    if (originalBrowser === undefined) delete globalThis.browser;
+    else globalThis.browser = originalBrowser;
+  }
+});
+
 test('selector writes to proven-distinct fields bypass unrelated debt', async () => {
   const originalChrome = globalThis.chrome;
   const originalBrowser = globalThis.browser;
