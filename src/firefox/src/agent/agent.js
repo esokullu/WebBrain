@@ -2105,10 +2105,102 @@ export class Agent extends LoopDetector {
   }
 
   _cleanSpecificAttachmentTarget(value) {
-    const text = String(value || '').trim();
-    const match = text.match(/(?:(?:an?|the|\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+)?(?:images?|photos?|pictures?|videos?|gifs?|animated\s+gifs?|attachments?|files?)\s+(?:of|named|called|with\s+name)\s+(.+)$/i);
-    if (match) return match[1].trim().toLowerCase();
+    let text = String(value || '').trim();
+    text = text.replace(/^['"“”«»`]+|['"“”«»`]+$/g, '').trim();
+    const prefixMatch = text.match(/(?:(?:an?|the|\d+|one|two|three|four|five|six|seven|eight|nine|ten|une?|ein(?:e|en)?|un[ao]?|el|la|le|l'|gli|il)\s+)?(?:images?|photos?|pictures?|videos?|gifs?|animated\s+gifs?|attachments?|files?|bilder?|fotos?|vidéos?|archivos?|dateien?|allegat[oi]?|anexos?|вложения?|사진|이미지|동영상|画像|写真|视频|影片)\s*(?:of|named|called|with\s+name|de|von|d'|d’|di|con\s+nombre|이름의|名為|名为|名前の|:|：)\s*(.+)$/i)
+      || text.match(/^(?:images?|photos?|pictures?|videos?|gifs?|animated\s+gifs?|attachments?|files?|bilder?|fotos?|vidéos?|archivos?|dateien?|allegat[oi]?|anexos?|вложения?|사진|이미지|동영상|画像|写真|视频|影片)\s*[:：]\s*(.+)$/i);
+    if (prefixMatch) {
+      let target = prefixMatch[1].trim();
+      target = target.replace(/^['"“”«»`]+|['"“”«»`]+$/g, '').trim();
+      if (target) return target.toLowerCase();
+    }
+    const suffixMatch = text.match(/^(.+?)\s*(?:の|의)?\s*(?:images?|photos?|pictures?|videos?|gifs?|animated\s+gifs?|attachments?|files?|bilder?|fotos?|vidéos?|archivos?|dateien?|allegat[oi]?|anexos?|вложения?|사진|이미지|동영상|画像|写真|视频|影片)$/i);
+    if (suffixMatch) {
+      let target = suffixMatch[1].trim();
+      target = target.replace(/^['"“”«»`]+|['"“”«»`]+$/g, '').trim();
+      if (target) return target.toLowerCase();
+    }
     return text.toLowerCase();
+  }
+
+  _targetAttachmentNames(specificTarget) {
+    const targets = new Set();
+    if (!specificTarget) return [];
+    const clean = String(specificTarget).trim().replace(/^['"“”«»`]+|['"“”«»`]+$/g, '').trim().toLowerCase();
+    if (clean) {
+      targets.add(clean);
+      const segs = clean.split(/[?#]/)[0].split(/[/\\]/).filter(Boolean);
+      if (segs.length > 0) {
+        targets.add(segs[segs.length - 1]);
+      }
+    }
+    return Array.from(targets);
+  }
+
+  _extractAttachmentCandidateNames(att) {
+    const rawCandidates = [];
+    if (typeof att === 'string') {
+      rawCandidates.push(att);
+    } else if (att && typeof att === 'object') {
+      if (att.name) rawCandidates.push(String(att.name));
+      if (att.src) rawCandidates.push(String(att.src));
+      if (att.url) rawCandidates.push(String(att.url));
+      if (att.alt) rawCandidates.push(String(att.alt));
+      if (att.title) rawCandidates.push(String(att.title));
+      if (att.ariaLabel) rawCandidates.push(String(att.ariaLabel));
+      if (att.text) rawCandidates.push(String(att.text));
+    }
+
+    const candidateNames = new Set();
+
+    for (const raw of rawCandidates) {
+      if (!raw) continue;
+      const trimmed = String(raw).trim();
+      if (!trimmed) continue;
+
+      const cleanDirect = trimmed.replace(/^['"“”«»`]+|['"“”«»`]+$/g, '').trim().toLowerCase();
+      if (cleanDirect) {
+        candidateNames.add(cleanDirect);
+      }
+
+      const cleanedPhrase = this._cleanSpecificAttachmentTarget(cleanDirect);
+      if (cleanedPhrase) {
+        candidateNames.add(cleanedPhrase);
+      }
+
+      try {
+        const urlObj = new URL(trimmed, 'https://example.invalid');
+        const pathname = urlObj.pathname;
+        const segments = pathname.split('/').filter(Boolean);
+        if (segments.length > 0) {
+          let last = segments[segments.length - 1];
+          try { last = decodeURIComponent(last); } catch {}
+          last = last.trim().toLowerCase();
+          if (last) candidateNames.add(last);
+        }
+      } catch {
+        const withoutQuery = trimmed.split(/[?#]/)[0];
+        const segments = withoutQuery.split(/[/\\]/).filter(Boolean);
+        if (segments.length > 0) {
+          const last = segments[segments.length - 1].trim().toLowerCase();
+          if (last) candidateNames.add(last);
+        }
+      }
+
+      const tokens = trimmed.split(/[\s,;:()[\]{}<>"'“”«»`]+/);
+      for (let token of tokens) {
+        token = token.replace(/^[('"`“«]+|[)'"`”».!?,;:]+$/g, '').trim().toLowerCase();
+        if (token) {
+          candidateNames.add(token);
+          const tokenSegments = token.split(/[?#]/)[0].split(/[/\\]/).filter(Boolean);
+          if (tokenSegments.length > 0) {
+            candidateNames.add(tokenSegments[tokenSegments.length - 1]);
+          }
+        }
+      }
+    }
+
+    return Array.from(candidateNames);
   }
 
   _parseWorkflowAttachmentRequirement(value) {
@@ -2164,9 +2256,9 @@ export class Agent extends LoopDetector {
     if (expectedImageCount > 0 && expectedVideoCount > 0) {
       expectedCount = expectedImageCount + expectedVideoCount;
     } else if (expectedImageCount > 0) {
-      expectedCount = expectedImageCount;
+      expectedCount = expectedImageCount + (wantsVideo ? 1 : 0);
     } else if (expectedVideoCount > 0) {
-      expectedCount = expectedVideoCount;
+      expectedCount = expectedVideoCount + (wantsImage ? 1 : 0);
     } else {
       const genericNounCountMatch = text.match(new RegExp(`(?:^|[\\s,;and+와과및])(${countPrefix})\\s+(?:attachments?|files?|media|uploads?|pieces?|items?|assets?|enclosures?|documents?|fichiers?|archivos?|dateien?|allegati?|anexos?|вложения?|вложение|첨부(?:파일)?|파일|미디어)`, 'i'))
         || text.match(new RegExp(`(?:^|[\\s,;and+와과및])(${countPrefix})\\s*(?:枚|つ|本|张|條|条|个|個|장|개|건|편)`, 'i'))
@@ -2179,7 +2271,7 @@ export class Agent extends LoopDetector {
       }
     }
 
-    if (expectedImageCount === 0 && expectedVideoCount === 0 && wantsImage && wantsVideo && expectedCount < 2) {
+    if (wantsImage && wantsVideo && expectedCount < 2) {
       expectedCount = 2;
     }
 
@@ -2212,10 +2304,12 @@ export class Agent extends LoopDetector {
     };
 
     let matchingAttachments = rawAttachments;
-    if (parsed.expectedImageCount > 0 && parsed.expectedVideoCount > 0) {
+    if (parsed.wantsImage && parsed.wantsVideo) {
+      const minImages = parsed.expectedImageCount > 0 ? parsed.expectedImageCount : 1;
+      const minVideos = parsed.expectedVideoCount > 0 ? parsed.expectedVideoCount : 1;
       const imageCount = rawAttachments.filter(isImageAttachment).length;
       const videoCount = rawAttachments.filter(isVideoAttachment).length;
-      if (imageCount < parsed.expectedImageCount || videoCount < parsed.expectedVideoCount) {
+      if (imageCount < minImages || videoCount < minVideos) {
         return false;
       }
     } else if (parsed.wantsVideo && !parsed.wantsImage) {
@@ -2233,12 +2327,21 @@ export class Agent extends LoopDetector {
     }
 
     const specificTarget = this._cleanSpecificAttachmentTarget(parsed.normalized);
+    const targetNames = this._targetAttachmentNames(specificTarget);
+
     const matchesSpecific = matchingAttachments.some(att => {
-      const src = String(att?.src || att?.url || '').toLowerCase();
-      const alt = String(att?.alt || att?.name || '').toLowerCase();
-      const text = String(att?.text || '').toLowerCase();
-      return src.includes(parsed.normalized) || alt.includes(parsed.normalized) || text.includes(parsed.normalized)
-        || (specificTarget && (src.includes(specificTarget) || alt.includes(specificTarget) || text.includes(specificTarget)));
+      const candidates = this._extractAttachmentCandidateNames(att);
+      return targetNames.some(target => {
+        const targetHasExt = /\.[a-z0-9]+$/i.test(target);
+        return candidates.some(candidate => {
+          if (candidate === target) return true;
+          if (!targetHasExt) {
+            const candidateBase = candidate.replace(/\.[a-z0-9]+$/i, '');
+            if (candidateBase === target) return true;
+          }
+          return false;
+        });
+      });
     });
 
     return matchesSpecific;

@@ -87592,6 +87592,89 @@ test('attachment requirement parser recognizes Korean generic media nouns and co
   }
 });
 
+test('attachment verification requires each media type in unquantified mixed-media requests', () => {
+  for (const AgentClass of [AgentCh, AgentFx]) {
+    const agent = new AgentClass({});
+    const req = agent._parseWorkflowAttachmentRequirement('image and video');
+    assert.equal(req.isGeneric, true, AgentClass.name + ': image and video should be generic');
+    assert.equal(req.wantsImage, true, AgentClass.name + ': should want image');
+    assert.equal(req.wantsVideo, true, AgentClass.name + ': should want video');
+    assert.equal(req.expectedCount, 2, AgentClass.name + ': should expect at least 2 attachments');
+
+    const twoImages = agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'image and video' },
+      { attachments: [{ type: 'image', src: 'pic1.png' }, { type: 'image', src: 'pic2.png' }] }
+    );
+    assert.equal(twoImages, false, AgentClass.name + ': two images without video should be rejected for image and video');
+
+    const twoVideos = agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'image and video' },
+      { attachments: [{ type: 'video', src: 'clip1.mp4' }, { type: 'video', src: 'clip2.mp4' }] }
+    );
+    assert.equal(twoVideos, false, AgentClass.name + ': two videos without image should be rejected for image and video');
+
+    const imageAndVideo = agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'image and video' },
+      { attachments: [{ type: 'image', src: 'pic.png' }, { type: 'video', src: 'clip.mp4' }] }
+    );
+    assert.equal(imageAndVideo, true, AgentClass.name + ': image plus video should satisfy image and video');
+
+    const twoImagesAndVideo = agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'image and video' },
+      { attachments: [{ type: 'image', src: 'pic1.png' }, { type: 'image', src: 'pic2.png' }, { type: 'video', src: 'clip.mp4' }] }
+    );
+    assert.equal(twoImagesAndVideo, true, AgentClass.name + ': 2 images plus video should satisfy image and video');
+  }
+});
+
+test('attachment verification matches specific attachment names without substring collisions', () => {
+  for (const AgentClass of [AgentCh, AgentFx]) {
+    const agent = new AgentClass({});
+
+    const oldChartUrl = agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'chart.png' },
+      { attachments: [{ type: 'image', src: 'https://pbs.twimg.com/media/old-chart.png', alt: 'old-chart.png' }] }
+    );
+    assert.equal(oldChartUrl, false, AgentClass.name + ': old-chart.png should not satisfy chart.png');
+
+    const notChartUrl = agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'chart.png' },
+      { attachments: [{ type: 'image', src: 'https://pbs.twimg.com/media/not-chart.png', alt: 'not-chart.png' }] }
+    );
+    assert.equal(notChartUrl, false, AgentClass.name + ': not-chart.png should not satisfy chart.png');
+
+    const oldChartAlt = agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'chart.png' },
+      { attachments: [{ type: 'image', src: 'https://pbs.twimg.com/media/random-id.jpg', alt: 'Uploaded old-chart.png' }] }
+    );
+    assert.equal(oldChartAlt, false, AgentClass.name + ': alt with old-chart.png should not satisfy chart.png');
+
+    const exactChartUrl = agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'chart.png' },
+      { attachments: [{ type: 'image', src: 'https://pbs.twimg.com/media/chart.png' }] }
+    );
+    assert.equal(exactChartUrl, true, AgentClass.name + ': chart.png in URL should satisfy chart.png');
+
+    const exactChartAlt = agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'chart.png' },
+      { attachments: [{ type: 'image', src: 'https://pbs.twimg.com/media/random-id.jpg', alt: 'Uploaded chart.png' }] }
+    );
+    assert.equal(exactChartAlt, true, AgentClass.name + ': alt with chart.png should satisfy chart.png');
+
+    const cleanedPrefixAccepted = agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'an image of chart.png' },
+      { attachments: [{ type: 'image', src: 'https://pbs.twimg.com/media/chart.png' }] }
+    );
+    assert.equal(cleanedPrefixAccepted, true, AgentClass.name + ': an image of chart.png should accept chart.png');
+
+    const cleanedPrefixRejected = agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'an image of chart.png' },
+      { attachments: [{ type: 'image', src: 'https://pbs.twimg.com/media/old-chart.png' }] }
+    );
+    assert.equal(cleanedPrefixRejected, false, AgentClass.name + ': an image of chart.png should reject old-chart.png');
+  }
+});
+
 test('post body extraction preserves nested quotation marks and does not overwrite full body with prefix', async () => {
   for (const [index, AgentClass] of [AgentCh, AgentFx].entries()) {
     const agent = new AgentClass({});
