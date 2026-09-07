@@ -178,7 +178,7 @@ const SOCIAL_NOUN_LIKE_PUBLISH = new RegExp(
   'iu',
 );
 const SOCIAL_NEGATION = new RegExp(
-  `(?<![${SOCIAL_WORD_EDGE}])(?:not|never|neither|nor|don't|dont|do\\s+not|cannot|can't|cant|shouldn't|shouldnt|should\\s+not|mustn't|mustnt|must\\s+not|won't|wont|will\\s+not|avoid|refrain|stop|prevent|prohibit|no(?=\\s+(?!attachments?|photos?|images?|pictures?|videos?|files?|media|delays?|doubt|worries|hashtags?|tags?|links?|urls?\\b))|without(?=(?:\\s+(?!attachments?|photos?|images?|pictures?|videos?|files?|media|delays?|hesitation|doubt|fail|exception|interruption|warning|stopping|pause|regret|fear|hashtags?|tags?|links?|urls?\\b)|\\s*$))|sans(?=(?:\\s+(?!pièces?|photos?|images?|vidéos?|fichiers?|médias?|délai|doutes?|faute|retard\\b)|\\s*$))|sin(?=(?:\\s+(?!archivos?|adjuntos?|fotos?|imágenes?|videos?|medios?|demora|duda|falta|retraso\\b)|\\s*$))|sem(?=(?:\\s+(?!anexos?|fotos?|imagens?|vídeos?|arquivos?|mídia|demora|dúvida|falta|atraso\\b)|\\s*$))|senza(?=(?:\\s+(?!allegati?|foto|immagini?|video|file|media|ritardo|dubbio\\b)|\\s*$))|ohne(?=(?:\\s+(?!anhänge?|anhang|fotos?|bilder?|videos?|dateien?|medien?|verzögerung|zweifel\\b)|\\s*$))|без(?=(?:\\s+(?!вложений|вложения|фото|изображений|видео|файлов|задержки|сомнений\\b)|\\s*$))|ne|pas|ne\\s+pas|nunca|jamás|jamais|nicht|nie|kein|keine|non|mai|não|nao|hayır|asla|sakın|yapmayın|yapma|не|никогда|нет)(?![${SOCIAL_WORD_EDGE}])`
+  `(?<![${SOCIAL_WORD_EDGE}])(?:not|never|neither|nor|don't|dont|do\\s+not|cannot|can't|cant|shouldn't|shouldnt|should\\s+not|mustn't|mustnt|must\\s+not|won't|wont|will\\s+not|avoid|refrain|stop|prevent|prohibit|no(?=\\s+(?!attachments?|photos?|images?|pictures?|videos?|files?|media|delays?|doubt|worries|hashtags?|tags?|links?|urls?|x\\b|twitter\\b|bluesky\\b))|without(?=(?:\\s+(?!attachments?|photos?|images?|pictures?|videos?|files?|media|delays?|hesitation|doubt|fail|exception|interruption|warning|stopping|pause|regret|fear|hashtags?|tags?|links?|urls?\\b)|\\s*$))|sans(?=(?:\\s+(?!pièces?|photos?|images?|vidéos?|fichiers?|médias?|délai|doutes?|faute|retard\\b)|\\s*$))|sin(?=(?:\\s+(?!archivos?|adjuntos?|fotos?|imágenes?|videos?|medios?|demora|duda|falta|retraso\\b)|\\s*$))|sem(?=(?:\\s+(?!anexos?|fotos?|imagens?|vídeos?|arquivos?|mídia|demora|dúvida|falta|atraso\\b)|\\s*$))|senza(?=(?:\\s+(?!allegati?|foto|immagini?|video|file|media|ritardo|dubbio\\b)|\\s*$))|ohne(?=(?:\\s+(?!anhänge?|anhang|fotos?|bilder?|videos?|dateien?|medien?|verzögerung|zweifel\\b)|\\s*$))|без(?=(?:\\s+(?!вложений|вложения|фото|изображений|видео|файлов|задержки|сомнений\\b)|\\s*$))|ne|pas|ne\\s+pas|nunca|jamás|jamais|nicht|nie|kein|keine|non|mai|não|nao|hayır|asla|sakın|yapmayın|yapma|не|никогда|нет)(?![${SOCIAL_WORD_EDGE}])`
   + '|不要|别|不能|不可|不得|不用|请勿|勿|严禁|禁止|决不|绝不|決して'
   + '|하지\\s*마|하지\\s*마세요|금지',
   'iu',
@@ -188,15 +188,15 @@ const SOCIAL_POST_NEGATION = new RegExp(
   'iu',
 );
 const SOCIAL_CLAUSE_DELIMITER = new RegExp(
-  `([.!?;:\\n]|(?<![${SOCIAL_WORD_EDGE}])(?:and|then|but|or|nor|after|before|y|luego|puis|et|ensuite|und|dann|poi|sonra|ve|затем|и)(?![${SOCIAL_WORD_EDGE}])|然后|然後|接着|そして|それから|または|、|。|,)`,
+  `([.!?;:\\n]|(?<![${SOCIAL_WORD_EDGE}])(?:and|then|but|or|nor|after|before|y|e|ed|luego|puis|et|ensuite|und|dann|poi|sonra|ve|затем|и)(?![${SOCIAL_WORD_EDGE}])|然后|然後|接着|そして|それから|または|、|。|,)`,
   'iu',
 );
 const SOCIAL_COORDINATING_DELIMITER = new RegExp(
-  `^(?:or|nor|and|neither|o|ou|oder|ni|nem|né|veya|ya\\s+da|или|ни|或|或者|または|もしくは|や|또는|이나|거나)$`,
+  `^(?:or|nor|and|neither|y|e|ed|et|und|ve|и|o|u|ou|oder|weder|noch|od|ni|nem|né|veya|ya\\s+da|или|ни|或|或者|和|与|與|及|以及|また|または|もしくは|や|と|および|及び|ならびに|並びに|또는|이나|거나|그리고|와|과)$`,
   'iu',
 );
 const SOCIAL_CLAUSE_BREAK = new RegExp(
-  `[.!?;:,\\n]|(?<![${SOCIAL_WORD_EDGE}])(?:and|then|but|or|nor|after|before|y|luego|puis|et|ensuite|und|dann|poi|sonra|ve|затем|и)(?![${SOCIAL_WORD_EDGE}])|然后|然後|接着|そして|それから|または|、|。`,
+  `[.!?;:,\\n]|(?<![${SOCIAL_WORD_EDGE}])(?:and|then|but|or|nor|after|before|y|e|ed|luego|puis|et|ensuite|und|dann|poi|sonra|ve|затем|и)(?![${SOCIAL_WORD_EDGE}])|然后|然後|接着|そして|それから|または|、|。`,
   'iu',
 );
 
@@ -13198,7 +13198,8 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         for (let bIdx = beforeClauses.length - 2; bIdx >= 0; bIdx--) {
           const nextB = beforeClauses[bIdx + 1];
           const isCoord = SOCIAL_COORDINATING_DELIMITER.test(nextB.delim || '')
-            || (nextB.delim || '').trim() === ',';
+            || (nextB.delim || '').trim() === ','
+            || (nextB.delim || '').trim() === '、';
           if (!isCoord) break;
           const bClause = beforeClauses[bIdx];
           if (bClause.isNegated) break;
@@ -13264,7 +13265,8 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
             const nextClause = clauses[nextIdx];
             if (nextClause.isNegated) break;
             const isCoord = SOCIAL_COORDINATING_DELIMITER.test(nextClause.delim || '')
-              || (nextClause.delim || '').trim() === ',';
+              || (nextClause.delim || '').trim() === ','
+              || (nextClause.delim || '').trim() === '、';
             if (!isCoord) break;
             const nextTargetText = nextClause.maskedText || nextClause.text;
             if (SOCIAL_READ_VERBS.test(nextTargetText)) break;
