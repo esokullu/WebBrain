@@ -25,7 +25,7 @@ function pdfHandlerPage(runtime) {
 // When the native MIME handler owns a PDF tab, the tab URL is our own viewer
 // page wrapping the real URL in ?url=. read_pdf falls back to the tab URL when
 // called without an explicit one, so unwrap it before the scheme check.
-function unwrapPdfHandlerUrl(url, runtime = globalThis.chrome?.runtime) {
+export function unwrapPdfHandlerUrl(url, runtime = globalThis.chrome?.runtime) {
   if (url.protocol !== 'chrome-extension:' && url.protocol !== 'moz-extension:') return url;
   if (typeof runtime?.getURL !== 'function') return url;
   let handler;
@@ -42,6 +42,16 @@ function unwrapPdfHandlerUrl(url, runtime = globalThis.chrome?.runtime) {
   } catch {
     return url;
   }
+}
+
+export function pdfUrlFromTabUrl(value, runtime = globalThis.chrome?.runtime) {
+  let url;
+  try {
+    url = new URL(String(value || ''));
+  } catch {
+    return String(value || '');
+  }
+  return unwrapPdfHandlerUrl(url, runtime).href;
 }
 
 export function normalizePdfUrl(value, runtime = globalThis.chrome?.runtime) {

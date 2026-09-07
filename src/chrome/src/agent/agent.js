@@ -71,6 +71,7 @@ import {
   buildClaudeDocumentBlock,
   PDF_PASSTHROUGH_MAX_BYTES,
 } from './pdf-tools.js';
+import { pdfUrlFromTabUrl } from './pdf-extraction.js';
 import { normalizePdfOcrResult, PDF_OCR_SYSTEM_PROMPT } from './pdf-ocr.js';
 import * as trace from '../trace/recorder.js';
 import { buildTerminalRuntimeEvent, enqueueCloudRuntimeEvent, flushCloudRuntimeOutbox } from '../trace/cloud-runtime-outbox.js';
@@ -5358,6 +5359,7 @@ export class Agent extends LoopDetector {
    * Decide whether `pageUrl` is a PDF tab the content-script path
    * cannot reach. Two paths:
    *   - Fast path: URL pattern (`isPdfUrl`). Catches `*.pdf` paths and
+   *     WebBrain's PDF handler URL after unwrapping its `url` parameter.
    *     `?file=*.pdf` viewer URLs — the bulk of cases.
    *   - Slow path: HEAD probe with credentials. Catches PDFs served
    *     from endpoints whose URL doesn't reveal the type, e.g.
@@ -5377,7 +5379,8 @@ export class Agent extends LoopDetector {
    */
   async _isPdfTab(tabId, pageUrl) {
     if (!pageUrl) return false;
-    if (isPdfUrl(pageUrl)) return true;
+    const pdfUrl = pdfUrlFromTabUrl(pageUrl);
+    if (isPdfUrl(pdfUrl)) return true;
 
     // Cache hit?
     const cached = this._isPdfTabCache.get(tabId);
@@ -5387,9 +5390,9 @@ export class Agent extends LoopDetector {
     // route to read_pdf, and a fetch against chrome:// or about:// just
     // throws.
     let isPdf = false;
-    if (/^https?:/i.test(pageUrl)) {
+    if (/^https?:/i.test(pdfUrl)) {
       try {
-        const res = await fetch(pageUrl, {
+        const res = await fetch(pdfUrl, {
           method: 'HEAD',
           credentials: 'include',
         });
@@ -31533,12 +31536,16 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       const pageUrl = tabForPdfCheck?.url || '';
       // _isPdfTab does sync URL-pattern match first, then a HEAD probe
       // (credentialed) so PDFs served from extension-less paths like
-      // `/download?id=42` with `Content-Type: application/pdf` are
-      // caught too. Cached per (tabId, pageUrl) — at most one probe
-      // per tab+URL.
+      // `/download?id=42` with `Content-Type: application/pdf` are caught
+      // too. A WebBrain PDF handler URL is unwrapped before both checks.
+      // Cached per (tabId, pageUrl) — at most one probe per tab+URL.
       if (await this._isPdfTab(tabId, pageUrl)) {
         if (name === 'read_page') {
-          const pdfResult = await this.executeTool(tabId, 'read_pdf', { url: pageUrl });
+          const pdfResult = await this.executeTool(
+            tabId,
+            'read_pdf',
+            { url: pdfUrlFromTabUrl(pageUrl) },
+          );
           return {
             ...pdfResult,
             redirectedFrom: 'read_page',

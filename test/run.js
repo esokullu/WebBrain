@@ -1353,6 +1353,75 @@ function test(name, fn) { tests.push({ name, fn }); }
 
 console.log('\nselection quote');
 
+test('read_page redirects WebBrain PDF handler tabs to read_pdf with the source URL', async () => {
+  const previousChrome = globalThis.chrome;
+  const previousBrowser = globalThis.browser;
+  const makeStorageArea = () => ({
+    get: async values => {
+      if (typeof values === 'string') return {};
+      if (Array.isArray(values)) return Object.fromEntries(values.map(key => [key, undefined]));
+      return values || {};
+    },
+    set: async () => {},
+    remove: async () => {},
+  });
+  try {
+    for (const [label, AgentClass, apiName, scheme] of [
+      ['chrome', AgentCh, 'chrome', 'chrome-extension'],
+      ['firefox', AgentFx, 'browser', 'moz-extension'],
+    ]) {
+      const sourceUrl = 'https://papers.example.test/handler-source.pdf';
+      const extensionId = `${label}-pdf-routing`;
+      const handlerUrl = `${scheme}://${extensionId}/src/ui/pdf-handler.html?url=${encodeURIComponent(sourceUrl)}&tabId=73`;
+      const storageArea = makeStorageArea();
+      const api = {
+        runtime: {
+          id: extensionId,
+          getURL: path => `${scheme}://${extensionId}/${path}`,
+          getManifest: () => ({
+            mime_types_handler: {
+              'application/pdf': { handler_url: 'src/ui/pdf-handler.html' },
+            },
+          }),
+        },
+        storage: {
+          local: storageArea,
+          session: storageArea,
+          onChanged: { addListener: () => {} },
+        },
+        tabs: {
+          get: async () => ({ id: 73, url: handlerUrl }),
+        },
+      };
+      globalThis[apiName] = api;
+      const agent = new AgentClass({});
+      agent._richTextToolbarToolBlock = async () => null;
+      const delegated = [];
+      const executeTool = agent.executeTool.bind(agent);
+      agent.executeTool = async (tabId, name, args, ...rest) => {
+        if (name === 'read_pdf') {
+          delegated.push({ tabId, name, args });
+          return { success: true, pages: ['handler source'] };
+        }
+        return executeTool(tabId, name, args, ...rest);
+      };
+
+      const result = await executeTool(73, 'read_page', {});
+      assert.equal(result.redirectedFrom, 'read_page', `${label}: read_page did not redirect`);
+      assert.deepEqual(delegated, [{
+        tabId: 73,
+        name: 'read_pdf',
+        args: { url: sourceUrl },
+      }], `${label}: redirect did not preserve the handler's source URL`);
+    }
+  } finally {
+    if (previousChrome === undefined) delete globalThis.chrome;
+    else globalThis.chrome = previousChrome;
+    if (previousBrowser === undefined) delete globalThis.browser;
+    else globalThis.browser = previousBrowser;
+  }
+});
+
 test('buildSelectionQuote preserves multiline answer text as an editable quote', () => {
   const selected = 'First line\n\n<script>alert("x")</script>';
   const expected = '> First line\n> \n> <script>alert("x")</script>\n\n';
