@@ -77622,24 +77622,53 @@ test('empty selector appends report a proven no-op without dispatch', async () =
   const originalSendCommand = cdpClientCh.sendCommand;
   const originalAttach = cdpClientCh.attach;
   const originalEvaluate = cdpClientCh.evaluate;
+  const originalResolveSelector = cdpClientCh.resolveSelector;
   try {
-    let calls = 0;
-    cdpClientCh.sendCommand = async () => { calls += 1; return {}; };
-    cdpClientCh.attach = async () => { calls += 1; return { attached: true }; };
-    cdpClientCh.evaluate = async () => { calls += 1; return { result: { value: null } }; };
+    const inputDispatches = [];
+    cdpClientCh.sendCommand = async (_tabId, method) => {
+      if (String(method).startsWith('Input.')) inputDispatches.push(method);
+      return {};
+    };
+    cdpClientCh.attach = async () => ({ attached: true });
+    cdpClientCh.evaluate = async () => ({ result: { value: null } });
+    // Resolved text control + empty append: proven no-op, no input dispatch.
+    cdpClientCh.resolveSelector = async () => ({ tag: 'INPUT' });
     const noop = await cdpClientCh.typeText(9991, '#field', '', false);
     assert.equal(noop?.success, true, 'empty append was not successful');
     assert.equal(noop?.noDispatch, true, 'empty append was dispatched');
     assert.equal(noop?.noop, true, 'empty append was not marked as a no-op');
     assert.equal(noop?.dispatched ?? false, false, 'empty append claimed a dispatch');
-    assert.equal(calls, 0, 'empty append touched the protocol');
+    assert.equal(inputDispatches.length, 0, 'empty append dispatched input');
+    // A select resolving to an empty-valued option still navigates to it:
+    // choosing it IS the requested mutation, not a no-op.
+    cdpClientCh.resolveSelector = async () => ({ tag: 'SELECT' });
+    let evaluations = 0;
+    cdpClientCh.evaluate = async () => {
+      evaluations += 1;
+      if (evaluations === 1) {
+        return { result: { value: {
+          success: true, currentIndex: 0, targetIndex: 1, targetText: 'None', targetValue: '',
+        } } };
+      }
+      return { result: { value: { verified: true, selectedText: 'None', selectedValue: '' } } };
+    };
+    const selected = await cdpClientCh.typeText(9991, '#choice', '', false);
+    assert.equal(selected?.success, true, 'empty select choice failed');
+    assert.equal(selected?.noop ?? false, false, 'empty select choice was misreported as a no-op');
+    assert.equal(selected?.method, 'select-keyboard', 'empty select choice skipped option navigation');
+    assert.equal(selected?.verified, true, 'empty select choice was not verified');
+    assert.equal(selected?.keyPresses, 1, 'empty select choice sent no navigation keys');
+    assert.ok(inputDispatches.some(method => method === 'Input.dispatchKeyEvent'),
+      'empty select choice dispatched no keyboard input');
     // clear:true with empty text still empties the field: not a no-op.
+    cdpClientCh.resolveSelector = originalResolveSelector;
     const cleared = await cdpClientCh.typeText(9991, '#field', '', true);
     assert.equal(cleared?.noop ?? false, false, 'clear-only call was misreported as a no-op');
   } finally {
     cdpClientCh.sendCommand = originalSendCommand;
     cdpClientCh.attach = originalAttach;
     cdpClientCh.evaluate = originalEvaluate;
+    cdpClientCh.resolveSelector = originalResolveSelector;
   }
 });
 
@@ -78049,13 +78078,23 @@ test('verification rejects commits unattributed to the requested branch', async 
   const commitUrl = `https://github.com/Example/Repo/commit/${commitSha}`;
   const naiveUrl = `https://github.com/example/repo/raw/${commitSha}/docs/plan.md`;
   const apiUrl = `https://api.github.com/repos/example/repo/commits/${commitSha}/branches-where-head?per_page=100`;
+  const sameHostUrl = `https://github.com/example/repo/branch_commits/${commitSha}`;
+  const branchHtml = (...names) => '<div><ul class="branches-list">'
+    + names.map(name => `<li class="branch"><a href="/example/repo">${name}</a></li>`).join('')
+    + '</ul></div>';
   try {
+    let sameHost = { ok: true, status: 200, body: branchHtml('main') };
     let apiResponse = { ok: true, status: 200, body: JSON.stringify([{ name: 'main' }]) };
     const seen = [];
     globalThis.fetch = async (url) => {
       seen.push(url);
       if (url === naiveUrl) {
         return { ok: true, status: 200, headers: { get: () => String(body.length) }, text: async () => body };
+      }
+      if (url === sameHostUrl) {
+        return { ok: sameHost.ok, status: sameHost.status,
+          headers: { get: () => String(sameHost.body.length) },
+          text: async () => sameHost.body };
       }
       if (url === apiUrl) {
         return { ok: apiResponse.ok, status: apiResponse.status,
@@ -78068,6 +78107,7 @@ test('verification rejects commits unattributed to the requested branch', async 
       ['chrome', AgentCh, 9538],
       ['firefox', AgentFx, 9539],
     ]) {
+      seen.length = 0;
       const agent = new AgentClass({});
       agent._planExecutionGuards.set(tabId, {
         enabled: true,
@@ -78093,26 +78133,35 @@ test('verification rejects commits unattributed to the requested branch', async 
       const verify = (binding) => agent._githubCommittedFileVerification(
         tabId, pageState, commitUrl, { verifiedFinalSubmit: true, submit: { workflowBinding: binding } },
       );
-      // Commit is the head of the requested branch: verified.
-      apiResponse = { ok: true, status: 200, body: JSON.stringify([{ name: 'main' }]) };
+      // Same-host list names the requested branch: verified without the API.
+      seen.length = 0;
+      sameHost = { ok: true, status: 200, body: branchHtml('main') };
       assert.equal((await verify(bindingFor())).verified, true,
         `${label}: branch-attributed commit was not verified`);
-      // Commit landed on a new PR branch instead: rejected.
-      apiResponse = { ok: true, status: 200, body: JSON.stringify([{ name: 'user-patch-1' }]) };
+      assert.ok(!seen.includes(apiUrl),
+        `${label}: same-host attribution needlessly consulted the token API`);
+      // Same-host list names only the PR branch: rejected.
+      sameHost = { ok: true, status: 200, body: branchHtml('user-patch-1') };
       const wrongBranch = await verify(bindingFor());
       assert.equal(wrongBranch.verified, false,
         `${label}: commit on another branch reported full success`);
       assert.equal(wrongBranch.reason, 'commit_wrong_branch',
         `${label}: wrong-branch commit misreported (${wrongBranch.reason})`);
-      // Inconclusive API outcomes keep the content verdict.
+      // Unparseable same-host page falls back to the API.
+      sameHost = { ok: true, status: 200, body: '<div>redesigned</div>' };
+      apiResponse = { ok: true, status: 200, body: JSON.stringify([{ name: 'main' }]) };
+      assert.equal((await verify(bindingFor())).verified, true,
+        `${label}: API fallback did not confirm the branch`);
+      // Inconclusive outcomes on both sources keep the content verdict.
+      sameHost = { ok: false, status: 404, body: 'Not Found' };
       apiResponse = { ok: false, status: 403, body: 'rate limited' };
       assert.equal((await verify(bindingFor())).verified, true,
         `${label}: rate-limited branch check blocked verification`);
       apiResponse = { ok: true, status: 200, body: '[]' };
       assert.equal((await verify(bindingFor())).verified, true,
         `${label}: empty branch list blocked verification`);
-      assert.ok(seen.includes(naiveUrl) && seen.includes(apiUrl),
-        `${label}: raw blob and branch API were not both consulted`);
+      assert.ok(seen.includes(naiveUrl) && seen.includes(sameHostUrl),
+        `${label}: raw blob and branch attribution were not both consulted`);
     }
   } finally {
     globalThis.fetch = originalFetch;

@@ -4553,21 +4553,6 @@ export class CDPClient {
       throwIfAborted();
     };
     throwIfAborted();
-    // Empty appends mutate nothing: inserting zero characters cannot change
-    // any value, so skip resolution and dispatch entirely and report a
-    // proven no-op. (A clear:true call still empties the field and takes the
-    // normal verified path below.) Without this, the append proof — which
-    // rejects an empty expected string — reports uncertainty debt that
-    // blocks later legitimate typing.
-    if (String(text ?? '') === '' && clear !== true) {
-      return {
-        success: true,
-        dispatched: false,
-        noDispatch: true,
-        noop: true,
-        method: 'cdp-insert-text',
-      };
-    }
     const expectedNodeId = Number(expectedBackendNodeId);
     if (Number.isInteger(expectedNodeId) && expectedNodeId > 0) {
       const currentInfo = await this.resolveSelector(tabId, selector, resolveOptions);
@@ -4658,6 +4643,23 @@ export class CDPClient {
     if (!info) return { success: false, dispatched: false, noDispatch: true, error: 'Element not found' };
     if (info.error) return { success: false, dispatched: false, noDispatch: true, error: info.error };
     const dispatchBindingToken = String(resolveOptions?.dispatchBindingToken || '');
+
+    // Empty appends mutate nothing on text-entry controls: inserting zero
+    // characters cannot change any value, so report a proven no-op without
+    // dispatching. Native <select> elements are excluded: choosing their
+    // empty-valued option below IS the requested mutation. (A clear:true
+    // call still empties the field and takes the verified path.) Without
+    // this, the append proof — which rejects an empty expected string —
+    // reports uncertainty debt that blocks later legitimate typing.
+    if (String(text ?? '') === '' && clear !== true && info?.tag !== 'SELECT') {
+      return {
+        success: true,
+        dispatched: false,
+        noDispatch: true,
+        noop: true,
+        method: 'cdp-insert-text',
+      };
+    }
 
     // ── <select> fast-path ──────────────────────────────────────────────
     // Native <select> elements CANNOT be typed into via Input.insertText.

@@ -2075,15 +2075,40 @@ export class Agent extends LoopDetector {
     }
   }
 
-  // Confirm a fresh commit is the head of the requested branch: the commit
-  // dialog can create a new branch + PR instead of committing to the URL
-  // branch, while everything else here is SHA-addressed and branch-blind.
-  // Returns true (confirmed), false (affirmatively elsewhere), or null
-  // (inconclusive — auth, rate limit, empty or oversize list — keep today's
-  // behavior). Only an affirmative mismatch ever rejects.
-  async _githubCommitBranchHeadMatches(repository, branch, sha) {
-    try {
-      if (!repository || !branch || !sha) return null;
+  // Confirm a fresh commit sits on the requested branch: the commit dialog
+  // can create a new branch + PR instead of committing to the URL branch,
+  // while everything else here is SHA-addressed and branch-blind.
+  // Returns true (confirmed on the branch), false (affirmatively elsewhere),
+  // or null (inconclusive — keep the content verdict). Only an affirmative
+  // mismatch ever rejects. The same-host branch list comes first so session
+  // cookies authenticate private repositories; the token-based API is the
+  // fallback for public ones. Unparseable or oversize answers are
+  // inconclusive, never evidence.
+  async _githubCommitBranchAttribution(repository, branch, sha) {
+    const sameHostAttribution = async () => {
+      const response = await fetch(
+        `https://github.com/${repository}/branch_commits/${sha}`,
+        { credentials: 'include', cache: 'no-store' },
+      );
+      if (!response.ok) return null;
+      const length = Number(response.headers?.get?.('content-length') || 0);
+      if (length > 65536) return null;
+      const html = await response.text();
+      if (!html || html.length > 65536) return null;
+      const names = [];
+      const branchItem = /<li[^>]*class="[^"]*\bbranch\b[^"]*"[^>]*>\s*<a[^>]*>([^<]*)<\/a>/gi;
+      let match = null;
+      // eslint-disable-next-line no-cond-assign
+      while ((match = branchItem.exec(html)) !== null) {
+        const name = match[1]
+          .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+          .replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim();
+        if (name) names.push(name);
+      }
+      if (names.length === 0) return null;
+      return names.includes(branch);
+    };
+    const apiAttribution = async () => {
       const response = await fetch(
         `https://api.github.com/repos/${repository}/commits/${sha}/branches-where-head?per_page=100`,
         { headers: { Accept: 'application/vnd.github+json' }, cache: 'no-store' },
@@ -2099,6 +2124,12 @@ export class Agent extends LoopDetector {
       const names = entries.map(entry => String(entry?.name || '')).filter(Boolean);
       if (names.length === 0) return null;
       return names.includes(branch);
+    };
+    try {
+      if (!repository || !branch || !sha) return null;
+      const sameHost = await sameHostAttribution();
+      if (sameHost !== null) return sameHost;
+      return await apiAttribution();
     } catch {
       return null;
     }
@@ -2283,7 +2314,7 @@ export class Agent extends LoopDetector {
           // affirmative mismatch rejects; inconclusive API outcomes keep the
           // content verdict. Skipped for fully-ambiguous scopes, where no
           // branch was requested to check against.
-          if (!scopeAmbiguous && await this._githubCommitBranchHeadMatches(
+          if (!scopeAmbiguous && await this._githubCommitBranchAttribution(
             commit.repository, expected.branch, commit.sha,
           ) === false) {
             return {

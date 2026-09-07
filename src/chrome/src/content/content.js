@@ -1883,8 +1883,9 @@
 
     // Empty appends mutate nothing: skip focus/dispatch entirely and report
     // a proven no-op so no uncertainty debt is recorded downstream.
-    // (clear:true still empties below and takes the verified path.)
-    if (!typedText && !params.clear) {
+    // (clear:true still empties below and takes the verified path. Native
+    // selects are excluded: choosing an empty-valued option IS a mutation.)
+    if (!typedText && !params.clear && !(el instanceof HTMLSelectElement)) {
       return { success: true, dispatched: false, noDispatch: true, noop: true, method: 'noop-empty-append' };
     }
 
