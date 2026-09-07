@@ -1,0 +1,30 @@
+{
+  "runTag": "2026-09-07-qwen3.5-4b-compact-full-v2",
+  "model": "qwen3.5-4b",
+  "browser": "chrome",
+  "base": "http://127.0.0.1:1234",
+  "saveRequest": true,
+  "tier": "compact",
+  "modeOverride": null,
+  "chatTemplateCompat": "off",
+  "structuredToolsSent": true,
+  "reasoningEffort": null,
+  "freeze": null,
+  "cases": 100,
+  "totalLatencyMs": 486577,
+  "errors": 0,
+  "withToolCall": 89,
+  "withToolCallFromContent": 0,
+  "byTool": {
+    "navigate": 24,
+    "get_accessibility_tree": 51,
+    "(no_tool_call)": 11,
+    "inspect_viewport": 2,
+    "read_page": 3,
+    "extract_data": 2,
+    "scroll": 1,
+    "get_selection": 1,
+    "clarify": 4,
+    "press_keys": 1
+  }
+}

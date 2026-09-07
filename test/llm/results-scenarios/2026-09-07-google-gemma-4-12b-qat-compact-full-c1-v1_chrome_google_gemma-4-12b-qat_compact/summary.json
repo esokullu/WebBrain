@@ -1,0 +1,30 @@
+{
+  "runTag": "2026-09-07-google-gemma-4-12b-qat-compact-full-c1-v1",
+  "model": "google/gemma-4-12b-qat",
+  "base": "http://127.0.0.1:1234",
+  "browser": "chrome",
+  "tier": "compact",
+  "modeOverride": null,
+  "unprotected": false,
+  "chatTemplateCompat": "off",
+  "structuredToolsSent": true,
+  "freeze": null,
+  "scenarios": 1,
+  "skipped": 0,
+  "totalLatencyMs": 7113,
+  "byVerdict": {
+    "other": 1
+  },
+  "byCategory": {
+    "cross-lingual": {
+      "ideal": 0,
+      "ideal_name": 0,
+      "anti": 0,
+      "other": 1,
+      "no_tool": 0,
+      "empty": 0,
+      "error": 0,
+      "skipped": 0
+    }
+  }
+}

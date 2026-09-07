@@ -1,0 +1,123 @@
+{
+  "schemaVersion": "webbrain.text-benchmark.reconciled-summary.v1",
+  "createdAt": "2026-09-07T21:03:02.4630293+03:00",
+  "model": {
+    "requested": "google/gemma-4-12b-qat",
+    "actualFromV1Models": "google/gemma-4-12b-qat",
+    "endpoint": "http://127.0.0.1:1234",
+    "runtime": "LM Studio OpenAI-compatible server",
+    "architecture": "gemma4",
+    "params": "12B",
+    "quantization": "Q4_0",
+    "modelBytes": 7151067268,
+    "loadedContextLength": 125184,
+    "maximumContextLength": 262144,
+    "loadedParallel": 1,
+    "flashAttention": true,
+    "speculativeDraftEnabled": false
+  },
+  "contract": {
+    "browser": "chrome",
+    "tier": "compact",
+    "concurrency": 1,
+    "timeoutMs": 300000,
+    "structuredTools": true,
+    "finalCoverageRequired": 100,
+    "transportRetriesOnly": true,
+    "committed": false,
+    "pushed": false
+  },
+  "commands": {
+    "firstTurn": "node run-llamacpp.mjs --base http://127.0.0.1:1234 --model google/gemma-4-12b-qat --tag 2026-09-07-google-gemma-4-12b-qat-compact-full-c1-v1 --tier compact --browser chrome --concurrency 1 --timeout 300000",
+    "firstTurnRecovery": "same command with --resume; two bounded passes",
+    "scenarios": "node run-scenarios.mjs --base http://127.0.0.1:1234 --model google/gemma-4-12b-qat --tag 2026-09-07-google-gemma-4-12b-qat-compact-full-c1-v1 --tier compact --browser chrome --concurrency 1 --timeout 300000",
+    "scenarioRecovery": "explicit --only lists for transport-error IDs after the complete second pass"
+  },
+  "coverage": {
+    "firstTurn": {
+      "rows": 100,
+      "uniqueIds": 100,
+      "missing": 0,
+      "extra": 0,
+      "embeddedIdMismatches": 0,
+      "errors": 0
+    },
+    "scenarios": {
+      "rows": 100,
+      "uniqueIds": 100,
+      "missing": 0,
+      "extra": 0,
+      "embeddedIdMismatches": 0,
+      "errors": 0
+    }
+  },
+  "firstTurn": {
+    "completed": 100,
+    "errors": 0,
+    "withToolCall": 90,
+    "noToolCall": 10,
+    "exact": 7,
+    "nameOnly": 12,
+    "other": 71,
+    "exactOrName": 19,
+    "exactPercent": 7.0,
+    "exactOrNamePercent": 19.0,
+    "scoring": "Exact compares the stored structured first tool call with idealFirstToolCall name and recursively key-sorted arguments. nameOnly counts stored structured calls with the expected tool name but different arguments. other counts remaining structured calls. noToolCall counts rows without a structured tool call."
+  },
+  "scenarios": {
+    "completed": 100,
+    "eligibleNonSkipped": 89,
+    "skipped": 11,
+    "errors": 0,
+    "ideal": 12,
+    "idealName": 22,
+    "other": 52,
+    "noTool": 0,
+    "anti": 3,
+    "empty": 0,
+    "idealOrName": 34,
+    "idealPercentOfEligible": 13.48314606741573,
+    "idealOrNamePercentOfEligible": 38.20224719101123,
+    "structuredToolCalls": 70,
+    "structuredToolCallRate": 0.7
+  },
+  "durations": {
+    "firstTurnInvocationWallTimeMs": [953825, 231043, 22061],
+    "scenarioInvocationWallTimeMs": [827443, 787374, 147057, 62462, 7113],
+    "totalInferenceWallTimeMs": 3038378,
+    "totalInferenceWallTimeMinutes": 50.639633333333336
+  },
+  "recoveryNotes": {
+    "firstTurn": "The initial pass had 21 transient HTTP 400 engine fetch failures. Two run-llamacpp --resume passes completed only error rows and produced final 100/100 error-free coverage.",
+    "scenarios": "run-scenarios does not implement --resume. One attempted --resume invocation therefore executed a second complete pass. The canonical scenario directory contains that second pass plus three explicit --only recovery passes, ending at verified 100/100 error-free coverage.",
+    "scenarioRawOutputsFromFirstPassPreserved": false,
+    "semanticRetries": 0
+  },
+  "artifacts": [
+    {
+      "role": "first-turn",
+      "path": "G:\\esoku\\Documents\\webbrain\\test\\llm\\results\\2026-09-07-google-gemma-4-12b-qat-compact-full-c1-v1_chrome_google_gemma-4-12b-qat_compact",
+      "files": 101,
+      "bytes": 5467878,
+      "treeSha256": "023838b86579d67bab630067826dd10bf2650b4c9ca7722719e0d5f673fb2e34",
+      "summarySha256": "dea63e3b5bfc483d2366b7e5a48797253ca8cbd88a93ef754c1d59cbe92069b1"
+    },
+    {
+      "role": "scenarios",
+      "path": "G:\\esoku\\Documents\\webbrain\\test\\llm\\results-scenarios\\2026-09-07-google-gemma-4-12b-qat-compact-full-c1-v1_chrome_google_gemma-4-12b-qat_compact",
+      "files": 101,
+      "bytes": 1105575,
+      "treeSha256": "48156974689f033643ae89931b33bc882737b3e10446f05b2fe05c2c7090a75a",
+      "summarySha256": "dbfb7a856f333bcfa84fdedc819f324e14fb5c499e6a7005363eea6e1c1ad173"
+    }
+  ],
+  "artifactTreeDigestAlgorithm": "sha256 over UTF-8 concatenation of sorted lines: relative_path TAB byte_size TAB file_sha256 LF",
+  "harness": {
+    "runLlamacppSha256": "b1bd3de7d6dad90a55dee52f3df7bdae175a95af9c6812716440f4a2f8911495",
+    "runScenariosSha256": "e3a54dbcdfd8370015175f0a3bfe2b1119c92f366d3496bd6e0dee0184031c88",
+    "scoreSha256": "35297349d3cbdec9ebe290aa8e8941a07b0cde51dd2077f0281266b7180f5cc6",
+    "regraderSha256": "0a882a5b6a6bbe36a1581f8c64d98467b79496d8644db303d420567981a9e30d",
+    "inferenceFreeRegradeReport": "G:\\esoku\\Documents\\webbrain\\test\\llm\\analysis\\compact-parser-regrade-v2-de32452fe26a839e\\summary-9f88a2fde6997d13ad86c1fcde7ea0dcc640b9d26b0d4ff350d1e1acfa311db0.json",
+    "inferenceFreeRegradeReportSha256": "9f88a2fde6997d13ad86c1fcde7ea0dcc640b9d26b0d4ff350d1e1acfa311db0"
+  }
+}

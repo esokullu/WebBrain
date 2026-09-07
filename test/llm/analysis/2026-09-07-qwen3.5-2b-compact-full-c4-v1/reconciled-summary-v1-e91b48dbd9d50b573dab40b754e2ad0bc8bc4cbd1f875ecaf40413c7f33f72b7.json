@@ -1,0 +1,135 @@
+{
+  "schemaVersion": "webbrain.text-benchmark.reconciled-summary.v1",
+  "createdAt": "2026-09-07T19:52:11.9881127+03:00",
+  "model": {
+    "requested": "qwen3.5-2b",
+    "actualFromV1Models": "qwen3.5-2b",
+    "endpoint": "http://127.0.0.1:1234",
+    "runtime": "LM Studio OpenAI-compatible server",
+    "params": "2B",
+    "quantization": "Q4_K_M",
+    "modelBytes": 1942180448,
+    "loadedContextLength": 134912,
+    "loadedParallel": 4,
+    "flashAttention": true,
+    "speculativeDraftEnabled": false
+  },
+  "contract": {
+    "browser": "chrome",
+    "tier": "compact",
+    "concurrency": 4,
+    "timeoutMs": 300000,
+    "structuredTools": true,
+    "rawOutputsOverwritten": false,
+    "committed": false,
+    "pushed": false
+  },
+  "commands": {
+    "firstTurn": "node run-llamacpp.mjs --base http://127.0.0.1:1234 --model qwen3.5-2b --tag 2026-09-07-qwen3.5-2b-compact-full-c4-v1 --tier compact --browser chrome --concurrency 4 --timeout 300000",
+    "scenarios": "node run-scenarios.mjs --base http://127.0.0.1:1234 --model qwen3.5-2b --tag 2026-09-07-qwen3.5-2b-compact-full-c4-v1 --tier compact --browser chrome --concurrency 4 --timeout 300000",
+    "scenarioRetry": "node run-scenarios.mjs --base http://127.0.0.1:1234 --model qwen3.5-2b --tag 2026-09-07-qwen3.5-2b-compact-error-retry-fold-system-c4-v1 --only 65 --tier compact --browser chrome --chat-template-compat fold-system --concurrency 4 --timeout 300000"
+  },
+  "firstTurn": {
+    "original": {
+      "completed": 100,
+      "errors": 0,
+      "withToolCall": 92,
+      "noToolCall": 8,
+      "wallTimeMs": 61873
+    },
+    "retry": null,
+    "effective": {
+      "completed": 100,
+      "errors": 0,
+      "exact": 1,
+      "nameOnly": 4,
+      "other": 87,
+      "noTool": 8,
+      "exactOrName": 5,
+      "exactPercent": 1.0,
+      "exactOrNamePercent": 5.0,
+      "meanWallTimeMsPerRow": 618.73,
+      "wallTimeMs": 61873,
+      "scoring": "Exact compares idealFirstToolCall name and recursively key-sorted arguments. nameOnly counts parsed calls with the expected tool name but different arguments. other counts remaining tool calls. noTool counts every row without a parsed tool call, including terminal prose."
+    }
+  },
+  "scenarios": {
+    "original": {
+      "completed": 100,
+      "eligibleNonSkipped": 89,
+      "skipped": 11,
+      "errors": 1,
+      "ideal": 11,
+      "idealName": 17,
+      "other": 55,
+      "anti": 5,
+      "empty": 0,
+      "wallTimeMs": 57583
+    },
+    "retry": {
+      "ids": ["065"],
+      "chatTemplateCompat": "fold-system",
+      "completed": 1,
+      "errors": 0,
+      "verdict": "other",
+      "tool": "get_accessibility_tree",
+      "rowLatencyMs": 5027,
+      "wallTimeMs": 5029
+    },
+    "effective": {
+      "completed": 100,
+      "eligibleNonSkipped": 89,
+      "skipped": 11,
+      "errors": 0,
+      "ideal": 11,
+      "idealName": 17,
+      "other": 56,
+      "anti": 5,
+      "empty": 0,
+      "idealOrName": 28,
+      "idealPercentOfEligible": 12.359550561797752,
+      "idealOrNamePercentOfEligible": 31.46067415730337,
+      "wallTimeMs": 62510,
+      "reconciliation": "Scenario 065's original strict-template error remains in the main raw output and is replaced only for effective metrics by the versioned fold-system retry."
+    }
+  },
+  "durations": {
+    "allExecutedRequestsWallTimeMs": 124485,
+    "allExecutedRequestsWallTimeMinutes": 2.07475,
+    "effectiveRowsWallTimeMs": 124383,
+    "effectiveRowsWallTimeMinutes": 2.07305
+  },
+  "artifacts": [
+    {
+      "role": "first-turn-original",
+      "path": "G:\\esoku\\Documents\\webbrain\\test\\llm\\results\\2026-09-07-qwen3.5-2b-compact-full-c4-v1_chrome_qwen3.5-2b_compact",
+      "files": 101,
+      "bytes": 5467747,
+      "treeSha256": "3133c794d862b0b36ecac9982ec00a7df8932261337997bce87b2da1d858a95d",
+      "summarySha256": "85dbad9693947b895a32c02f645c305994020e6b737832a6217181d097a53780"
+    },
+    {
+      "role": "scenarios-original",
+      "path": "G:\\esoku\\Documents\\webbrain\\test\\llm\\results-scenarios\\2026-09-07-qwen3.5-2b-compact-full-c4-v1_chrome_qwen3.5-2b_compact",
+      "files": 101,
+      "bytes": 1114328,
+      "treeSha256": "9f5fd771ba084d4ede191c13eb34349459c07e4bb6841f3b9800791fa2cc6976",
+      "summarySha256": "e8a7b3b34f4029c7599db3f89b0f011b25ac4ae3f1f5b09c3426c5db773d25a2"
+    },
+    {
+      "role": "scenario-retry",
+      "path": "G:\\esoku\\Documents\\webbrain\\test\\llm\\results-scenarios\\2026-09-07-qwen3.5-2b-compact-error-retry-fold-system-c4-v1_chrome_qwen3.5-2b_compact",
+      "files": 2,
+      "bytes": 11839,
+      "treeSha256": "866105da94e3277b9f1fa4141f778999076f567808fbc77396e0c3fe376e1100",
+      "summarySha256": "bcad548f656b24891f1afadad4944b0e1beb29c258769945368f7f31263e6f46"
+    }
+  ],
+  "artifactTreeDigestAlgorithm": "sha256 over UTF-8 concatenation of sorted lines: relative_path TAB byte_size TAB file_sha256 LF",
+  "harness": {
+    "runLlamacppSha256": "b1bd3de7d6dad90a55dee52f3df7bdae175a95af9c6812716440f4a2f8911495",
+    "runScenariosSha256": "e3a54dbcdfd8370015175f0a3bfe2b1119c92f366d3496bd6e0dee0184031c88",
+    "scoreSha256": "35297349d3cbdec9ebe290aa8e8941a07b0cde51dd2077f0281266b7180f5cc6",
+    "inferenceFreeRegradeReport": "G:\\esoku\\Documents\\webbrain\\test\\llm\\analysis\\compact-parser-regrade-v2-98bd2b98db28c4c4\\summary-b6afd330c0fa265ec880c96082db29a5d206e6634a83666f55d0a3aaf403cd1c.json"
+  }
+}
