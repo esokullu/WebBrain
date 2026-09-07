@@ -248,7 +248,7 @@ const GENERIC_ATTACHMENT_WORDS = new Set([
 
 // Quoted attachment names are parked behind these placeholders while a target
 // list is split, so a conjunction inside a quoted name is never a separator.
-const QUOTED_NAME_PLACEHOLDER = /\u0000(\d+)\u0000/;
+const QUOTED_NAME_PLACEHOLDER_ALL = /\u0000(\d+)\u0000/g;
 const QUOTED_NAME_PLACEHOLDER_TAIL = /\u0000\d+\u0000\s*$/;
 const QUOTED_NAME_PLACEHOLDER_HEAD = /^\s*\u0000\d+\u0000/;
 
@@ -264,6 +264,7 @@ const MIN_ATTACHMENT_COUNT_REGEX = new RegExp(
   + '|(?:최소한|최소|이상)',
   'iu',
 );
+const MIN_ATTACHMENT_COUNT_STRIP_REGEX = new RegExp(MIN_ATTACHMENT_COUNT_REGEX.source, 'giu');
 
 const CJK_GENERIC_ATTACHMENT_REGEX = /^[0-9一二两三四五六七八九十添付画像写真動画メディア已上传附件图片照片视频媒体枚つの本张條条个個장에서의사진이미지포토동영상비디오영상클립움짤첨부파일미디어하나둘셋넷다섯한두세네일이삼사오개건편와과및그리고하고도无没有不带零なし無しゼロ없음안함只仅唯一だけのみ만오직단지\s\-_,.:;!?/\\()&+、，。；：/]+$/u;
 
@@ -2315,7 +2316,7 @@ export class Agent extends LoopDetector {
       },
     );
     const restoreQuoted = str => String(str).replace(
-      new RegExp(QUOTED_NAME_PLACEHOLDER.source, 'g'),
+      QUOTED_NAME_PLACEHOLDER_ALL,
       (whole, index) => (quotedNames[Number(index)] !== undefined ? quotedNames[Number(index)] : whole),
     );
     text = text.replace(/^['"“”«»`]+|['"“”«»`]+$/g, '').trim();
@@ -2550,7 +2551,7 @@ export class Agent extends LoopDetector {
     // requirement with the qualifier removed.
     const hasMinCountQualifier = MIN_ATTACHMENT_COUNT_REGEX.test(text);
     const countText = hasMinCountQualifier
-      ? text.replace(new RegExp(MIN_ATTACHMENT_COUNT_REGEX.source, 'giu'), ' ').replace(/\s+/g, ' ').trim()
+      ? text.replace(MIN_ATTACHMENT_COUNT_STRIP_REGEX, ' ').replace(/\s+/g, ' ').trim()
       : text;
 
     let isGeneric = false;
