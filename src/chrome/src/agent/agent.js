@@ -15393,8 +15393,24 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         && (isComposer
           || SOCIAL_PUBLISH_VERBS.test(firstAfterClause.maskedText || firstAfterClause.text));
       if (firstAfterNegatesPublish) continue;
+      let publishGoverned = this._socialPublicationCommandIn(lastBeforeClause?.text || '');
+      if (!publishGoverned && beforeClauses.length > 1 && !lastBeforeClause?.isNegated) {
+        for (let bIdx = beforeClauses.length - 2; bIdx >= 0; bIdx--) {
+          const nextB = beforeClauses[bIdx + 1];
+          const isCoord = SOCIAL_COORDINATING_DELIMITER.test(nextB.delim || '')
+            || (nextB.delim || '').trim() === ',';
+          if (!isCoord) break;
+          const bClause = beforeClauses[bIdx];
+          if (bClause.isNegated) break;
+          if (SOCIAL_READ_VERBS.test(bClause.maskedText || bClause.text)) break;
+          if (this._socialPublicationCommandIn(bClause.text || '')) {
+            publishGoverned = true;
+            break;
+          }
+        }
+      }
       const governed = (isComposer && !firstAfterClause?.isNegated)
-        || this._socialPublicationCommandIn(lastBeforeClause?.text || '')
+        || publishGoverned
         || (SOCIAL_PUBLISH_DESTINATION_LEAD.test(lastBeforeClause?.text || '')
           && this._socialPublicationCommandIn(firstAfterClause?.text || ''));
       if (!governed) continue;
@@ -15443,6 +15459,18 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
             if (platformPattern.test(prevTargetText) && !SOCIAL_READ_VERBS.test(prevTargetText) && !prevClause.isNegated) {
               return true;
             }
+          }
+          for (let nextIdx = clauseIdx + 1; nextIdx < clauses.length; nextIdx++) {
+            const nextClause = clauses[nextIdx];
+            if (nextClause.isNegated) break;
+            const isCoord = SOCIAL_COORDINATING_DELIMITER.test(nextClause.delim || '')
+              || (nextClause.delim || '').trim() === ',';
+            if (!isCoord) break;
+            const nextTargetText = nextClause.maskedText || nextClause.text;
+            if (SOCIAL_READ_VERBS.test(nextTargetText)) break;
+            if (SOCIAL_PUBLISH_VERBS.test(nextTargetText)) break;
+            platformPattern.lastIndex = 0;
+            if (platformPattern.test(nextTargetText)) return true;
           }
         }
         return false;
@@ -22485,7 +22513,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     const publishVerbPattern = `(?:${SOCIAL_PUBLISH_VERBS.source}|message|update)`;
     const quotedPattern = new RegExp(`${publishVerbPattern}[\\s\\S]*?(?:“([\\s\\S]+?)”|「([\\s\\S]+?)」|『([\\s\\S]+?)』|«([\\s\\S]+?)»|"([\\s\\S]+?)")`, 'iu');
     const singleQuotePattern = new RegExp(`${publishVerbPattern}[\\s\\S]*?(?:(?<!\\p{L})'([\\s\\S]+?)'(?!\\p{L}))`, 'iu');
-    const colonPattern = new RegExp(`${publishVerbPattern}[\\s\\S]*?(?<!https?|ftp|sftp)[:：](?!//)\\s*([\\s\\S]+)$`, 'iu');
+    const colonPattern = new RegExp(`${publishVerbPattern}[\\s\\S]*?(?<!https?|ftp|sftp)(?:(?<!\\d)[:：]|[:：](?!\\d{2}))(?!\\/\\/)\\s*([\\s\\S]+)$`, 'iu');
     for (const text of candidates) {
       let body = '';
       // Scan for the colon delimiter that introduces the post body.
@@ -22493,6 +22521,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       // 1. URL schemes (e.g. "https://", "ftp://")
       // 2. Colons inside parentheses, brackets, or quotes (e.g. "(account: @acme):")
       // 3. Incidental metadata key labels (e.g. "account: @acme")
+      // 4. Clock notation colons (e.g. "3:00", "14:30")
       const verbMatches = [...text.matchAll(new RegExp(publishVerbPattern, 'giu'))];
       let colonBody = '';
       let colonDelimIndex = -1;
@@ -22539,6 +22568,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           if (ch === ':' || ch === '\uff1a') {
             if (text.slice(i, i + 3) === '://' || text.slice(i, i + 2) === ':\u2044\u2044') continue;
             if (/(?:https?|ftp|sftp|file|mailto)$/i.test(text.slice(Math.max(0, i - 10), i))) continue;
+            if (/\d/.test(prevChar) && /^\d{2}/.test(text.slice(i + 1))) continue;
 
             if (parenDepth > 0 || bracketDepth > 0 || braceDepth > 0
                 || inDoubleQuote || inSingleQuote || inSmartQuote > 0 || inCjkQuote > 0 || inGuillemet > 0) {

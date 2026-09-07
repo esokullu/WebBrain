@@ -86404,6 +86404,12 @@ test('social publication workflow follows the live X or Bluesky destination and 
         'guillemet quotation containing inner ASCII quote mispaired delimiters'],
       ['Post 「He said 『hello; world』 today」 on X', ['twitter'],
         'nested CJK quotation marks mispaired delimiters'],
+      ['Post research and development news on X', ['twitter'],
+        'payload conjunction and before on X split command and destination into separate clauses'],
+      ['Post research and development news to https://x.com/home', ['twitter'],
+        'payload conjunction and before explicit social URL split command and destination into separate clauses'],
+      ['Post research, development, and marketing news on X', ['twitter'],
+        'multiple payload conjunctions and commas before on X split command and destination into separate clauses'],
     ]) {
       assert.deepEqual(
         [...agent._trustedSocialPublishTargetAdapters({ taskText })],
@@ -88027,6 +88033,21 @@ test('post body extraction skips incidental command colons and parenthesized met
       agent._extractWorkflowTaskBody('Post on X (account: @acme): Breaking: Version 2 is released'),
       'Breaking: Version 2 is released',
       AgentClass.name + ': body containing colon should preserve colon after payload delimiter'
+    );
+    assert.equal(
+      agent._extractWorkflowTaskBody('Post on X at 3:00: Hello world'),
+      'Hello world',
+      AgentClass.name + ': clock colon in at 3:00 should not be captured as body delimiter'
+    );
+    assert.equal(
+      agent._extractWorkflowTaskBody('Post on X at 14:30: Hello world'),
+      'Hello world',
+      AgentClass.name + ': 24-hour clock colon in at 14:30 should not be captured as body delimiter'
+    );
+    assert.equal(
+      agent._extractWorkflowTaskBody('Post on X at 3:00 PM: Hello world'),
+      'Hello world',
+      AgentClass.name + ': clock colon with AM/PM should not be captured as body delimiter'
     );
   }
 });
