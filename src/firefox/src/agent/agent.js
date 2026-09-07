@@ -2280,18 +2280,6 @@ export class Agent extends LoopDetector {
       return explicitWords.has(s);
     };
 
-    const countPrefix = '(?:\\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|single|both|multiple|un|une|deux|trois|quatre|cinq|uno|una|unos|unas|dos|tres|cuatro|cinco|due|tre|quattro|cinque|ein|eine|einen|einer|zwei|drei|vier|fünf|um|uma|dois|duas|três|один|одна|одно|два|две|три|четыре|пять|[一二两三四五六七八九十]|하나|둘|셋|넷|다섯|한(?=\\s*(?:장|개|건|편|개의|장의))|두(?=\\s*(?:장|개|건|편|개의|장의))|세(?=\\s*(?:장|개|건|편|개의|장의))|네(?=\\s*(?:장|개|건|편|개의|장의))|[일이삼사오](?=\\s*(?:장|개|건|편|개의|장의)))';
-
-    const imageCountMatch = text.match(new RegExp(`(?:^|[\\s,;and+와과및])(${countPrefix})\\s*(?:images?|photos?|pictures?|pics?|foto|fotos|bild|bilder|imagen(?:es)?|imágenes|画像|写真|图片|照片|圖片|изображение|фото|사진|이미지|포토)(?:\\s*(?:장|개|건))?`, 'i'))
-      || text.match(/(?:사진|이미지|포토)\s*([0-9하나둘셋넷다섯]+|[한두세네일이삼사오](?=\\s*(?:장|개|건|편|개의|장의)))\s*(?:장|개|건)?/i);
-    const expectedImageCount = imageCountMatch ? parseCountWord(imageCountMatch[1]) : 0;
-    const hasExplicitImageCount = imageCountMatch ? isExplicitCountWord(imageCountMatch[1]) : false;
-
-    const videoCountMatch = text.match(new RegExp(`(?:^|[\\s,;and+와과및])(${countPrefix})\\s*(?:videos?|clips?|recordings?|gifs?|animated[-_ ]gifs?|vidéo|vidéos|動画|视频|影片|видео|동영상|비디오|영상)(?:\\s*(?:개|편|건))?`, 'i'))
-      || text.match(/(?:동영상|비디오|영상)\s*([0-9하나둘셋넷다섯]+|[한두세네일이삼사오](?=\\s*(?:장|개|건|편|개의|장의)))\s*(?:개|편|건)?/i);
-    const expectedVideoCount = videoCountMatch ? parseCountWord(videoCountMatch[1]) : 0;
-    const hasExplicitVideoCount = videoCountMatch ? isExplicitCountWord(videoCountMatch[1]) : false;
-
     let isGeneric = false;
     if (CJK_GENERIC_ATTACHMENT_REGEX.test(text)) {
       isGeneric = true;
@@ -2301,31 +2289,51 @@ export class Agent extends LoopDetector {
       isGeneric = words.length > 0 && words.every(w => /^\d+$/.test(w) || GENERIC_ATTACHMENT_WORDS.has(w) || CJK_GENERIC_ATTACHMENT_REGEX.test(w));
     }
 
+    const countPrefix = '(?:\\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|single|both|multiple|un|une|deux|trois|quatre|cinq|uno|una|unos|unas|dos|tres|cuatro|cinco|due|tre|quattro|cinque|ein|eine|einen|einer|zwei|drei|vier|fünf|um|uma|dois|duas|três|один|одна|одно|два|две|три|четыре|пять|[一二两三四五六七八九十]|하나|둘|셋|넷|다섯|한(?=\\s*(?:장|개|건|편|개의|장의))|두(?=\\s*(?:장|개|건|편|개의|장의))|세(?=\\s*(?:장|개|건|편|개의|장의))|네(?=\\s*(?:장|개|건|편|개의|장의))|[일이삼사오](?=\\s*(?:장|개|건|편|개의|장의)))';
+    const countSeparator = '(?:^|[\\s,;+&/|]|(?:\\b(?:and|und|et|e|y)\\b\\s*)|[와과및])';
+
+    const imageCountMatch = isGeneric
+      ? (text.match(new RegExp(`${countSeparator}(${countPrefix})\\s*(?:images?|photos?|pictures?|pics?|foto|fotos|bild|bilder|imagen(?:es)?|imágenes|画像|写真|图片|照片|圖片|изображение|фото|사진|이미지|포토)(?:\\s*(?:장|개|건))?`, 'i'))
+        || text.match(/(?:사진|이미지|포토)\s*([0-9하나둘셋넷다섯]+|[한두세네일이삼사오](?=\\s*(?:장|개|건|편|개의|장의)))\s*(?:장|개|건)?/i))
+      : null;
+    const expectedImageCount = imageCountMatch ? parseCountWord(imageCountMatch[1]) : 0;
+    const hasExplicitImageCount = imageCountMatch ? isExplicitCountWord(imageCountMatch[1]) : false;
+
+    const videoCountMatch = isGeneric
+      ? (text.match(new RegExp(`${countSeparator}(${countPrefix})\\s*(?:videos?|clips?|recordings?|gifs?|animated[-_ ]gifs?|vidéo|vidéos|動画|视频|影片|видео|동영상|비디오|영상)(?:\\s*(?:개|편|건))?`, 'i'))
+        || text.match(/(?:동영상|비디오|영상)\s*([0-9하나둘셋넷다섯]+|[한두세네일이삼사오](?=\\s*(?:장|개|건|편|개의|장의)))\s*(?:개|편|건)?/i))
+      : null;
+    const expectedVideoCount = videoCountMatch ? parseCountWord(videoCountMatch[1]) : 0;
+    const hasExplicitVideoCount = videoCountMatch ? isExplicitCountWord(videoCountMatch[1]) : false;
+
     let hasExplicitGenericCount = false;
     let expectedCount = 1;
-    if (expectedImageCount > 0 && expectedVideoCount > 0) {
-      expectedCount = expectedImageCount + expectedVideoCount;
-    } else if (expectedImageCount > 0) {
-      expectedCount = expectedImageCount + (wantsVideo ? 1 : 0);
-    } else if (expectedVideoCount > 0) {
-      expectedCount = expectedVideoCount + (wantsImage ? 1 : 0);
-    } else {
-      const genericNounCountMatch = text.match(new RegExp(`(?:^|[\\s,;and+와과및])(${countPrefix})\\s+(?:attachments?|files?|media|uploads?|pieces?|items?|assets?|enclosures?|documents?|fichiers?|archivos?|dateien?|allegati?|anexos?|вложения?|вложение|첨부(?:파일)?|파일|미디어)`, 'i'))
-        || text.match(new RegExp(`(?:^|[\\s,;and+와과및])(${countPrefix})\\s*(?:枚|つ|本|张|條|条|个|個|장|개|건|편)`, 'i'))
-        || text.match(new RegExp(`(?:첨부(?:파일)?|파일|미디어)\\s*(${countPrefix})\\s*(?:장|개|건|편)?`, 'i'));
-      const generalCountMatch = genericNounCountMatch
-        || (isGeneric && (text.match(new RegExp(`\\b(${countPrefix})\\b`, 'i')) || text.match(/([一二两三四五六七八九十])/)));
-      if (generalCountMatch) {
-        const parsedNum = parseCountWord(generalCountMatch[1]);
-        if (parsedNum > 0) {
-          expectedCount = parsedNum;
-          hasExplicitGenericCount = isExplicitCountWord(generalCountMatch[1]);
+    if (isGeneric) {
+      if (expectedImageCount > 0 && expectedVideoCount > 0) {
+        expectedCount = expectedImageCount + expectedVideoCount;
+      } else if (expectedImageCount > 0) {
+        expectedCount = expectedImageCount + (wantsVideo ? 1 : 0);
+      } else if (expectedVideoCount > 0) {
+        expectedCount = expectedVideoCount + (wantsImage ? 1 : 0);
+      } else {
+        const genericNounCountMatch = text.match(new RegExp(`${countSeparator}(${countPrefix})\\s+(?:attachments?|files?|media|uploads?|pieces?|items?|assets?|enclosures?|documents?|fichiers?|archivos?|dateien?|allegati?|anexos?|вложения?|вложение|첨부(?:파일)?|파일|미디어)`, 'i'))
+          || text.match(new RegExp(`${countSeparator}(${countPrefix})\\s*(?:枚|つ|本|张|條|条|个|個|장|개|건|편)`, 'i'))
+          || text.match(new RegExp(`(?:첨부(?:파일)?|파일|미디어)\\s*(${countPrefix})\\s*(?:장|개|건|편)?`, 'i'));
+        const generalCountMatch = genericNounCountMatch
+          || text.match(new RegExp(`\\b(${countPrefix})\\b`, 'i'))
+          || text.match(/([一二两三四五六七八九十])/);
+        if (generalCountMatch) {
+          const parsedNum = parseCountWord(generalCountMatch[1]);
+          if (parsedNum > 0) {
+            expectedCount = parsedNum;
+            hasExplicitGenericCount = isExplicitCountWord(generalCountMatch[1]);
+          }
         }
       }
-    }
 
-    if (wantsImage && wantsVideo && expectedCount < 2) {
-      expectedCount = 2;
+      if (wantsImage && wantsVideo && expectedCount < 2) {
+        expectedCount = 2;
+      }
     }
 
     const hasExplicitCardinality = hasExplicitImageCount || hasExplicitVideoCount || hasExplicitGenericCount;

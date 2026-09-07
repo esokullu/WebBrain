@@ -87613,6 +87613,41 @@ test('attachment requirement parser ignores numbers in specific attachment filen
     const req4 = agent._parseWorkflowAttachmentRequirement('2枚');
     assert.equal(req4.expectedCount, 2, AgentClass.name + ': 2枚 should expect 2 attachments');
     assert.equal(req4.isGeneric, true, AgentClass.name + ': 2枚 should be generic');
+
+    const reqBrand = agent._parseWorkflowAttachmentRequirement('brand2images.png');
+    assert.equal(reqBrand.expectedCount, 1, AgentClass.name + ': brand2images.png should expect 1 attachment');
+    assert.equal(reqBrand.expectedImageCount, 0, AgentClass.name + ': brand2images.png should have 0 expectedImageCount');
+    assert.equal(reqBrand.hasExplicitImageCount, false, AgentClass.name + ': brand2images.png should not have explicit image count');
+    assert.equal(reqBrand.hasExplicitCardinality, false, AgentClass.name + ': brand2images.png should not have explicit cardinality');
+    assert.equal(reqBrand.isGeneric, false, AgentClass.name + ': brand2images.png should not be generic');
+    assert.equal(reqBrand.wantsImage, true, AgentClass.name + ': brand2images.png should want image');
+    assert.equal(reqBrand.wantsVideo, false, AgentClass.name + ': brand2images.png should not want video');
+
+    const brandVerified = agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'brand2images.png' },
+      { attachments: [{ type: 'image', src: 'https://pbs.twimg.com/media/brand2images.png' }] },
+    );
+    assert.equal(brandVerified, true, AgentClass.name + ': single matching brand2images.png should pass');
+
+    const brandWrongFile = agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'brand2images.png' },
+      { attachments: [{ type: 'image', src: 'https://pbs.twimg.com/media/other.png' }] },
+    );
+    assert.equal(brandWrongFile, false, AgentClass.name + ': non-matching file for brand2images.png should fail');
+
+    const reqBrandVid = agent._parseWorkflowAttachmentRequirement('brand2videos.mp4');
+    assert.equal(reqBrandVid.expectedCount, 1, AgentClass.name + ': brand2videos.mp4 should expect 1 attachment');
+    assert.equal(reqBrandVid.expectedVideoCount, 0, AgentClass.name + ': brand2videos.mp4 should have 0 expectedVideoCount');
+    assert.equal(reqBrandVid.hasExplicitVideoCount, false, AgentClass.name + ': brand2videos.mp4 should not have explicit video count');
+    assert.equal(reqBrandVid.isGeneric, false, AgentClass.name + ': brand2videos.mp4 should not be generic');
+    assert.equal(reqBrandVid.wantsVideo, true, AgentClass.name + ': brand2videos.mp4 should want video');
+    assert.equal(reqBrandVid.wantsImage, false, AgentClass.name + ': brand2videos.mp4 should not want image');
+
+    const brandVidVerified = agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'brand2videos.mp4' },
+      { attachments: [{ type: 'video', src: 'https://video.twimg.com/media/brand2videos.mp4' }] },
+    );
+    assert.equal(brandVidVerified, true, AgentClass.name + ': single matching brand2videos.mp4 should pass');
   }
 });
 
