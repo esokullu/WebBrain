@@ -1376,6 +1376,15 @@ export class Agent extends LoopDetector {
     }
     const next = recordCompletionToolResult(state, name, completionArgs, result);
     this.completionInvariants.set(tabId, next);
+    const socialUploadEvidence = this._rememberSocialPublishUploadEvidence(
+      tabId,
+      name,
+      result,
+      next,
+    );
+    if (socialUploadEvidence && result && typeof result === 'object') {
+      result.socialUploadEvidence = socialUploadEvidence;
+    }
     const workflowControlEvidence = this._rememberWorkflowControlActionEvidence(
       tabId,
       name,
@@ -1828,6 +1837,9 @@ export class Agent extends LoopDetector {
         ? {
             preDispatchPublicationAccountIdentity,
             preDispatchPublicationAccountIdentityComplete: !!preDispatchPublicationAccountIdentity,
+            uploadedAttachmentNames: (Array.isArray(guard.workflowSocialUploadEvidence)
+              ? guard.workflowSocialUploadEvidence
+              : []).map(item => String(item?.name || '').trim()).filter(Boolean).slice(-12),
           }
         : {}),
       ...(githubFileCommit ? { githubFileCommit } : {}),
@@ -2671,7 +2683,7 @@ export class Agent extends LoopDetector {
   _parseWorkflowAttachmentRequirement(value) {
     const rawVal = (typeof value === 'object' && value !== null && 'value' in value) ? value.value : value;
     const text = String(rawVal || '').trim().toLowerCase();
-    if (!text) return { isGeneric: true, expectedCount: 1, expectedImageCount: 0, expectedVideoCount: 0, wantsImage: false, wantsVideo: false, wantsGif: false, specificTargets: [], normalized: '' };
+    if (!text) return { isGeneric: true, expectedCount: 1, expectedImageCount: 0, expectedVideoCount: 0, expectedGifCount: 0, wantsImage: false, wantsVideo: false, wantsOrdinaryVideo: false, wantsGif: false, specificTargets: [], normalized: '' };
 
     if (this._isNegativeAttachmentRequirement(text)) {
       return {
@@ -2714,10 +2726,12 @@ export class Agent extends LoopDetector {
     }
 
     const hasRawGif = RAW_GIF_NOUN_REGEX.test(text);
-    const hasRawVideo = hasRawGif || RAW_VIDEO_NOUN_REGEX.test(text);
+    const hasRawOrdinaryVideo = RAW_VIDEO_NOUN_REGEX.test(text);
+    const hasRawVideo = hasRawGif || hasRawOrdinaryVideo;
     const hasRawImage = RAW_IMAGE_NOUN_REGEX.test(text);
 
     const wantsGif = hasRawGif && !isGifNegated;
+    const wantsOrdinaryVideo = hasRawOrdinaryVideo && !isVideoNegated;
     const wantsVideo = (hasRawVideo && !isVideoNegated) || wantsGif;
     const wantsImage = hasRawImage && !isImageNegated;
 
@@ -2788,20 +2802,24 @@ export class Agent extends LoopDetector {
     // media type does not loosen an exact count on the other.
     let minScopedImage = false;
     let minScopedVideo = false;
+    let minScopedGif = false;
     let minScopedGeneric = false;
     if (hasMinCountQualifier) {
       for (const segment of text.split(MIN_COUNT_SCOPE_SPLIT)) {
         if (!segment || !MIN_ATTACHMENT_COUNT_REGEX.test(segment)) continue;
         const segmentImage = RAW_IMAGE_NOUN_REGEX.test(segment);
-        const segmentVideo = RAW_GIF_NOUN_REGEX.test(segment) || RAW_VIDEO_NOUN_REGEX.test(segment);
+        const segmentGif = RAW_GIF_NOUN_REGEX.test(segment);
+        const segmentVideo = RAW_VIDEO_NOUN_REGEX.test(segment);
         if (segmentImage) minScopedImage = true;
         if (segmentVideo) minScopedVideo = true;
-        if (!segmentImage && !segmentVideo) minScopedGeneric = true;
+        if (segmentGif) minScopedGif = true;
+        if (!segmentImage && !segmentVideo && !segmentGif) minScopedGeneric = true;
       }
     }
     const isMinimumCount = isGeneric && hasMinCountQualifier;
     const isImageMinimum = isGeneric && (minScopedImage || minScopedGeneric);
     const isVideoMinimum = isGeneric && (minScopedVideo || minScopedGeneric);
+    const isGifMinimum = isGeneric && (minScopedGif || minScopedGeneric);
 
     const countPrefix = '(?:\\d+|zero|cero|zéro|a|an|one|two|three|four|five|six|seven|eight|nine|ten|single|both|multiple|un|une|deux|trois|quatre|cinq|uno|una|unos|unas|dos|tres|cuatro|cinco|due|tre|quattro|cinque|ein|eine|einen|einer|zwei|drei|vier|fünf|um|uma|dois|duas|três|один|одна|одно|два|две|три|четыре|пять|[一二两三四五六七八九十]|하나|둘|셋|넷|다섯|한(?=\\s*(?:장|개|건|편|개의|장의))|두(?=\\s*(?:장|개|건|편|개의|장의))|세(?=\\s*(?:장|개|건|편|개의|장의))|네(?=\\s*(?:장|개|건|편|개의|장의))|[일이삼사오](?=\\s*(?:장|개|건|편|개의|장의)))';
     const countSeparator = '(?:^|[\\s,;+&/|、，。；：]|(?:\\b(?:and|und|et|e|y)\\b\\s*)|[와과및])';
@@ -2821,8 +2839,21 @@ export class Agent extends LoopDetector {
       hasExplicitImageCount = isExplicitCountWord(imageCountMatch[1]);
     }
 
+    const gifCountMatch = isGeneric
+      ? countText.match(new RegExp(`${countSeparator}(${countPrefix})(?:\\s*(?:枚|つ|本|张|條|条|个|個|장|개|건|편))?\\s*(?:gifs?|animated[-_ ]gifs?|動圖|动图|움짤)(?:\\s*(?:개|편|건))?`, 'i'))
+      : null;
+    let expectedGifCount = 0;
+    let hasExplicitGifCount = false;
+    if (isGifNegated) {
+      expectedGifCount = 0;
+      hasExplicitGifCount = true;
+    } else if (gifCountMatch) {
+      expectedGifCount = parseCountWord(gifCountMatch[1]);
+      hasExplicitGifCount = isExplicitCountWord(gifCountMatch[1]);
+    }
+
     const videoCountMatch = isGeneric
-      ? (countText.match(new RegExp(`${countSeparator}(${countPrefix})(?:\\s*(?:枚|つ|本|张|條|条|个|個|장|개|건|편))?\\s*(?:videos?|clips?|recordings?|gifs?|animated[-_ ]gifs?|vidéo|vidéos|動画|视频|影片|видео|동영상|비디오|영상)(?:\\s*(?:개|편|건))?`, 'i'))
+      ? (countText.match(new RegExp(`${countSeparator}(${countPrefix})(?:\\s*(?:枚|つ|本|张|條|条|个|個|장|개|건|편))?\\s*(?:videos?|clips?|recordings?|vidéo|vidéos|動画|视频|影片|видео|동영상|비디오|영상)(?:\\s*(?:개|편|건))?`, 'i'))
         || countText.match(/(?:동영상|비디오|영상)\s*([0-9하나둘셋넷다섯]+|[한두세네일이삼사오](?=\\s*(?:장|개|건|편|개의|장의)))\s*(?:개|편|건)?/i)
         || countText.match(/(?:動画|视频|影片)\s*([0-9一二两三四五六七八九十]+)\s*(?:つ|本|個|个|條|条|편|개)?/i))
       : null;
@@ -2842,24 +2873,25 @@ export class Agent extends LoopDetector {
     let hasExplicitGenericCount = false;
     let expectedCount = 1;
     if (isGeneric) {
+      const combinedVideoCount = expectedVideoCount + expectedGifCount;
       if (isAlternative) {
-        if (expectedImageCount > 0 && expectedVideoCount > 0) {
-          expectedCount = Math.min(expectedImageCount, expectedVideoCount);
+        if (expectedImageCount > 0 && combinedVideoCount > 0) {
+          expectedCount = Math.min(expectedImageCount, combinedVideoCount);
         } else if (expectedImageCount > 0) {
           expectedCount = expectedImageCount;
-        } else if (expectedVideoCount > 0) {
-          expectedCount = expectedVideoCount;
+        } else if (combinedVideoCount > 0) {
+          expectedCount = combinedVideoCount;
         } else {
           expectedCount = 1;
         }
-      } else if (expectedImageCount > 0 && expectedVideoCount > 0) {
-        expectedCount = expectedImageCount + expectedVideoCount;
+      } else if (expectedImageCount > 0 && combinedVideoCount > 0) {
+        expectedCount = expectedImageCount + combinedVideoCount;
       } else if (expectedImageCount > 0) {
         expectedCount = expectedImageCount + (wantsVideo ? 1 : 0);
-      } else if (expectedVideoCount > 0) {
-        expectedCount = expectedVideoCount + (wantsImage ? 1 : 0);
+      } else if (combinedVideoCount > 0) {
+        expectedCount = combinedVideoCount + (wantsImage ? 1 : 0);
       } else if (wantsVideo && !wantsImage) {
-        expectedCount = expectedVideoCount > 0 ? expectedVideoCount : 1;
+        expectedCount = combinedVideoCount > 0 ? combinedVideoCount : 1;
       } else if (wantsImage && !wantsVideo) {
         expectedCount = expectedImageCount > 0 ? expectedImageCount : 1;
       } else {
@@ -2891,7 +2923,9 @@ export class Agent extends LoopDetector {
 
     const hasExplicitPositiveImageCount = hasExplicitImageCount && !isImageNegated;
     const hasExplicitPositiveVideoCount = hasExplicitVideoCount && !isVideoNegated;
-    const hasExplicitCardinality = hasExplicitPositiveImageCount || hasExplicitPositiveVideoCount || hasExplicitGenericCount || (isImageNegated && isVideoNegated);
+    const hasExplicitPositiveGifCount = hasExplicitGifCount && !isGifNegated;
+    const hasExplicitCardinality = hasExplicitPositiveImageCount || hasExplicitPositiveVideoCount
+      || hasExplicitPositiveGifCount || hasExplicitGenericCount || (isImageNegated && isVideoNegated);
     const specificTargets = isGeneric ? [] : this._parseSpecificAttachmentTargets(rawVal);
 
     return {
@@ -2899,8 +2933,10 @@ export class Agent extends LoopDetector {
       expectedCount,
       expectedImageCount,
       expectedVideoCount,
+      expectedGifCount,
       hasExplicitImageCount,
       hasExplicitVideoCount,
+      hasExplicitGifCount,
       hasExplicitCardinality,
       isImageNegated,
       isVideoNegated,
@@ -2909,11 +2945,68 @@ export class Agent extends LoopDetector {
       isMinimumCount,
       isImageMinimum,
       isVideoMinimum,
+      isGifMinimum,
       wantsImage,
       wantsVideo,
+      wantsOrdinaryVideo,
       wantsGif,
       specificTargets,
       normalized: text,
+    };
+  }
+
+  _workflowSocialRecordWithUploadedAttachmentNames(record, binding) {
+    const attachments = Array.isArray(record?.attachments)
+      ? record.attachments
+      : (Array.isArray(record?.media) ? record.media : []);
+    const names = (Array.isArray(binding?.uploadedAttachmentNames)
+      ? binding.uploadedAttachmentNames
+      : []).map(value => String(value || '').split(/[\\/]/).pop().trim()).filter(Boolean);
+    // A filename may describe an observed published attachment, but it may
+    // never create one. Require one upload name per DOM-observed media node and
+    // a type-compatible bijection before adding the names to the record.
+    if (!attachments.length || names.length !== attachments.length) return record;
+    const nameKind = (name) => (
+      /\.gif(?:[?#]|$)/i.test(name) ? 'video'
+        : /\.(?:mp4|mov|webm|mkv)(?:[?#]|$)/i.test(name) ? 'video'
+        : /\.(?:png|jpe?g|webp|avif|heic|bmp|svg)(?:[?#]|$)/i.test(name) ? 'image'
+        : ''
+    );
+    const attachmentKind = (attachment) => {
+      const type = String(attachment?.type || attachment?.kind || '').toLowerCase();
+      if (type === 'video' || type === 'animated_gif' || type === 'gif') return 'video';
+      if (type === 'image' || type === 'photo') return 'image';
+      const source = typeof attachment === 'string'
+        ? attachment
+        : String(attachment?.src || attachment?.url || '');
+      if (/\.(?:mp4|mov|webm|mkv|gif)(?:[?#]|$)/i.test(source)
+          || /\/tweet_video(?:_thumb)?\//i.test(source)) return 'video';
+      return 'image';
+    };
+    const assignment = new Array(attachments.length).fill(-1);
+    const matchNames = (attachmentIndex, usedNames) => {
+      if (attachmentIndex >= attachments.length) return true;
+      const observedKind = attachmentKind(attachments[attachmentIndex]);
+      for (let nameIndex = 0; nameIndex < names.length; nameIndex++) {
+        if (usedNames.has(nameIndex)) continue;
+        const uploadedKind = nameKind(names[nameIndex]);
+        if (uploadedKind && uploadedKind !== observedKind) continue;
+        assignment[attachmentIndex] = nameIndex;
+        usedNames.add(nameIndex);
+        if (matchNames(attachmentIndex + 1, usedNames)) return true;
+        usedNames.delete(nameIndex);
+        assignment[attachmentIndex] = -1;
+      }
+      return false;
+    };
+    if (!matchNames(0, new Set())) return record;
+    return {
+      ...record,
+      attachments: attachments.map((attachment, index) => (
+        typeof attachment === 'string'
+          ? { src: attachment, name: names[assignment[index]] }
+          : { ...attachment, name: names[assignment[index]] }
+      )),
     };
   }
 
@@ -2962,24 +3055,53 @@ export class Agent extends LoopDetector {
     const imageCount = rawAttachments.filter(isImageAttachment).length;
     const videoCount = rawAttachments.filter(isVideoAttachment).length;
     const gifCount = rawAttachments.filter(isGifAttachment).length;
-    if (parsed.wantsGif && gifCount < 1) return false;
+    const ordinaryVideoCount = rawAttachments.filter(att => isVideoAttachment(att) && !isGifAttachment(att)).length;
+    if (parsed.wantsGif) {
+      const requiredGifCount = parsed.expectedGifCount > 0 ? parsed.expectedGifCount : 1;
+      if (gifCount < requiredGifCount) return false;
+      if (parsed.hasExplicitGifCount && !parsed.isGifMinimum && gifCount !== parsed.expectedGifCount) return false;
+    }
+    if (parsed.wantsGif && parsed.wantsOrdinaryVideo) {
+      const requiredOrdinaryVideoCount = parsed.expectedVideoCount > 0 ? parsed.expectedVideoCount : 1;
+      if (ordinaryVideoCount < requiredOrdinaryVideoCount) return false;
+      if (parsed.hasExplicitVideoCount && !parsed.isVideoMinimum
+          && ordinaryVideoCount !== parsed.expectedVideoCount) return false;
+    }
     if (parsed.isGifNegated && gifCount > 0) return false;
+    const exactTypedTotal = parsed.isGeneric && !parsed.isAlternative
+      && (!parsed.wantsImage || (parsed.hasExplicitImageCount && !parsed.isImageMinimum))
+      && (!parsed.wantsOrdinaryVideo || (parsed.hasExplicitVideoCount && !parsed.isVideoMinimum))
+      && (!parsed.wantsGif || (parsed.hasExplicitGifCount && !parsed.isGifMinimum));
+    if (exactTypedTotal && (parsed.wantsImage || parsed.wantsOrdinaryVideo || parsed.wantsGif)) {
+      const expectedTypedTotal = (parsed.wantsImage ? parsed.expectedImageCount : 0)
+        + (parsed.wantsOrdinaryVideo ? parsed.expectedVideoCount : 0)
+        + (parsed.wantsGif ? parsed.expectedGifCount : 0);
+      if (rawAttachments.length !== expectedTypedTotal) return false;
+    }
 
     let matchingAttachments = rawAttachments;
     if (parsed.wantsImage && parsed.wantsVideo) {
       if (parsed.isAlternative) {
         const minImages = parsed.expectedImageCount > 0 ? parsed.expectedImageCount : 1;
-        const minVideos = parsed.expectedVideoCount > 0 ? parsed.expectedVideoCount : 1;
+        const expectedAlternativeVideoCount = parsed.wantsGif && !parsed.wantsOrdinaryVideo
+          ? parsed.expectedGifCount
+          : parsed.expectedVideoCount;
+        const alternativeVideoCount = parsed.wantsGif && !parsed.wantsOrdinaryVideo
+          ? gifCount
+          : videoCount;
+        const minVideos = expectedAlternativeVideoCount > 0 ? expectedAlternativeVideoCount : 1;
         const exactImageAlt = parsed.hasExplicitImageCount && !parsed.isImageMinimum;
-        const exactVideoAlt = parsed.hasExplicitVideoCount && !parsed.isVideoMinimum;
+        const exactVideoAlt = parsed.wantsGif && !parsed.wantsOrdinaryVideo
+          ? parsed.hasExplicitGifCount && !parsed.isGifMinimum
+          : parsed.hasExplicitVideoCount && !parsed.isVideoMinimum;
         const matchesImageAlt = imageCount >= minImages
           && (!exactImageAlt || imageCount === parsed.expectedImageCount)
           && videoCount === 0
           && (!exactImageAlt || rawAttachments.length === parsed.expectedImageCount);
-        const matchesVideoAlt = videoCount >= minVideos
-          && (!exactVideoAlt || videoCount === parsed.expectedVideoCount)
+        const matchesVideoAlt = alternativeVideoCount >= minVideos
+          && (!exactVideoAlt || alternativeVideoCount === expectedAlternativeVideoCount)
           && imageCount === 0
-          && (!exactVideoAlt || rawAttachments.length === parsed.expectedVideoCount);
+          && (!exactVideoAlt || rawAttachments.length === expectedAlternativeVideoCount);
         if (!matchesImageAlt && !matchesVideoAlt) {
           return false;
         }
@@ -3000,7 +3122,7 @@ export class Agent extends LoopDetector {
         }
         if (parsed.hasExplicitImageCount && parsed.hasExplicitVideoCount
             && !parsed.isImageMinimum && !parsed.isVideoMinimum) {
-          if (rawAttachments.length !== (parsed.expectedImageCount + parsed.expectedVideoCount)) {
+          if (rawAttachments.length !== (parsed.expectedImageCount + parsed.expectedVideoCount + parsed.expectedGifCount)) {
             return false;
           }
         } else if (parsed.hasExplicitCardinality) {
@@ -3025,8 +3147,9 @@ export class Agent extends LoopDetector {
       matchingAttachments = rawAttachments.filter(isImageAttachment);
     } else if (parsed.wantsVideo && !parsed.wantsImage) {
       if (imageCount > 0) return false;
-      const hasExactVideoCount = !parsed.isVideoMinimum
-        && ((parsed.hasExplicitVideoCount && !parsed.isVideoNegated) || parsed.hasExplicitGenericCount);
+      const hasExactVideoCount = (parsed.hasExplicitVideoCount && !parsed.isVideoNegated && !parsed.isVideoMinimum)
+        || (parsed.hasExplicitGifCount && !parsed.isGifNegated && !parsed.isGifMinimum)
+        || parsed.hasExplicitGenericCount;
       if (hasExactVideoCount) {
         if (videoCount !== parsed.expectedCount || rawAttachments.length !== parsed.expectedCount) {
           return false;
@@ -3563,16 +3686,17 @@ export class Agent extends LoopDetector {
       if (!intendedAccount || !publishedAccount
           || !accountMatches(requestedAccount)
           || !accountMatches(capturedAccount)) return false;
+      const publishedRecord = this._workflowSocialRecordWithUploadedAttachmentNames(records[0], binding);
       return requirements.every(requirement => (
         requirement?.field === 'account'
           ? true
           : requirement?.field === 'body'
-          ? this._workflowSocialPublishedBodyObserved(requirement, records[0])
+          ? this._workflowSocialPublishedBodyObserved(requirement, publishedRecord)
           : requirement?.field === 'attachment'
-          ? this._workflowSocialPublishedAttachmentObserved(requirement, records[0])
+          ? this._workflowSocialPublishedAttachmentObserved(requirement, publishedRecord)
           : this._workflowPublishedPayloadValueObserved(requirement, {
-              pageText: records[0].text,
-              pageUrl: records[0].url,
+              pageText: publishedRecord.text,
+              pageUrl: publishedRecord.url,
               publishedResourceIdentity: binding.publishedResourceIdentity,
             })
       ));
@@ -13853,6 +13977,34 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     return proof;
   }
 
+  _rememberSocialPublishUploadEvidence(tabId, name, result = {}, completionState = null) {
+    const guard = this._planExecutionGuards.get(tabId);
+    const siteWorkflow = guard?.siteWorkflow;
+    if (!guard?.enabled
+        || name !== 'upload_file'
+        || siteWorkflow?.job?.id !== 'publish-post'
+        || !['twitter', 'bluesky'].includes(siteWorkflow.adapterName)
+        || !this._isSuccessfulExecutionEvidence(result)
+        || !['input_attached', 'page_consumed'].includes(result?.attachmentState)) return null;
+    const fileName = String(result?.attached?.name || '').split(/[\\/]/).pop().trim().slice(0, 500);
+    const actionSequence = Number(completionState?.lastAction?.sequence || completionState?.sequence || 0);
+    if (!fileName || !actionSequence) return null;
+    const prior = Array.isArray(guard.workflowSocialUploadEvidence)
+      ? guard.workflowSocialUploadEvidence
+      : [];
+    const normalizedName = fileName.toLocaleLowerCase();
+    const evidence = {
+      name: fileName,
+      attachmentState: result.attachmentState,
+      actionSequence,
+    };
+    guard.workflowSocialUploadEvidence = [
+      ...prior.filter(item => String(item?.name || '').toLocaleLowerCase() !== normalizedName),
+      evidence,
+    ].slice(-12);
+    return evidence;
+  }
+
   _rememberWorkflowInventoryObservation(tabId, name, args, result) {
     const guard = this._planExecutionGuards.get(tabId);
     const siteWorkflow = guard?.siteWorkflow;
@@ -14612,6 +14764,13 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     guard.siteWorkflowUrl = liveUrl;
     guard.workflowTerminalEvidence = null;
     guard.verifiedSubmissionEvidence = false;
+    // Publication requirements and upload provenance belong to the currently
+    // bound destination. Reclassify and recollect them after X <-> Bluesky
+    // navigation instead of reusing the first platform's payload.
+    guard.workflowMetadataRequirements = [];
+    guard.workflowMetadataRequirementsResolved = false;
+    guard.workflowMetadataRequirementsIncomplete = false;
+    guard.workflowSocialUploadEvidence = [];
     await this._ensureWorkflowMetadataRequirements(
       tabId,
       { provider, costState: this.currentCostState.get(tabId) || null },
@@ -23018,8 +23177,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           if (extractedBody) {
             const bodyReq = details.items.find(r => r.field === 'body');
             if (bodyReq) {
-              if (extractedBody.length > (bodyReq.value || '').length
-                  || bodyReq.value === '[from task]'
+              if (bodyReq.value === '[from task]'
                   || extractedBody.includes(bodyReq.value)) {
                 bodyReq.value = this._workflowMetadataValue(extractedBody, 25000);
               }
@@ -23790,6 +23948,9 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       socialPublishSatisfiedTargets: carryMatches && Array.isArray(carried.socialPublishSatisfiedTargets)
         ? [...carried.socialPublishSatisfiedTargets]
         : [],
+      workflowSocialUploadEvidence: carryMatches && Array.isArray(carried.workflowSocialUploadEvidence)
+        ? carried.workflowSocialUploadEvidence.map(item => ({ ...item }))
+        : [],
       workflowTerminalEvidence: carryMatches && carried.workflowTerminalEvidence
         ? { ...carried.workflowTerminalEvidence }
         : null,
@@ -24118,6 +24279,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       || Object.keys(guard.workflowReleaseAssetEvidence || {}).length > 0
       || Object.keys(guard.workflowPendingReleaseAssetEvidence || {}).length > 0
       || Object.keys(guard.workflowPendingUploadEvidence || {}).length > 0
+      || (guard.workflowSocialUploadEvidence || []).length > 0
     )) {
       const submit = this._completionSubmitStates.get(tabId);
       this._continuationExecutionEvidence.set(tabId, {
@@ -24143,6 +24305,9 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         verifiedSubmissionEvidence: guard.verifiedSubmissionEvidence === true,
         socialPublishSatisfiedTargets: Array.isArray(guard.socialPublishSatisfiedTargets)
           ? [...guard.socialPublishSatisfiedTargets]
+          : [],
+        workflowSocialUploadEvidence: Array.isArray(guard.workflowSocialUploadEvidence)
+          ? guard.workflowSocialUploadEvidence.map(item => ({ ...item }))
           : [],
         workflowTerminalEvidence: guard.workflowTerminalEvidence
           ? { ...guard.workflowTerminalEvidence }

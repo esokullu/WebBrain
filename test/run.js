@@ -90946,6 +90946,59 @@ test('social publication workflow follows the live X or Bluesky destination and 
   }
 });
 
+test('social destination rebinding refreshes platform-specific payload and upload evidence', async () => {
+  for (const [index, AgentClass] of [AgentCh, AgentFx].entries()) {
+    const agent = new AgentClass({});
+    agent.useSiteAdapters = true;
+    agent._persist = () => {};
+    const tabId = 9040 + index;
+    const taskText = 'Post "A much longer announcement" on X and "B" on Bluesky.';
+    agent.conversations.set(tabId, [
+      { role: 'system', content: 'system' },
+      { role: 'user', content: taskText },
+    ]);
+    const twitterWorkflow = agent._resolvePlannerSiteWorkflow('https://x.com/compose/post', {
+      request_kind: 'execute',
+      site_job: 'publish-post',
+    });
+    const guard = agent._startPlanExecutionGuard(tabId, 'act', {
+      requestKind: 'execute',
+      requiresStateChange: true,
+      requiresSubmission: true,
+      siteWorkflow: twitterWorkflow,
+      siteWorkflowUrl: 'https://x.com/compose/post',
+    });
+    guard.workflowMetadataRequirements = [{ field: 'body', value: 'A much longer announcement' }];
+    guard.workflowMetadataRequirementsResolved = true;
+    guard.workflowSocialUploadEvidence = [{ name: 'x-card.png', attachmentState: 'input_attached', actionSequence: 3 }];
+    agent._currentUrl = async () => 'https://bsky.app/';
+    agent._currentProgressPageScope = () => 'https://bsky.app/';
+    let classifiedAdapter = '';
+    agent._chatWithCostAllowance = async (_provider, messages) => {
+      const context = JSON.parse(messages[1].content).siteContext;
+      classifiedAdapter = context?.workflow?.adapter || '';
+      return {
+        content: JSON.stringify({
+          mode: 'inactive',
+          allowedActions: [],
+          forbiddenActions: [],
+          targets: [],
+          workflowFields: [{ field: 'body', value: 'B' }],
+          confidence: 0.99,
+          pageScopePolicy: 'page',
+        }),
+      };
+    };
+    assert.equal(await agent._adoptLiveSocialPublishWorkflow(tabId, { chat: async () => ({ content: '{}' }) }), true);
+    assert.equal(classifiedAdapter, 'bluesky', AgentClass.name + ': rebind classified the stale platform');
+    assert.deepEqual(guard.workflowMetadataRequirements, [{ field: 'body', value: 'B' }],
+      AgentClass.name + ': longer X body overwrote the Bluesky-specific payload');
+    assert.equal(guard.workflowMetadataRequirementsResolved, true);
+    assert.deepEqual(guard.workflowSocialUploadEvidence, [],
+      AgentClass.name + ': X upload provenance leaked into the Bluesky binding');
+  }
+});
+
 test('multi-platform social publication requires verified evidence for every destination', async () => {
   for (const [index, AgentClass] of [AgentCh, AgentFx].entries()) {
     const agent = new AgentClass({});
@@ -91383,6 +91436,23 @@ test('X and Bluesky same-route publication accepts only one new permalink with t
         fixture.feedUrl,
         submit,
       ), false, AgentClass.name + ': wrong uploaded asset satisfied specific attachment requirement');
+      assert.equal(agent._workflowPublishedResourcePayloadMatch(
+        {
+          ...submit.workflowBinding,
+          metadataRequirements: [
+            ...submit.workflowBinding.metadataRequirements,
+            { field: 'attachment', value: 'quarterly-chart.png' },
+          ],
+          uploadedAttachmentNames: ['quarterly-chart.png'],
+          publishedResourceIdentity: fixture.expectedIdentity,
+          preDispatchPublicationAccountIdentity: fixture.accountIdentity,
+          preDispatchPublicationAccountIdentityComplete: true,
+        },
+        guard,
+        pageStateWithImage,
+        fixture.feedUrl,
+        submit,
+      ), true, AgentClass.name + ': bound source filename did not survive a rewritten published CDN URL');
 
       const pageStateWithSpecificImage = {
         ...exactPageState,
@@ -92266,6 +92336,81 @@ test('attachment requirement parser ignores numbers in specific attachment filen
   }
 });
 
+test('social upload filenames bind to type-compatible published DOM attachments', () => {
+  for (const [index, AgentClass] of [AgentCh, AgentFx].entries()) {
+    const agent = new AgentClass({});
+    agent.useSiteAdapters = true;
+    const tabId = 9220 + index;
+    const pageUrl = 'https://x.com/compose/post';
+    const siteWorkflow = agent._resolvePlannerSiteWorkflow(pageUrl, {
+      request_kind: 'execute',
+      site_job: 'publish-post',
+    });
+    const guard = agent._startPlanExecutionGuard(tabId, 'act', {
+      requestKind: 'execute',
+      requiresStateChange: true,
+      requiresSubmission: true,
+      siteWorkflow,
+      siteWorkflowUrl: pageUrl,
+    });
+    guard.workflowMetadataRequirements = [
+      { field: 'body', value: 'Quarterly results' },
+      { field: 'attachment', value: 'chart.png' },
+    ];
+    guard.workflowMetadataRequirementsResolved = true;
+    const upload = agent._rememberSocialPublishUploadEvidence(tabId, 'upload_file', {
+      success: true,
+      attached: { name: 'chart.png', size: 1234 },
+      attachmentState: 'input_attached',
+    }, { lastAction: { sequence: 4 } });
+    assert.equal(upload?.name, 'chart.png', AgentClass.name + ': upload filename was not retained');
+    const binding = agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {}, {
+      publicationAccountIdentity: '@acme',
+      publicationAccountIdentityComplete: true,
+    });
+    assert.deepEqual(binding?.uploadedAttachmentNames, ['chart.png'],
+      AgentClass.name + ': pre-submit binding omitted the verified upload filename');
+
+    const cdnRecord = {
+      attachments: [{ type: 'image', src: 'https://pbs.twimg.com/media/G7RANDOM?format=png' }],
+    };
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'chart.png' }, cdnRecord,
+    ), false, AgentClass.name + ': rewritten CDN URL unexpectedly retained the source filename');
+    const namedRecord = agent._workflowSocialRecordWithUploadedAttachmentNames(cdnRecord, binding);
+    assert.equal(namedRecord.attachments?.[0]?.name, 'chart.png',
+      AgentClass.name + ': upload provenance was not joined to the observed media node');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'chart.png' }, namedRecord,
+    ), true, AgentClass.name + ': source filename did not verify the observed published media');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'chart.png' }, agent._workflowSocialRecordWithUploadedAttachmentNames(
+        { attachments: [{ type: 'video', src: 'https://video.twimg.com/ext_tw_video/123/pu/vid/clip.mp4' }] },
+        binding,
+      ),
+    ), false, AgentClass.name + ': an image filename was attached to an incompatible video record');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'chart.png' }, agent._workflowSocialRecordWithUploadedAttachmentNames(
+        { attachments: [] },
+        binding,
+      ),
+    ), false, AgentClass.name + ': upload provenance invented a missing published attachment');
+
+    guard.successfulTaskToolCalls = 1;
+    guard.evidenceTaskKey = guard.taskKey;
+    agent._storeContinuationExecutionEvidence(tabId);
+    const resumed = agent._startPlanExecutionGuard(tabId, 'act', {
+      requestKind: 'execute',
+      requiresStateChange: true,
+      requiresSubmission: true,
+      siteWorkflow,
+      siteWorkflowUrl: pageUrl,
+    }, { trustedContinuation: true });
+    assert.deepEqual(resumed.workflowSocialUploadEvidence, [upload],
+      AgentClass.name + ': trusted Continue discarded source filename provenance');
+  }
+});
+
 test('attachment requirement parser treats conjunction-based requirements as generic', () => {
   for (const AgentClass of [AgentCh, AgentFx]) {
     const agent = new AgentClass({});
@@ -92712,6 +92857,48 @@ test('attachment verification matches specific attachment names without substrin
       true,
       AgentClass.name + ': an ordinary mp4 should pass a negated GIF requirement',
     );
+    const twoGifRequirement = agent._parseWorkflowAttachmentRequirement({ value: 'two GIFs' });
+    assert.equal(twoGifRequirement.expectedGifCount, 2,
+      AgentClass.name + ': the GIF count was collapsed into the general video count');
+    assert.equal(twoGifRequirement.expectedVideoCount, 0,
+      AgentClass.name + ': GIFs were also counted as requested ordinary videos');
+    assert.equal(twoGifRequirement.hasExplicitGifCount, true);
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'two GIFs' },
+      { attachments: [gifMedia.typed] },
+    ), false, AgentClass.name + ': one GIF satisfied an exact two-GIF requirement');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'two GIFs' },
+      { attachments: [gifMedia.typed, gifMedia.named] },
+    ), true, AgentClass.name + ': two GIFs did not satisfy an exact two-GIF requirement');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'two GIFs' },
+      { attachments: [gifMedia.typed, gifMedia.mp4] },
+    ), false, AgentClass.name + ': an ordinary video substituted for the second GIF');
+
+    const gifAndVideoRequirement = agent._parseWorkflowAttachmentRequirement({ value: 'one GIF and one video' });
+    assert.equal(gifAndVideoRequirement.expectedGifCount, 1);
+    assert.equal(gifAndVideoRequirement.expectedVideoCount, 1);
+    assert.equal(gifAndVideoRequirement.expectedCount, 2);
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one GIF and one video' },
+      { attachments: [gifMedia.typed, gifMedia.mp4] },
+    ), true, AgentClass.name + ': one GIF plus one ordinary video did not satisfy both typed counts');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one GIF and one video' },
+      { attachments: [gifMedia.typed, gifMedia.named] },
+    ), false, AgentClass.name + ': two GIFs satisfied a GIF-plus-video requirement');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one GIF and one video' },
+      { attachments: [gifMedia.typed, gifMedia.mp4, { ...gifMedia.mp4, src: 'second.mp4' }] },
+    ), false, AgentClass.name + ': an extra ordinary video bypassed the exact typed counts');
+
+    const minimumGifs = agent._parseWorkflowAttachmentRequirement({ value: 'at least two GIFs' });
+    assert.equal(minimumGifs.isGifMinimum, true);
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'at least two GIFs' },
+      { attachments: [gifMedia.typed, gifMedia.named, gifMedia.plain] },
+    ), true, AgentClass.name + ': a GIF minimum was incorrectly treated as an exact count');
 
     // A singular article counts as exactly one, the same as the word "one".
     const oneImage = { type: 'image', src: 'https://pbs.twimg.com/media/first.png' };
