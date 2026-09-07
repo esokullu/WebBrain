@@ -86324,6 +86324,14 @@ test('social publication workflow follows the live X or Bluesky destination and 
         'independent affirmative publish clause separated by comma from negated publish clause was wrongly rejected'],
       ['Publish on Bluesky; read https://x.com/home', ['bluesky'],
         'unrelated publication command in prior clause was wrongly attributed to read-only social URL'],
+      ['Without posting anything on X, inspect the feed and submit a summary', [],
+        'without governing publish verb was not recognized as negation'],
+      ['Inspect the feed without posting anything on X, and submit a summary', [],
+        'without governing publish verb in second clause was not recognized as negation'],
+      ['Post on X without attachments', ['twitter'],
+        'without attachments in post metadata was wrongly treated as publish negation'],
+      ['Without delay, post on X', ['twitter'],
+        'without delay was wrongly treated as publish negation'],
     ]) {
       assert.deepEqual(
         [...agent._trustedSocialPublishTargetAdapters({ taskText })],
