@@ -1353,7 +1353,7 @@ function test(name, fn) { tests.push({ name, fn }); }
 
 console.log('\nselection quote');
 
-test('read_page redirects PDF handler tabs and probes the unwrapped source URL', async () => {
+test('read_page redirects PDF handler tabs to the unwrapped source URL without probing', async () => {
   const previousChrome = globalThis.chrome;
   const previousBrowser = globalThis.browser;
   const previousFetch = globalThis.fetch;
@@ -1371,9 +1371,13 @@ test('read_page redirects PDF handler tabs and probes the unwrapped source URL',
       ['chrome', AgentCh, 'chrome', 'chrome-extension'],
       ['firefox', AgentFx, 'browser', 'moz-extension'],
     ]) {
-      for (const { sourceUrl, expectHeadProbe } of [
-        { sourceUrl: 'https://papers.example.test/handler-source.pdf', expectHeadProbe: false },
-        { sourceUrl: 'https://papers.example.test/download?id=42', expectHeadProbe: true },
+      // The second URL reveals nothing about its type, so it is the case that
+      // would fall back to a Content-Type probe on an ordinary tab. On our own
+      // handler page it must not: we only open that page for a PDF, and the
+      // probe is a HEAD request servers are free to reject.
+      for (const sourceUrl of [
+        'https://papers.example.test/handler-source.pdf',
+        'https://papers.example.test/download?id=42',
       ]) {
         const extensionId = `${label}-pdf-routing`;
         const handlerUrl = `${scheme}://${extensionId}/src/ui/pdf-handler.html?url=${encodeURIComponent(sourceUrl)}&tabId=73`;
@@ -1398,14 +1402,18 @@ test('read_page redirects PDF handler tabs and probes the unwrapped source URL',
           },
         };
         const headRequests = [];
+        // Answers "not a PDF" so a probe, if one were made, would suppress the
+        // redirect — the redirect must come from recognizing the handler page.
         globalThis.fetch = async (url, options) => {
           headRequests.push({ url: String(url), method: options?.method || 'GET' });
           return {
             headers: {
-              get: name => name.toLowerCase() === 'content-type' ? 'application/pdf' : '',
+              get: name => name.toLowerCase() === 'content-type' ? 'text/html' : '',
             },
           };
         };
+        delete globalThis.chrome;
+        delete globalThis.browser;
         globalThis[apiName] = api;
         const agent = new AgentClass({});
         agent._richTextToolbarToolBlock = async () => null;
@@ -1428,8 +1436,8 @@ test('read_page redirects PDF handler tabs and probes the unwrapped source URL',
         }], `${label}: redirect did not preserve the handler's source URL`);
         assert.deepEqual(
           headRequests,
-          expectHeadProbe ? [{ url: sourceUrl, method: 'HEAD' }] : [],
-          `${label}: HEAD probe should use the unwrapped source URL`,
+          [],
+          `${label}: a handler tab should be recognized without a Content-Type probe`,
         );
       }
     }

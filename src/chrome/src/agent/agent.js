@@ -71,7 +71,7 @@ import {
   buildClaudeDocumentBlock,
   PDF_PASSTHROUGH_MAX_BYTES,
 } from './pdf-tools.js';
-import { pdfUrlFromTabUrl } from './pdf-extraction.js';
+import { isPdfHandlerTabUrl, pdfUrlFromTabUrl } from './pdf-extraction.js';
 import { normalizePdfOcrResult, PDF_OCR_SYSTEM_PROMPT } from './pdf-ocr.js';
 import * as trace from '../trace/recorder.js';
 import { buildTerminalRuntimeEvent, enqueueCloudRuntimeEvent, flushCloudRuntimeOutbox } from '../trace/cloud-runtime-outbox.js';
@@ -5359,8 +5359,9 @@ export class Agent extends LoopDetector {
    * Decide whether `pageUrl` is a PDF tab the content-script path
    * cannot reach. Two paths:
    *   - Fast path: URL pattern (`isPdfUrl`). Catches `*.pdf` paths and
-   *     WebBrain's PDF handler URL after unwrapping its `url` parameter.
-   *     `?file=*.pdf` viewer URLs — the bulk of cases.
+   *     `?file=*.pdf` viewer URLs — the bulk of cases. WebBrain's own
+   *     PDF handler URL is unwrapped first, and a handler tab counts as
+   *     a PDF tab outright: we only ever open it for a PDF response.
    *   - Slow path: HEAD probe with credentials. Catches PDFs served
    *     from endpoints whose URL doesn't reveal the type, e.g.
    *     `/download?id=42` returning `Content-Type: application/pdf`.
@@ -5380,7 +5381,7 @@ export class Agent extends LoopDetector {
   async _isPdfTab(tabId, pageUrl) {
     if (!pageUrl) return false;
     const pdfUrl = pdfUrlFromTabUrl(pageUrl);
-    if (isPdfUrl(pdfUrl)) return true;
+    if (isPdfUrl(pdfUrl) || isPdfHandlerTabUrl(pageUrl)) return true;
 
     // Cache hit?
     const cached = this._isPdfTabCache.get(tabId);
@@ -27954,10 +27955,13 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       try {
         let pdfUrl = String(args.url || '').trim();
         if (!pdfUrl) {
-          // Default to the active tab's URL.
+          // Default to the active tab's URL. On our own viewer page that URL
+          // is the handler wrapping the real one in ?url=; extraction unwraps
+          // it internally, but the document name below is derived from this
+          // string, so unwrap here too.
           try {
             const tab = await chrome.tabs.get(tabId);
-            pdfUrl = tab?.url || '';
+            pdfUrl = pdfUrlFromTabUrl(tab?.url || '');
           } catch {}
         }
         if (!pdfUrl) {

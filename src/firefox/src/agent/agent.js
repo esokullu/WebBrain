@@ -59,6 +59,7 @@ import {
 import { executeWikipediaSkillTool } from './wikipedia-offline.js';
 import {
   isPdfUrl,
+  isPdfHandlerTabUrl,
   pdfUrlFromTabUrl,
   extractPdfText,
   providerSupportsPdfPassthrough,
@@ -9187,7 +9188,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
   async _isPdfTab(tabId, pageUrl) {
     if (!pageUrl) return false;
     const pdfUrl = pdfUrlFromTabUrl(pageUrl);
-    if (isPdfUrl(pdfUrl)) return true;
+    if (isPdfUrl(pdfUrl) || isPdfHandlerTabUrl(pageUrl)) return true;
 
     const cached = this._isPdfTabCache.get(tabId);
     if (cached && cached.url === pageUrl) return cached.isPdf;
@@ -25209,7 +25210,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         if (!pdfUrl) {
           try {
             const tab = await browser.tabs.get(tabId);
-            pdfUrl = tab?.url || '';
+            // On our own viewer page the tab URL is the handler wrapping the
+            // real URL in ?url=; fetching the handler HTML would hand pdfjs a
+            // document it cannot parse.
+            pdfUrl = pdfUrlFromTabUrl(tab?.url || '');
           } catch {}
         }
         if (!pdfUrl) {

@@ -59,6 +59,23 @@ export function pdfUrlFromTabUrl(value, runtime = globalThis.browser?.runtime ||
   return unwrapPdfHandlerUrl(url, runtime).href;
 }
 
+// Our viewer page is only ever opened for a response we already identified as
+// a PDF, so a handler tab is a PDF tab by construction. Callers use this to
+// skip the Content-Type probe, which would otherwise decide the question for
+// wrapped URLs like `/download?id=42` — and servers routinely answer HEAD with
+// 405, or drop the Content-Type, or burn a one-shot signed download link.
+export function isPdfHandlerTabUrl(value, runtime = globalThis.browser?.runtime || globalThis.chrome?.runtime) {
+  let url;
+  try {
+    url = new URL(String(value || ''));
+  } catch {
+    return false;
+  }
+  // unwrapPdfHandlerUrl returns the same object when there was nothing to
+  // unwrap, so identity is the "this was our handler page" signal.
+  return unwrapPdfHandlerUrl(url, runtime) !== url;
+}
+
 /**
  * Lazy-load pdfjs only on first PDF read. The legacy bundle is ~1 MB
  * and the worker is ~2.3 MB; we don't want to pay that startup cost
