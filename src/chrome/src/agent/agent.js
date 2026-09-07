@@ -15369,14 +15369,15 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           if (SOCIAL_POST_NEGATION.test(afterVerbText.trim())) continue;
           if (SOCIAL_NOUN_LIKE_PUBLISH.test(verbWord) && SOCIAL_READ_VERBS.test(afterVerbText)) continue;
           if (/^shares?$/i.test(verbWord) && /(?<![\p{L}\p{N}_])(?:market|mind|revenue|profit|traffic|audience|wallet|fair|lion's|stock|equity|file|screen|time)\s+$/iu.test(beforeVerbClause)) continue;
-          const afterVerb = clause.text.slice(verbIndex, verbIndex + verbWord.length + 60);
-          const beforeVerb = clause.text.slice(Math.max(0, verbIndex - 60), verbIndex);
+          const afterVerb = targetText.slice(verbIndex + verbWord.length);
+          const beforeVerb = targetText.slice(0, verbIndex);
           platformPattern.lastIndex = 0;
           if (platformPattern.test(afterVerb) || platformPattern.test(beforeVerb)) return true;
           if (clauseIdx > 0) {
             const prevClause = clauses[clauseIdx - 1];
+            const prevTargetText = prevClause.maskedText || prevClause.text;
             platformPattern.lastIndex = 0;
-            if (platformPattern.test(prevClause.text) && !SOCIAL_READ_VERBS.test(prevClause.text) && !prevClause.isNegated) {
+            if (platformPattern.test(prevTargetText) && !SOCIAL_READ_VERBS.test(prevTargetText) && !prevClause.isNegated) {
               return true;
             }
           }
@@ -22424,20 +22425,98 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     const colonPattern = new RegExp(`${publishVerbPattern}[\\s\\S]*?(?<!https?|ftp|sftp)[:：](?!//)\\s*([\\s\\S]+)$`, 'iu');
     for (const text of candidates) {
       let body = '';
-      const colonMatch = text.match(colonPattern);
+      // Scan for the colon delimiter that introduces the post body.
+      // We look for colons occurring after a publish verb, skipping:
+      // 1. URL schemes (e.g. "https://", "ftp://")
+      // 2. Colons inside parentheses, brackets, or quotes (e.g. "(account: @acme):")
+      // 3. Incidental metadata key labels (e.g. "account: @acme")
+      const verbMatches = [...text.matchAll(new RegExp(publishVerbPattern, 'giu'))];
       let colonBody = '';
       let colonDelimIndex = -1;
-      if (colonMatch && colonMatch[1]?.trim()) {
-        let candidate = colonMatch[1].trim();
-        const innerQuote = candidate.match(/^(?:“([\s\S]+)”|「([\s\S]+)」|『([\s\S]+)』|«([\s\S]+)»|"([\s\S]+)"|'([\s\S]+)')$/);
-        const innerContent = innerQuote ? (innerQuote[1] || innerQuote[2] || innerQuote[3] || innerQuote[4] || innerQuote[5] || innerQuote[6]) : null;
-        if (innerContent && innerContent.trim()) {
-          candidate = innerContent.trim();
+      for (const verbMatch of verbMatches) {
+        const verbStart = verbMatch.index ?? 0;
+        const verbEnd = verbStart + (verbMatch[0] || '').length;
+        let parenDepth = 0;
+        let bracketDepth = 0;
+        let braceDepth = 0;
+        let inDoubleQuote = false;
+        let inSingleQuote = false;
+        let inSmartQuote = 0;
+        let inCjkQuote = 0;
+        let inGuillemet = 0;
+
+        for (let i = verbEnd; i < text.length; i++) {
+          const ch = text[i];
+          const prevChar = i > 0 ? text[i - 1] : '';
+          const nextChar = i + 1 < text.length ? text[i + 1] : '';
+
+          if (ch === '(' || ch === '\uff08') parenDepth++;
+          else if (ch === ')' || ch === '\uff09') parenDepth = Math.max(0, parenDepth - 1);
+          else if (ch === '[' || ch === '\u3010' || ch === '\uff3b') bracketDepth++;
+          else if (ch === ']' || ch === '\u3011' || ch === '\uff3d') bracketDepth = Math.max(0, bracketDepth - 1);
+          else if (ch === '{' || ch === '\uff5b') braceDepth++;
+          else if (ch === '}' || ch === '\uff5d') braceDepth = Math.max(0, braceDepth - 1);
+          else if (ch === '"') inDoubleQuote = !inDoubleQuote;
+          else if (ch === '“') inSmartQuote++;
+          else if (ch === '”') inSmartQuote = Math.max(0, inSmartQuote - 1);
+          else if (ch === '「' || ch === '『') inCjkQuote++;
+          else if (ch === '」' || ch === '』') inCjkQuote = Math.max(0, inCjkQuote - 1);
+          else if (ch === '«') inGuillemet++;
+          else if (ch === '»') inGuillemet = Math.max(0, inGuillemet - 1);
+          else if (ch === "'") {
+            const isLetterBefore = /\p{L}/u.test(prevChar);
+            const isLetterAfter = /\p{L}/u.test(nextChar);
+            if (!inSingleQuote && !isLetterBefore && isLetterAfter) {
+              inSingleQuote = true;
+            } else if (inSingleQuote && isLetterBefore && !isLetterAfter) {
+              inSingleQuote = false;
+            }
+          }
+
+          if (ch === ':' || ch === '\uff1a') {
+            if (text.slice(i, i + 3) === '://' || text.slice(i, i + 2) === ':\u2044\u2044') continue;
+            if (/(?:https?|ftp|sftp|file|mailto)$/i.test(text.slice(Math.max(0, i - 10), i))) continue;
+
+            if (parenDepth > 0 || bracketDepth > 0 || braceDepth > 0
+                || inDoubleQuote || inSingleQuote || inSmartQuote > 0 || inCjkQuote > 0 || inGuillemet > 0) {
+              continue;
+            }
+
+            const beforeColon = text.slice(verbEnd, i);
+            if (/(?<![\p{L}\p{N}_])(?:account|user|username|handle|profile|channel|destination|target|via|date|time|tag|tags|label|media|image|video|cuenta|compte|benutzer|kullanıcı|hesap|аккаунт|пользователь|账号|帳號|ユーザー|アカウント|계정)\s*$/iu.test(beforeColon)) {
+              continue;
+            }
+
+            const candidate = text.slice(i + 1).trim();
+            if (candidate) {
+              colonDelimIndex = i;
+              colonBody = candidate;
+              const innerQuote = candidate.match(/^(?:“([\s\S]+)”|「([\s\S]+)」|『([\s\S]+)』|«([\s\S]+)»|"([\s\S]+)"|'([\s\S]+)')$/);
+              const innerContent = innerQuote ? (innerQuote[1] || innerQuote[2] || innerQuote[3] || innerQuote[4] || innerQuote[5] || innerQuote[6]) : null;
+              if (innerContent && innerContent.trim()) {
+                colonBody = innerContent.trim();
+              }
+              break;
+            }
+          }
         }
-        colonBody = candidate;
-        const prefix = colonMatch[0].slice(0, colonMatch[0].length - colonMatch[1].length);
-        const matchDelim = prefix.search(/[:：][^\S\r\n]*$/);
-        colonDelimIndex = colonMatch.index + (matchDelim >= 0 ? matchDelim : prefix.length - 1);
+        if (colonBody) break;
+      }
+
+      if (!colonBody) {
+        const colonMatch = text.match(colonPattern);
+        if (colonMatch && colonMatch[1]?.trim()) {
+          let candidate = colonMatch[1].trim();
+          const innerQuote = candidate.match(/^(?:“([\s\S]+)”|「([\s\S]+)」|『([\s\S]+)』|«([\s\S]+)»|"([\s\S]+)"|'([\s\S]+)')$/);
+          const innerContent = innerQuote ? (innerQuote[1] || innerQuote[2] || innerQuote[3] || innerQuote[4] || innerQuote[5] || innerQuote[6]) : null;
+          if (innerContent && innerContent.trim()) {
+            candidate = innerContent.trim();
+          }
+          colonBody = candidate;
+          const prefix = colonMatch[0].slice(0, colonMatch[0].length - colonMatch[1].length);
+          const matchDelim = prefix.search(/[:：][^\S\r\n]*$/);
+          colonDelimIndex = colonMatch.index + (matchDelim >= 0 ? matchDelim : prefix.length - 1);
+        }
       }
 
       const quotedMatch = text.match(quotedPattern);

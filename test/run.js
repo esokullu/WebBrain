@@ -86332,6 +86332,12 @@ test('social publication workflow follows the live X or Bluesky destination and 
         'without attachments in post metadata was wrongly treated as publish negation'],
       ['Without delay, post on X', ['twitter'],
         'without delay was wrongly treated as publish negation'],
+      ['Post "This is a very long announcement body that contains far more than fifty or sixty characters and explains everything clearly" on X', ['twitter'],
+        'long quoted body before on X was cut off by character window'],
+      ['Post "This is another long announcement body with more than sixty characters" to Bluesky', ['bluesky'],
+        'long quoted body before to Bluesky was cut off by character window'],
+      ['Post "Check our thoughts on X" to Bluesky', ['bluesky'],
+        'platform mentioned inside quoted body leaked into target detection'],
     ]) {
       assert.deepEqual(
         [...agent._trustedSocialPublishTargetAdapters({ taskText })],
@@ -87884,6 +87890,42 @@ test('post body extraction prefers colon-introduced body when colon precedes inc
       agent._extractWorkflowTaskBody(colonWrappedInQuotes),
       'Hello world with updates',
       AgentClass.name + ': colon body completely wrapped in quotes should be unwrapped'
+    );
+  }
+});
+
+test('post body extraction skips incidental command colons and parenthesized metadata', () => {
+  for (const AgentClass of [AgentCh, AgentFx]) {
+    const agent = new AgentClass({});
+    assert.equal(
+      agent._extractWorkflowTaskBody('Post on X (account: @acme): Hello world'),
+      'Hello world',
+      AgentClass.name + ': parenthesized account metadata with colon should not be captured as body'
+    );
+    assert.equal(
+      agent._extractWorkflowTaskBody('Post on X [account: @acme]: Hello world'),
+      'Hello world',
+      AgentClass.name + ': bracketed account metadata with colon should not be captured as body'
+    );
+    assert.equal(
+      agent._extractWorkflowTaskBody('Post on X (account: @acme): Here is a long announcement containing "important news" and more updates today'),
+      'Here is a long announcement containing "important news" and more updates today',
+      AgentClass.name + ': parenthesized metadata with colon preceding inner quotes should extract full body'
+    );
+    assert.equal(
+      agent._extractWorkflowTaskBody('Post on X, account: @acme: Hello world'),
+      'Hello world',
+      AgentClass.name + ': metadata key prefix with colon should be skipped in favor of payload colon'
+    );
+    assert.equal(
+      agent._extractWorkflowTaskBody('Xに投稿（アカウント：@acme）：こんにちは世界'),
+      'こんにちは世界',
+      AgentClass.name + ': Japanese full-width parenthesized account with colon should not be captured as body'
+    );
+    assert.equal(
+      agent._extractWorkflowTaskBody('Post on X (account: @acme): Breaking: Version 2 is released'),
+      'Breaking: Version 2 is released',
+      AgentClass.name + ': body containing colon should preserve colon after payload delimiter'
     );
   }
 });
