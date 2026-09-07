@@ -66,20 +66,36 @@ function createMinimalPdf() {
 async function startPdfServer() {
   const pdf = createMinimalPdf();
   let requestCount = 0;
+  const requests = [];
+  const sendPdf = (response, filename) => {
+    response.writeHead(200, {
+      'content-type': pdfMimeType,
+      'content-length': String(pdf.byteLength),
+      'content-disposition': `inline; filename="${filename}"`,
+      'cache-control': 'no-store',
+    });
+    response.end(pdf);
+  };
   const server = createServer((request, response) => {
     const url = new URL(request.url || '/', 'http://127.0.0.1');
+    requests.push(`${request.method} ${url.pathname}`);
+    // The same PDF from a URL that reveals nothing about its type, behind a
+    // server that refuses HEAD. A Content-Type probe learns nothing here, so
+    // this endpoint is what proves the handler page is recognized without one.
+    if (url.pathname === '/opaque-download') {
+      if (request.method === 'HEAD') {
+        response.writeHead(405).end();
+        return;
+      }
+      sendPdf(response, 'document.pdf');
+      return;
+    }
     if (url.pathname !== '/document.pdf') {
       response.writeHead(404).end('not found');
       return;
     }
     requestCount += 1;
-    response.writeHead(200, {
-      'content-type': pdfMimeType,
-      'content-length': String(pdf.byteLength),
-      'content-disposition': 'inline; filename="document.pdf"',
-      'cache-control': 'no-store',
-    });
-    response.end(pdf);
+    sendPdf(response, 'document.pdf');
   });
   await new Promise((resolve, reject) => {
     server.once('error', reject);
@@ -91,7 +107,9 @@ async function startPdfServer() {
     server,
     pdf,
     requestCount: () => requestCount,
+    requests,
     url: `http://127.0.0.1:${address.port}/document.pdf`,
+    opaqueUrl: `http://127.0.0.1:${address.port}/opaque-download?id=42`,
   };
 }
 
@@ -125,6 +143,88 @@ async function inspectPdfRouting(context, url, extensionId, waitMs = 2000) {
       sawNativeHandler: urls.some(value => value.startsWith('chrome-extension://') && !value.startsWith(`chrome-extension://${extensionId}/`)),
       urls,
     };
+  } finally {
+    await page.close();
+  }
+}
+
+// `read_page` cannot use the content-script path on our own PDF viewer, so it
+// redirects to `read_pdf`. That redirect hinges on `_isPdfTab` recognizing the
+// handler page. Recognizing it by URL pattern alone is not enough: the wrapped
+// URL may reveal nothing about its type, and the Content-Type probe that used
+// to decide those cases is a HEAD request servers are free to reject. We only
+// ever open the handler for a response already identified as a PDF, so the
+// page itself is the signal, and no probe should be issued.
+async function assertHandlerTabSkipsContentTypeProbe(context, settings, extensionId, fixture) {
+  const sourceUrl = fixture.opaqueUrl;
+  const page = await context.newPage();
+  try {
+    await page.goto(sourceUrl, { waitUntil: 'commit', timeout: 30_000 });
+
+    const tabId = await settings.waitForFunction(async url => {
+      const tabs = await chrome.tabs.query({});
+      return tabs.find(tab => tab.url === url)?.id ?? null;
+    }, sourceUrl, { timeout: 15_000 }).then(handle => handle.jsonValue());
+    assert.ok(Number.isInteger(tabId) && tabId > 0, 'Could not find the tab showing the opaque PDF.');
+
+    // Exactly what the "Open PDF with WebBrain" context menu does. That entry
+    // is the only route to a wrapped handler URL, and it appears because the
+    // response was application/pdf, not because the URL looked like a PDF.
+    const handlerUrl = await settings.evaluate(async ({ id, url }) => {
+      const viewerUrl = chrome.runtime.getURL(
+        `src/ui/pdf-handler.html?url=${encodeURIComponent(url)}&tabId=${encodeURIComponent(id)}`,
+      );
+      await chrome.tabs.update(id, { url: viewerUrl });
+      return viewerUrl;
+    }, { id: tabId, url: sourceUrl });
+
+    await settings.waitForFunction(async ({ id, expected }) => {
+      const tab = await chrome.tabs.get(id);
+      return tab?.url === expected;
+    }, { id: tabId, expected: handlerUrl }, { timeout: 15_000 });
+
+    const requestsBefore = fixture.requests.length;
+
+    // Dynamic import() is disallowed on ServiceWorkerGlobalScope, so the
+    // settings page stands in: same extension origin, same chrome.* APIs.
+    // Running here also exercises the origin comparison in
+    // `unwrapPdfHandlerUrl` for real. Node's URL parser reports `origin` as
+    // the string "null" for every chrome-extension:// URL, so the unit tests
+    // cannot tell our handler from another extension's.
+    const helpers = await settings.evaluate(async ({ url, source }) => {
+      const module = await import(chrome.runtime.getURL('src/agent/pdf-extraction.js'));
+      return {
+        handlerTab: module.isPdfHandlerTabUrl(url),
+        unwrapped: module.pdfUrlFromTabUrl(url),
+        foreignExtension: module.isPdfHandlerTabUrl(
+          'chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/src/ui/pdf-handler.html?url=http://example.invalid/x.pdf',
+        ),
+        ordinaryPage: module.isPdfHandlerTabUrl('https://example.invalid/'),
+      };
+    }, { url: handlerUrl, source: sourceUrl });
+    assert.equal(helpers.handlerTab, true, 'isPdfHandlerTabUrl did not recognize our own handler tab.');
+    assert.equal(helpers.unwrapped, sourceUrl, 'The handler tab did not unwrap to its source URL.');
+    assert.equal(helpers.foreignExtension, false, 'A foreign extension id was accepted as our PDF handler.');
+    assert.equal(helpers.ordinaryPage, false, 'An ordinary page was treated as a PDF handler tab.');
+
+    const isPdfTab = await settings.evaluate(async ({ id, url }) => {
+      const { Agent } = await import(chrome.runtime.getURL('src/agent/agent.js'));
+      // Object.create skips the constructor; _isPdfTab only needs this cache.
+      const agent = Object.create(Agent.prototype);
+      agent._isPdfTabCache = new Map();
+      return agent._isPdfTab(id, url);
+    }, { id: tabId, url: handlerUrl });
+    assert.equal(isPdfTab, true, '_isPdfTab did not recognize the PDF handler tab.');
+
+    // The viewer legitimately GETs the PDF to render it; what must not appear
+    // is a HEAD, which is how the routing decision used to be made.
+    const probesDuring = fixture.requests.slice(requestsBefore).filter(entry => entry.startsWith('HEAD'));
+    assert.deepEqual(probesDuring, [], `Recognizing the handler tab issued a probe: ${probesDuring.join(', ')}`);
+    assert.equal(
+      fixture.requests.some(entry => entry.startsWith('HEAD')),
+      false,
+      `The handler tab triggered a Content-Type probe: ${fixture.requests.join(', ')}`,
+    );
   } finally {
     await page.close();
   }
@@ -236,6 +336,9 @@ async function main() {
     assert.equal(disabledAgainRouting.sawWebBrainHandler, false, `Turning PDF handling off still entered WebBrain: ${disabledAgainRouting.urls.join(', ')}`);
     assert.equal(disabledAgainRouting.sawNativeHandler, true, `Turning PDF handling off did not restore Chrome's native viewer: ${disabledAgainRouting.urls.join(', ')}`);
     console.log(`  ✓ Chrome ${browser.version()} keeps native PDF routing aligned with the WebBrain toggle`);
+
+    await assertHandlerTabSkipsContentTypeProbe(context, settings, extensionId, fixture);
+    console.log('  ✓ read_page routing recognizes a PDF handler tab without a Content-Type probe');
   } finally {
     if (browserCdp && extensionId) {
       await browserCdp.send('Extensions.uninstall', { id: extensionId }).catch(() => {});
