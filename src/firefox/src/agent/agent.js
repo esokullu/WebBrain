@@ -2037,19 +2037,46 @@ export class Agent extends LoopDetector {
     };
 
     for (const [index, requested] of requestedUrls.entries()) {
+      const getDisplayed = (candidate) => {
+        if (!candidate) return null;
+        return ['text', 'title', 'ariaLabel', 'expandedUrl', 'href']
+          .map(field => this._workflowMetadataValue(candidate[field]))
+          .filter(value => value && observedBody.includes(value))
+          .find(value => this._workflowSocialDisplayedUrlMatchesRequested(value, requested));
+      };
+
       let linkIndex = links.findIndex((candidate, candidateIndex) => (
         !consumedLinks.has(candidateIndex)
+        && candidate?.authored
         && this._workflowSocialLinkMatchesRequested(candidate, requested)
+        && getDisplayed(candidate)
       ));
+      if (linkIndex < 0) {
+        linkIndex = links.findIndex((candidate, candidateIndex) => (
+          !consumedLinks.has(candidateIndex)
+          && candidate?.authored
+          && this._workflowSocialLinkMatchesRequested(candidate, requested)
+        ));
+      }
+      if (linkIndex < 0) {
+        linkIndex = links.findIndex((candidate, candidateIndex) => (
+          !consumedLinks.has(candidateIndex)
+          && this._workflowSocialLinkMatchesRequested(candidate, requested)
+          && getDisplayed(candidate)
+        ));
+      }
+      if (linkIndex < 0) {
+        linkIndex = links.findIndex((candidate, candidateIndex) => (
+          !consumedLinks.has(candidateIndex)
+          && this._workflowSocialLinkMatchesRequested(candidate, requested)
+        ));
+      }
       if (linkIndex < 0) linkIndex = priorLinkByRequestedUrl.get(requested) ?? -1;
       const link = linkIndex >= 0 ? links[linkIndex] : null;
       if (!link) return false;
       consumedLinks.add(linkIndex);
       if (!priorLinkByRequestedUrl.has(requested)) priorLinkByRequestedUrl.set(requested, linkIndex);
-      const displayed = ['text', 'title', 'ariaLabel', 'expandedUrl', 'href']
-        .map(field => this._workflowMetadataValue(link[field]))
-        .filter(value => value && observedBody.includes(value))
-        .find(value => this._workflowSocialDisplayedUrlMatchesRequested(value, requested));
+      const displayed = getDisplayed(link);
       if (!displayed) return false;
 
       const timesUsed = linkUsageCount.get(linkIndex) || 0;
@@ -20000,28 +20027,55 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     const colonPattern = new RegExp(`${publishVerbPattern}[\\s\\S]*?(?<!https?|ftp|sftp)[:：](?!//)\\s*([\\s\\S]+)$`, 'iu');
     for (const text of candidates) {
       let body = '';
-      // 1. Quoted body: Post "..." on X, Tweet "...", Publish "...", etc.
+      const colonMatch = text.match(colonPattern);
+      let colonBody = '';
+      let colonDelimIndex = -1;
+      if (colonMatch && colonMatch[1]?.trim()) {
+        let candidate = colonMatch[1].trim();
+        const innerQuote = candidate.match(/^(?:“([\s\S]+)”|「([\s\S]+)」|『([\s\S]+)』|«([\s\S]+)»|"([\s\S]+)"|'([\s\S]+)')$/);
+        const innerContent = innerQuote ? (innerQuote[1] || innerQuote[2] || innerQuote[3] || innerQuote[4] || innerQuote[5] || innerQuote[6]) : null;
+        if (innerContent && innerContent.trim()) {
+          candidate = innerContent.trim();
+        }
+        colonBody = candidate;
+        const prefix = colonMatch[0].slice(0, colonMatch[0].length - colonMatch[1].length);
+        const matchDelim = prefix.search(/[:：][^\S\r\n]*$/);
+        colonDelimIndex = colonMatch.index + (matchDelim >= 0 ? matchDelim : prefix.length - 1);
+      }
+
       const quotedMatch = text.match(quotedPattern);
-      const matchedContent = quotedMatch ? (quotedMatch[1] || quotedMatch[2] || quotedMatch[3] || quotedMatch[4] || quotedMatch[5]) : null;
-      if (matchedContent && matchedContent.trim()) {
-        body = matchedContent.trim();
-      } else {
-        // Single-quoted body (not contractions)
-        const singleQuoteMatch = text.match(singleQuotePattern);
-        if (singleQuoteMatch && singleQuoteMatch[1]?.trim()) {
-          body = singleQuoteMatch[1].trim();
-        } else {
-          // 2. Colon-introduced body: "Publish this exact post on X:\s*<body text>", "Tweet:\s*<body text>", "Post the following on X:\s*<body text>"
-          const colonMatch = text.match(colonPattern);
-          if (colonMatch && colonMatch[1]?.trim()) {
-            let candidateBody = colonMatch[1].trim();
-            const innerQuote = candidateBody.match(/^(?:“([\s\S]+)”|「([\s\S]+)」|『([\s\S]+)』|«([\s\S]+)»|"([\s\S]+)"|'([\s\S]+)')$/);
-            const innerContent = innerQuote ? (innerQuote[1] || innerQuote[2] || innerQuote[3] || innerQuote[4] || innerQuote[5] || innerQuote[6]) : null;
-            if (innerContent) candidateBody = innerContent.trim();
-            if (candidateBody) body = candidateBody;
-          }
+      let quotedBody = '';
+      let quoteOpenIndex = -1;
+      if (quotedMatch) {
+        const content = quotedMatch[1] || quotedMatch[2] || quotedMatch[3] || quotedMatch[4] || quotedMatch[5];
+        if (content && content.trim()) {
+          quotedBody = content.trim();
+          quoteOpenIndex = quotedMatch.index + quotedMatch[0].indexOf(content) - 1;
         }
       }
+
+      const singleQuoteMatch = text.match(singleQuotePattern);
+      let singleQuoteBody = '';
+      let singleQuoteOpenIndex = -1;
+      if (singleQuoteMatch && singleQuoteMatch[1]?.trim()) {
+        singleQuoteBody = singleQuoteMatch[1].trim();
+        singleQuoteOpenIndex = singleQuoteMatch.index + singleQuoteMatch[0].indexOf(singleQuoteMatch[1]) - 1;
+      }
+
+      if (colonBody) {
+        if (quotedBody) {
+          body = (colonDelimIndex < quoteOpenIndex) ? colonBody : quotedBody;
+        } else if (singleQuoteBody) {
+          body = (colonDelimIndex < singleQuoteOpenIndex) ? colonBody : singleQuoteBody;
+        } else {
+          body = colonBody;
+        }
+      } else if (quotedBody) {
+        body = quotedBody;
+      } else if (singleQuoteBody) {
+        body = singleQuoteBody;
+      }
+
       if (body && body.length > bestBody.length) {
         bestBody = body;
       }

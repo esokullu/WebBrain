@@ -87216,6 +87216,31 @@ test('social body verification reads the authored post text, not the card chrome
   }
 });
 
+test('social body verification prefers authored link over author-profile anchor when body links to own profile', () => {
+  for (const AgentClass of [AgentCh, AgentFx]) {
+    const agent = new AgentClass({});
+    const ownProfileUrl = 'https://x.com/myhandle';
+    const card = {
+      bodyText: 'Follow my profile x.com/myhandle for updates',
+      links: [
+        // Earlier anchor on the card (e.g. author avatar/name linking to profile)
+        { href: ownProfileUrl, text: 'My Author Name', authored: false },
+        // Authored anchor inside the tweet text
+        { href: ownProfileUrl, text: 'x.com/myhandle', expandedUrl: ownProfileUrl, authored: true },
+      ],
+    };
+    assert.equal(
+      agent._workflowSocialPublishedBodyObserved(
+        { field: 'body', value: `Follow my profile ${ownProfileUrl} for updates` },
+        card,
+      ),
+      true,
+      AgentClass.name + ': should bind to authored anchor when linking to own profile'
+    );
+  }
+});
+
+
 test('a Bluesky DID and handle name one account only on the card that proves it', () => {
   for (const AgentClass of [AgentCh, AgentFx]) {
     const agent = new AgentClass({});
@@ -87834,6 +87859,32 @@ test('attachment verification matches specific attachment names without substrin
       { attachments: [{ type: 'image', src: 'https://pbs.twimg.com/media/old-chart.png' }] }
     );
     assert.equal(cleanedPrefixRejected, false, AgentClass.name + ': an image of chart.png should reject old-chart.png');
+  }
+});
+
+test('post body extraction prefers colon-introduced body when colon precedes incidental quotes', () => {
+  for (const AgentClass of [AgentCh, AgentFx]) {
+    const agent = new AgentClass({});
+    const longBodyWithQuotes = 'Post on X: Here is a long announcement containing "important news" and more updates today';
+    assert.equal(
+      agent._extractWorkflowTaskBody(longBodyWithQuotes),
+      'Here is a long announcement containing "important news" and more updates today',
+      AgentClass.name + ': colon-introduced body should preserve text containing incidental quotes'
+    );
+
+    const quotedBeforeColon = 'Post "breaking news" on X: see updates now';
+    assert.equal(
+      agent._extractWorkflowTaskBody(quotedBeforeColon),
+      'breaking news',
+      AgentClass.name + ': quote before colon should take precedence'
+    );
+
+    const colonWrappedInQuotes = 'Post on X: "Hello world with updates"';
+    assert.equal(
+      agent._extractWorkflowTaskBody(colonWrappedInQuotes),
+      'Hello world with updates',
+      AgentClass.name + ': colon body completely wrapped in quotes should be unwrapped'
+    );
   }
 });
 
