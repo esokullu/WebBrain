@@ -296,7 +296,7 @@ const GENERIC_ATTACHMENT_WORDS = new Set([
   'o', 'os', 'as', 'do', 'da', 'dos', 'das', 'un', 'une', 'deux', 'trois', 'quatre', 'cinq',
   'uno', 'una', 'unos', 'unas', 'dos', 'tres', 'cuatro', 'cinco', 'due', 'tre', 'quattro', 'cinque',
   'ein', 'eine', 'einen', 'einer', 'zwei', 'drei', 'vier', 'fünf', 'um', 'uma', 'dois', 'duas', 'três',
-  'imagen', 'imagenes', 'imágenes', 'foto', 'fotos', 'vidéo', 'vidéos', 'bild', 'bilder',
+  'imagen', 'imagenes', 'imágenes', 'imagem', 'imagens', 'foto', 'fotos', 'vidéo', 'vidéos', 'bild', 'bilder',
   'fichier', 'fichiers', 'archivo', 'archivos', 'datei', 'dateien', 'allegato', 'allegati', 'anexo', 'anexos',
   'et', 'ou', 'y', 'e', 'und', 'oder', 'ed', 've', 'veya', 'ile',
   'один', 'одна', 'одно', 'два', 'две', 'три', 'четыре', 'пять',
@@ -403,8 +403,8 @@ const TOPIC_NOUN_AFTER_PLATFORM = new RegExp(
 );
 
 const IMAGE_NEGATION_REGEX = new RegExp(
-  `(?<![${SOCIAL_WORD_EDGE}])(?:no|not|without|without\\s+any|0|zero|none|sin|sans|sem|senza|ohne|kein|keine|keinen|aucun|aucune|ningun|ningún|ninguna|nenhum|nenhuma|nessun|nessuno|nessuna|nie|без|нет)\\s+(?:any\\s+)?(?:images?|photos?|pictures?|pics?|fotos?|bilder?|imagen(?:es)?|imágenes|pièces?\\s+jointes?|изображени[яй]|фото(?:графий)?|resim|fotoğraf)(?![${SOCIAL_WORD_EDGE}])`
-  + `|(?:images?|photos?|pictures?|pics?|fotos?|bilder?|imagen(?:es)?|imágenes)\\s*:\\s*(?:none|no|0|zero|false)`
+  `(?<![${SOCIAL_WORD_EDGE}])(?:no|not|without|without\\s+any|0|zero|none|sin|sans|sem|senza|ohne|kein|keine|keinen|aucun|aucune|ningun|ningún|ninguna|nenhum|nenhuma|nessun|nessuno|nessuna|nie|без|нет)\\s+(?:any\\s+)?(?:images?|photos?|pictures?|pics?|fotos?|bilder?|imagen(?:es)?|imágenes|imagem|imagens|pièces?\\s+jointes?|изображени[яй]|фото(?:графий)?|resim|fotoğraf)(?![${SOCIAL_WORD_EDGE}])`
+  + `|(?:images?|photos?|pictures?|pics?|fotos?|bilder?|imagen(?:es)?|imágenes|imagem|imagens)\\s*:\\s*(?:none|no|0|zero|false)`
   + `|(?:无|没有|不带|零个|0个|0)\\s*(?:图片|照片|圖片)`
   + `|(?:图片|照片|圖片)\\s*(?:无|没有|为0|为零|0个|零个|0)`
   + `|(?:なし|無し|ゼロ|0)\\s*(?:画像|写真)`
@@ -2782,7 +2782,7 @@ export class Agent extends LoopDetector {
 
     const hasRawGif = /\b(?:gif|gifs)\b|\.gif(?:[?#]|$)|(?:animated[-_ ]gif|動圖|动图|움짤)/i.test(text);
     const hasRawVideo = hasRawGif || /\b(?:video|videos|mp4|mov|webm|mkv|clip|clips|recording|recordings|vidéo|vidéos)\b|(?:動画|视频|影片|видео|동영상|비디오|영상)/i.test(text);
-    const hasRawImage = /\b(?:image|images|photo|photos|picture|pictures|pic|pics|png|jpg|jpeg|webp|foto|fotos|bild|bilder|imagen(?:es)?|imágenes)\b|(?:画像|写真|图片|照片|圖片|изображение|фото|사진|이미지|포토)/i.test(text);
+    const hasRawImage = /\b(?:image|images|photo|photos|picture|pictures|pic|pics|png|jpg|jpeg|webp|foto|fotos|bild|bilder|imagen(?:es)?|imágenes|imagem|imagens)\b|(?:画像|写真|图片|照片|圖片|изображение|фото|사진|이미지|포토)/i.test(text);
 
     const wantsGif = hasRawGif && !isGifNegated;
     const wantsVideo = (hasRawVideo && !isVideoNegated) || wantsGif;
@@ -2819,6 +2819,9 @@ export class Agent extends LoopDetector {
         'zero', 'cero', 'zéro', 'null', 'ноль', 'нуль',
         'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten',
         'single', 'both',
+        // "a video" asks for one video, the same as "one video" does.
+        'a', 'an', 'un', 'une', 'uno', 'una', 'ein', 'eine', 'einen', 'einer',
+        'um', 'uma', 'один', 'одна', 'одно',
         'deux', 'trois', 'quatre', 'cinq',
         'dos', 'tres', 'cuatro', 'cinco',
         'due', 'tre', 'quattro', 'cinque',
@@ -2854,7 +2857,7 @@ export class Agent extends LoopDetector {
     const countSeparator = '(?:^|[\\s,;+&/|、，。；：]|(?:\\b(?:and|und|et|e|y)\\b\\s*)|[와과및])';
 
     const imageCountMatch = isGeneric
-      ? (countText.match(new RegExp(`${countSeparator}(${countPrefix})(?:\\s*(?:枚|つ|本|张|條|条|个|個|장|개|건|편))?\\s*(?:images?|photos?|pictures?|pics?|foto|fotos|bild|bilder|imagen(?:es)?|imágenes|画像|写真|图片|照片|圖片|изображение|фото|사진|이미지|포토)(?:\\s*(?:장|개|건))?`, 'i'))
+      ? (countText.match(new RegExp(`${countSeparator}(${countPrefix})(?:\\s*(?:枚|つ|本|张|條|条|个|個|장|개|건|편))?\\s*(?:images?|photos?|pictures?|pics?|foto|fotos|bild|bilder|imagen(?:es)?|imágenes|imagem|imagens|画像|写真|图片|照片|圖片|изображение|фото|사진|이미지|포토)(?:\\s*(?:장|개|건))?`, 'i'))
         || countText.match(/(?:사진|이미지|포토)\s*([0-9하나둘셋넷다섯]+|[한두세네일이삼사오](?=\\s*(?:장|개|건|편|개의|장의)))\s*(?:장|개|건)?/i)
         || countText.match(/(?:画像|写真|图片|照片|圖片)\s*([0-9一二两三四五六七八九十]+)\s*(?:枚|つ|张|條|条|个|個)?/i))
       : null;
@@ -2951,6 +2954,7 @@ export class Agent extends LoopDetector {
       hasExplicitCardinality,
       isImageNegated,
       isVideoNegated,
+      isGifNegated,
       isAlternative,
       isMinimumCount,
       wantsImage,
@@ -2989,8 +2993,25 @@ export class Agent extends LoopDetector {
       return !isVideoAttachment(att);
     };
 
+    // A GIF is a video, but not every video is a GIF: an mp4 must not satisfy
+    // "a GIF", and a GIF must not slip past "one video and no GIFs". X serves
+    // animated GIFs as mp4 from its tweet_video path, so the subtype is read
+    // from the type, the path, and the name rather than the container.
+    const isGifAttachment = (att) => {
+      const type = attachmentType(att);
+      if (type === 'animated_gif' || type === 'gif') return true;
+      const src = String(att?.src || att?.url || '');
+      const alt = String(att?.alt || att?.description || '');
+      return /\.gif(?:\.mp4)?(?:[?#]|$)/i.test(src)
+        || /\/tweet_video(?:_thumb)?\//i.test(src)
+        || /\.gif(?:[?#\s]|$)/i.test(alt);
+    };
+
     const imageCount = rawAttachments.filter(isImageAttachment).length;
     const videoCount = rawAttachments.filter(isVideoAttachment).length;
+    const gifCount = rawAttachments.filter(isGifAttachment).length;
+    if (parsed.wantsGif && gifCount < 1) return false;
+    if (parsed.isGifNegated && gifCount > 0) return false;
 
     let matchingAttachments = rawAttachments;
     if (parsed.wantsImage && parsed.wantsVideo) {

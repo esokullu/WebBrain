@@ -88110,7 +88110,7 @@ test('X and Bluesky same-route publication accepts only one new permalink with t
         pageStateWithVideo,
         fixture.feedUrl,
         submit,
-      ), true, AgentClass.name + ': video attachment satisfying GIF requirement was rejected');
+      ), false, AgentClass.name + ': an ordinary mp4 satisfied a requirement for a GIF');
 
       const pageStateWithSpecificGif = {
         ...exactPageState,
@@ -89180,6 +89180,77 @@ test('attachment verification matches specific attachment names without substrin
     });
     assert.deepEqual(mixedListReq.specificTargets, ['research and development.png', 'cover.jpg'],
       AgentClass.name + ': a trailing conjunction between two filenames still splits');
+
+    // A GIF is a video, but an ordinary video is not a GIF.
+    const gifMedia = {
+      mp4: { type: 'video', src: 'https://video.twimg.com/media/clip.mp4' },
+      typed: { type: 'animated_gif', src: 'https://video.twimg.com/tweet_video/loop.mp4' },
+      named: { type: 'video', src: 'https://video.twimg.com/tweet_video/animation.gif.mp4', alt: 'animation.gif' },
+      plain: { type: 'video', src: 'https://cdn.example.com/loop.gif' },
+    };
+    for (const [gifKey, gifLabel] of [['typed', 'a typed animated GIF'], ['named', 'an mp4-served GIF'], ['plain', 'a plain .gif']]) {
+      assert.equal(
+        agent._workflowSocialPublishedAttachmentObserved({ value: 'a GIF' }, { attachments: [gifMedia[gifKey]] }),
+        true,
+        AgentClass.name + `: ${gifLabel} should satisfy a GIF requirement`,
+      );
+      assert.equal(
+        agent._workflowSocialPublishedAttachmentObserved(
+          { value: 'one video and no GIFs' },
+          { attachments: [gifMedia[gifKey]] },
+        ),
+        false,
+        AgentClass.name + `: ${gifLabel} should not pass a negated GIF requirement`,
+      );
+    }
+    assert.equal(
+      agent._workflowSocialPublishedAttachmentObserved({ value: 'a GIF' }, { attachments: [gifMedia.mp4] }),
+      false,
+      AgentClass.name + ': an ordinary mp4 should not satisfy a GIF requirement',
+    );
+    assert.equal(
+      agent._workflowSocialPublishedAttachmentObserved(
+        { value: 'one video and no GIFs' },
+        { attachments: [gifMedia.mp4] },
+      ),
+      true,
+      AgentClass.name + ': an ordinary mp4 should pass a negated GIF requirement',
+    );
+
+    // A singular article counts as exactly one, the same as the word "one".
+    const oneImage = { type: 'image', src: 'https://pbs.twimg.com/media/first.png' };
+    const otherImage = { type: 'image', src: 'https://pbs.twimg.com/media/second.png' };
+    const oneVideo = { type: 'video', src: 'https://video.twimg.com/media/clip.mp4' };
+    for (const articleReq of ['a video', 'an image', 'un video', 'une image', 'ein bild', 'uma imagem']) {
+      assert.equal(agent._parseWorkflowAttachmentRequirement({ value: articleReq }).hasExplicitCardinality, true,
+        AgentClass.name + `: "${articleReq}" should read as an explicit count of one`);
+    }
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved({ value: 'a video' }, { attachments: [oneVideo] }), true,
+      AgentClass.name + ': one video should satisfy "a video"');
+    assert.equal(
+      agent._workflowSocialPublishedAttachmentObserved(
+        { value: 'a video' },
+        { attachments: [oneVideo, { type: 'video', src: 'https://video.twimg.com/media/other.mp4' }] },
+      ),
+      false,
+      AgentClass.name + ': two videos should not satisfy "a video"',
+    );
+    assert.equal(
+      agent._workflowSocialPublishedAttachmentObserved(
+        { value: 'an image and a video' },
+        { attachments: [oneImage, oneVideo] },
+      ),
+      true,
+      AgentClass.name + ': one image and one video should satisfy "an image and a video"',
+    );
+    assert.equal(
+      agent._workflowSocialPublishedAttachmentObserved(
+        { value: 'an image and a video' },
+        { attachments: [oneImage, otherImage, oneVideo] },
+      ),
+      false,
+      AgentClass.name + ': an extra image should not satisfy "an image and a video"',
+    );
 
     // Minimum-count qualifiers bound the count from below instead of naming a file.
     for (const [minReq, minCount] of [
