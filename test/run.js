@@ -44681,6 +44681,52 @@ test('tab-chat persistence recovers when several sub-threshold chats exceed the 
   }
 });
 
+test('tab-chat persistence strips large and mixed-case image data URLs without changing other data URLs', () => {
+  const payload = 'A'.repeat(6 * 1024 * 1024);
+  const input = [
+    '<div>before</div>',
+    `<img src="DATA:IMAGE/WEBP;charset=utf-8;BASE64,${payload}">`,
+    '<img src="data:image/svg+xml,not-base64">',
+    '<div>after</div>',
+  ].join('');
+  const expected = [
+    '<div>before</div>',
+    `<img src="${TabChatPersistenceCh.TRANSPARENT_PIXEL_PNG_DATA_URL}">`,
+    '<img src="data:image/svg+xml,not-base64">',
+    '<div>after</div>',
+  ].join('');
+
+  const chromeResult = TabChatPersistenceCh.stripImagePayloadsForPersist(input);
+  const firefoxResult = TabChatPersistenceFx.stripImagePayloadsForPersist(input);
+  assert.equal(chromeResult, expected, 'chrome: large image data URL was not compacted exactly');
+  assert.equal(firefoxResult, expected, 'firefox: large image data URL was not compacted exactly');
+  assert.equal(chromeResult, firefoxResult, 'chrome/firefox image compaction diverged');
+});
+
+test('tab-chat persistence keeps markup between a bare image MIME mention and a later payload', () => {
+  const input = [
+    '<div>paste as data:image/png here</div>',
+    '<b>kept</b>',
+    `<img src="data:image/gif;base64,${'A'.repeat(64)}">`,
+  ].join('');
+  const expected = [
+    '<div>paste as data:image/png here</div>',
+    '<b>kept</b>',
+    `<img src="${TabChatPersistenceCh.TRANSPARENT_PIXEL_PNG_DATA_URL}">`,
+  ].join('');
+
+  for (const [label, persistence] of [
+    ['chrome', TabChatPersistenceCh],
+    ['firefox', TabChatPersistenceFx],
+  ]) {
+    assert.equal(
+      persistence.stripImagePayloadsForPersist(input),
+      expected,
+      `${label}: markup between a bare MIME mention and a later image payload was swallowed`,
+    );
+  }
+});
+
 test('tab-chat persistence never evicts other chats when shared quota remains exhausted', async () => {
   for (const [label, persistence] of [
     ['chrome', TabChatPersistenceCh],

@@ -6,11 +6,110 @@ const TAB_CHAT_QUOTA_RETRY_BUDGET = 256 * 1024;
 export const TRANSPARENT_PIXEL_PNG_DATA_URL =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
 
+const IMAGE_DATA_URL_PREFIX = 'data:image/';
+const BASE64_DATA_URL_MARKER = ';base64,';
+
+function asciiLowerCode(code) {
+  return code >= 65 && code <= 90 ? code + 32 : code;
+}
+
+function matchesAsciiIgnoreCase(source, offset, expected) {
+  if (offset + expected.length > source.length) return false;
+  for (let i = 0; i < expected.length; i++) {
+    if (asciiLowerCode(source.charCodeAt(offset + i))
+      !== asciiLowerCode(expected.charCodeAt(i))) return false;
+  }
+  return true;
+}
+
+function isMimeTypeCode(code) {
+  return (code >= 48 && code <= 57)
+    || (code >= 65 && code <= 90)
+    || (code >= 97 && code <= 122)
+    || code === 43
+    || code === 45
+    || code === 46;
+}
+
+function isBase64Code(code) {
+  return (code >= 48 && code <= 57)
+    || (code >= 65 && code <= 90)
+    || (code >= 97 && code <= 122)
+    || code === 43
+    || code === 47
+    || code === 61;
+}
+
+function isMediaParameterCode(code) {
+  return isMimeTypeCode(code)
+    || code === 33
+    || code === 37
+    || code === 39
+    || code === 42
+    || code === 61
+    || code === 95
+    || code === 126;
+}
+
+function findImageDataUrl(source, start) {
+  const firstCode = IMAGE_DATA_URL_PREFIX.charCodeAt(0);
+  for (let index = start; index <= source.length - IMAGE_DATA_URL_PREFIX.length; index++) {
+    if (asciiLowerCode(source.charCodeAt(index)) !== firstCode) continue;
+    if (matchesAsciiIgnoreCase(source, index, IMAGE_DATA_URL_PREFIX)) return index;
+  }
+  return -1;
+}
+
+function imageDataPayloadEnd(source, marker) {
+  let cursor = marker + IMAGE_DATA_URL_PREFIX.length;
+  const mimeStart = cursor;
+  while (cursor < source.length && isMimeTypeCode(source.charCodeAt(cursor))) cursor++;
+  if (cursor === mimeStart) return -1;
+
+  // Walk the short metadata section without applying a regexp to the image
+  // bytes. Only `;name=value` media-type parameters may sit between the MIME
+  // type and `;base64,`, so the walk stops at the first character that cannot
+  // belong to one (a quote, a tag boundary, whitespace, or the comma that
+  // starts a non-base64 payload). Without that bound the scan would run past
+  // the attribute it started in and swallow every character up to the next
+  // image in the document.
+  while (cursor < source.length && source.charCodeAt(cursor) === 59) {
+    if (matchesAsciiIgnoreCase(source, cursor, BASE64_DATA_URL_MARKER)) {
+      cursor += BASE64_DATA_URL_MARKER.length;
+      const payloadStart = cursor;
+      while (cursor < source.length && isBase64Code(source.charCodeAt(cursor))) cursor++;
+      return cursor > payloadStart ? cursor : -1;
+    }
+    cursor++;
+    while (cursor < source.length && isMediaParameterCode(source.charCodeAt(cursor))) cursor++;
+  }
+  return -1;
+}
+
 export function stripImagePayloadsForPersist(html) {
-  return String(html || '').replace(
-    /data:image\/[a-z0-9.+-]+(?:;[^,]*)?;base64,[a-z0-9+/=]+/gi,
-    TRANSPARENT_PIXEL_PNG_DATA_URL,
-  );
+  const source = String(html || '');
+  const chunks = [];
+  let copyCursor = 0;
+  let searchCursor = 0;
+  let replaced = false;
+
+  while (searchCursor < source.length) {
+    const marker = findImageDataUrl(source, searchCursor);
+    if (marker < 0) break;
+    const end = imageDataPayloadEnd(source, marker);
+    if (end < 0) {
+      searchCursor = marker + IMAGE_DATA_URL_PREFIX.length;
+      continue;
+    }
+    chunks.push(source.slice(copyCursor, marker), TRANSPARENT_PIXEL_PNG_DATA_URL);
+    copyCursor = end;
+    searchCursor = end;
+    replaced = true;
+  }
+
+  if (!replaced) return source;
+  chunks.push(source.slice(copyCursor));
+  return chunks.join('');
 }
 
 function findHtmlTagEnd(source, start) {
