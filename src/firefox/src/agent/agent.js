@@ -222,9 +222,18 @@ const GENERIC_ATTACHMENT_WORDS = new Set([
   'один', 'одна', 'одно', 'два', 'две', 'три', 'четыре', 'пять',
   'вложения', 'вложение', 'фотографии', 'фотография', 'изображения', 'изображение', 'видео',
   'и', 'или', 'плюс',
+  '사진', '이미지', '포토',
+  '동영상', '비디오', '영상', '클립',
+  '움짤',
+  '첨부', '첨부파일', '미디어', '파일',
+  '하나', '둘', '셋', '넷', '다섯',
+  '한', '두', '세', '네',
+  '일', '이', '삼', '사', '오',
+  '장', '개', '건', '편',
+  '와', '과', '및', '그리고', '하고', '도',
 ]);
 
-const CJK_GENERIC_ATTACHMENT_REGEX = /^[0-9一二两三四五六七八九十添付画像写真動画メディア已上传附件图片照片视频媒体枚つの本张條条个個장での\s\-_,.:;!?/\\()]+$/u;
+const CJK_GENERIC_ATTACHMENT_REGEX = /^[0-9一二两三四五六七八九十添付画像写真動画メディア已上传附件图片照片视频媒体枚つの本张條条个個장에서의사진이미지포토동영상비디오영상클립움짤첨부파일미디어하나둘셋넷다섯한두세네일이삼사오개건편와과및그리고하고도\s\-_,.:;!?/\\()&+/]+$/u;
 
 // "On <url>, publish this" names a destination just as plainly as
 // "publish this on <url>", but only when the URL is presented as a place.
@@ -2060,9 +2069,9 @@ export class Agent extends LoopDetector {
     const text = String(value || '').trim().toLowerCase();
     if (!text) return { isGeneric: true, expectedCount: 1, expectedImageCount: 0, expectedVideoCount: 0, wantsImage: false, wantsVideo: false, wantsGif: false, normalized: '' };
 
-    const wantsGif = /\b(?:gif|gifs)\b|\.gif(?:[?#]|$)|(?:animated[-_ ]gif|動圖|动图)/i.test(text);
-    const wantsVideo = wantsGif || /\b(?:video|videos|mp4|mov|webm|mkv|clip|clips|recording|recordings|vidéo|vidéos)\b|(?:動画|视频|影片|видео)/i.test(text);
-    const wantsImage = /\b(?:image|images|photo|photos|picture|pictures|pic|pics|png|jpg|jpeg|webp|foto|fotos|bild|bilder|imagen(?:es)?|imágenes)\b|(?:画像|写真|图片|照片|圖片|изображение|фото)/i.test(text);
+    const wantsGif = /\b(?:gif|gifs)\b|\.gif(?:[?#]|$)|(?:animated[-_ ]gif|動圖|动图|움짤)/i.test(text);
+    const wantsVideo = wantsGif || /\b(?:video|videos|mp4|mov|webm|mkv|clip|clips|recording|recordings|vidéo|vidéos)\b|(?:動画|视频|影片|видео|동영상|비디오|영상)/i.test(text);
+    const wantsImage = /\b(?:image|images|photo|photos|picture|pictures|pic|pics|png|jpg|jpeg|webp|foto|fotos|bild|bilder|imagen(?:es)?|imágenes)\b|(?:画像|写真|图片|照片|圖片|изображение|фото|사진|이미지|포토)/i.test(text);
 
     const parseCountWord = (str) => {
       if (!str) return 0;
@@ -2071,22 +2080,29 @@ export class Agent extends LoopDetector {
       const wordToNum = {
         a: 1, an: 1, one: 1, single: 1, un: 1, une: 1, uno: 1, una: 1, ein: 1, eine: 1, einen: 1, einer: 1, um: 1, uma: 1,
         '一': 1, один: 1, одна: 1, одно: 1,
+        '하나': 1, '한': 1, '일': 1,
         two: 2, both: 2, dos: 2, due: 2, deux: 2, zwei: 2, dois: 2, duas: 2, '两': 2, '二': 2, два: 2, две: 2,
+        '둘': 2, '두': 2, '이': 2,
         three: 3, tres: 3, tre: 3, trois: 3, drei: 3, 'três': 3, '三': 3, три: 3,
+        '셋': 3, '세': 3, '삼': 3,
         four: 4, cuatro: 4, quattro: 4, quatre: 4, vier: 4, quatro: 4, '四': 4, четыре: 4,
+        '넷': 4, '네': 4, '사': 4,
         five: 5, cinco: 5, cinque: 5, cinq: 5, 'fünf': 5, '五': 5, пять: 5,
+        '다섯': 5, '오': 5,
         six: 6, '六': 6, seven: 7, '七': 7, eight: 8, '八': 8, nine: 9, '九': 9, ten: 10, '十': 10,
         multiple: 2,
       };
       return wordToNum[s] || 0;
     };
 
-    const countPrefix = '(?:\\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|single|both|multiple|un|une|deux|trois|quatre|cinq|uno|una|unos|unas|dos|tres|cuatro|cinco|due|tre|quattro|cinque|ein|eine|einen|einer|zwei|drei|vier|fünf|um|uma|dois|duas|três|один|одна|одно|два|две|три|четыре|пять|[一二两三四五六七八九十])';
+    const countPrefix = '(?:\\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|single|both|multiple|un|une|deux|trois|quatre|cinq|uno|una|unos|unas|dos|tres|cuatro|cinco|due|tre|quattro|cinque|ein|eine|einen|einer|zwei|drei|vier|fünf|um|uma|dois|duas|três|один|одна|одно|два|две|три|четыре|пять|[一二两三四五六七八九十]|하나|둘|셋|넷|다섯|한(?=\\s*(?:장|개|건|편|개의|장의))|두(?=\\s*(?:장|개|건|편|개의|장의))|세(?=\\s*(?:장|개|건|편|개의|장의))|네(?=\\s*(?:장|개|건|편|개의|장의))|[일이삼사오](?=\\s*(?:장|개|건|편|개의|장의)))';
 
-    const imageCountMatch = text.match(new RegExp(`(?:^|[\\s,;and+])(${countPrefix})\\s+(?:images?|photos?|pictures?|pics?|foto|fotos|bild|bilder|imagen(?:es)?|imágenes|画像|写真|图片|照片|圖片|изображение|фото)`, 'i'));
+    const imageCountMatch = text.match(new RegExp(`(?:^|[\\s,;and+와과및])(${countPrefix})\\s*(?:images?|photos?|pictures?|pics?|foto|fotos|bild|bilder|imagen(?:es)?|imágenes|画像|写真|图片|照片|圖片|изображение|фото|사진|이미지|포토)(?:\\s*(?:장|개|건))?`, 'i'))
+      || text.match(/(?:사진|이미지|포토)\s*([0-9하나둘셋넷다섯]+|[한두세네일이삼사오](?=\s*(?:장|개|건|편|개의|장의)))\s*(?:장|개|건)?/i);
     const expectedImageCount = imageCountMatch ? parseCountWord(imageCountMatch[1]) : 0;
 
-    const videoCountMatch = text.match(new RegExp(`(?:^|[\\s,;and+])(${countPrefix})\\s+(?:videos?|clips?|recordings?|gifs?|animated[-_ ]gifs?|vidéo|vidéos|動画|视频|影片|видео)`, 'i'));
+    const videoCountMatch = text.match(new RegExp(`(?:^|[\\s,;and+와과및])(${countPrefix})\\s*(?:videos?|clips?|recordings?|gifs?|animated[-_ ]gifs?|vidéo|vidéos|動画|视频|影片|видео|동영상|비디오|영상)(?:\\s*(?:개|편|건))?`, 'i'))
+      || text.match(/(?:동영상|비디오|영상)\s*([0-9하나둘셋넷다섯]+|[한두세네일이삼사오](?=\s*(?:장|개|건|편|개의|장의)))\s*(?:개|편|건)?/i);
     const expectedVideoCount = videoCountMatch ? parseCountWord(videoCountMatch[1]) : 0;
 
     let isGeneric = false;
@@ -2106,14 +2122,19 @@ export class Agent extends LoopDetector {
     } else if (expectedVideoCount > 0) {
       expectedCount = expectedVideoCount;
     } else {
-      const genericNounCountMatch = text.match(new RegExp(`(?:^|[\\s,;and+])(${countPrefix})\\s+(?:attachments?|files?|media|uploads?|pieces?|items?|assets?|enclosures?|documents?|fichiers?|archivos?|dateien?|allegati?|anexos?|вложения?|вложение)`, 'i'))
-        || text.match(new RegExp(`(?:^|[\\s,;and+])(${countPrefix})\\s*(?:枚|つ|本|张|條|条|个|個|장)`, 'i'));
+      const genericNounCountMatch = text.match(new RegExp(`(?:^|[\\s,;and+와과및])(${countPrefix})\\s+(?:attachments?|files?|media|uploads?|pieces?|items?|assets?|enclosures?|documents?|fichiers?|archivos?|dateien?|allegati?|anexos?|вложения?|вложение|첨부(?:파일)?|파일|미디어)`, 'i'))
+        || text.match(new RegExp(`(?:^|[\\s,;and+와과및])(${countPrefix})\\s*(?:枚|つ|本|张|條|条|个|個|장|개|건|편)`, 'i'))
+        || text.match(new RegExp(`(?:첨부(?:파일)?|파일|미디어)\\s*(${countPrefix})\\s*(?:장|개|건|편)?`, 'i'));
       const generalCountMatch = genericNounCountMatch
         || (isGeneric && (text.match(new RegExp(`\\b(${countPrefix})\\b`, 'i')) || text.match(/([一二两三四五六七八九十])/)));
       if (generalCountMatch) {
         const parsedNum = parseCountWord(generalCountMatch[1]);
         if (parsedNum > 0) expectedCount = parsedNum;
       }
+    }
+
+    if (expectedImageCount === 0 && expectedVideoCount === 0 && wantsImage && wantsVideo && expectedCount < 2) {
+      expectedCount = 2;
     }
 
     return { isGeneric, expectedCount, expectedImageCount, expectedVideoCount, wantsImage, wantsVideo, wantsGif, normalized: text };

@@ -276,6 +276,11 @@ export function publicationResourceRecordRoot(link, identity, publicationResourc
     : value.startsWith('bluesky:')
     ? '[data-testid="postText"]'
     : '';
+  const embedSelector = value.startsWith('twitter:')
+    ? '[data-testid="quoteTweet"],[role="blockquote"],[data-testid*="quote"],[data-testid*="card.layout"]'
+    : value.startsWith('bluesky:')
+    ? '[data-testid^="postQuote-"],[data-testid="embeddedPost"],[data-testid*="quote"],[data-testid^="embed-"]'
+    : '';
   const identityOf = (candidate) => {
     try {
       return publicationResourceIdentity(candidate.getAttribute('href') || candidate.href || '') || '';
@@ -290,6 +295,30 @@ export function publicationResourceRecordRoot(link, identity, publicationResourc
       return null;
     }
   };
+  const isInsideAuthoredText = (node) => {
+    if (!bodySelector) return false;
+    try {
+      if (typeof node.closest === 'function') {
+        const bodyEl = node.closest(bodySelector);
+        if (bodyEl) {
+          if (!embedSelector || typeof node.closest !== 'function' || !node.closest(embedSelector)) {
+            return true;
+          }
+        }
+      }
+    } catch {}
+    let curr = node.parentElement;
+    for (let i = 0; curr && i < 5; i++, curr = curr.parentElement) {
+      try {
+        if (typeof curr.matches === 'function' && curr.matches(bodySelector)) {
+          if (!embedSelector || typeof node.closest !== 'function' || !node.closest(embedSelector)) {
+            return true;
+          }
+        }
+      } catch {}
+    }
+    return false;
+  };
   // The largest subtree around a foreign permalink that this post's own
   // permalink never reaches into is the embedded post.
   const embeddedResourcesIn = (card) => {
@@ -300,13 +329,29 @@ export function publicationResourceRecordRoot(link, identity, publicationResourc
       if (excluded.length >= 8) break;
       const found = identityOf(candidate);
       if (!found || found === value) continue;
-      if (excluded.some(node => node === candidate || node.contains?.(candidate))) continue;
-      let best = candidate;
-      let node = candidate.parentElement;
-      for (let depth = 0; node && node !== card && depth < 9; depth++, node = node.parentElement) {
-        const inner = linksIn(node);
-        if (!inner || inner.some(entry => identityOf(entry) === value)) break;
-        best = node;
+      if (isInsideAuthoredText(candidate)) continue;
+      if (excluded.some(node => node === candidate || node.contains?.(node))) continue;
+      let embedContainer = null;
+      if (embedSelector) {
+        try {
+          if (typeof candidate.closest === 'function') {
+            embedContainer = candidate.closest(embedSelector);
+          }
+        } catch {}
+      }
+      let best = embedContainer || candidate;
+      if (!embedContainer) {
+        let node = candidate.parentElement;
+        for (let depth = 0; node && node !== card && depth < 9; depth++, node = node.parentElement) {
+          if (bodySelector) {
+            try {
+              if (typeof node.matches === 'function' && node.matches(bodySelector)) break;
+            } catch {}
+          }
+          const inner = linksIn(node);
+          if (!inner || inner.some(entry => identityOf(entry) === value)) break;
+          best = node;
+        }
       }
       excluded.push(best);
     }

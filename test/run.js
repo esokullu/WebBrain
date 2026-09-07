@@ -24622,6 +24622,33 @@ test('publication resource records keep the owning social card when it embeds an
     assert.equal(mediaRecord.root, mediaCard);
     assert.deepEqual(mediaRecord.attachments, [photoNode, videoComponentNode],
       `${label}: media attachments failed to deduplicate nested videoNode or failed to include photo`);
+
+    // Authored post body containing a foreign permalink keeps the postText in authored nodes.
+    const foreignPermalink = { getAttribute: () => '/other/status/888', href: '/other/status/888' };
+    const foreignBodyNode = {
+      innerText: 'Check this out https://x.com/other/status/888',
+      querySelectorAll: selector => (selector === 'a[href]' ? [foreignPermalink] : []),
+      contains: node => node === foreignPermalink,
+    };
+    foreignPermalink.parentElement = foreignBodyNode;
+    foreignPermalink.closest = selector => (selector.includes('Text') ? foreignBodyNode : null);
+    const foreignCardPermalink = {
+      innerText: '2m',
+      getAttribute: () => '/me/status/222',
+      href: '/me/status/222',
+      closest: () => foreignCard,
+    };
+    const foreignCard = {
+      innerText: 'Author\nCheck this out https://x.com/other/status/888',
+      querySelectorAll: selector => (String(selector).includes('Text') ? [foreignBodyNode] : [foreignCardPermalink, foreignPermalink]),
+      contains: node => node === foreignCardPermalink || node === foreignCard || node === foreignBodyNode || node === foreignPermalink,
+    };
+    foreignCardPermalink.parentElement = foreignCard;
+    foreignBodyNode.parentElement = foreignCard;
+    const foreignRecord = invariant.publicationResourceRecordRoot(foreignCardPermalink, identity, identityOf);
+    assert.equal(foreignRecord.root, foreignCard, `${label}: authored permalink discarded the owning card`);
+    assert.deepEqual(foreignRecord.excluded, [], `${label}: authored foreign permalink was treated as an embedded post`);
+    assert.deepEqual(foreignRecord.authored, [foreignBodyNode], `${label}: authored body containing foreign permalink was lost`);
   }
 
   for (const [label, rel] of [
@@ -87453,6 +87480,56 @@ test('attachment requirement parser treats conjunction-based requirements as gen
       { attachments: [{ type: 'image', src: 'pic.png' }, { type: 'video', src: 'vid.mp4' }] }
     );
     assert.equal(verified, true, AgentClass.name + ': image plus video should satisfy generic conjunction requirement');
+  }
+});
+
+test('attachment requirement parser recognizes Korean generic media nouns and counts', () => {
+  for (const AgentClass of [AgentCh, AgentFx]) {
+    const agent = new AgentClass({});
+    const reqImg = agent._parseWorkflowAttachmentRequirement('사진');
+    assert.equal(reqImg.isGeneric, true, AgentClass.name + ': 사진 should be generic');
+    assert.equal(reqImg.wantsImage, true, AgentClass.name + ': 사진 should want image');
+    assert.equal(reqImg.expectedCount, 1, AgentClass.name + ': 사진 should expect 1 attachment');
+
+    const reqVid = agent._parseWorkflowAttachmentRequirement('동영상');
+    assert.equal(reqVid.isGeneric, true, AgentClass.name + ': 동영상 should be generic');
+    assert.equal(reqVid.wantsVideo, true, AgentClass.name + ': 동영상 should want video');
+    assert.equal(reqVid.expectedCount, 1, AgentClass.name + ': 동영상 should expect 1 attachment');
+
+    const reqImg2 = agent._parseWorkflowAttachmentRequirement('사진 2장');
+    assert.equal(reqImg2.isGeneric, true, AgentClass.name + ': 사진 2장 should be generic');
+    assert.equal(reqImg2.expectedCount, 2, AgentClass.name + ': 사진 2장 should expect 2 attachments');
+    assert.equal(reqImg2.expectedImageCount, 2, AgentClass.name + ': 사진 2장 should expect 2 images');
+
+    const reqBoth = agent._parseWorkflowAttachmentRequirement('이미지와 동영상');
+    assert.equal(reqBoth.isGeneric, true, AgentClass.name + ': 이미지와 동영상 should be generic');
+    assert.equal(reqBoth.wantsImage, true, AgentClass.name + ': 이미지와 동영상 should want image');
+    assert.equal(reqBoth.wantsVideo, true, AgentClass.name + ': 이미지와 동영상 should want video');
+    assert.equal(reqBoth.expectedCount, 2, AgentClass.name + ': 이미지와 동영상 should expect 2 attachments');
+
+    const verifiedImg = agent._workflowSocialPublishedAttachmentObserved(
+      { value: '사진' },
+      { attachments: [{ type: 'image', src: 'https://pbs.twimg.com/media/pic.jpg' }] }
+    );
+    assert.equal(verifiedImg, true, AgentClass.name + ': valid image should satisfy 사진 requirement');
+
+    const rejectedImg = agent._workflowSocialPublishedAttachmentObserved(
+      { value: '사진' },
+      { attachments: [{ type: 'video', src: 'https://video.twimg.com/media/clip.mp4' }] }
+    );
+    assert.equal(rejectedImg, false, AgentClass.name + ': video attachment should not satisfy 사진 requirement');
+
+    const verifiedVid = agent._workflowSocialPublishedAttachmentObserved(
+      { value: '동영상' },
+      { attachments: [{ type: 'video', src: 'https://video.twimg.com/media/clip.mp4' }] }
+    );
+    assert.equal(verifiedVid, true, AgentClass.name + ': valid video should satisfy 동영상 requirement');
+
+    const rejectedVid = agent._workflowSocialPublishedAttachmentObserved(
+      { value: '동영상' },
+      { attachments: [{ type: 'image', src: 'https://pbs.twimg.com/media/pic.jpg' }] }
+    );
+    assert.equal(rejectedVid, false, AgentClass.name + ': image attachment should not satisfy 동영상 requirement');
   }
 });
 
