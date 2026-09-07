@@ -1,0 +1,139 @@
+{
+  "schemaVersion": "webbrain.text-benchmark.reconciled-summary.v1",
+  "createdAt": "2026-09-07T19:25:47.3140995+03:00",
+  "model": {
+    "requested": "qwen3.5-4b",
+    "actualFromV1Models": "qwen3.5-4b",
+    "endpoint": "http://127.0.0.1:1234",
+    "runtime": "LM Studio OpenAI-compatible server",
+    "params": "4B",
+    "quantization": "Q4_K_M",
+    "modelBytes": 3383082464,
+    "loadedContextLength": 151808,
+    "loadedParallel": 1,
+    "flashAttention": true
+  },
+  "contract": {
+    "browser": "chrome",
+    "tier": "compact",
+    "concurrency": 1,
+    "timeoutMs": 300000,
+    "structuredTools": true,
+    "rawOutputsOverwritten": false,
+    "committed": false,
+    "pushed": false
+  },
+  "commands": {
+    "firstTurn": "node run-llamacpp.mjs --base http://127.0.0.1:1234 --model qwen3.5-4b --tag 2026-09-07-qwen3.5-4b-compact-full-v2 --tier compact --browser chrome --concurrency 1 --timeout 300000",
+    "scenarios": "node run-scenarios.mjs --base http://127.0.0.1:1234 --model qwen3.5-4b --tag 2026-09-07-qwen3.5-4b-compact-full-v2 --tier compact --browser chrome --concurrency 1 --timeout 300000",
+    "scenarioRetry": "node run-scenarios.mjs --base http://127.0.0.1:1234 --model qwen3.5-4b --tag 2026-09-07-qwen3.5-4b-compact-error-retry-fold-system-v1 --only 65 --tier compact --browser chrome --chat-template-compat fold-system --concurrency 1 --timeout 300000"
+  },
+  "firstTurn": {
+    "original": {
+      "completed": 100,
+      "errors": 0,
+      "withToolCall": 89,
+      "noToolCall": 11,
+      "totalLatencyMs": 486577
+    },
+    "retry": null,
+    "effective": {
+      "completed": 100,
+      "errors": 0,
+      "exact": 8,
+      "nameOnly": 20,
+      "other": 61,
+      "noTool": 11,
+      "exactOrName": 28,
+      "exactPercent": 8.0,
+      "exactOrNamePercent": 28.0,
+      "meanLatencyMs": 4865.77,
+      "totalLatencyMs": 486577,
+      "scoring": "Exact compares idealFirstToolCall name and recursively key-sorted arguments. nameOnly counts structured/content-extracted calls with the expected tool name but different arguments. other counts remaining tool calls. noTool counts every row without a parsed tool call, including terminal prose."
+    }
+  },
+  "scenarios": {
+    "original": {
+      "completed": 100,
+      "skipped": 11,
+      "errors": 1,
+      "ideal": 16,
+      "idealName": 20,
+      "other": 48,
+      "anti": 2,
+      "empty": 2,
+      "totalLatencyMs": 370484
+    },
+    "retry": {
+      "ids": ["065"],
+      "chatTemplateCompat": "fold-system",
+      "completed": 1,
+      "errors": 0,
+      "verdict": "other",
+      "tool": "get_accessibility_tree",
+      "rowLatencyMs": 3017,
+      "totalLatencyMs": 3020
+    },
+    "effective": {
+      "completed": 100,
+      "eligibleNonSkipped": 89,
+      "skipped": 11,
+      "errors": 0,
+      "ideal": 16,
+      "idealName": 20,
+      "other": 49,
+      "anti": 2,
+      "empty": 2,
+      "idealOrName": 36,
+      "idealPercentOfEligible": 17.97752808988764,
+      "idealOrNamePercentOfEligible": 40.449438202247194,
+      "totalLatencyMs": 373476,
+      "reconciliation": "Scenario 065's original strict-template error remains in the main raw output and is replaced only for effective metrics by the versioned fold-system retry. The two empty outputs are semantic model outputs and were not retried."
+    }
+  },
+  "durations": {
+    "allExecutedRequestsMs": 860081,
+    "allExecutedRequestsHours": 0.23891138888888888,
+    "effectiveRowsMs": 860053,
+    "effectiveRowsHours": 0.2389036111111111
+  },
+  "recoveryEvidence": {
+    "authoritativeRun": "2026-09-07-qwen3.5-4b-compact-full-v2",
+    "preservedAbortedRun": "G:\\esoku\\Documents\\webbrain\\test\\llm\\results\\2026-09-07-qwen3.5-4b-compact-full-v1_chrome_qwen3.5-4b_compact",
+    "preservedProbe": "G:\\esoku\\Documents\\webbrain\\test\\llm\\results\\2026-09-07-qwen3.5-4b-compact-recovery-probe-009-v1_chrome_qwen3.5-4b_compact",
+    "incident": "The first full attempt was stopped after cases 009-015 returned transient LM Studio Engine protocol predict request failed: fetch failed errors. A separate no-overwrite case-009 probe then succeeded in 913 ms, after which the clean authoritative v2 run completed 100/100 without transport errors."
+  },
+  "artifacts": [
+    {
+      "role": "first-turn-original",
+      "path": "G:\\esoku\\Documents\\webbrain\\test\\llm\\results\\2026-09-07-qwen3.5-4b-compact-full-v2_chrome_qwen3.5-4b_compact",
+      "files": 101,
+      "bytes": 5469891,
+      "treeSha256": "55f0f66985501a8725626e1b64bc661ad020c0330cde0a0eded7b4474ed866aa",
+      "summarySha256": "99bd91d2a56795c35bbd18e138c71b8c7ad55ccdae5e04b85a1a215ca7416931"
+    },
+    {
+      "role": "scenarios-original",
+      "path": "G:\\esoku\\Documents\\webbrain\\test\\llm\\results-scenarios\\2026-09-07-qwen3.5-4b-compact-full-v2_chrome_qwen3.5-4b_compact",
+      "files": 101,
+      "bytes": 1108271,
+      "treeSha256": "aef849b472f146bbd90ddd114a91b7b28e23ee6c3c79a1124bda6f5d94ad80a8",
+      "summarySha256": "27ce33c4c1273a3b70e596b00cbed2178b826e096c8db5b601bb8b03b033c980"
+    },
+    {
+      "role": "scenario-retry",
+      "path": "G:\\esoku\\Documents\\webbrain\\test\\llm\\results-scenarios\\2026-09-07-qwen3.5-4b-compact-error-retry-fold-system-v1_chrome_qwen3.5-4b_compact",
+      "files": 2,
+      "bytes": 11834,
+      "treeSha256": "8a0bb3bbba1c71f276193303bc1ce7f773a388f5c07ec24d87fe993ba31e71f7",
+      "summarySha256": "c8f3973799f09f292a83140a7692141ed1ed359e9715ebe8fd87caa3c510d844"
+    }
+  ],
+  "artifactTreeDigestAlgorithm": "sha256 over UTF-8 concatenation of sorted lines: relative_path TAB byte_size TAB file_sha256 LF",
+  "harness": {
+    "runLlamacppSha256": "b1bd3de7d6dad90a55dee52f3df7bdae175a95af9c6812716440f4a2f8911495",
+    "runScenariosSha256": "e3a54dbcdfd8370015175f0a3bfe2b1119c92f366d3496bd6e0dee0184031c88",
+    "scoreSha256": "35297349d3cbdec9ebe290aa8e8941a07b0cde51dd2077f0281266b7180f5cc6",
+    "inferenceFreeRegradeReport": "G:\\esoku\\Documents\\webbrain\\test\\llm\\analysis\\compact-parser-regrade-v2-0130c8e57a5d64df\\summary-f8cf2787cbf58e79dac23819c7f3b083d124c152d61d08642903a035141ea81a.json"
+  }
+}

@@ -1,0 +1,71 @@
+{
+  "schema": "webbrain-compact-parser-regrade-v2",
+  "createdAt": "2026-09-07T18:01:17.546Z",
+  "inferenceRequests": 0,
+  "inputSignatureSha256": "de32452fe26a839e356eadc2c86c409dafd40408f93d18ba922d5b7aebcc123e",
+  "implementation": {
+    "regrader": {
+      "path": "G:\\esoku\\Documents\\webbrain\\test\\llm\\regrade-compact-parser-v2.mjs",
+      "sha256": "0a882a5b6a6bbe36a1581f8c64d98467b79496d8644db303d420567981a9e30d"
+    },
+    "contentParser": {
+      "path": "G:\\esoku\\Documents\\webbrain\\test\\llm\\lib\\content-tool-call-parser.mjs",
+      "sha256": "479dba3660d7ee168001a854f7b8f871797ac152b31b1367d574b0f27661fdba"
+    },
+    "grader": {
+      "path": "G:\\esoku\\Documents\\webbrain\\test\\llm\\lib\\score.mjs",
+      "sha256": "35297349d3cbdec9ebe290aa8e8941a07b0cde51dd2077f0281266b7180f5cc6"
+    }
+  },
+  "models": [
+    {
+      "label": "google-gemma-4-12b-qat",
+      "firstTurn": {
+        "rows": 100,
+        "toolCalls": 90,
+        "toolCallRate": 0.9,
+        "counts": {
+          "exact": 7,
+          "name_only": 22,
+          "other": 71,
+          "no_tool": 0,
+          "anti": 0,
+          "empty": 0,
+          "error": 0,
+          "skipped": 0
+        }
+      },
+      "scenarios": {
+        "rows": 100,
+        "toolCalls": 70,
+        "toolCallRate": 0.7,
+        "counts": {
+          "exact": 12,
+          "name_only": 22,
+          "other": 52,
+          "no_tool": 0,
+          "anti": 3,
+          "empty": 0,
+          "error": 0,
+          "skipped": 11
+        }
+      },
+      "combined": {
+        "rows": 200,
+        "toolCalls": 160,
+        "toolCallRate": 0.8,
+        "counts": {
+          "exact": 19,
+          "name_only": 44,
+          "other": 123,
+          "no_tool": 0,
+          "anti": 3,
+          "empty": 0,
+          "error": 0,
+          "skipped": 11
+        }
+      }
+    }
+  ],
+  "reportSha256": "9f88a2fde6997d13ad86c1fcde7ea0dcc640b9d26b0d4ff350d1e1acfa311db0"
+}
