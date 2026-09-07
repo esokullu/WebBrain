@@ -86517,6 +86517,10 @@ test('social publication workflow follows the live X or Bluesky destination and 
         'German coordinated destinations on X and Bluesky should both be targeted'],
       ['Posta su X e Bluesky', ['twitter', 'bluesky'],
         'Italian coordinated destinations on X and Bluesky should both be targeted'],
+      ['Post on both X and Bluesky', ['twitter', 'bluesky'],
+        'coordinated destinations with "both" on X and Bluesky should both be targeted'],
+      ['Post to either X or Bluesky: Launch announcement', ['twitter', 'bluesky'],
+        'coordinated destination with "either" on X or Bluesky should target both platforms'],
       // Content links should not be treated as competing destinations
       ['Post a link to the survey on X', ['twitter'],
         'content link to survey should not compete with X publish destination'],
@@ -88287,6 +88291,39 @@ test('attachment verification matches specific attachment names without substrin
         invalidExtra: [{ type: 'image', src: 'https://pbs.twimg.com/media/pic.jpg' }],
         invalidWrong: [{ type: 'video', src: 'https://video.twimg.com/clip.mp4' }],
       },
+      {
+        req: 'videos and no images',
+        valid: [
+          { type: 'video', src: 'https://video.twimg.com/clip1.mp4' },
+          { type: 'video', src: 'https://video.twimg.com/clip2.mp4' },
+        ],
+        invalidExtra: [
+          { type: 'video', src: 'https://video.twimg.com/clip1.mp4' },
+          { type: 'image', src: 'https://pbs.twimg.com/media/pic.jpg' },
+        ],
+        invalidWrong: [{ type: 'image', src: 'https://pbs.twimg.com/media/pic.jpg' }],
+      },
+      {
+        req: 'images only',
+        valid: [
+          { type: 'image', src: 'https://pbs.twimg.com/media/pic1.jpg' },
+          { type: 'image', src: 'https://pbs.twimg.com/media/pic2.jpg' },
+        ],
+        invalidExtra: [
+          { type: 'image', src: 'https://pbs.twimg.com/media/pic1.jpg' },
+          { type: 'video', src: 'https://video.twimg.com/clip.mp4' },
+        ],
+        invalidWrong: [{ type: 'video', src: 'https://video.twimg.com/clip.mp4' }],
+      },
+      {
+        req: 'video only',
+        valid: [{ type: 'video', src: 'https://video.twimg.com/clip.mp4' }],
+        invalidExtra: [
+          { type: 'video', src: 'https://video.twimg.com/clip.mp4' },
+          { type: 'image', src: 'https://pbs.twimg.com/media/pic.jpg' },
+        ],
+        invalidWrong: [{ type: 'image', src: 'https://pbs.twimg.com/media/pic.jpg' }],
+      },
     ];
 
     for (const { req, valid, invalidExtra, invalidWrong } of mixedCases) {
@@ -88306,6 +88343,60 @@ test('attachment verification matches specific attachment names without substrin
         AgentClass.name + `: post with wrong media should reject "${req}"`
       );
     }
+
+    // Media disjunctions (e.g. "one image or one video")
+    const altReq = 'one image or one video';
+    const parsedAlt = agent._parseWorkflowAttachmentRequirement({ value: altReq });
+    assert.equal(parsedAlt.isAlternative, true, AgentClass.name + ': isAlternative should be true for "one image or one video"');
+    assert.equal(parsedAlt.expectedCount, 1, AgentClass.name + ': expectedCount should be 1 for alternative');
+
+    assert.equal(
+      agent._workflowSocialPublishedAttachmentObserved(
+        { value: altReq },
+        { attachments: [{ type: 'image', src: 'https://pbs.twimg.com/media/1.jpg' }] },
+      ),
+      true,
+      AgentClass.name + ': 1 image should satisfy "one image or one video"'
+    );
+    assert.equal(
+      agent._workflowSocialPublishedAttachmentObserved(
+        { value: altReq },
+        { attachments: [{ type: 'video', src: 'https://video.twimg.com/clip.mp4' }] },
+      ),
+      true,
+      AgentClass.name + ': 1 video should satisfy "one image or one video"'
+    );
+    assert.equal(
+      agent._workflowSocialPublishedAttachmentObserved(
+        { value: altReq },
+        {
+          attachments: [
+            { type: 'image', src: 'https://pbs.twimg.com/media/1.jpg' },
+            { type: 'image', src: 'https://pbs.twimg.com/media/2.jpg' },
+          ],
+        },
+      ),
+      false,
+      AgentClass.name + ': 2 images should reject "one image or one video"'
+    );
+    assert.equal(
+      agent._workflowSocialPublishedAttachmentObserved(
+        { value: altReq },
+        {
+          attachments: [
+            { type: 'image', src: 'https://pbs.twimg.com/media/1.jpg' },
+            { type: 'video', src: 'https://video.twimg.com/clip.mp4' },
+          ],
+        },
+      ),
+      false,
+      AgentClass.name + ': simultaneous image and video should reject "one image or one video"'
+    );
+
+    // Media-only generic phrase check
+    const parsedOnly = agent._parseWorkflowAttachmentRequirement({ value: 'images only' });
+    assert.equal(parsedOnly.isGeneric, true, AgentClass.name + ': "images only" should be parsed as generic');
+    assert.equal(parsedOnly.wantsImage, true, AgentClass.name + ': "images only" should want image');
   }
 });
 

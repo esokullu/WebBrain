@@ -211,7 +211,15 @@ const GENERIC_ATTACHMENT_WORDS = new Set([
   'a', 'an', 'the', 'of', 'in', 'with', 'some', 'any',
   'and', 'or', 'plus', 'also', 'as', 'well',
   'no', 'not', 'without', 'zero', 'none',
+  'only', 'just', 'solely',
   'sin', 'sans', 'sem', 'senza', 'ohne', 'kein', 'keine', 'keinen', 'aucun', 'aucune', 'ningun', 'ninguna', 'ningún', 'nenhum', 'nenhuma', 'nessun', 'nessuno', 'nessuna', 'nie', 'без', 'нет',
+  'solo', 'sólo', 'solamente', 'únicamente', 'solos', 'solas',
+  'seul', 'seule', 'seuls', 'seules', 'seulement', 'uniquement',
+  'nur', 'einzig', 'allein',
+  'soltanto',
+  'apenas', 'somente', 'só', 'exclusivamente',
+  'только', 'лишь', 'исключительно',
+  'sadece', 'yalnızca', 'yalnız',
   'yok',
   'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten',
   'single', 'multiple', 'both',
@@ -236,7 +244,7 @@ const GENERIC_ATTACHMENT_WORDS = new Set([
   '와', '과', '및', '그리고', '하고', '도',
 ]);
 
-const CJK_GENERIC_ATTACHMENT_REGEX = /^[0-9一二两三四五六七八九十添付画像写真動画メディア已上传附件图片照片视频媒体枚つの本张條条个個장에서의사진이미지포토동영상비디오영상클립움짤첨부파일미디어하나둘셋넷다섯한두세네일이삼사오개건편와과및그리고하고도无没有不带零なし無しゼロ없음안함\s\-_,.:;!?/\\()&+、，。；：/]+$/u;
+const CJK_GENERIC_ATTACHMENT_REGEX = /^[0-9一二两三四五六七八九十添付画像写真動画メディア已上传附件图片照片视频媒体枚つの本张條条个個장에서의사진이미지포토동영상비디오영상클립움짤첨부파일미디어하나둘셋넷다섯한두세네일이삼사오개건편와과및그리고하고도无没有不带零なし無しゼロ없음안함只仅唯一だけのみ만오직단지\s\-_,.:;!?/\\()&+、，。；：/]+$/u;
 
 // "On <url>, publish this" names a destination just as plainly as
 // "publish this on <url>", but only when the URL is presented as a place.
@@ -2500,10 +2508,23 @@ export class Agent extends LoopDetector {
       hasExplicitVideoCount = isExplicitCountWord(videoCountMatch[1]);
     }
 
+    const DISJUNCTION_REGEX = /(?:\b(?:or|oder|ou|o|oppure|или|либо|veya|ya\s+da)\b|[或或者]|(?:또는|혹은)|(?:または|それとも))/i;
+    const isAlternative = isGeneric && wantsImage && wantsVideo && DISJUNCTION_REGEX.test(text);
+
     let hasExplicitGenericCount = false;
     let expectedCount = 1;
     if (isGeneric) {
-      if (expectedImageCount > 0 && expectedVideoCount > 0) {
+      if (isAlternative) {
+        if (expectedImageCount > 0 && expectedVideoCount > 0) {
+          expectedCount = Math.min(expectedImageCount, expectedVideoCount);
+        } else if (expectedImageCount > 0) {
+          expectedCount = expectedImageCount;
+        } else if (expectedVideoCount > 0) {
+          expectedCount = expectedVideoCount;
+        } else {
+          expectedCount = 1;
+        }
+      } else if (expectedImageCount > 0 && expectedVideoCount > 0) {
         expectedCount = expectedImageCount + expectedVideoCount;
       } else if (expectedImageCount > 0) {
         expectedCount = expectedImageCount + (wantsVideo ? 1 : 0);
@@ -2529,7 +2550,7 @@ export class Agent extends LoopDetector {
         }
       }
 
-      if (wantsImage && wantsVideo && expectedCount < 2) {
+      if (!isAlternative && wantsImage && wantsVideo && expectedCount < 2) {
         expectedCount = 2;
       }
     } else {
@@ -2540,7 +2561,9 @@ export class Agent extends LoopDetector {
       }
     }
 
-    const hasExplicitCardinality = hasExplicitImageCount || hasExplicitVideoCount || hasExplicitGenericCount;
+    const hasExplicitPositiveImageCount = hasExplicitImageCount && !isImageNegated;
+    const hasExplicitPositiveVideoCount = hasExplicitVideoCount && !isVideoNegated;
+    const hasExplicitCardinality = hasExplicitPositiveImageCount || hasExplicitPositiveVideoCount || hasExplicitGenericCount || (isImageNegated && isVideoNegated);
     const specificTargets = isGeneric ? [] : this._parseSpecificAttachmentTargets(rawVal);
 
     return {
@@ -2551,6 +2574,9 @@ export class Agent extends LoopDetector {
       hasExplicitImageCount,
       hasExplicitVideoCount,
       hasExplicitCardinality,
+      isImageNegated,
+      isVideoNegated,
+      isAlternative,
       wantsImage,
       wantsVideo,
       wantsGif,
@@ -2592,29 +2618,49 @@ export class Agent extends LoopDetector {
 
     let matchingAttachments = rawAttachments;
     if (parsed.wantsImage && parsed.wantsVideo) {
-      const minImages = parsed.expectedImageCount > 0 ? parsed.expectedImageCount : 1;
-      const minVideos = parsed.expectedVideoCount > 0 ? parsed.expectedVideoCount : 1;
-      if (imageCount < minImages || videoCount < minVideos) {
-        return false;
-      }
-      if (parsed.hasExplicitImageCount && imageCount !== parsed.expectedImageCount) {
-        return false;
-      }
-      if (parsed.hasExplicitVideoCount && videoCount !== parsed.expectedVideoCount) {
-        return false;
-      }
-      if (parsed.hasExplicitImageCount && parsed.hasExplicitVideoCount) {
-        if (rawAttachments.length !== (parsed.expectedImageCount + parsed.expectedVideoCount)) {
+      if (parsed.isAlternative) {
+        const minImages = parsed.expectedImageCount > 0 ? parsed.expectedImageCount : 1;
+        const minVideos = parsed.expectedVideoCount > 0 ? parsed.expectedVideoCount : 1;
+        const matchesImageAlt = imageCount >= minImages
+          && (!parsed.hasExplicitImageCount || imageCount === parsed.expectedImageCount)
+          && videoCount === 0
+          && (!parsed.hasExplicitImageCount || rawAttachments.length === parsed.expectedImageCount);
+        const matchesVideoAlt = videoCount >= minVideos
+          && (!parsed.hasExplicitVideoCount || videoCount === parsed.expectedVideoCount)
+          && imageCount === 0
+          && (!parsed.hasExplicitVideoCount || rawAttachments.length === parsed.expectedVideoCount);
+        if (!matchesImageAlt && !matchesVideoAlt) {
           return false;
         }
-      } else if (parsed.hasExplicitCardinality) {
-        if (rawAttachments.length > (imageCount + videoCount)) {
+        matchingAttachments = matchesImageAlt
+          ? rawAttachments.filter(isImageAttachment)
+          : rawAttachments.filter(isVideoAttachment);
+      } else {
+        const minImages = parsed.expectedImageCount > 0 ? parsed.expectedImageCount : 1;
+        const minVideos = parsed.expectedVideoCount > 0 ? parsed.expectedVideoCount : 1;
+        if (imageCount < minImages || videoCount < minVideos) {
           return false;
+        }
+        if (parsed.hasExplicitImageCount && imageCount !== parsed.expectedImageCount) {
+          return false;
+        }
+        if (parsed.hasExplicitVideoCount && videoCount !== parsed.expectedVideoCount) {
+          return false;
+        }
+        if (parsed.hasExplicitImageCount && parsed.hasExplicitVideoCount) {
+          if (rawAttachments.length !== (parsed.expectedImageCount + parsed.expectedVideoCount)) {
+            return false;
+          }
+        } else if (parsed.hasExplicitCardinality) {
+          if (rawAttachments.length > (imageCount + videoCount)) {
+            return false;
+          }
         }
       }
     } else if (parsed.wantsImage && !parsed.wantsVideo) {
       if (videoCount > 0) return false;
-      if (parsed.hasExplicitCardinality || parsed.hasExplicitImageCount) {
+      const hasExactImageCount = (parsed.hasExplicitImageCount && !parsed.isImageNegated) || parsed.hasExplicitGenericCount;
+      if (hasExactImageCount) {
         if (imageCount !== parsed.expectedCount || rawAttachments.length !== parsed.expectedCount) {
           return false;
         }
@@ -2626,7 +2672,8 @@ export class Agent extends LoopDetector {
       matchingAttachments = rawAttachments.filter(isImageAttachment);
     } else if (parsed.wantsVideo && !parsed.wantsImage) {
       if (imageCount > 0) return false;
-      if (parsed.hasExplicitCardinality || parsed.hasExplicitVideoCount) {
+      const hasExactVideoCount = (parsed.hasExplicitVideoCount && !parsed.isVideoNegated) || parsed.hasExplicitGenericCount;
+      if (hasExactVideoCount) {
         if (videoCount !== parsed.expectedCount || rawAttachments.length !== parsed.expectedCount) {
           return false;
         }
@@ -13462,17 +13509,18 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     const publishesTo = (platform) => {
       const destPreps = '(?:on|onto|to|via|in|at|en|sur|sobre|\u00e0|au|auf|su|em|na|no|nos|nas|para|\u0432|\u043d\u0430)';
       const coordConj = '(?:and|und|et|e|y|ve|и|oder|or|ou|o|as\\s+well\\s+as|&|\\/)';
-      const coordItem = `(?:the\\s+)?[a-z0-9_.-]+(?:\\s+page|\\s+account|\\s+profile)?`;
+      const listModifiers = '(?:both|either|all|ambos|ambas|entrambi|entrambe|beide|beiden|les\\s+deux|tous\\s+les\\s+deux|\u043e\u0431\u0430|\u043e\u0431\u0435|\u4e24\u8005|\u4e24\u4e2a|\u4e24|\u4e21\u65b9|\u4e21\u8005|\u4e21|\ub458\\s*\ub2e4|\ub458|\uc591\uc790|\uc591)';
+      const coordItem = `(?:the\\s+)?(?:${listModifiers}\\s+)?[a-z0-9_.-]+(?:\\s+page|\\s+account|\\s+profile)?`;
       const coordPrefix = `(?:${coordItem}(?:\\s*,\\s*${coordItem})*\\s*(?:,\\s*${coordConj}|,|;|\\s+${coordConj})\\s+(?:the\\s+)?)`;
       const platformPattern = new RegExp(
-        `(?<![${SOCIAL_WORD_EDGE}])${destPreps}(?![${SOCIAL_WORD_EDGE}])\\s+(?:the\\s+)?(?:${coordPrefix})?${platform}(?![${SOCIAL_WORD_EDGE}])`
+        `(?<![${SOCIAL_WORD_EDGE}])${destPreps}(?![${SOCIAL_WORD_EDGE}])\\s+(?:(?:${listModifiers}|the)\\s+)*(?:${coordPrefix})?${platform}(?![${SOCIAL_WORD_EDGE}])`
         + `|[\\u5230\\u81f3\\u5728]\\s*(?:[^\\s,;:.?!]+\\s*(?:和|与|及|以及|,|、)\\s*)*${platform}(?![a-z0-9_])`
         + `|(?:\u5728\\s*)?${platform}(?:\\s*(?:と|や|、)\\s*(?:[^\\s,;:.?!]+\\s*(?:と|や|、)\\s*)*[^\\s,;:.?!]+)?\\s*[\\u306b\\u3078\\u3067\\u4e0a\\uc5d0\\ub85c](?![a-z0-9_])`
         + `|${platform}(?:\\s*(?:와|과|및|,)\\s*(?:[^\\s,;:.?!]+\\s*(?:와|과|및|,)\\s*)*[^\\s,;:.?!]+)?\\s*\\uc73c\\ub85c(?![a-z0-9_])`,
         'giu',
       );
       const coordPlatformPattern = new RegExp(
-        `(?<![${SOCIAL_WORD_EDGE}])(?:${destPreps}(?![${SOCIAL_WORD_EDGE}])\\s+)?(?:the\\s+)?(?:${coordPrefix})?${platform}(?![${SOCIAL_WORD_EDGE}])`
+        `(?<![${SOCIAL_WORD_EDGE}])(?:${destPreps}(?![${SOCIAL_WORD_EDGE}])\\s+)?(?:(?:${listModifiers}|the)\\s+)*(?:${coordPrefix})?${platform}(?![${SOCIAL_WORD_EDGE}])`
         + `|(?:[\\u5230\\u81f3\\u5728]\\s*)?(?:[^\\s,;:.?!]+\\s*(?:和|与|及|以及|,|、)\\s*)*${platform}(?![a-z0-9_])`
         + `|(?:\u5728\\s*)?${platform}(?:\\s*(?:と|や|、)\\s*(?:[^\\s,;:.?!]+\\s*(?:と|や|、)\\s*)*[^\\s,;:.?!]+)?\\s*[\\u306b\\u3078\\u3067\\u4e0a\\uc5d0\\ub85c]?(?![a-z0-9_])`
         + `|${platform}(?:\\s*(?:와|과|및|,)\\s*(?:[^\\s,;:.?!]+\\s*(?:와|과|및|,)\\s*)*[^\\s,;:.?!]+)?\\s*(?:\\uc73c\\ub85c)?(?![a-z0-9_])`,
