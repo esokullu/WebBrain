@@ -12974,14 +12974,72 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
 
   _maskQuotedPayload(text) {
     if (!text) return '';
-    let str = String(text);
-    str = str.replace(/(["“「『«])([\s\S]*?)(["”」』»])/g, (_match, open, content, close) => {
-      return open + ' '.repeat(content.length) + close;
-    });
-    str = str.replace(/(?<!\p{L})'([^']+)'(?!\p{L})/gu, (_match, content) => {
+    const chars = String(text).split('');
+    const pairs = {
+      '“': '”',
+      '「': '」',
+      '『': '』',
+      '«': '»',
+    };
+    let i = 0;
+    while (i < chars.length) {
+      const ch = chars[i];
+      if (pairs[ch]) {
+        const openChar = ch;
+        const closeChar = pairs[ch];
+        const start = i;
+        let depth = 1;
+        i++;
+        while (i < chars.length && depth > 0) {
+          if (chars[i] === '\\' && i + 1 < chars.length) {
+            i += 2;
+            continue;
+          }
+          if (chars[i] === openChar) depth++;
+          else if (chars[i] === closeChar) depth--;
+          i++;
+        }
+        if (depth === 0) {
+          for (let j = start + 1; j < i - 1; j++) {
+            chars[j] = ' ';
+          }
+        } else {
+          i = start + 1;
+        }
+        continue;
+      }
+      if (ch === '"') {
+        const start = i;
+        i++;
+        let closed = false;
+        while (i < chars.length) {
+          if (chars[i] === '\\' && i + 1 < chars.length) {
+            i += 2;
+            continue;
+          }
+          if (chars[i] === '"') {
+            closed = true;
+            i++;
+            break;
+          }
+          i++;
+        }
+        if (closed) {
+          for (let j = start + 1; j < i - 1; j++) {
+            chars[j] = ' ';
+          }
+        } else {
+          i = start + 1;
+        }
+        continue;
+      }
+      i++;
+    }
+    let res = chars.join('');
+    res = res.replace(/(?<!\p{L})'([^']+)'(?!\p{L})/gu, (_match, content) => {
       return "'" + ' '.repeat(content.length) + "'";
     });
-    return str;
+    return res;
   }
 
   _socialPublicationClauses(text) {

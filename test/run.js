@@ -86396,6 +86396,14 @@ test('social publication workflow follows the live X or Bluesky destination and 
         'Portuguese na Bluesky destination preposition was not recognized'],
       ['Não publique no X: olá', [],
         'negated Portuguese no X command was wrongly treated as a publish destination'],
+      ['Post “He said \\"hello; world\\" today” on X', ['twitter'],
+        'nested quotation styles mispaired opening curly quote with inner ASCII quote'],
+      ['Post “He said "hello; world" today” on X', ['twitter'],
+        'nested quotation styles mispaired opening curly quote with inner ASCII quote'],
+      ['Post «He said "hello; world" today» to https://bsky.app/', ['bluesky'],
+        'guillemet quotation containing inner ASCII quote mispaired delimiters'],
+      ['Post 「He said 『hello; world』 today」 on X', ['twitter'],
+        'nested CJK quotation marks mispaired delimiters'],
     ]) {
       assert.deepEqual(
         [...agent._trustedSocialPublishTargetAdapters({ taskText })],
