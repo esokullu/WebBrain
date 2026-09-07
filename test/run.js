@@ -89137,6 +89137,17 @@ test('attachment verification matches specific attachment names without substrin
     assert.deepEqual(quotedListReq.specificTargets, ['research and development.png', 'q1 report.png'],
       AgentClass.name + ': quoted names split on the delimiter but not on their own conjunctions');
 
+    // A finished quoted name still ends a target, so the list around it splits.
+    for (const [mixedValue, mixedTargets] of [
+      ['"research and development.png" and cover.jpg', ['research and development.png', 'cover.jpg']],
+      ['cover.jpg and "research and development.png"', ['cover.jpg', 'research and development.png']],
+      ['research and "development.png"', ['research', 'development.png']],
+      ['"my notes" and cover.jpg', ['my notes', 'cover.jpg']],
+    ]) {
+      assert.deepEqual(agent._parseSpecificAttachmentTargets(mixedValue), mixedTargets,
+        AgentClass.name + `: "${mixedValue}" should split around the quoted name`);
+    }
+
     // An unquoted conjunction still separates two named files.
     const mixedListReq = agent._parseWorkflowAttachmentRequirement({
       value: 'research and development.png and cover.jpg',

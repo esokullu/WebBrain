@@ -246,6 +246,12 @@ const GENERIC_ATTACHMENT_WORDS = new Set([
   '와', '과', '및', '그리고', '하고', '도',
 ]);
 
+// Quoted attachment names are parked behind these placeholders while a target
+// list is split, so a conjunction inside a quoted name is never a separator.
+const QUOTED_NAME_PLACEHOLDER = /\u0000(\d+)\u0000/;
+const QUOTED_NAME_PLACEHOLDER_TAIL = /\u0000\d+\u0000\s*$/;
+const QUOTED_NAME_PLACEHOLDER_HEAD = /^\s*\u0000\d+\u0000/;
+
 // "at least two images" bounds the count from below instead of naming a file,
 // so the qualifier is lifted out before the generic-media test and its
 // lower-bound meaning is carried on the parsed requirement.
@@ -2258,8 +2264,9 @@ export class Agent extends LoopDetector {
   }
 
   // "cat.png and dog.jpg" lists two files, but "research and development.png"
-  // names one. A bare conjunction only separates targets when what precedes it
-  // already ends in an extension, or when what follows it does not.
+  // names one. Punctuation always separates; a bare conjunction only separates
+  // when the name on its left is already finished -- it ends in an extension or
+  // in a closing quote -- or when what follows is not the tail of a filename.
   _splitAttachmentTargetList(text, splitRegex) {
     const flags = splitRegex.flags.includes('g') ? splitRegex.flags : `${splitRegex.flags}g`;
     const scanner = new RegExp(splitRegex.source, flags);
@@ -2271,6 +2278,8 @@ export class Agent extends LoopDetector {
     }
     if (boundaries.length === 0) return [text];
     const endsWithExtension = str => /\.[a-z0-9]{2,5}$/i.test(String(str).trim());
+    const endsWithQuotedName = str => QUOTED_NAME_PLACEHOLDER_TAIL.test(String(str));
+    const startsWithQuotedName = str => QUOTED_NAME_PLACEHOLDER_HEAD.test(String(str));
     const segments = [];
     let cursor = 0;
     for (let i = 0; i < boundaries.length; i++) {
@@ -2278,7 +2287,9 @@ export class Agent extends LoopDetector {
       const left = text.slice(cursor, boundary.start);
       const next = text.slice(boundary.end, boundaries[i + 1] ? boundaries[i + 1].start : text.length);
       const punctuated = /[,;\n，、]/.test(boundary.delimiter);
-      if (!punctuated && !endsWithExtension(left) && endsWithExtension(next)) continue;
+      const leftIsFinished = endsWithExtension(left) || endsWithQuotedName(left);
+      const nextIsFilenameTail = endsWithExtension(next) && !startsWithQuotedName(next);
+      if (!punctuated && !leftIsFinished && nextIsFilenameTail) continue;
       segments.push(left);
       cursor = boundary.end;
     }
@@ -2304,7 +2315,7 @@ export class Agent extends LoopDetector {
       },
     );
     const restoreQuoted = str => String(str).replace(
-      /\u0000(\d+)\u0000/g,
+      new RegExp(QUOTED_NAME_PLACEHOLDER.source, 'g'),
       (whole, index) => (quotedNames[Number(index)] !== undefined ? quotedNames[Number(index)] : whole),
     );
     text = text.replace(/^['"“”«»`]+|['"“”«»`]+$/g, '').trim();
