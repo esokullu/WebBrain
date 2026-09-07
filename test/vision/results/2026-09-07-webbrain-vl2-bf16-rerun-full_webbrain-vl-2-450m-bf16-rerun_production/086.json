@@ -1,0 +1,161 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-09-07T13:10:36.259Z",
+  "id": "086",
+  "model": "webbrain-vl-2-450m-bf16-rerun",
+  "endpoint": "http://127.0.0.1:8335/v1/chat/completions",
+  "promptMode": "production",
+  "question": {
+    "schemaVersion": 1,
+    "id": "086",
+    "difficulty": {
+      "level": 5,
+      "slug": "challenging",
+      "label": "Challenging"
+    },
+    "category": "toast-notification",
+    "title": "Export queued",
+    "image": "images/086.png",
+    "question": "What transient notification is visible, and is it success, warning, error, or informational? Focus on the “Export queued” screen.",
+    "defaultPromptMode": "production"
+  },
+  "image": {
+    "path": "images/086.png",
+    "bytes": 100816,
+    "sha256": "f99038ae9d1f044ac86558e1f413c3ccd730cae620a76931394d817fc00b7837"
+  },
+  "request": {
+    "systemPrompt": "You are the vision subsystem of a web-automation agent. A screenshot of the current browser viewport is attached. Describe what is on screen so the planning agent can decide its next action.\n\nFormat — keep it terse, structured, no flowery prose:\n\n1) Page purpose: one line (e.g. \"GitHub repo issue list\", \"Gmail compose\", \"Stripe checkout form\").\n2) Visible text: list the EXACT strings on buttons, links, headings, tabs, and menu items. Quote them verbatim. Do not paraphrase.\n3) Inputs: list each visible form field with its label, placeholder, current value, and whether it is focused/disabled.\n4) State signals: loading spinners, toasts, modals, error banners, success messages, CAPTCHAs, cookie/consent banners, overlays.\n5) Blockers: anything that would prevent the next likely action (overlay, disabled submit, missing data, auth prompt).\n6) Unknowns: if you cannot read something clearly, say so. Do not guess numbers, names, or identifiers.\n\nRules: no prose intro, no conclusion, no \"this screenshot shows...\", no layout description unless it matters (e.g. \"left nav is collapsed\"). If the page is blank or still loading, say that in one line and stop.",
+    "userText": "Describe this screenshot of the current browser viewport for a web-automation agent. Follow the format in the system prompt.",
+    "foldSystem": false,
+    "temperature": 0,
+    "maxTokens": 800,
+    "chatTemplateKwargs": {
+      "enable_thinking": false,
+      "think": false,
+      "thinking": false
+    }
+  },
+  "response": {
+    "status": 200,
+    "content": "1) Page purpose: Data export form with a one-lock toggle button.\n2) Visible text: \"WebScene\", \"Home\", \"Workspace\", \"Activity\", \"Export queued\", \"Position 14 of 32\", \"General\", \"Notifications\", \"Privacy\", \"Integrations\", \"Cancel export\".\n3) Inputs: None visible.\n4) State signals: \"Export queued\" tooltip, \"Position 14 of 32\" text.\n5) Blockers: None.\n6) Unknowns: None.",
+    "reasoningChars": 0,
+    "usage": {
+      "prompt_tokens": 1103,
+      "completion_tokens": 116,
+      "total_tokens": 1219
+    },
+    "timings": null
+  },
+  "latencyMs": {
+    "headers": 1601,
+    "total": 1601
+  },
+  "score": {
+    "success": true,
+    "ratio": 0.8888888888888888,
+    "earned": 8,
+    "possible": 9,
+    "threshold": 0.72,
+    "sectionCount": 6,
+    "criticalFailures": [],
+    "dimensions": {
+      "page_purpose": {
+        "earned": 1,
+        "possible": 1,
+        "ratio": 1
+      },
+      "visible_text": {
+        "earned": 1,
+        "possible": 2,
+        "ratio": 0.5
+      },
+      "state_signals": {
+        "earned": 4,
+        "possible": 4,
+        "ratio": 1
+      }
+    },
+    "checks": [
+      {
+        "id": "purpose",
+        "dimension": "page_purpose",
+        "section": 1,
+        "kind": "any",
+        "values": [
+          "data export",
+          "settings",
+          "upload",
+          "export"
+        ],
+        "weight": 1,
+        "critical": false,
+        "passed": true,
+        "matched": [
+          "data export",
+          "export"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "heading",
+        "dimension": "visible_text",
+        "section": 2,
+        "kind": "literal",
+        "value": "Data export",
+        "weight": 1,
+        "critical": false,
+        "caseSensitive": true,
+        "passed": false,
+        "matched": [],
+        "scopeFound": true
+      },
+      {
+        "id": "button",
+        "dimension": "visible_text",
+        "section": 2,
+        "kind": "literal",
+        "value": "Cancel export",
+        "weight": 1,
+        "critical": false,
+        "caseSensitive": true,
+        "passed": true,
+        "matched": [
+          "Cancel export"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "toast",
+        "dimension": "state_signals",
+        "section": 4,
+        "kind": "literal",
+        "value": "Export queued",
+        "weight": 2,
+        "critical": true,
+        "caseSensitive": true,
+        "passed": true,
+        "matched": [
+          "Export queued"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "detail",
+        "dimension": "state_signals",
+        "section": 4,
+        "kind": "literal",
+        "value": "Position 14 of 32",
+        "weight": 2,
+        "critical": true,
+        "caseSensitive": true,
+        "passed": true,
+        "matched": [
+          "Position 14 of 32"
+        ],
+        "scopeFound": true
+      }
+    ]
+  },
+  "error": null
+}
