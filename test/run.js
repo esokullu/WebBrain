@@ -89108,6 +89108,93 @@ test('attachment verification matches specific attachment names without substrin
       assert.equal(parsedConj.specificTargets.length, 2, AgentClass.name + `: should parse 2 targets for "${conjCase}"`);
     }
 
+    // A conjunction inside one filename is part of the name, not a separator.
+    for (const [singleName, expected] of [
+      ['"research and development.png"', 'research and development.png'],
+      ['research and development.png', 'research and development.png'],
+      ['sales & marketing.png', 'sales & marketing.png'],
+      ['\u201cq1 and q2 summary.pdf\u201d', 'q1 and q2 summary.pdf'],
+    ]) {
+      const parsedName = agent._parseWorkflowAttachmentRequirement({ value: singleName });
+      assert.deepEqual(parsedName.specificTargets, [expected],
+        AgentClass.name + `: "${singleName}" should stay one attachment target`);
+      assert.equal(parsedName.expectedCount, 1,
+        AgentClass.name + `: "${singleName}" should expect one attachment`);
+      assert.equal(
+        agent._workflowSocialPublishedAttachmentObserved(
+          { value: singleName },
+          { attachments: [{ type: 'image', src: `https://pbs.twimg.com/media/${encodeURIComponent(expected)}` }] },
+        ),
+        true,
+        AgentClass.name + `: the uploaded "${expected}" should satisfy "${singleName}"`,
+      );
+    }
+
+    // A quoted name keeps its conjunction while the list around it still splits.
+    const quotedListReq = agent._parseWorkflowAttachmentRequirement({
+      value: '"research and development.png", "q1 report.png"',
+    });
+    assert.deepEqual(quotedListReq.specificTargets, ['research and development.png', 'q1 report.png'],
+      AgentClass.name + ': quoted names split on the delimiter but not on their own conjunctions');
+
+    // An unquoted conjunction still separates two named files.
+    const mixedListReq = agent._parseWorkflowAttachmentRequirement({
+      value: 'research and development.png and cover.jpg',
+    });
+    assert.deepEqual(mixedListReq.specificTargets, ['research and development.png', 'cover.jpg'],
+      AgentClass.name + ': a trailing conjunction between two filenames still splits');
+
+    // Minimum-count qualifiers bound the count from below instead of naming a file.
+    for (const [minReq, minCount] of [
+      ['at least two images', 2],
+      ['at least 2 images', 2],
+      ['minimum of 3 photos', 3],
+      ['no fewer than two images', 2],
+      ['mindestens zwei bilder', 2],
+      ['au moins deux photos', 2],
+      ['al menos dos im\u00e1genes', 2],
+      ['en az 2 foto\u011fraf', 2],
+      ['\u81f3\u5c11\u4e24\u5f20\u56fe\u7247', 2],
+      ['\ucd5c\uc18c 2\uc7a5 \uc0ac\uc9c4', 2],
+    ]) {
+      const parsedMin = agent._parseWorkflowAttachmentRequirement({ value: minReq });
+      assert.equal(parsedMin.isGeneric, true,
+        AgentClass.name + `: "${minReq}" should read as a generic media requirement`);
+      assert.equal(parsedMin.isMinimumCount, true,
+        AgentClass.name + `: "${minReq}" should carry lower-bound semantics`);
+      assert.deepEqual(parsedMin.specificTargets, [],
+        AgentClass.name + `: "${minReq}" should not name an attachment`);
+      assert.equal(parsedMin.expectedCount, minCount,
+        AgentClass.name + `: "${minReq}" should expect ${minCount}`);
+      const images = count => ({
+        attachments: Array.from({ length: count }, (unused, index) => (
+          { type: 'image', src: `https://pbs.twimg.com/media/shot${index}.png` }
+        )),
+      });
+      assert.equal(agent._workflowSocialPublishedAttachmentObserved({ value: minReq }, images(minCount)), true,
+        AgentClass.name + `: exactly ${minCount} attachments should satisfy "${minReq}"`);
+      assert.equal(agent._workflowSocialPublishedAttachmentObserved({ value: minReq }, images(minCount + 1)), true,
+        AgentClass.name + `: more than ${minCount} attachments should satisfy "${minReq}"`);
+      assert.equal(agent._workflowSocialPublishedAttachmentObserved({ value: minReq }, images(minCount - 1)), false,
+        AgentClass.name + `: fewer than ${minCount} attachments should reject "${minReq}"`);
+    }
+
+    // An unqualified count stays exact.
+    assert.equal(
+      agent._workflowSocialPublishedAttachmentObserved(
+        { value: 'two images' },
+        {
+          attachments: [
+            { type: 'image', src: 'https://pbs.twimg.com/media/one.png' },
+            { type: 'image', src: 'https://pbs.twimg.com/media/two.png' },
+            { type: 'image', src: 'https://pbs.twimg.com/media/three.png' },
+          ],
+        },
+      ),
+      false,
+      AgentClass.name + ': three attachments should not satisfy an exact two-image requirement',
+    );
+
     // Negative attachment requirements
     for (const negReq of [
       'no attachments',
