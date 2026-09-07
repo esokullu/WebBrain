@@ -87140,6 +87140,7 @@ test('social publication workflow follows the live X or Bluesky destination and 
     assert.equal(agent._socialPublishDestinationAdapter('https://bsky.app/profile/nasa.gov/post/3kabc'), '');
     assert.equal(agent._socialPublishDestinationAdapter('https://x.com/nasa'), '');
     assert.equal(agent._socialPublishDestinationAdapter('https://x.com/home'), 'twitter');
+    assert.equal(agent._socialPublishDestinationAdapter('https://x.com/compose'), 'twitter');
     assert.equal(agent._socialPublishDestinationAdapter('https://x.com/compose/post'), 'twitter');
     assert.equal(agent._socialPublishDestinationAdapter('https://bsky.app/'), 'bluesky');
 
@@ -87194,6 +87195,8 @@ test('social publication workflow follows the live X or Bluesky destination and 
         'a composer route needed an English verb'],
       ['Just open https://x.com/compose/post', ['twitter'],
         'a composer route is a destination by construction'],
+      ['Use https://x.com/compose to send this update', ['twitter'],
+        'the bare X composer route was not recognized as a destination by construction'],
       // A destination can lead the command as easily as follow it.
       ['On https://x.com/home, publish this update', ['twitter'],
         'a destination that leads the command was discarded'],
@@ -87535,6 +87538,94 @@ test('social publication workflow follows the live X or Bluesky destination and 
     assert.equal(await agent._adoptLiveSocialPublishWorkflow(genericTabId, provider), false);
     assert.equal(genericGuard.siteWorkflow, null);
     assert.equal(genericGuard.verifiedSubmissionEvidence, true);
+  }
+});
+
+test('multi-platform social publication requires verified evidence for every destination', async () => {
+  for (const [index, AgentClass] of [AgentCh, AgentFx].entries()) {
+    const agent = new AgentClass({});
+    agent.useSiteAdapters = true;
+    agent._persist = () => {};
+    agent._ensureWorkflowMetadataRequirements = async () => {};
+    const tabId = 9075 + index;
+    const taskText = 'Post this update on X and Bluesky.';
+    const approvedScratchpadText = [
+      '[Approved plan pinned by planner]',
+      '- Post this update on X and Bluesky.',
+    ].join('\n');
+    agent.conversations.set(tabId, [
+      { role: 'system', content: 'system' },
+      { role: 'user', content: taskText },
+    ]);
+
+    const twitterWorkflow = agent._resolvePlannerSiteWorkflow('https://x.com/compose/post', {
+      request_kind: 'execute',
+      site_job: 'publish-post',
+    });
+    let guard = agent._startPlanExecutionGuard(tabId, 'act', {
+      requestKind: 'execute',
+      requiresStateChange: true,
+      requiresSubmission: true,
+      siteWorkflow: twitterWorkflow,
+      siteWorkflowUrl: 'https://x.com/compose/post',
+      approvedScratchpadText,
+    });
+    guard.successfulConsequentialToolCalls = 1;
+    guard.evidenceTaskKey = guard.taskKey;
+
+    // A candidate permalink alone is not enough to checkpoint a destination.
+    agent._recordSocialPublishTargetSatisfied(guard);
+    assert.deepEqual(guard.socialPublishSatisfiedTargets, [],
+      AgentClass.name + ': an unverified first destination was checkpointed');
+
+    guard.workflowTerminalEvidence = {
+      bindingKey: agent._adapterWorkflowBindingKey(guard.siteWorkflow),
+      job: guard.siteWorkflow.job.id,
+      verificationKind: agent._workflowVerificationKind(guard.siteWorkflow),
+      source: 'dispatch_bound_published_resource',
+    };
+    guard.verifiedSubmissionEvidence = true;
+    agent._recordSocialPublishTargetSatisfied(guard);
+    assert.deepEqual(guard.socialPublishSatisfiedTargets, ['twitter']);
+    assert.deepEqual(agent._missingSocialPublishTargets(guard), ['bluesky']);
+    assert.equal(agent._executionEvidenceSatisfied(guard), false,
+      AgentClass.name + ': one verified platform completed a two-platform task');
+
+    let liveUrl = 'https://bsky.app/';
+    agent._currentUrl = async () => liveUrl;
+    agent._currentProgressPageScope = () => liveUrl;
+    assert.equal(await agent._adoptLiveSocialPublishWorkflow(tabId, {}), true);
+    assert.equal(guard.siteWorkflow.adapterName, 'bluesky');
+    assert.deepEqual(guard.socialPublishSatisfiedTargets, ['twitter'],
+      AgentClass.name + ': rebinding discarded the first platform checkpoint');
+    assert.equal(guard.workflowTerminalEvidence, null);
+
+    // A trusted Continue may occur between destinations; keep the verified
+    // checkpoint so the resumed run is not asked to republish on X.
+    agent._storeContinuationExecutionEvidence(tabId);
+    guard = agent._startPlanExecutionGuard(tabId, 'act', {
+      requestKind: 'execute',
+      requiresStateChange: true,
+      requiresSubmission: true,
+      siteWorkflow: guard.siteWorkflow,
+      siteWorkflowUrl: liveUrl,
+      approvedScratchpadText,
+    }, { trustedContinuation: true });
+    assert.deepEqual(guard.socialPublishSatisfiedTargets, ['twitter'],
+      AgentClass.name + ': Continue discarded a verified platform checkpoint');
+
+    guard.workflowTerminalEvidence = {
+      bindingKey: agent._adapterWorkflowBindingKey(guard.siteWorkflow),
+      job: guard.siteWorkflow.job.id,
+      verificationKind: agent._workflowVerificationKind(guard.siteWorkflow),
+      source: 'dispatch_bound_published_resource',
+    };
+    guard.verifiedSubmissionEvidence = true;
+    agent._recordSocialPublishTargetSatisfied(guard);
+    assert.deepEqual(guard.socialPublishSatisfiedTargets, ['twitter', 'bluesky']);
+    assert.deepEqual(agent._missingSocialPublishTargets(guard), []);
+    assert.equal(agent._executionEvidenceSatisfied(guard), true,
+      AgentClass.name + ': both verified platforms did not complete the task');
   }
 });
 
@@ -89286,6 +89377,62 @@ test('attachment verification matches specific attachment names without substrin
       assert.equal(agent._workflowSocialPublishedAttachmentObserved({ value: minReq }, images(minCount - 1)), false,
         AgentClass.name + `: fewer than ${minCount} attachments should reject "${minReq}"`);
     }
+
+    // A minimum qualifier applies only to the media count in its own phrase.
+    const image = index => ({ type: 'image', src: `https://pbs.twimg.com/media/image${index}.png` });
+    const video = index => ({ type: 'video', src: `https://video.twimg.com/media/video${index}.mp4` });
+    const scopedImageMinimum = { value: 'at least two images and one video' };
+    const parsedScopedImageMinimum = agent._parseWorkflowAttachmentRequirement(scopedImageMinimum);
+    assert.equal(parsedScopedImageMinimum.isImageMinimum, true,
+      AgentClass.name + ': the image minimum qualifier was not retained');
+    assert.equal(parsedScopedImageMinimum.isVideoMinimum, false,
+      AgentClass.name + ': the image minimum qualifier leaked onto the exact video count');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      scopedImageMinimum,
+      { attachments: [image(1), image(2), video(1)] },
+    ), true, AgentClass.name + ': the exact mixed minimum requirement did not pass');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      scopedImageMinimum,
+      { attachments: [image(1), image(2), image(3), video(1)] },
+    ), true, AgentClass.name + ': an extra image did not satisfy the image minimum');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      scopedImageMinimum,
+      { attachments: [image(1), image(2), video(1), video(2)] },
+    ), false, AgentClass.name + ': the image minimum incorrectly loosened the exact video count');
+
+    const scopedVideoMinimum = { value: 'one image and at least two videos' };
+    const parsedScopedVideoMinimum = agent._parseWorkflowAttachmentRequirement(scopedVideoMinimum);
+    assert.equal(parsedScopedVideoMinimum.isImageMinimum, false,
+      AgentClass.name + ': the video minimum qualifier leaked onto the exact image count');
+    assert.equal(parsedScopedVideoMinimum.isVideoMinimum, true,
+      AgentClass.name + ': the video minimum qualifier was not retained');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      scopedVideoMinimum,
+      { attachments: [image(1), video(1), video(2), video(3)] },
+    ), true, AgentClass.name + ': an extra video did not satisfy the video minimum');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      scopedVideoMinimum,
+      { attachments: [image(1), image(2), video(1), video(2)] },
+    ), false, AgentClass.name + ': the video minimum incorrectly loosened the exact image count');
+
+    const alternativeScopedMinimum = { value: 'at least two images or one video' };
+    const parsedAlternativeScopedMinimum = agent._parseWorkflowAttachmentRequirement(alternativeScopedMinimum);
+    assert.equal(parsedAlternativeScopedMinimum.isImageMinimum, true,
+      AgentClass.name + ': the alternative image minimum qualifier was not retained');
+    assert.equal(parsedAlternativeScopedMinimum.isVideoMinimum, false,
+      AgentClass.name + ': an alternative image minimum leaked onto the exact video count');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      alternativeScopedMinimum,
+      { attachments: [image(1), image(2), image(3)] },
+    ), true, AgentClass.name + ': extra images did not satisfy the alternative image minimum');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      alternativeScopedMinimum,
+      { attachments: [video(1)] },
+    ), true, AgentClass.name + ': one video did not satisfy the exact alternative');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      alternativeScopedMinimum,
+      { attachments: [video(1), video(2)] },
+    ), false, AgentClass.name + ': an image minimum loosened the alternative exact video count');
 
     // An unqualified count stays exact.
     assert.equal(

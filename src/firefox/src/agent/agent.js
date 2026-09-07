@@ -246,6 +246,16 @@ const GENERIC_ATTACHMENT_WORDS = new Set([
   '와', '과', '및', '그리고', '하고', '도',
 ]);
 
+// The media nouns, kept where both the requirement parser and the
+// minimum-count scope test can reach them.
+const RAW_GIF_NOUN_REGEX = /\b(?:gif|gifs)\b|\.gif(?:[?#]|$)|(?:animated[-_ ]gif|動圖|动图|움짤)/i;
+const RAW_VIDEO_NOUN_REGEX = /\b(?:video|videos|mp4|mov|webm|mkv|clip|clips|recording|recordings|vidéo|vidéos)\b|(?:動画|视频|影片|видео|동영상|비디오|영상)/i;
+const RAW_IMAGE_NOUN_REGEX = /\b(?:image|images|photo|photos|picture|pictures|pic|pics|png|jpg|jpeg|webp|foto|fotos|bild|bilder|imagen(?:es)?|imágenes|imagem|imagens)\b|(?:画像|写真|图片|照片|圖片|изображение|фото|사진|이미지|포토)/i;
+// A minimum qualifier binds the count phrase it sits in, not the whole
+// requirement: "at least two images and one video" still wants exactly one
+// video. These are the boundaries between those phrases.
+const MIN_COUNT_SCOPE_SPLIT = /(?:\s*[,;&+]\s*|\s+(?:and|or|und|oder|et|ou|e|o|y|plus|as\s+well\s+as|oppure|ve|veya|ya\s+da|и|или|либо|그리고|또는|혹은)\s+|(?:和|与|及|以及|或|或者|、|，|와|과|및|と|や|または|それとも))/i;
+
 // Quoted attachment names are parked behind these placeholders while a target
 // list is split, so a conjunction inside a quoted name is never a separator.
 const QUOTED_NAME_PLACEHOLDER_ALL = /\u0000(\d+)\u0000/g;
@@ -2494,9 +2504,9 @@ export class Agent extends LoopDetector {
       };
     }
 
-    const hasRawGif = /\b(?:gif|gifs)\b|\.gif(?:[?#]|$)|(?:animated[-_ ]gif|動圖|动图|움짤)/i.test(text);
-    const hasRawVideo = hasRawGif || /\b(?:video|videos|mp4|mov|webm|mkv|clip|clips|recording|recordings|vidéo|vidéos)\b|(?:動画|视频|影片|видео|동영상|비디오|영상)/i.test(text);
-    const hasRawImage = /\b(?:image|images|photo|photos|picture|pictures|pic|pics|png|jpg|jpeg|webp|foto|fotos|bild|bilder|imagen(?:es)?|imágenes|imagem|imagens)\b|(?:画像|写真|图片|照片|圖片|изображение|фото|사진|이미지|포토)/i.test(text);
+    const hasRawGif = RAW_GIF_NOUN_REGEX.test(text);
+    const hasRawVideo = hasRawGif || RAW_VIDEO_NOUN_REGEX.test(text);
+    const hasRawImage = RAW_IMAGE_NOUN_REGEX.test(text);
 
     const wantsGif = hasRawGif && !isGifNegated;
     const wantsVideo = (hasRawVideo && !isVideoNegated) || wantsGif;
@@ -2565,7 +2575,24 @@ export class Agent extends LoopDetector {
       const words = nonPunctuation ? nonPunctuation.split(/\s+/) : [];
       isGeneric = words.length > 0 && words.every(w => /^\d+$/.test(w) || GENERIC_ATTACHMENT_WORDS.has(w) || CJK_GENERIC_ATTACHMENT_REGEX.test(w));
     }
+    // Scope each qualifier to the phrase it appears in, so a minimum on one
+    // media type does not loosen an exact count on the other.
+    let minScopedImage = false;
+    let minScopedVideo = false;
+    let minScopedGeneric = false;
+    if (hasMinCountQualifier) {
+      for (const segment of text.split(MIN_COUNT_SCOPE_SPLIT)) {
+        if (!segment || !MIN_ATTACHMENT_COUNT_REGEX.test(segment)) continue;
+        const segmentImage = RAW_IMAGE_NOUN_REGEX.test(segment);
+        const segmentVideo = RAW_GIF_NOUN_REGEX.test(segment) || RAW_VIDEO_NOUN_REGEX.test(segment);
+        if (segmentImage) minScopedImage = true;
+        if (segmentVideo) minScopedVideo = true;
+        if (!segmentImage && !segmentVideo) minScopedGeneric = true;
+      }
+    }
     const isMinimumCount = isGeneric && hasMinCountQualifier;
+    const isImageMinimum = isGeneric && (minScopedImage || minScopedGeneric);
+    const isVideoMinimum = isGeneric && (minScopedVideo || minScopedGeneric);
 
     const countPrefix = '(?:\\d+|zero|cero|zéro|a|an|one|two|three|four|five|six|seven|eight|nine|ten|single|both|multiple|un|une|deux|trois|quatre|cinq|uno|una|unos|unas|dos|tres|cuatro|cinco|due|tre|quattro|cinque|ein|eine|einen|einer|zwei|drei|vier|fünf|um|uma|dois|duas|três|один|одна|одно|два|две|три|четыре|пять|[一二两三四五六七八九十]|하나|둘|셋|넷|다섯|한(?=\\s*(?:장|개|건|편|개의|장의))|두(?=\\s*(?:장|개|건|편|개의|장의))|세(?=\\s*(?:장|개|건|편|개의|장의))|네(?=\\s*(?:장|개|건|편|개의|장의))|[일이삼사오](?=\\s*(?:장|개|건|편|개의|장의)))';
     const countSeparator = '(?:^|[\\s,;+&/|、，。；：]|(?:\\b(?:and|und|et|e|y)\\b\\s*)|[와과및])';
@@ -2671,6 +2698,8 @@ export class Agent extends LoopDetector {
       isGifNegated,
       isAlternative,
       isMinimumCount,
+      isImageMinimum,
+      isVideoMinimum,
       wantsImage,
       wantsVideo,
       wantsGif,
@@ -2732,8 +2761,8 @@ export class Agent extends LoopDetector {
       if (parsed.isAlternative) {
         const minImages = parsed.expectedImageCount > 0 ? parsed.expectedImageCount : 1;
         const minVideos = parsed.expectedVideoCount > 0 ? parsed.expectedVideoCount : 1;
-        const exactImageAlt = parsed.hasExplicitImageCount && !parsed.isMinimumCount;
-        const exactVideoAlt = parsed.hasExplicitVideoCount && !parsed.isMinimumCount;
+        const exactImageAlt = parsed.hasExplicitImageCount && !parsed.isImageMinimum;
+        const exactVideoAlt = parsed.hasExplicitVideoCount && !parsed.isVideoMinimum;
         const matchesImageAlt = imageCount >= minImages
           && (!exactImageAlt || imageCount === parsed.expectedImageCount)
           && videoCount === 0
@@ -2754,13 +2783,14 @@ export class Agent extends LoopDetector {
         if (imageCount < minImages || videoCount < minVideos) {
           return false;
         }
-        if (parsed.hasExplicitImageCount && !parsed.isMinimumCount && imageCount !== parsed.expectedImageCount) {
+        if (parsed.hasExplicitImageCount && !parsed.isImageMinimum && imageCount !== parsed.expectedImageCount) {
           return false;
         }
-        if (parsed.hasExplicitVideoCount && !parsed.isMinimumCount && videoCount !== parsed.expectedVideoCount) {
+        if (parsed.hasExplicitVideoCount && !parsed.isVideoMinimum && videoCount !== parsed.expectedVideoCount) {
           return false;
         }
-        if (parsed.hasExplicitImageCount && parsed.hasExplicitVideoCount && !parsed.isMinimumCount) {
+        if (parsed.hasExplicitImageCount && parsed.hasExplicitVideoCount
+            && !parsed.isImageMinimum && !parsed.isVideoMinimum) {
           if (rawAttachments.length !== (parsed.expectedImageCount + parsed.expectedVideoCount)) {
             return false;
           }
@@ -2772,7 +2802,7 @@ export class Agent extends LoopDetector {
       }
     } else if (parsed.wantsImage && !parsed.wantsVideo) {
       if (videoCount > 0) return false;
-      const hasExactImageCount = !parsed.isMinimumCount
+      const hasExactImageCount = !parsed.isImageMinimum
         && ((parsed.hasExplicitImageCount && !parsed.isImageNegated) || parsed.hasExplicitGenericCount);
       if (hasExactImageCount) {
         if (imageCount !== parsed.expectedCount || rawAttachments.length !== parsed.expectedCount) {
@@ -2786,7 +2816,7 @@ export class Agent extends LoopDetector {
       matchingAttachments = rawAttachments.filter(isImageAttachment);
     } else if (parsed.wantsVideo && !parsed.wantsImage) {
       if (imageCount > 0) return false;
-      const hasExactVideoCount = !parsed.isMinimumCount
+      const hasExactVideoCount = !parsed.isVideoMinimum
         && ((parsed.hasExplicitVideoCount && !parsed.isVideoNegated) || parsed.hasExplicitGenericCount);
       if (hasExactVideoCount) {
         if (videoCount !== parsed.expectedCount || rawAttachments.length !== parsed.expectedCount) {
@@ -13595,7 +13625,9 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       if (lastBeforeClause?.isNegated) continue;
       const afterClauses = this._socialPublicationClauses(after);
       const firstAfterClause = afterClauses.find(c => c.text.trim().length > 0);
-      const isComposer = /\/(?:compose|intent|i\/flow)\//.test(url);
+      // The route matcher accepts a bare /compose, so the composer test has to
+      // end at a path boundary rather than demand a following slash.
+      const isComposer = /\/(?:compose|intent|i\/flow)(?:[/?#]|$)/i.test(url);
       const firstAfterNegatesPublish = firstAfterClause?.isNegated
         && (isComposer
           || SOCIAL_PUBLISH_VERBS.test(firstAfterClause.maskedText || firstAfterClause.text));
@@ -13795,6 +13827,40 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       targets.add('twitter');
     }
     return targets;
+  }
+
+  // The guard holds one workflow slot, so a run that publishes on X and then
+  // rebinds to Bluesky forgets the first post. A task that named both is not
+  // finished until both exist, so each proven platform is remembered here as
+  // the run moves on.
+  _recordSocialPublishTargetSatisfied(guard) {
+    const bound = guard?.siteWorkflow;
+    if (!guard || !bound?.job || bound.job.id !== 'publish-post') return;
+    if (!['twitter', 'bluesky'].includes(bound.adapterName)) return;
+    // A permalink discovered after dispatch is only a candidate. Record the
+    // platform after the full account/body/attachment contract has verified.
+    if (!this._workflowTerminalEvidenceMatchesState(guard, guard.workflowTerminalEvidence)) return;
+    const satisfied = Array.isArray(guard.socialPublishSatisfiedTargets)
+      ? guard.socialPublishSatisfiedTargets
+      : [];
+    if (!satisfied.includes(bound.adapterName)) satisfied.push(bound.adapterName);
+    guard.socialPublishSatisfiedTargets = satisfied;
+  }
+
+  _missingSocialPublishTargets(state) {
+    if (!state || state.requiresSubmission !== true) return [];
+    let targets;
+    try {
+      targets = this._trustedSocialPublishTargetAdapters(state);
+    } catch {
+      return ['unknown'];
+    }
+    // One destination is already covered by the ordinary terminal evidence.
+    if (!targets || targets.size < 2) return [];
+    const satisfied = Array.isArray(state.socialPublishSatisfiedTargets)
+      ? state.socialPublishSatisfiedTargets
+      : [];
+    return [...targets].filter(name => !satisfied.includes(name));
   }
 
   async _adoptLiveSocialPublishWorkflow(tabId, provider) {
@@ -21933,6 +21999,9 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         ? (carried.successfulRequiredSchedulingToolCalls || 0)
         : 0,
       verifiedSubmissionEvidence: carryMatches && carried.verifiedSubmissionEvidence === true,
+      socialPublishSatisfiedTargets: carryMatches && Array.isArray(carried.socialPublishSatisfiedTargets)
+        ? [...carried.socialPublishSatisfiedTargets]
+        : [],
       workflowTerminalEvidence: carryMatches && carried.workflowTerminalEvidence
         ? { ...carried.workflowTerminalEvidence }
         : null,
@@ -22235,11 +22304,13 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     const workflowJobEvidenceSatisfied = this._workflowJobRequiresDraftEvidence(state.siteWorkflow)
       ? this._workflowTerminalEvidenceMatchesState(state, state.workflowTerminalEvidence)
       : (!state.workflowRequiredJobEvidence || state.workflowJobEvidenceSatisfied === true);
+    const everySocialTargetSatisfied = this._missingSocialPublishTargets(state).length === 0;
     return taskEvidenceSatisfied
       && schedulingEvidenceSatisfied
       && downloadEvidenceSatisfied
       && submissionEvidenceSatisfied
-      && workflowJobEvidenceSatisfied;
+      && workflowJobEvidenceSatisfied
+      && everySocialTargetSatisfied;
   }
 
   _storeContinuationExecutionEvidence(tabId) {
@@ -22282,6 +22353,9 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         pendingDownloadIds: [...guard.pendingDownloadIds],
         successfulRequiredSchedulingToolCalls: guard.successfulRequiredSchedulingToolCalls,
         verifiedSubmissionEvidence: guard.verifiedSubmissionEvidence === true,
+        socialPublishSatisfiedTargets: Array.isArray(guard.socialPublishSatisfiedTargets)
+          ? [...guard.socialPublishSatisfiedTargets]
+          : [],
         workflowTerminalEvidence: guard.workflowTerminalEvidence
           ? { ...guard.workflowTerminalEvidence }
           : null,
@@ -22564,6 +22638,9 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     const missingRequiredLedger = !terminalFailure
       && state.siteWorkflow?.job?.requiresLedger === true
       && !this._workflowLedgerReconciliationSatisfied(tabId, state);
+    const missingSocialPublishTargets = !terminalFailure
+      ? this._missingSocialPublishTargets(state)
+      : [];
     const missingEvidence = !terminalFailure && !this._executionEvidenceSatisfied(state);
     const unknownMutationIntent = state.requiresStateChange == null;
     // Every plain Act/Dev terminal gets one protocol recovery regardless of
@@ -22600,6 +22677,8 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           ? `[PLAN EXECUTION BLOCK: The approved plan requires a successful ${state.requiredSchedulingTool} call before this task can finish successfully. A one-time read, scroll, send, or other action does not create the scheduled work. Call ${state.requiredSchedulingTool} with the user's requested timing and verify success:true plus scheduled:true. If the schedule is unsupported or still lacks required timing, call done with outcome partial or failed and explain the exact limitation; do not claim it was scheduled.]`
           : missingRequiredDownload
           ? '[PLAN EXECUTION BLOCK: This task requires a file to be downloaded before it can finish successfully. Finding a URL, link, button, or media source is only read evidence. Use an authorized tool call with the DOWNLOAD capability and verify that it returned successful download evidence. If permission is denied or no file can be saved, call done with outcome partial or failed and explain the limitation; do not claim the file was downloaded.]'
+          : missingSocialPublishTargets.length
+          ? `[PLAN EXECUTION BLOCK: This task requests publication on every named social destination, but job-bound terminal evidence is still missing for: ${missingSocialPublishTargets.map(name => name === 'twitter' ? 'X' : name === 'bluesky' ? 'Bluesky' : name).join(', ')}. Continue with those destinations and verify each published resource before calling done again. Do not republish on a destination already verified in this run.]`
           : missingRequiredSubmission
           ? (state.siteWorkflow?.job?.id
             ? `[PLAN EXECUTION BLOCK: The selected ${state.siteWorkflow.job.id} job requires terminal evidence for its own submit/send/publish/commit contract. Filling fields, another site's submit, or an unrelated success signal is not completion. Dispatch the intended action and observe the job-specific terminal state (for example recipient-bound sent state, saved/published resource, form confirmation, or paid/ticket-issued transaction) before calling done again. If that cannot be verified, use outcome partial or failed and report the exact blocker.]`
@@ -22639,6 +22718,12 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       return {
         failure: '[Agent stopped because the approved task required a downloaded file, but no successful DOWNLOAD-capability tool result was verified after one recovery nudge. A URL, link, media-resolution result, or unrelated page action does not prove that a file was saved.]',
         status: 'required_tool_missing',
+      };
+    }
+    if (missingSocialPublishTargets.length) {
+      return {
+        failure: `[Agent stopped because job-bound terminal evidence was still missing for these requested social destinations after one recovery nudge: ${missingSocialPublishTargets.map(name => name === 'twitter' ? 'X' : name === 'bluesky' ? 'Bluesky' : name).join(', ')}. A post may already exist on another destination; inspect each missing destination before retrying to avoid duplicate publication.]`,
+        status: 'required_evidence_missing',
       };
     }
     if (missingRequiredSubmission) {
@@ -26628,6 +26713,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
                 if (workflowTerminalEvidence) {
                   executionGuard.workflowTerminalEvidence = workflowTerminalEvidence;
                   executionGuard.verifiedSubmissionEvidence = true;
+                  this._recordSocialPublishTargetSatisfied(executionGuard);
                 }
               } else {
                 if (workflowTerminalEvidence) {
