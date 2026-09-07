@@ -26,6 +26,7 @@ This changelog was generated from the repository Git history and release tags. V
 ### Added
 - Added OpenRouter routing variant controls, including support for encoding **Exacto** as an OpenRouter model variant
 - Added LFM2.5 1.2B Instruct, 1.2B Thinking, VL 1.6B, and VL 3B to the Chromium WebGPU picker; the VL presets are exposed as multimodal providers
+- Added the Nanbeige4.2-3B ONNX WebGPU export as a Chromium WebGPU text preset, with its non-default graph file name, publisher sampling settings, and a 4k context sized for its 44 KV-cache slots
 
 ### Changed
 - Restored the **default compact activity history** behavior

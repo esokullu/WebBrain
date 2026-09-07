@@ -30,6 +30,7 @@ const WEBGPU_LFM25_12B_INSTRUCT_MODEL_ID = 'LiquidAI/LFM2.5-1.2B-Instruct-ONNX';
 const WEBGPU_LFM25_12B_THINKING_MODEL_ID = 'LiquidAI/LFM2.5-1.2B-Thinking-ONNX';
 const WEBGPU_LFM25_VL_16B_MODEL_ID = 'LiquidAI/LFM2.5-VL-1.6B-ONNX';
 const WEBGPU_LFM25_VL_3B_MODEL_ID = 'LiquidAI/LFM2.5-VL-3B-ONNX';
+const WEBGPU_NANBEIGE42_3B_MODEL_ID = 'Michionlion/Nanbeige4.2-3B-ONNX-WebGPU';
 const WEBGPU_BONSAI27_MODEL_ID = 'prism-ml/Bonsai-27B-gguf';
 const WEBGPU_LFM25_MAX_NEW_TOKENS = 2048;
 const WEBGPU_LFM25_TEXT_MODEL_IDS = new Set([
@@ -40,6 +41,37 @@ const WEBGPU_LFM25_TEXT_MODEL_IDS = new Set([
 const WEBGPU_LFM25_VL_MODEL_IDS = new Set([
   WEBGPU_LFM25_VL_16B_MODEL_ID,
   WEBGPU_LFM25_VL_3B_MODEL_ID,
+]);
+// Presets whose reasoning is generated as hidden thinking rather than as part
+// of the visible answer, so they need the long output budget.
+const WEBGPU_REASONING_MODEL_IDS = new Set([
+  WEBGPU_LFM25_MODEL_ID,
+  WEBGPU_LFM25_12B_THINKING_MODEL_ID,
+  WEBGPU_NANBEIGE42_3B_MODEL_ID,
+]);
+// Chat templates that emit the opening `<think>` themselves, so the runtime
+// only returns the reasoning suffix.
+const WEBGPU_OPEN_THINKING_MODEL_IDS = new Set([
+  WEBGPU_LFM25_MODEL_ID,
+  WEBGPU_NANBEIGE42_3B_MODEL_ID,
+]);
+const WEBGPU_LONG_OUTPUT_MODEL_IDS = new Set([
+  ...WEBGPU_LFM25_TEXT_MODEL_IDS,
+  WEBGPU_NANBEIGE42_3B_MODEL_ID,
+]);
+// Publisher-recommended decoding for the shipped reasoning presets. Custom
+// repositories keep Transformers.js greedy defaults.
+const WEBGPU_TEXT_SAMPLING = new Map([
+  [WEBGPU_LFM25_MODEL_ID, { temperature: 0.1, top_k: 50, repetition_penalty: 1.1 }],
+  [WEBGPU_LFM25_12B_THINKING_MODEL_ID, { temperature: 0.05, top_k: 50, repetition_penalty: 1.05 }],
+  // Nanbeige4.2-3B's own generation_config.json.
+  [WEBGPU_NANBEIGE42_3B_MODEL_ID, { temperature: 0.6, top_k: 20, top_p: 0.95 }],
+]);
+// Nanbeige ships a single WebGPU-fused graph under a non-default file name.
+// Without this override Transformers.js looks for `onnx/model_q4f16.onnx`,
+// which the repository does not publish.
+const WEBGPU_TEXT_MODEL_FILE_NAMES = new Map([
+  [WEBGPU_NANBEIGE42_3B_MODEL_ID, 'model_webgpu_mlp'],
 ]);
 const WEBGPU_VISION_READY_MARKER_VERSION = 2;
 const WEBGPU_VISION_READY_MARKER_PREFIX = 'https://webbrain.one/.well-known/webgpu-vision-ready/';
@@ -660,6 +692,9 @@ async function getTextRuntime(modelId, dtype, device, { localFilesOnly = false }
       pipeline = await library.pipeline('text-generation', modelId, {
         device,
         dtype,
+        ...(WEBGPU_TEXT_MODEL_FILE_NAMES.has(modelId)
+          ? { model_file_name: WEBGPU_TEXT_MODEL_FILE_NAMES.get(modelId) }
+          : {}),
         // ORT mutates this object while appending its default session config.
         session_options: createWebGpuTextSessionOptions(),
         local_files_only: localFilesOnly,
@@ -1223,17 +1258,17 @@ async function runText(payload) {
   const modelId = assertOnnxTextModel(payload?.modelId);
   const device = payload?.device || 'webgpu';
   const dtype = payload?.dtype || 'q4f16';
-  const usesLfm25ReasoningTemplate = modelId === WEBGPU_LFM25_MODEL_ID
-    || modelId === WEBGPU_LFM25_12B_THINKING_MODEL_ID;
-  const opensThinkingInPrompt = modelId === WEBGPU_LFM25_MODEL_ID;
-  const usesLfm25TextRuntime = WEBGPU_LFM25_TEXT_MODEL_IDS.has(modelId);
+  const usesReasoningTemplate = WEBGPU_REASONING_MODEL_IDS.has(modelId);
+  const opensThinkingInPrompt = WEBGPU_OPEN_THINKING_MODEL_IDS.has(modelId);
+  const usesLongOutputBudget = WEBGPU_LONG_OUTPUT_MODEL_IDS.has(modelId);
+  const sampling = WEBGPU_TEXT_SAMPLING.get(modelId);
   if (!await isTextModelReady(modelId, dtype)) {
     throw new Error(`${modelId} is not downloaded. Open Apocalypse Mode > WebGPU to download it before chatting.`);
   }
   const runtime = await getTextRuntime(modelId, dtype, device, { localFilesOnly: true });
   if (payload?.requireTools === true) assertToolCapableTextRuntime(runtime, modelId);
   const requestedTokens = Number(payload?.options?.maxTokens);
-  const maxTokenLimit = usesLfm25TextRuntime
+  const maxTokenLimit = usesLongOutputBudget
     ? WEBGPU_LFM25_MAX_NEW_TOKENS
     : WEBGPU_TEXT_MAX_NEW_TOKENS;
   const maxNewTokens = Number.isFinite(requestedTokens)
@@ -1245,17 +1280,13 @@ async function runText(payload) {
   let output;
   try {
     output = await runtime.pipeline(prepareTextMessages(payload?.messages), {
-      do_sample: usesLfm25ReasoningTemplate,
-      ...(usesLfm25ReasoningTemplate
-        ? {
-          temperature: modelId === WEBGPU_LFM25_12B_THINKING_MODEL_ID ? 0.05 : 0.1,
-          top_k: 50,
-          repetition_penalty: modelId === WEBGPU_LFM25_12B_THINKING_MODEL_ID ? 1.05 : 1.1,
-        }
-        : {}),
+      do_sample: Boolean(sampling),
+      ...(sampling || {}),
       max_new_tokens: maxNewTokens,
       tools: tools.length ? tools : undefined,
-      tokenizer_encode_kwargs: usesLfm25ReasoningTemplate
+      // Reasoning templates re-open `<think>` for the pending turn and collapse
+      // completed thinking in history; the rest suppress thinking outright.
+      tokenizer_encode_kwargs: usesReasoningTemplate
         ? { preserve_thinking: false }
         : { enable_thinking: false },
     });

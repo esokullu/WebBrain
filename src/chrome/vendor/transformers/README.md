@@ -4,9 +4,10 @@ This directory packages the JavaScript and WASM runtime used by two local
 WebGPU paths in Chrome and by offline RAG's CPU/WASM semantic reranker:
 
 - **Apocalypse Mode -> local WebGPU chat** downloads the selected LFM2.5 text
-  or vision-language preset used by the standalone-chat nuclear override. An
-  opt-in Bonsai 27B preset uses a separate vendored bitgpu worker, not this
-  Transformers.js runtime; see `src/chrome/vendor/bitgpu/README.webbrain.md`.
+  or vision-language preset, or the Nanbeige4.2-3B ONNX export, used by the
+  standalone-chat nuclear override. An opt-in Bonsai 27B preset uses a separate
+  vendored bitgpu worker, not this Transformers.js runtime; see
+  `src/chrome/vendor/bitgpu/README.webbrain.md`.
 - **Settings -> Multimodal -> Vision -> LFM2.5-VL local fallback** runs
   `LiquidAI/LFM2.5-VL-450M-ONNX` as the dedicated screenshot sidecar.
 - **Apocalypse Mode -> Offline RAG** runs the explicitly downloaded, pinned
@@ -15,7 +16,8 @@ WebGPU paths in Chrome and by offline RAG's CPU/WASM semantic reranker:
 
 Model weights are not bundled. Transformers.js downloads each selected WebGPU
 model on first use and stores it in the browser cache. The shipped ONNX chat
-presets are LFM2.5 2.6B, 1.2B Instruct, 1.2B Thinking, VL 1.6B, and VL 3B.
+presets are LFM2.5 2.6B, 1.2B Instruct, 1.2B Thinking, VL 1.6B, VL 3B, and
+Nanbeige4.2-3B.
 They are available through the nuclear control in standalone chat and can also
 be selected as the normal provider after download. The reasoning presets keep
 completed thinking out of visible answers. Current LFM2.5-VL layouts use:
@@ -23,6 +25,18 @@ completed thinking out of visible answers. Current LFM2.5-VL layouts use:
 - `embed_tokens`: FP16
 - `vision_encoder`: FP16
 - `decoder_model_merged`: Q4
+
+`Michionlion/Nanbeige4.2-3B-ONNX-WebGPU` needs no bundle patch, but it does
+need two things from this runtime. It publishes one WebGPU-fused graph named
+`onnx/model_webgpu_mlp_q4f16.onnx` instead of the default `model_q4f16.onnx`,
+so the worker passes `model_file_name: 'model_webgpu_mlp'`; the two external
+data shards are declared by the repository's own
+`transformers.js_config.use_external_data_format`. Its graph also uses the
+`com.microsoft::MatMulNBitsMlp` WebGPU kernel, which is compiled into the
+vendored `ort-wasm-simd-threaded.asyncify.wasm`. Do not replace the ONNX
+Runtime artifacts with a build that drops that kernel; a test asserts it is
+present because its absence only shows up as an opaque session-creation
+failure at runtime.
 
 The dedicated 450M vision sidecar uses the same component layout and is
 approximately 810 MB. The VL 1.6B chat export instead names its vision and
@@ -131,7 +145,7 @@ ProviderManager._createProvider('webgpu') / getVisionProvider()
   -> MV3 offscreen document
   -> dedicated module Worker
   -> text-generation pipeline / AutoProcessor + AutoModelForImageTextToText
-  -> selected LFM2.5 ONNX repo / LFM2.5-VL-450M-ONNX over WebGPU
+  -> selected LFM2.5 or Nanbeige ONNX repo / LFM2.5-VL-450M-ONNX over WebGPU
 ```
 
 Keep inference in the Worker. The MV3 service worker has no WebGPU, while the

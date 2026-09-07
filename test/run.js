@@ -973,6 +973,7 @@ const {
   WEBGPU_LFM25_12B_THINKING_MODEL_ID,
   WEBGPU_LFM25_VL_16B_MODEL_ID,
   WEBGPU_LFM25_VL_3B_MODEL_ID,
+  WEBGPU_NANBEIGE42_3B_MODEL_ID,
   WEBGPU_BONSAI27_MODEL_ID,
   WEBGPU_MODEL_ID,
   WEBGPU_MODEL_PRESETS,
@@ -58664,6 +58665,7 @@ test('Chrome exposes separate endpoint-free WebGPU text and vision providers', a
       { id: WEBGPU_LFM25_12B_THINKING_MODEL_ID, label: 'LFM2.5-1.2B-Thinking', runtime: 'onnx', contextWindow: 16384, supportsVision: false },
       { id: WEBGPU_LFM25_VL_16B_MODEL_ID, label: 'LFM2.5-VL-1.6B', runtime: 'onnx-vl', contextWindow: 16384, supportsVision: true },
       { id: WEBGPU_LFM25_VL_3B_MODEL_ID, label: 'LFM2.5-VL-3B', runtime: 'onnx-vl', contextWindow: 16384, supportsVision: true },
+      { id: WEBGPU_NANBEIGE42_3B_MODEL_ID, label: 'Nanbeige4.2-3B', runtime: 'onnx', contextWindow: 4096, supportsVision: false },
       { id: WEBGPU_BONSAI27_MODEL_ID, label: 'Basic text model', runtime: 'bitgpu', contextWindow: 4096, supportsVision: false },
     ]);
     assert.equal(new WebGPUProvider({ model: WEBGPU_BONSAI27_MODEL_ID }).dtype, 'q1');
@@ -59484,11 +59486,15 @@ test('WebGPU worker follows local text-generation and WebBrain VL vision contrac
     'aliased ONNX files must resolve device and precision by logical session name');
   assert.equal(chromeTransformers, firefoxTransformers,
     'the patched Transformers.js browser bundle must stay byte-identical across builds');
+  const ortWasm = fs.readFileSync(path.join(ROOT, 'src/chrome/vendor/transformers/ort-wasm-simd-threaded.asyncify.wasm'));
+  assert.ok(ortWasm.includes(Buffer.from('MatMulNBitsMlp')),
+    'the vendored ONNX Runtime build must keep the WebGPU kernel the Nanbeige graph is fused around');
   for (const modelId of [
     WEBGPU_LFM25_12B_INSTRUCT_MODEL_ID,
     WEBGPU_LFM25_12B_THINKING_MODEL_ID,
     WEBGPU_LFM25_VL_16B_MODEL_ID,
     WEBGPU_LFM25_VL_3B_MODEL_ID,
+    WEBGPU_NANBEIGE42_3B_MODEL_ID,
   ]) {
     assert.match(apocalypseHtml, new RegExp(modelId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
       `${modelId} is missing from the Apocalypse WebGPU picker`);
@@ -59627,6 +59633,9 @@ test('WebGPU worker follows local text-generation and WebBrain VL vision contrac
   assert.match(worker, /Object\.entries\(dtype\)\.sort/);
   assert.match(worker, /const WEBGPU_TEXT_MAX_NEW_TOKENS = 256/);
   assert.match(worker, /const WEBGPU_LFM25_MAX_NEW_TOKENS = 2048/);
+  assert.match(worker, /\[WEBGPU_NANBEIGE42_3B_MODEL_ID, 'model_webgpu_mlp'\]/,
+    'the Nanbeige export publishes no default model_q4f16.onnx, so its graph file name must be overridden');
+  assert.match(worker, /model_file_name: WEBGPU_TEXT_MODEL_FILE_NAMES\.get\(modelId\)/);
   assert.match(worker, /'ep\.webgpuexecutionprovider\.storageBufferCacheMode': 'simple'/);
   assert.match(worker, /session_options: createWebGpuTextSessionOptions\(\)/);
   assert.match(worker, /addEventListener\?\.\('uncapturederror'/);
@@ -60392,6 +60401,7 @@ test('WebGPU worker replays text tool history and applies model-specific generat
           }
           globalThis.__webgpuGenerationOptions = options;
           const content = modelId === 'LiquidAI/LFM2.5-2.6B-ONNX'
+            || modelId === 'Michionlion/Nanbeige4.2-3B-ONNX-WebGPU'
             ? 'private model reasoning</think>Hello!'
             : 'text answer';
           return [{ generated_text: [...input, { role: 'assistant', content }] }];
@@ -60671,6 +60681,43 @@ test('WebGPU worker replays text tool history and applies model-specific generat
       tools: undefined,
       tokenizer_encode_kwargs: { preserve_thinking: false },
     }, 'LFM2.5 must use LiquidAI generation settings and its reasoning-template argument');
+
+    const nanbeigePayload = {
+      ...textPayload,
+      modelId: WEBGPU_NANBEIGE42_3B_MODEL_ID,
+    };
+    await dispatch('download-text', nanbeigePayload);
+    assert.equal(
+      globalThis.__webgpuPipelineOptions.options.model_file_name,
+      'model_webgpu_mlp',
+      'Nanbeige publishes onnx/model_webgpu_mlp_q4f16.onnx, not the default model_q4f16.onnx',
+    );
+    const nanbeigeResponse = await dispatch('text-chat', nanbeigePayload);
+    assert.equal(nanbeigeResponse.content, 'Hello!');
+    assert.equal(nanbeigeResponse.reasoningContent, 'private model reasoning',
+      'Nanbeige opens <think> in the generation prompt, so the returned suffix is reasoning');
+    assert.deepEqual(globalThis.__webgpuGenerationOptions, {
+      do_sample: true,
+      temperature: 0.6,
+      top_k: 20,
+      top_p: 0.95,
+      max_new_tokens: 2048,
+      tools: undefined,
+      tokenizer_encode_kwargs: { preserve_thinking: false },
+    }, 'Nanbeige must use its own generation_config sampling and the reasoning-template argument');
+    assert.equal(
+      globalThis.__webgpuPipelineOptions.options.model_file_name,
+      'model_webgpu_mlp',
+      'the chat path must load the same overridden graph file name as the download path',
+    );
+
+    const lfmInstructPayload = {
+      ...textPayload,
+      modelId: WEBGPU_LFM25_12B_INSTRUCT_MODEL_ID,
+    };
+    await dispatch('download-text', lfmInstructPayload);
+    assert.equal(globalThis.__webgpuPipelineOptions.options.model_file_name, undefined,
+      'presets that publish the default graph name must not send a file-name override');
 
     const incompatiblePayload = {
       ...textPayload,

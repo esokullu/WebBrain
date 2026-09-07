@@ -10,6 +10,7 @@ export const WEBGPU_LFM25_12B_INSTRUCT_MODEL_ID = 'LiquidAI/LFM2.5-1.2B-Instruct
 export const WEBGPU_LFM25_12B_THINKING_MODEL_ID = 'LiquidAI/LFM2.5-1.2B-Thinking-ONNX';
 export const WEBGPU_LFM25_VL_16B_MODEL_ID = 'LiquidAI/LFM2.5-VL-1.6B-ONNX';
 export const WEBGPU_LFM25_VL_3B_MODEL_ID = 'LiquidAI/LFM2.5-VL-3B-ONNX';
+export const WEBGPU_NANBEIGE42_3B_MODEL_ID = 'Michionlion/Nanbeige4.2-3B-ONNX-WebGPU';
 export const WEBGPU_BONSAI27_MODEL_ID = 'prism-ml/Bonsai-27B-gguf';
 export const WEBGPU_DTYPE = 'q4f16';
 export const WEBGPU_BONSAI27_DTYPE = 'q1';
@@ -76,6 +77,18 @@ export const WEBGPU_MODEL_PRESETS = Object.freeze([
     dtypeLabel: 'FP16/Q4',
     contextWindow: 16384,
     supportsVision: true,
+  }),
+  Object.freeze({
+    id: WEBGPU_NANBEIGE42_3B_MODEL_ID,
+    runtime: WEBGPU_RUNTIME_ONNX,
+    label: 'Nanbeige4.2-3B',
+    size: '3.1 GB',
+    dtype: WEBGPU_DTYPE,
+    dtypeLabel: WEBGPU_DTYPE,
+    // The 44 logical KV slots cost about 176 KB per token in FP16, so a 16k
+    // window would need roughly 2.9 GB of cache on top of 3.1 GB of weights.
+    contextWindow: 4096,
+    supportsVision: false,
   }),
   Object.freeze({
     id: WEBGPU_BONSAI27_MODEL_ID,
