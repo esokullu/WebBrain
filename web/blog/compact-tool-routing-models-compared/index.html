@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Compact Tool Routing: 11 Models Compared - WebBrain Blog</title>
+  <title>Compact Tool Routing: 10 Models Compared - WebBrain Blog</title>
   <meta name="description" content="An updated WebBrain Compact benchmark table comparing Compass Tiny with Gemma 4, Qwen 3.5, Qwen 3.6, Qwen 3.8, Nanbeige, and the LFM2.5 base model.">
   <meta name="keywords" content="browser agent benchmark, tool calling, WebBrain Compact, Gemma 4, Qwen 3.5, WebBrain Compass Tiny">
-  <meta property="og:title" content="Compact tool routing: 11 models compared">
+  <meta property="og:title" content="Compact tool routing: 10 models compared">
   <meta property="og:description" content="The latest WebBrain Compact routing results for Compass Tiny, Gemma 4, Qwen, Nanbeige, and LFM2.5.">
   <meta property="og:type" content="article">
   <meta property="og:url" content="https://webbrain.one/blog/compact-tool-routing-models-compared">
@@ -18,7 +18,7 @@
   <meta property="og:image:alt" content="WebBrain — Open-source AI browser agent">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Compact tool routing: the updated WebBrain table">
-  <meta name="twitter:description" content="Eleven models from 2B to 35B, measured on the same Compact browser-tool suite.">
+  <meta name="twitter:description" content="Ten models from 2B to 35B, measured on the same Compact browser-tool suite.">
   <meta name="twitter:image" content="https://webbrain.one/twitter-image.png">
   <meta name="twitter:image:alt" content="WebBrain — Open-source AI browser agent">
   <link rel="icon" type="image/png" href="/favicon.png">
@@ -474,7 +474,7 @@
 {
   "@context": "https://schema.org",
   "@type": "BlogPosting",
-  "headline": "Compact tool routing compared: 11 models, from 2B to 35B",
+  "headline": "Compact tool routing compared: 10 models, from 2B to 35B",
   "description": "An updated WebBrain Compact benchmark table comparing Compass Tiny with Gemma 4, Qwen 3.5, Qwen 3.6, Qwen 3.8, Nanbeige, and the LFM2.5 base model.",
   "author": {
     "@type": "Person",
@@ -524,11 +524,11 @@
 
   <article>
     <div class="meta">September 7, 2026 &middot; 3 min read &middot; <a href="/blog">&larr; All posts</a></div>
-    <h1>Compact tool routing compared: 11 models, from 2B to 35B</h1>
-    <p class="lede"><strong>We added six local models to the WebBrain Compact routing benchmark.</strong> The updated table now spans 11 models from 2B to 35B. Qwen3.8-27B leads strict exact-action accuracy and first-turn structured-call coverage. A separate, looser tool-family measure produces a different ordering, but should not be read as end-to-end scenario success.</p>
+    <h1>Compact tool routing compared: 10 models, from 2B to 35B</h1>
+    <p class="lede"><strong>We added six local models to the WebBrain Compact routing benchmark.</strong> The updated table now spans 10 models from 2B to 35B. Qwen3.8-27B leads strict exact-action accuracy and first-turn structured-call coverage. A separate, looser tool-family measure produces a different ordering, but should not be read as end-to-end scenario success.</p>
 <h2 id="updated-results">Updated results</h2>
 <p>The suite contains 100 first-turn prompts and 100 stateful scenarios. Eleven scenarios are intentionally outside Compact mode, leaving 89 scored scenarios. <strong>Strict exact action</strong> requires both the reference tool name and its arguments to match. <strong>Loose tool-family match</strong> also gives credit for name-only matches and terminal prose mapped to the expected tool family; it is diagnostic, not a task-success score.</p>
-<div class="table-wrap"><table><thead><tr><th>Model</th><th>Parameters</th><th>First-turn structured calls</th><th><strong>Strict exact action (/89)</strong></th><th>Loose tool-family match (/89)</th><th>Loose match rate</th></tr></thead><tbody><tr><td>Qwen3.8-27B</td><td>27B</td><td><strong>99 / 100</strong></td><td><strong>17</strong></td><td>39</td><td>43.8%</td></tr><tr><td>Qwen3.5-4B</td><td>4B</td><td>89 / 100</td><td>16</td><td>36</td><td>40.4%</td></tr><tr><td>Qwen3.6-35B-A3B</td><td>35B A3B</td><td>89 / 100</td><td>15</td><td>42</td><td>47.2%</td></tr><tr><td>Gemma 4 E4B</td><td>7.5B</td><td>90 / 100</td><td>15</td><td>43</td><td>48.3%</td></tr><tr><td>Nanbeige4.2-3B</td><td>4.2B reported</td><td>89 / 100</td><td>13</td><td>37</td><td>41.6%</td></tr><tr><td>Gemma 4 12B QAT</td><td>12B</td><td>90 / 100</td><td>12</td><td>34</td><td>38.2%</td></tr><tr><td>Qwen3.5-2B</td><td>2B</td><td>92 / 100</td><td>11</td><td>28</td><td>31.5%</td></tr><tr><td>Gemma 4 E2B</td><td>4.6B</td><td>74 / 100</td><td>8</td><td><strong>45</strong></td><td><strong>50.6%</strong></td></tr><tr><td><strong>WebBrain Compass Tiny v1</strong></td><td><strong>2.6B</strong></td><td>81 / 100</td><td>4</td><td>42</td><td>47.2%</td></tr><tr><td>LFM2.5-2.6B base</td><td>2.6B</td><td>80 / 100</td><td>4</td><td>34</td><td>38.2%</td></tr><tr><td>Qwen3.5-9B</td><td>9B</td><td>84 / 100</td><td>2</td><td>12</td><td>13.5%</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>Model</th><th>Parameters</th><th>First-turn structured calls</th><th><strong>Strict exact action (/89)</strong></th><th>Loose tool-family match (/89)</th><th>Loose match rate</th></tr></thead><tbody><tr><td>Qwen3.8-27B</td><td>27B</td><td><strong>99 / 100</strong></td><td><strong>17</strong></td><td>39</td><td>43.8%</td></tr><tr><td>Qwen3.5-4B</td><td>4B</td><td>89 / 100</td><td>16</td><td>36</td><td>40.4%</td></tr><tr><td>Qwen3.6-35B-A3B</td><td>35B A3B</td><td>89 / 100</td><td>15</td><td>42</td><td>47.2%</td></tr><tr><td>Gemma 4 E4B</td><td>7.5B</td><td>90 / 100</td><td>15</td><td>43</td><td>48.3%</td></tr><tr><td>Nanbeige4.2-3B</td><td>4.2B reported</td><td>89 / 100</td><td>13</td><td>37</td><td>41.6%</td></tr><tr><td>Gemma 4 12B QAT</td><td>12B</td><td>90 / 100</td><td>12</td><td>34</td><td>38.2%</td></tr><tr><td>Qwen3.5-2B</td><td>2B</td><td>92 / 100</td><td>11</td><td>28</td><td>31.5%</td></tr><tr><td>Gemma 4 E2B</td><td>4.6B</td><td>74 / 100</td><td>8</td><td><strong>45</strong></td><td><strong>50.6%</strong></td></tr><tr><td><strong>WebBrain Compass Tiny v1</strong></td><td><strong>2.6B</strong></td><td>81 / 100</td><td>4</td><td>42</td><td>47.2%</td></tr><tr><td>LFM2.5-2.6B base</td><td>2.6B</td><td>80 / 100</td><td>4</td><td>34</td><td>38.2%</td></tr></tbody></table></div>
 <h2 id="what-stands-out">What stands out</h2>
 <ul><li>Qwen3.8-27B has the strongest strict exact-action result and the highest first-turn structured-call rate.</li><li>Gemma 4 E2B tops only the loose measure: 8 of its 45 credited outcomes are exact, while 37 are name-only or equivalent prose credits. Qwen3.8 records 17 exact outcomes and 22 additional loose matches.</li><li>Model size alone is not the story, but neither is the loose ranking. The strict and loose columns measure different behavior and should be read together.</li></ul>
 <h2 id="notes">Notes</h2>
