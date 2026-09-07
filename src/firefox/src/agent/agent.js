@@ -2233,15 +2233,37 @@ export class Agent extends LoopDetector {
       return wordToNum[s] || 0;
     };
 
+    const isExplicitCountWord = (str) => {
+      if (!str) return false;
+      const s = str.trim().toLowerCase();
+      if (/^\d+$/.test(s)) return true;
+      const explicitWords = new Set([
+        'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten',
+        'single', 'both',
+        'deux', 'trois', 'quatre', 'cinq',
+        'dos', 'tres', 'cuatro', 'cinco',
+        'due', 'tre', 'quattro', 'cinque',
+        'zwei', 'drei', 'vier', 'fünf',
+        'dois', 'duas', 'três',
+        'два', 'две', 'три', 'четыре', 'пять',
+        '一', '二', '两', '三', '四', '五', '六', '七', '八', '九', '十',
+        '하나', '둘', '셋', '넷', '다섯',
+        '한', '두', '세', '네', '일', '이', '삼', '사', '오',
+      ]);
+      return explicitWords.has(s);
+    };
+
     const countPrefix = '(?:\\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|single|both|multiple|un|une|deux|trois|quatre|cinq|uno|una|unos|unas|dos|tres|cuatro|cinco|due|tre|quattro|cinque|ein|eine|einen|einer|zwei|drei|vier|fünf|um|uma|dois|duas|três|один|одна|одно|два|две|три|четыре|пять|[一二两三四五六七八九十]|하나|둘|셋|넷|다섯|한(?=\\s*(?:장|개|건|편|개의|장의))|두(?=\\s*(?:장|개|건|편|개의|장의))|세(?=\\s*(?:장|개|건|편|개의|장의))|네(?=\\s*(?:장|개|건|편|개의|장의))|[일이삼사오](?=\\s*(?:장|개|건|편|개의|장의)))';
 
     const imageCountMatch = text.match(new RegExp(`(?:^|[\\s,;and+와과및])(${countPrefix})\\s*(?:images?|photos?|pictures?|pics?|foto|fotos|bild|bilder|imagen(?:es)?|imágenes|画像|写真|图片|照片|圖片|изображение|фото|사진|이미지|포토)(?:\\s*(?:장|개|건))?`, 'i'))
-      || text.match(/(?:사진|이미지|포토)\s*([0-9하나둘셋넷다섯]+|[한두세네일이삼사오](?=\s*(?:장|개|건|편|개의|장의)))\s*(?:장|개|건)?/i);
+      || text.match(/(?:사진|이미지|포토)\s*([0-9하나둘셋넷다섯]+|[한두세네일이삼사오](?=\\s*(?:장|개|건|편|개의|장의)))\s*(?:장|개|건)?/i);
     const expectedImageCount = imageCountMatch ? parseCountWord(imageCountMatch[1]) : 0;
+    const hasExplicitImageCount = imageCountMatch ? isExplicitCountWord(imageCountMatch[1]) : false;
 
     const videoCountMatch = text.match(new RegExp(`(?:^|[\\s,;and+와과및])(${countPrefix})\\s*(?:videos?|clips?|recordings?|gifs?|animated[-_ ]gifs?|vidéo|vidéos|動画|视频|影片|видео|동영상|비디오|영상)(?:\\s*(?:개|편|건))?`, 'i'))
-      || text.match(/(?:동영상|비디오|영상)\s*([0-9하나둘셋넷다섯]+|[한두세네일이삼사오](?=\s*(?:장|개|건|편|개의|장의)))\s*(?:개|편|건)?/i);
+      || text.match(/(?:동영상|비디오|영상)\s*([0-9하나둘셋넷다섯]+|[한두세네일이삼사오](?=\\s*(?:장|개|건|편|개의|장의)))\s*(?:개|편|건)?/i);
     const expectedVideoCount = videoCountMatch ? parseCountWord(videoCountMatch[1]) : 0;
+    const hasExplicitVideoCount = videoCountMatch ? isExplicitCountWord(videoCountMatch[1]) : false;
 
     let isGeneric = false;
     if (CJK_GENERIC_ATTACHMENT_REGEX.test(text)) {
@@ -2252,6 +2274,7 @@ export class Agent extends LoopDetector {
       isGeneric = words.length > 0 && words.every(w => /^\d+$/.test(w) || GENERIC_ATTACHMENT_WORDS.has(w) || CJK_GENERIC_ATTACHMENT_REGEX.test(w));
     }
 
+    let hasExplicitGenericCount = false;
     let expectedCount = 1;
     if (expectedImageCount > 0 && expectedVideoCount > 0) {
       expectedCount = expectedImageCount + expectedVideoCount;
@@ -2267,7 +2290,10 @@ export class Agent extends LoopDetector {
         || (isGeneric && (text.match(new RegExp(`\\b(${countPrefix})\\b`, 'i')) || text.match(/([一二两三四五六七八九十])/)));
       if (generalCountMatch) {
         const parsedNum = parseCountWord(generalCountMatch[1]);
-        if (parsedNum > 0) expectedCount = parsedNum;
+        if (parsedNum > 0) {
+          expectedCount = parsedNum;
+          hasExplicitGenericCount = isExplicitCountWord(generalCountMatch[1]);
+        }
       }
     }
 
@@ -2275,7 +2301,21 @@ export class Agent extends LoopDetector {
       expectedCount = 2;
     }
 
-    return { isGeneric, expectedCount, expectedImageCount, expectedVideoCount, wantsImage, wantsVideo, wantsGif, normalized: text };
+    const hasExplicitCardinality = hasExplicitImageCount || hasExplicitVideoCount || hasExplicitGenericCount;
+
+    return {
+      isGeneric,
+      expectedCount,
+      expectedImageCount,
+      expectedVideoCount,
+      hasExplicitImageCount,
+      hasExplicitVideoCount,
+      hasExplicitCardinality,
+      wantsImage,
+      wantsVideo,
+      wantsGif,
+      normalized: text,
+    };
   }
 
   _workflowSocialPublishedAttachmentObserved(requirement, record) {
@@ -2303,23 +2343,65 @@ export class Agent extends LoopDetector {
       return !isVideoAttachment(att);
     };
 
+    const imageCount = rawAttachments.filter(isImageAttachment).length;
+    const videoCount = rawAttachments.filter(isVideoAttachment).length;
+
     let matchingAttachments = rawAttachments;
     if (parsed.wantsImage && parsed.wantsVideo) {
       const minImages = parsed.expectedImageCount > 0 ? parsed.expectedImageCount : 1;
       const minVideos = parsed.expectedVideoCount > 0 ? parsed.expectedVideoCount : 1;
-      const imageCount = rawAttachments.filter(isImageAttachment).length;
-      const videoCount = rawAttachments.filter(isVideoAttachment).length;
       if (imageCount < minImages || videoCount < minVideos) {
         return false;
       }
-    } else if (parsed.wantsVideo && !parsed.wantsImage) {
-      matchingAttachments = rawAttachments.filter(isVideoAttachment);
+      if (parsed.hasExplicitImageCount && imageCount !== parsed.expectedImageCount) {
+        return false;
+      }
+      if (parsed.hasExplicitVideoCount && videoCount !== parsed.expectedVideoCount) {
+        return false;
+      }
+      if (parsed.hasExplicitImageCount && parsed.hasExplicitVideoCount) {
+        if (rawAttachments.length !== (parsed.expectedImageCount + parsed.expectedVideoCount)) {
+          return false;
+        }
+      } else if (parsed.hasExplicitCardinality) {
+        if (rawAttachments.length > (imageCount + videoCount)) {
+          return false;
+        }
+      }
     } else if (parsed.wantsImage && !parsed.wantsVideo) {
+      if (videoCount > 0) return false;
+      if (parsed.hasExplicitCardinality || parsed.hasExplicitImageCount) {
+        if (imageCount !== parsed.expectedCount || rawAttachments.length !== parsed.expectedCount) {
+          return false;
+        }
+      } else {
+        if (imageCount < parsed.expectedCount) {
+          return false;
+        }
+      }
       matchingAttachments = rawAttachments.filter(isImageAttachment);
-    }
-
-    if (matchingAttachments.length < parsed.expectedCount) {
-      return false;
+    } else if (parsed.wantsVideo && !parsed.wantsImage) {
+      if (imageCount > 0) return false;
+      if (parsed.hasExplicitCardinality || parsed.hasExplicitVideoCount) {
+        if (videoCount !== parsed.expectedCount || rawAttachments.length !== parsed.expectedCount) {
+          return false;
+        }
+      } else {
+        if (videoCount < parsed.expectedCount) {
+          return false;
+        }
+      }
+      matchingAttachments = rawAttachments.filter(isVideoAttachment);
+    } else {
+      if (parsed.hasExplicitCardinality) {
+        if (rawAttachments.length !== parsed.expectedCount) {
+          return false;
+        }
+      } else {
+        if (rawAttachments.length < parsed.expectedCount) {
+          return false;
+        }
+      }
     }
 
     if (parsed.isGeneric) {

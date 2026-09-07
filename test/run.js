@@ -87635,6 +87635,160 @@ test('attachment verification requires each media type in unquantified mixed-med
   }
 });
 
+test('attachment verification rejects extra media beyond explicitly requested counts and types', () => {
+  for (const AgentClass of [AgentCh, AgentFx]) {
+    const agent = new AgentClass({});
+
+    const reqOneImg = agent._parseWorkflowAttachmentRequirement('one image');
+    assert.equal(reqOneImg.hasExplicitCardinality, true, AgentClass.name + ': one image should have explicit cardinality');
+    assert.equal(reqOneImg.hasExplicitImageCount, true, AgentClass.name + ': one image should have explicit image count');
+    assert.equal(reqOneImg.expectedCount, 1, AgentClass.name + ': one image should expect 1');
+
+    // one image exact match
+    assert.equal(
+      agent._workflowSocialPublishedAttachmentObserved(
+        { value: 'one image' },
+        { attachments: [{ type: 'image', src: 'pic1.png' }] }
+      ),
+      true,
+      AgentClass.name + ': exact one image should pass'
+    );
+
+    // one image with extra image
+    assert.equal(
+      agent._workflowSocialPublishedAttachmentObserved(
+        { value: 'one image' },
+        { attachments: [{ type: 'image', src: 'pic1.png' }, { type: 'image', src: 'pic2.png' }] }
+      ),
+      false,
+      AgentClass.name + ': extra image beyond one image should be rejected'
+    );
+
+    // one image with unintended video
+    assert.equal(
+      agent._workflowSocialPublishedAttachmentObserved(
+        { value: 'one image' },
+        { attachments: [{ type: 'image', src: 'pic1.png' }, { type: 'video', src: 'vid.mp4' }] }
+      ),
+      false,
+      AgentClass.name + ': unintended video with one image should be rejected'
+    );
+
+    // two videos
+    const reqTwoVid = agent._parseWorkflowAttachmentRequirement('two videos');
+    assert.equal(reqTwoVid.hasExplicitCardinality, true, AgentClass.name + ': two videos should have explicit cardinality');
+    assert.equal(reqTwoVid.hasExplicitVideoCount, true, AgentClass.name + ': two videos should have explicit video count');
+    assert.equal(reqTwoVid.expectedCount, 2, AgentClass.name + ': two videos should expect 2');
+
+    // two videos exact match
+    assert.equal(
+      agent._workflowSocialPublishedAttachmentObserved(
+        { value: 'two videos' },
+        { attachments: [{ type: 'video', src: 'vid1.mp4' }, { type: 'video', src: 'vid2.mp4' }] }
+      ),
+      true,
+      AgentClass.name + ': exact two videos should pass'
+    );
+
+    // two videos with extra video
+    assert.equal(
+      agent._workflowSocialPublishedAttachmentObserved(
+        { value: 'two videos' },
+        { attachments: [{ type: 'video', src: 'vid1.mp4' }, { type: 'video', src: 'vid2.mp4' }, { type: 'video', src: 'vid3.mp4' }] }
+      ),
+      false,
+      AgentClass.name + ': extra video beyond two videos should be rejected'
+    );
+
+    // two videos with unintended image
+    assert.equal(
+      agent._workflowSocialPublishedAttachmentObserved(
+        { value: 'two videos' },
+        { attachments: [{ type: 'video', src: 'vid1.mp4' }, { type: 'video', src: 'vid2.mp4' }, { type: 'image', src: 'pic.png' }] }
+      ),
+      false,
+      AgentClass.name + ': unintended image with two videos should be rejected'
+    );
+
+    // one image and two videos
+    const reqMixed = agent._parseWorkflowAttachmentRequirement('one image and two videos');
+    assert.equal(reqMixed.hasExplicitCardinality, true, AgentClass.name + ': one image and two videos should have explicit cardinality');
+    assert.equal(reqMixed.hasExplicitImageCount, true, AgentClass.name + ': should have explicit image count');
+    assert.equal(reqMixed.hasExplicitVideoCount, true, AgentClass.name + ': should have explicit video count');
+    assert.equal(reqMixed.expectedCount, 3, AgentClass.name + ': should expect 3 attachments');
+
+    assert.equal(
+      agent._workflowSocialPublishedAttachmentObserved(
+        { value: 'one image and two videos' },
+        { attachments: [{ type: 'image', src: 'pic.png' }, { type: 'video', src: 'vid1.mp4' }, { type: 'video', src: 'vid2.mp4' }] }
+      ),
+      true,
+      AgentClass.name + ': exact 1 image + 2 videos should pass'
+    );
+
+    assert.equal(
+      agent._workflowSocialPublishedAttachmentObserved(
+        { value: 'one image and two videos' },
+        { attachments: [{ type: 'image', src: 'pic1.png' }, { type: 'image', src: 'pic2.png' }, { type: 'video', src: 'vid1.mp4' }, { type: 'video', src: 'vid2.mp4' }] }
+      ),
+      false,
+      AgentClass.name + ': 2 images + 2 videos should be rejected for 1 image and 2 videos'
+    );
+
+    // two attachments
+    const reqTwoAtt = agent._parseWorkflowAttachmentRequirement('two attachments');
+    assert.equal(reqTwoAtt.hasExplicitCardinality, true, AgentClass.name + ': two attachments should have explicit cardinality');
+    assert.equal(reqTwoAtt.expectedCount, 2, AgentClass.name + ': two attachments should expect 2');
+
+    assert.equal(
+      agent._workflowSocialPublishedAttachmentObserved(
+        { value: 'two attachments' },
+        { attachments: [{ type: 'image', src: 'pic1.png' }, { type: 'video', src: 'vid1.mp4' }] }
+      ),
+      true,
+      AgentClass.name + ': 2 attachments should pass'
+    );
+
+    assert.equal(
+      agent._workflowSocialPublishedAttachmentObserved(
+        { value: 'two attachments' },
+        { attachments: [{ type: 'image', src: 'pic1.png' }, { type: 'video', src: 'vid1.mp4' }, { type: 'image', src: 'pic2.png' }] }
+      ),
+      false,
+      AgentClass.name + ': 3 attachments should be rejected for two attachments'
+    );
+
+    // Korean 사진 2장
+    assert.equal(
+      agent._workflowSocialPublishedAttachmentObserved(
+        { value: '사진 2장' },
+        { attachments: [{ type: 'image', src: 'pic1.png' }, { type: 'image', src: 'pic2.png' }] }
+      ),
+      true,
+      AgentClass.name + ': 2 images should satisfy 사진 2장'
+    );
+
+    assert.equal(
+      agent._workflowSocialPublishedAttachmentObserved(
+        { value: '사진 2장' },
+        { attachments: [{ type: 'image', src: 'pic1.png' }, { type: 'image', src: 'pic2.png' }, { type: 'image', src: 'pic3.png' }] }
+      ),
+      false,
+      AgentClass.name + ': 3 images should be rejected for 사진 2장'
+    );
+
+    assert.equal(
+      agent._workflowSocialPublishedAttachmentObserved(
+        { value: '사진 2장' },
+        { attachments: [{ type: 'image', src: 'pic1.png' }, { type: 'image', src: 'pic2.png' }, { type: 'video', src: 'vid.mp4' }] }
+      ),
+      false,
+      AgentClass.name + ': 2 images + 1 video should be rejected for 사진 2장'
+    );
+  }
+});
+
+
 test('attachment verification matches specific attachment names without substring collisions', () => {
   for (const AgentClass of [AgentCh, AgentFx]) {
     const agent = new AgentClass({});
