@@ -1359,6 +1359,104 @@ function test(name, fn) { tests.push({ name, fn }); }
 
 console.log('\nselection quote');
 
+test('read_page redirects PDF handler tabs to the unwrapped source URL without probing', async () => {
+  const previousChrome = globalThis.chrome;
+  const previousBrowser = globalThis.browser;
+  const previousFetch = globalThis.fetch;
+  const makeStorageArea = () => ({
+    get: async values => {
+      if (typeof values === 'string') return {};
+      if (Array.isArray(values)) return Object.fromEntries(values.map(key => [key, undefined]));
+      return values || {};
+    },
+    set: async () => {},
+    remove: async () => {},
+  });
+  try {
+    for (const [label, AgentClass, apiName, scheme] of [
+      ['chrome', AgentCh, 'chrome', 'chrome-extension'],
+      ['firefox', AgentFx, 'browser', 'moz-extension'],
+    ]) {
+      // The second URL reveals nothing about its type, so it is the case that
+      // would fall back to a Content-Type probe on an ordinary tab. On our own
+      // handler page it must not: we only open that page for a PDF, and the
+      // probe is a HEAD request servers are free to reject.
+      for (const sourceUrl of [
+        'https://papers.example.test/handler-source.pdf',
+        'https://papers.example.test/download?id=42',
+      ]) {
+        const extensionId = `${label}-pdf-routing`;
+        const handlerUrl = `${scheme}://${extensionId}/src/ui/pdf-handler.html?url=${encodeURIComponent(sourceUrl)}&tabId=73`;
+        const storageArea = makeStorageArea();
+        const api = {
+          runtime: {
+            id: extensionId,
+            getURL: path => `${scheme}://${extensionId}/${path}`,
+            getManifest: () => ({
+              mime_types_handler: {
+                'application/pdf': { handler_url: 'src/ui/pdf-handler.html' },
+              },
+            }),
+          },
+          storage: {
+            local: storageArea,
+            session: storageArea,
+            onChanged: { addListener: () => {} },
+          },
+          tabs: {
+            get: async () => ({ id: 73, url: handlerUrl }),
+          },
+        };
+        const headRequests = [];
+        // Answers "not a PDF" so a probe, if one were made, would suppress the
+        // redirect — the redirect must come from recognizing the handler page.
+        globalThis.fetch = async (url, options) => {
+          headRequests.push({ url: String(url), method: options?.method || 'GET' });
+          return {
+            headers: {
+              get: name => name.toLowerCase() === 'content-type' ? 'text/html' : '',
+            },
+          };
+        };
+        delete globalThis.chrome;
+        delete globalThis.browser;
+        globalThis[apiName] = api;
+        const agent = new AgentClass({});
+        agent._richTextToolbarToolBlock = async () => null;
+        const delegated = [];
+        const executeTool = agent.executeTool.bind(agent);
+        agent.executeTool = async (tabId, name, args, ...rest) => {
+          if (name === 'read_pdf') {
+            delegated.push({ tabId, name, args });
+            return { success: true, pages: ['handler source'] };
+          }
+          return executeTool(tabId, name, args, ...rest);
+        };
+
+        const result = await executeTool(73, 'read_page', {});
+        assert.equal(result.redirectedFrom, 'read_page', `${label}: read_page did not redirect`);
+        assert.deepEqual(delegated, [{
+          tabId: 73,
+          name: 'read_pdf',
+          args: { url: sourceUrl },
+        }], `${label}: redirect did not preserve the handler's source URL`);
+        assert.deepEqual(
+          headRequests,
+          [],
+          `${label}: a handler tab should be recognized without a Content-Type probe`,
+        );
+      }
+    }
+  } finally {
+    if (previousChrome === undefined) delete globalThis.chrome;
+    else globalThis.chrome = previousChrome;
+    if (previousBrowser === undefined) delete globalThis.browser;
+    else globalThis.browser = previousBrowser;
+    if (previousFetch === undefined) delete globalThis.fetch;
+    else globalThis.fetch = previousFetch;
+  }
+});
+
 test('buildSelectionQuote preserves multiline answer text as an editable quote', () => {
   const selected = 'First line\n\n<script>alert("x")</script>';
   const expected = '> First line\n> \n> <script>alert("x")</script>\n\n';
@@ -26578,7 +26676,7 @@ test('field tool contracts advertise settled verification and recovery', () => {
     const typeText = tools.find(tool => tool.function.name === 'type_text');
     assert.match(typeAx.function.description, /settle[\s\S]*verified:true/i, `${label}: type_ax verification contract missing`);
     assert.match(setField.function.description, /verify the exact settled value/i, `${label}: set_field exact verification contract missing`);
-    assert.match(setField.function.description, /recoveryRequired:"fresh_tree"/, `${label}: set_field recovery contract missing`);
+    assert.match(setField.function.description, /recoveryRequired:"verify_or_restore_field"/, `${label}: set_field recovery contract missing`);
     for (const tool of [typeAx, setField, typeText]) {
       assert.equal(tool.function.parameters.properties.lang, undefined, `${label}: ${tool.function.name} still exposes a hidden language transform`);
     }
@@ -56373,23 +56471,28 @@ test('Chrome selector type distinguishes pre-dispatch failure from uncertain dis
     width: 30,
     height: 40,
   });
+  let insertAttempts = 0;
   client.sendCommand = async () => {
+    insertAttempts += 1;
     throw new Error('insert response lost');
   };
   let evaluateCalls = 0;
   client.evaluate = async () => {
-    evaluateCalls++;
-    return evaluateCalls === 1
-      ? { result: { value: null } }
-      : { result: { value: { success: false, error: 'fallback target disappeared' } } };
+    evaluateCalls += 1;
+    return { result: { value: null } };
   };
 
   const uncertain = await client.typeText(42, '#field', 'hello');
   assert.equal(uncertain.success, false);
-  assert.equal(uncertain.dispatched, true, 'an Input.insertText attempt must fail closed when fallback also fails');
+  assert.equal(uncertain.dispatched, true, 'a lost Input.insertText response must fail closed');
+  assert.equal(uncertain.mutationMayHaveOccurred, true);
+  assert.equal(insertAttempts, 1, 'a lost Input.insertText response must not trigger another write');
+  assert.ok(evaluateCalls > 0, 'typing safety probes should still run before dispatch');
+  assert.doesNotMatch(typeTextSource, /js-contenteditable|js-setter|if \(!typed\)/,
+    'a lost Input.insertText response must not have a JS setter fallback path');
 });
 
-test('Chrome selector type reports post-edit value verification', async () => {
+test('Chrome selector replacement proves clear before insert and reports final verification', async () => {
   const client = new CDPClient();
   client.resolveSelector = async () => ({
     inViewport: false,
@@ -56403,15 +56506,19 @@ test('Chrome selector type reports post-edit value verification', async () => {
   });
   client.sendCommand = async () => ({});
   client.evaluate = async () => ({ result: { value: null } });
-  // Unproven is reported by omitting `verified`, never by setting it false:
-  // `verified === false` is read as an action failure by the loop detector,
-  // the delivery checkpoint and the observation boundary, and an exact-match
-  // proof legitimately fails on masked, truncated or reformatted fields.
   client.verifyTextEntry = async () => null;
-  const reverted = await client.typeText(42, '#field', 'hello', true);
-  assert.equal(reverted.success, true);
-  assert.equal(reverted.verified, undefined, 'a reverted selector edit must not claim verification');
-  assert.ok(!('verified' in reverted), 'an unproven selector edit must omit verified entirely');
+  const unverifiedInsert = await client.typeText(42, '#field', 'hello', false);
+  assert.equal(unverifiedInsert.success, false);
+  assert.equal(unverifiedInsert.dispatched, true);
+  assert.equal(unverifiedInsert.verified, false);
+  assert.equal(unverifiedInsert.mutationMayHaveOccurred, true);
+  assert.match(unverifiedInsert.error, /could not be verified exactly/i);
+
+  const uncleared = await client.typeText(42, '#field', 'hello', true);
+  assert.equal(uncleared.success, false);
+  assert.equal(uncleared.verified, false);
+  assert.equal(uncleared.mutationMayHaveOccurred, true);
+  assert.match(uncleared.error, /no replacement text was inserted/i);
 
   client.verifyTextEntry = async () => true;
   const persisted = await client.typeText(42, '#field', 'hello', true);
@@ -56874,7 +56981,7 @@ test('Chrome focused type_text binds the frame token while preserving trusted CD
   }
 });
 
-test('Chrome focused type_text propagates post-edit verification', async () => {
+test('Chrome focused replacement blocks when clear is unproven and propagates final verification', async () => {
   const originalAttach = cdpClientCh.attach;
   const originalEvaluate = cdpClientCh.evaluate;
   const originalSendCommand = cdpClientCh.sendCommand;
@@ -56898,13 +57005,15 @@ test('Chrome focused type_text propagates post-edit verification', async () => {
     cdpClientCh.sendCommand = async () => ({});
     cdpClientCh.verifyTextEntry = async () => null;
     const agent = new AgentCh({});
-    const reverted = await agent.executeTool(42, 'type_text', { text: 'hello', clear: true });
-    assert.equal(reverted.success, true);
-    assert.equal(reverted.verified, undefined, 'a reverted focused edit must not claim verification');
-    assert.ok(!('verified' in reverted), 'an unproven focused edit must omit verified entirely');
+    const uncleared = await agent.executeTool(42, 'type_text', { text: 'hello', clear: true });
+    assert.equal(uncleared.success, false);
+    assert.equal(uncleared.verified, false);
+    assert.equal(uncleared.mutationMayHaveOccurred, true);
+    assert.equal(uncleared.repeatBlocked, true);
 
     cdpClientCh.verifyTextEntry = async () => true;
-    const persisted = await agent.executeTool(42, 'type_text', { text: 'hello', clear: true });
+    const persistedAgent = new AgentCh({});
+    const persisted = await persistedAgent.executeTool(43, 'type_text', { text: 'hello', clear: true });
     assert.equal(persisted.success, true);
     assert.equal(persisted.verified, true, 'a persisted focused edit must be verified');
   } finally {
@@ -75925,7 +76034,7 @@ test('set_field waits for reconciliation and verifies the complete value', () =>
     assert.match(branch, /el\.focus\(\{ preventScroll: true \}\);\s*\} catch \{\}\s*if \(actionDeadlineExpired\(\)\) return deadlineFailure\(\);/, `${label}: set_field can mutate after focus handlers cross the deadline`);
     assert.match(branch, /if \(setter\) setter\.call\(el, newVal\); else el\.value = newVal;\s*if \(actionDeadlineExpired\(\)\) return deadlineFailure\(\);\s*el\.dispatchEvent\(new Event\('input'/, `${label}: set_field does not recheck its deadline before page events`);
     if (label === 'firefox') {
-      assert.match(branch, /await _retryFieldWithExecCommand\([\s\S]*if \(actionDeadlineExpired\(\)\) return deadlineFailure\(\);/, 'firefox: set_field fallback can continue after its reconciliation wait expires');
+      assert.doesNotMatch(branch, /_retryFieldWithExecCommand/, 'firefox: a dispatched field write must not trigger an automatic second write');
       const hoverStart = source.indexOf("'hover': () => {");
       const hoverEnd = source.indexOf("'drag_drop': () => {", hoverStart);
       const hoverBranch = source.slice(hoverStart, hoverEnd);
@@ -76111,11 +76220,11 @@ test('type_ax shares settled exact verification and explicit recovery contract',
       /return\s+\{\s*success:\s*true/,
       `${label}: select must not return verified success before settling`,
     );
-    assert.match(branch, /verified: false[\s\S]*recoveryRequired: 'fresh_tree'/, `${label}: failed type_ax needs a fresh-tree recovery directive`);
+    assert.match(branch, /verified: false[\s\S]*recoveryRequired: 'verify_or_restore_field'/, `${label}: failed type_ax needs a non-retryable exact-value recovery directive`);
     assert.match(branch, /success: true,[\s\S]*verified: true/, `${label}: successful type_ax must report verified:true`);
     assert.doesNotMatch(branch, /actual\.includes\(text\)/, `${label}: type_ax must not accept substring matches`);
     if (label === 'firefox') {
-      assert.match(branch, /_retryFieldWithExecCommand/, 'firefox: type_ax should attempt the strongest in-page fallback');
+      assert.doesNotMatch(branch, /_retryFieldWithExecCommand/, 'firefox: type_ax must not retry after its first write dispatch');
     } else {
       assert.match(branch, /_expectedValue/, 'chrome: type_ax should preserve the exact expected value for its trusted background retry');
     }
@@ -76152,22 +76261,15 @@ test('Chrome controlled-field fallback is ref-bound, trusted, verified, and subm
   }
 });
 
-test('Chrome controlled-field fallback timeout preserves an unknown mutation outcome', async () => {
+test('Chrome controlled-field fallback skips retry when the original dispatch is uncertain', async () => {
   const originalChrome = globalThis.chrome;
   const originalAttach = cdpClientCh.attach;
   const originalSendCommand = cdpClientCh.sendCommand;
   try {
-    let releasePreparation;
-    let markPreparationStarted;
-    const preparationStarted = new Promise(resolve => { markPreparationStarted = resolve; });
-    const delayedPreparation = new Promise(resolve => { releasePreparation = resolve; });
+    let preparationCalls = 0;
     globalThis.chrome = {
       tabs: {
-        async sendMessage(_tabId, message) {
-          assert.equal(message.action, 'ax_prepare_field_for_trusted_type');
-          markPreparationStarted();
-          return delayedPreparation;
-        },
+        async sendMessage() { preparationCalls += 1; return { success: true }; },
       },
     };
     let cdpMutations = 0;
@@ -76181,24 +76283,6 @@ test('Chrome controlled-field fallback timeout preserves an unknown mutation out
     };
 
     const agent = new AgentCh({});
-    let deadlineTool = '';
-    agent._withContentActionDeadline = async (operation, toolName) => {
-      deadlineTool = toolName;
-      const error = new Error(`${toolName} did not return a page response within 60 seconds.`);
-      error.code = 'content_action_timeout';
-      const controller = new AbortController();
-      const started = Promise.resolve().then(() => operation(controller.signal));
-      await preparationStarted;
-      controller.abort(error);
-      releasePreparation({
-        success: true,
-        fieldMeta: { type: 'text', contentEditable: false },
-        contentEditable: false,
-      });
-      await assert.rejects(started, candidate => candidate === error);
-      throw error;
-    };
-
     const result = await agent._maybeFallbackFieldWithCdp(
       42,
       'set_field',
@@ -76206,18 +76290,20 @@ test('Chrome controlled-field fallback timeout preserves an unknown mutation out
       {
         success: false,
         verified: false,
+        dispatched: true,
         _expectedValue: 'updated value',
-        recoveryRequired: 'fresh_tree',
+        recoveryRequired: 'verify_or_restore_field',
       },
     );
 
-    assert.equal(deadlineTool, 'set_field');
     assert.equal(result.success, false);
-    assert.equal(result.dispatched, true);
     assert.equal(result.outcomeUnknown, true);
-    assert.equal(result.retryable, false);
-    assert.equal(cdpMutations, 0, 'late field preparation reached trusted CDP mutation after timeout');
-    assert.match(result.error, /may have reached the page.*inspect the current state/i);
+    assert.equal(result.mutationMayHaveOccurred, true);
+    assert.equal(result.repeatBlocked, true);
+    assert.equal(result.fallbackAttempted, false);
+    assert.equal(preparationCalls, 0, 'uncertain original dispatch must not even prepare a trusted retry');
+    assert.equal(cdpMutations, 0, 'uncertain original dispatch reached trusted CDP mutation');
+    assert.match(result.error, /No trusted retry was sent/i);
   } finally {
     cdpClientCh.attach = originalAttach;
     cdpClientCh.sendCommand = originalSendCommand;
@@ -76288,9 +76374,11 @@ test('Chrome controlled-field fallback recovers exactly once and never submits a
       {
         success: false,
         verified: false,
+        dispatched: false,
+        noDispatch: true,
         error: 'controlled input reset',
         _expectedValue: 'gary flake',
-        recoveryRequired: 'fresh_tree',
+        recoveryRequired: 'verify_or_restore_field',
       },
     );
     assert.equal(recovered.success, true);
@@ -76316,9 +76404,11 @@ test('Chrome controlled-field fallback recovers exactly once and never submits a
       {
         success: false,
         verified: false,
+        dispatched: false,
+        noDispatch: true,
         error: 'controlled input reset',
         _expectedValue: 'gary flake',
-        recoveryRequired: 'fresh_tree',
+        recoveryRequired: 'verify_or_restore_field',
       },
       {
         messageRecipientGuardRequired: true,
@@ -76415,7 +76505,7 @@ test('Chrome controlled-field fallback recovers exactly once and never submits a
     assert.equal(failedEditor.verified, false);
     assert.equal(failedEditor.dispatched, true, 'a failed readback must preserve the trusted input dispatch');
     assert.equal(failedEditor.noDispatch, false, 'trusted contenteditable input must not remain retry-safe');
-    assert.equal(failedEditor.recoveryRequired, 'fresh_tree');
+    assert.equal(failedEditor.recoveryRequired, 'verify_or_restore_field');
     assert.equal(commands.filter(command => command.method === 'Input.insertText').length, 1, 'only one trusted editor retry is allowed');
 
     commands.length = 0;
@@ -76427,21 +76517,3334 @@ test('Chrome controlled-field fallback recovers exactly once and never submits a
       {
         success: false,
         verified: false,
+        dispatched: true,
         error: 'controlled input reset',
         _expectedValue: 'gary flake',
-        recoveryRequired: 'fresh_tree',
+        recoveryRequired: 'verify_or_restore_field',
       },
     );
     assert.equal(failed.success, false);
     assert.equal(failed.verified, false);
-    assert.equal(failed.recoveryRequired, 'fresh_tree');
-    assert.equal(commands.filter(command => command.method === 'Input.insertText').length, 1, 'only one trusted retry is allowed');
+    assert.equal(failed.recoveryRequired, 'verify_or_restore_field');
+    assert.equal(failed.mutationMayHaveOccurred, true);
+    assert.equal(failed.fallbackAttempted, false);
+    assert.equal(commands.filter(command => command.method === 'Input.insertText').length, 0, 'an uncertain original dispatch must not be retried');
     assert.equal(commands.some(command => command.params?.key === 'Enter'), false, 'a mismatched field must never submit');
   } finally {
     cdpClientCh.attach = originals.attach;
     cdpClientCh.sendCommand = originals.sendCommand;
     if (originalChrome === undefined) delete globalThis.chrome;
     else globalThis.chrome = originalChrome;
+  }
+});
+
+test('uncertain text mutation debt blocks blind retries until the document changes', async () => {
+  const originalChrome = globalThis.chrome;
+  const originalBrowser = globalThis.browser;
+  try {
+    const tabs = {
+      async sendMessage(_tabId, message) {
+        assert.equal(message.action, 'ax_verify_field_value');
+        const refId = message.params.ref_id;
+        if (refId === 'ref_editor_rerendered') {
+          return {
+            success: true,
+            verified: false,
+            fieldMeta: { id: 'file-editor-rerendered', contentEditable: true, labelText: 'Editing file contents' },
+          };
+        }
+        if (refId === 'ref_other') {
+          return {
+            success: true,
+            verified: false,
+            fieldMeta: { id: 'commit-message-input', contentEditable: false, labelText: 'Commit message' },
+          };
+        }
+        return { success: false, verified: false };
+      },
+    };
+    globalThis.chrome = { tabs };
+    globalThis.browser = { tabs };
+    for (const [label, AgentClass] of [['chrome', AgentCh], ['firefox', AgentFx]]) {
+      const agent = new AgentClass({});
+      const tabId = label === 'chrome' ? 9441 : 9442;
+      agent._lastAxScopes.set(tabId, {
+        documentToken: 'doc-one',
+        pageUrl: 'https://github.com/example/repo/edit/main/README.md',
+      });
+      const uncertain = await agent._finalizeTextMutationResult(
+        tabId,
+        'set_field',
+        { ref_id: 'ref_editor', text: 'intended body' },
+        {
+          success: true,
+          dispatched: true,
+          fieldMeta: { id: 'file-editor', contentEditable: true, labelText: 'Editing file contents' },
+        },
+      );
+      assert.equal(uncertain.outcomeUnknown, true, `${label}: uncertain write lost unknown outcome`);
+      assert.equal(uncertain.mutationMayHaveOccurred, true, `${label}: uncertain write lost mutation marker`);
+      assert.equal(uncertain.repeatBlocked, true, `${label}: uncertain write did not arm retry block`);
+      assert.equal(uncertain.recoveryRequired, 'verify_or_restore_field');
+      assert.equal(JSON.stringify([...agent._uncertainTextMutations.get(tabId).values()]).includes('intended body'), false,
+        `${label}: mutation debt retained raw editor text`);
+
+      agent._rememberAxScope(tabId, 'doc-one', 'https://github.com/example/repo/edit/main/README.md');
+      assert.equal(agent._uncertainTextMutations.has(tabId), true,
+        `${label}: a same-document tree read incorrectly cleared mutation debt`);
+      const blocked = await agent._uncertainTextMutationBlock(tabId, 'type_text', { text: 'another copy' });
+      assert.equal(blocked.success, false);
+      assert.equal(blocked.noDispatch, true);
+      assert.equal(blocked.repeatBlocked, true);
+      const crossToolBlocked = await agent._uncertainTextMutationBlock(
+        tabId, 'type_text', { selector: '[contenteditable="true"]', text: 'another copy' },
+      );
+      assert.equal(crossToolBlocked?.repeatBlocked, true,
+        `${label}: switching from an AX ref to a CSS selector bypassed the retry block`);
+      const rerenderedEditor = await agent._uncertainTextMutationBlock(
+        tabId, 'set_field', { ref_id: 'ref_editor_rerendered', text: 'changed body' },
+      );
+      assert.equal(rerenderedEditor?.repeatBlocked, true,
+        `${label}: a rerendered editor bypassed debt by receiving a new ref_id`);
+      const otherField = await agent._uncertainTextMutationBlock(
+        tabId, 'set_field', { ref_id: 'ref_other', text: 'safe other field' },
+      );
+      assert.equal(otherField, null, `${label}: a read-only probe proved a different field but it remained blocked`);
+      await agent._finalizeTextMutationResult(
+        tabId,
+        'set_field',
+        { ref_id: 'ref_other', text: 'safe other field' },
+        {
+          success: false,
+          dispatched: true,
+          verified: false,
+          fieldMeta: { id: 'commit-message-input', contentEditable: false, labelText: 'Commit message' },
+        },
+      );
+      assert.equal(agent._uncertainTextMutations.get(tabId).size, 2,
+        `${label}: a second uncertain target replaced the first target's debt`);
+      const originalStillBlocked = await agent._uncertainTextMutationBlock(
+        tabId, 'set_field', { ref_id: 'ref_editor', text: 'changed body' },
+      );
+      assert.equal(originalStillBlocked?.repeatBlocked, true,
+        `${label}: recording a second uncertain target unblocked the first one`);
+
+      agent._rememberAxScope(tabId, 'doc-two', 'https://github.com/example/repo/edit/main/README.md');
+      assert.equal(agent._uncertainTextMutations.get(tabId)?.size, 2,
+        `${label}: navigating away discarded scoped mutation debt`);
+      // The new document is unblocked: retained debts are token-scoped.
+      const movedOn = await agent._uncertainTextMutationBlock(
+        tabId, 'set_field', { ref_id: 'ref_other_page', text: 'fresh field' },
+      );
+      assert.equal(movedOn, null, `${label}: retained debt blocked the new document`);
+      assert.equal(agent._uncertainTextMutations.get(tabId)?.size, 2,
+        `${label}: allowing the new document dropped the old debts`);
+      // Back-forward return restores the guard: same token, same heap,
+      // possibly landed text.
+      agent._rememberAxScope(tabId, 'doc-one', 'https://github.com/example/repo/edit/main/README.md');
+      const backBlocked = await agent._uncertainTextMutationBlock(
+        tabId, 'set_field', { ref_id: 'ref_editor', text: 'appended after return' },
+      );
+      assert.equal(backBlocked?.repeatBlocked, true,
+        `${label}: back-forward return lost the mutation guard`);
+    }
+  } finally {
+    if (originalChrome === undefined) delete globalThis.chrome;
+    else globalThis.chrome = originalChrome;
+    if (originalBrowser === undefined) delete globalThis.browser;
+    else globalThis.browser = originalBrowser;
+  }
+});
+
+test('an exact same-field readback resolves uncertain replacement without dispatch', async () => {
+  for (const rel of [
+    'src/chrome/src/content/content.js',
+    'src/firefox/src/content/content.js',
+  ]) {
+    const source = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    assert.match(source, /'ax_verify_field_value': \(\) => \{[\s\S]*_setFieldValueMatches\(/,
+      `${rel}: exact AX field readback action is missing`);
+    assert.match(source, /'field_value_digest': async \(\) => \{[\s\S]*valueLength:[\s\S]*valueSha256/,
+      `${rel}: privacy-preserving fresh field digest action is missing`);
+  }
+  const originalChrome = globalThis.chrome;
+  const originalBrowser = globalThis.browser;
+  try {
+    let readbacks = 0;
+    const tabs = {
+      async sendMessage(_tabId, message) {
+        readbacks += 1;
+        // The finalize path refreshes to the live scope before recording
+        // debt; here the live document is unchanged, so no adoption happens.
+        if (message.action === 'field_value_digest') {
+          return {
+            success: false,
+            documentToken: 'doc-readback',
+            refScopeUrl: 'https://github.com/example/repo/edit/main/docs/plan.md',
+          };
+        }
+        assert.equal(message.action, 'ax_verify_field_value');
+        assert.equal(message.params.expected, 'complete body');
+        return { success: true, verified: true };
+      },
+    };
+    globalThis.chrome = { tabs };
+    globalThis.browser = { tabs };
+    for (const [label, AgentClass, tabId] of [
+      ['chrome', AgentCh, 9443],
+      ['firefox', AgentFx, 9444],
+    ]) {
+      const agent = new AgentClass({});
+      agent._lastAxScopes.set(tabId, {
+        documentToken: 'doc-readback',
+        pageUrl: 'https://github.com/example/repo/edit/main/docs/plan.md',
+      });
+      await agent._finalizeTextMutationResult(
+        tabId,
+        'set_field',
+        { ref_id: 'ref_editor', text: 'complete body' },
+        { success: false, dispatched: true, verified: false },
+      );
+      const recovered = await agent._uncertainTextMutationBlock(
+        tabId, 'set_field', { ref_id: 'ref_editor', text: 'complete body' },
+      );
+      assert.equal(recovered.success, true, `${label}: exact readback did not recover the write`);
+      assert.equal(recovered.verified, true);
+      assert.equal(recovered.noDispatch, true);
+      assert.equal(recovered.recoveredUncertainMutation, true);
+      assert.equal(agent._uncertainTextMutations.has(tabId), false);
+      assert.equal(
+        [...agent._verifiedTextReplacements.get(tabId).values()][0]?.expectedLength,
+        'complete body'.length,
+      );
+    }
+    // One live-scope digest at record time plus one AX readback at recovery,
+    // per build.
+    assert.equal(readbacks, 4);
+  } finally {
+    if (originalChrome === undefined) delete globalThis.chrome;
+    else globalThis.chrome = originalChrome;
+    if (originalBrowser === undefined) delete globalThis.browser;
+    else globalThis.browser = originalBrowser;
+  }
+});
+
+test('an uncertain contenteditable write invalidates stale proof across locator types', async () => {
+  for (const [label, AgentClass, tabId] of [
+    ['chrome', AgentCh, 9447],
+    ['firefox', AgentFx, 9448],
+  ]) {
+    const agent = new AgentClass({});
+    const pageUrl = 'https://github.com/example/repo/edit/main/docs/plan.md';
+    agent._lastAxScopes.set(tabId, { documentToken: 'doc', pageUrl });
+    agent._verifiedTextReplacements.set(tabId, new Map([
+      ['ax:doc:ref_editor', {
+        key: 'ax:doc:ref_editor', pageUrl, fieldMeta: { contentEditable: true },
+        expectedLength: 4, expectedSha256: await agent._sha256Text('body'),
+      }],
+      ['ax:doc:ref_commit', {
+        key: 'ax:doc:ref_commit', pageUrl, fieldMeta: { contentEditable: false, id: 'commit-message-input' },
+        expectedLength: 6, expectedSha256: await agent._sha256Text('commit'),
+      }],
+    ]));
+    const uncertain = await agent._finalizeTextMutationResult(
+      tabId,
+      'type_text',
+      { selector: '[contenteditable="true"]', text: 'changed', clear: true },
+      { success: true, dispatched: true },
+    );
+    assert.equal(uncertain.outcomeUnknown, true, `${label}: unverified success was not made uncertain`);
+    const replacements = agent._verifiedTextReplacements.get(tabId);
+    assert.equal(replacements.has('ax:doc:ref_editor'), false,
+      `${label}: selector uncertainty retained stale AX editor proof`);
+    assert.equal(replacements.has('ax:doc:ref_commit'), true,
+      `${label}: editor uncertainty erased a clearly distinct commit-message proof`);
+  }
+});
+
+test('uncertain text mutation debt survives same-document route changes and back-forward returns', async () => {
+  for (const [label, AgentClass, tabId] of [
+    ['chrome', AgentCh, 9453],
+    ['firefox', AgentFx, 9454],
+  ]) {
+    const agent = new AgentClass({});
+    const pageUrl = 'https://github.com/example/repo/edit/main/docs/plan.md';
+    agent._lastAxScopes.set(tabId, { documentToken: 'doc-route', pageUrl });
+    const uncertain = await agent._finalizeTextMutationResult(
+      tabId,
+      'set_field',
+      { ref_id: 'ref_editor', text: 'intended body' },
+      { success: false, dispatched: true, verified: false },
+    );
+    assert.equal(uncertain.mutationMayHaveOccurred, true, `${label}: uncertain write was not recorded`);
+    // A hash-only change keeps the same document and editor value: the guard must survive it.
+    agent._rememberAxScope(tabId, 'doc-route', `${pageUrl}#L10`);
+    assert.equal(agent._uncertainTextMutations.get(tabId)?.size, 1,
+      `${label}: same-document route change cleared mutation debt`);
+    const stillBlocked = await agent._uncertainTextMutationBlock(
+      tabId, 'set_field', { ref_id: 'ref_editor', text: 'intended body appended' },
+    );
+    assert.equal(stillBlocked?.repeatBlocked, true,
+      `${label}: append retry escaped the guard after a same-document route change`);
+    // A genuine document change scopes (not discards) the debt: the new
+    // document is unblocked while the record is retained boundedly.
+    agent._rememberAxScope(tabId, 'doc-next', `${pageUrl}#L10`);
+    assert.equal(agent._uncertainTextMutations.get(tabId)?.size, 1,
+      `${label}: document change discarded scoped mutation debt`);
+    // Back-forward return restores the guard.
+    agent._rememberAxScope(tabId, 'doc-route', pageUrl);
+    const backBlocked = await agent._uncertainTextMutationBlock(
+      tabId, 'set_field', { ref_id: 'ref_editor', text: 'appended after return' },
+    );
+    assert.equal(backBlocked?.repeatBlocked, true,
+      `${label}: back-forward return lost the mutation guard`);
+  }
+});
+
+test('uncertain text mutation recovery requires same-field identity', async () => {
+  const originalChrome = globalThis.chrome;
+  const originalBrowser = globalThis.browser;
+  try {
+    const tabs = {
+      async sendMessage(_tabId, message) {
+        assert.equal(message.action, 'ax_verify_field_value');
+        // The other field genuinely contains the requested text, but it is
+        // not the indebted field and cannot be proven distinct from it.
+        return { success: true, verified: true, fieldMeta: { labelText: 'Editor' } };
+      },
+    };
+    globalThis.chrome = { tabs };
+    globalThis.browser = { tabs };
+    for (const [label, AgentClass, tabId] of [
+      ['chrome', AgentCh, 9455],
+      ['firefox', AgentFx, 9456],
+    ]) {
+      const agent = new AgentClass({});
+      agent._lastAxScopes.set(tabId, {
+        documentToken: 'doc-identity',
+        pageUrl: 'https://github.com/example/repo/edit/main/docs/plan.md',
+      });
+      await agent._finalizeTextMutationResult(
+        tabId,
+        'set_field',
+        { ref_id: 'ref_a', text: 'shared text' },
+        {
+          success: false, dispatched: true, verified: false,
+          fieldMeta: { id: 'field-a', labelText: 'Editor' },
+        },
+      );
+      const blocked = await agent._uncertainTextMutationBlock(
+        tabId, 'set_field', { ref_id: 'ref_b', text: 'shared text' },
+      );
+      assert.equal(blocked?.repeatBlocked, true,
+        `${label}: cross-field readback cleared another field's debt`);
+      assert.equal(blocked?.recoveredUncertainMutation, undefined,
+        `${label}: cross-field readback reported recovery`);
+      assert.equal(agent._uncertainTextMutations.get(tabId)?.size, 1,
+        `${label}: cross-field readback deleted the original debt`);
+      assert.equal(agent._verifiedTextReplacements.has(tabId), false,
+        `${label}: cross-field readback minted proof for the wrong field`);
+    }
+  } finally {
+    if (originalChrome === undefined) delete globalThis.chrome;
+    else globalThis.chrome = originalChrome;
+    if (originalBrowser === undefined) delete globalThis.browser;
+    else globalThis.browser = originalBrowser;
+  }
+});
+
+test('githubFileCommit binding tolerates Chromium newline expansion in readback', async () => {
+  for (const [label, AgentClass, resolveJob, tabId] of [
+    ['chrome', AgentCh, resolveAdapterWorkflowJob, 9457],
+    ['firefox', AgentFx, resolveAdapterWorkflowJobFx, 9458],
+  ]) {
+    const agent = new AgentClass({});
+    const pageUrl = 'https://github.com/Example/Repo/edit/main/docs/plan.md';
+    agent._planExecutionGuards.set(tabId, {
+      enabled: true,
+      siteWorkflow: resolveJob(pageUrl, 'edit-file-and-commit'),
+      workflowMetadataRequirements: [],
+      workflowMetadataRequirementsResolved: true,
+    });
+    agent._taskTokens.set(tabId, `task-expansion-${tabId}`);
+    const body = '# Title\n\nOne complete copy.\n';
+    // Chromium serializes the trailing line feed of a contenteditable editor
+    // as an extra newline on readback while the digest still verifies: the
+    // proof is exact about intent but not byte-exact. The binding must
+    // survive this (the byte-exact raw-blob check after the commit is the
+    // backstop); requiring byte-exact readback here would permanently block
+    // every newline-terminated file.
+    const expanded = '# Title\n\n\nOne complete copy.\n\n';
+    agent._verifiedTextReplacements.set(tabId, new Map([['ax:doc:ref_editor', {
+      key: 'ax:doc:ref_editor',
+      locatorType: 'ax',
+      refId: 'ref_editor',
+      documentToken: 'doc',
+      pageUrl,
+      ambiguous: false,
+      expectedLength: body.length,
+      expectedSha256: await agent._sha256Text(body),
+      expectedFp: agent._workflowInventoryFingerprint(body),
+      fieldMeta: { contentEditable: true, ariaLabelledByText: 'Editing file contents' },
+      readbackLength: expanded.length,
+      readbackSha256: await agent._sha256Text(expanded),
+      verifiedAt: Date.now(),
+      taskToken: `task-expansion-${tabId}`,
+    }]]));
+    const binding = agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {});
+    assert.ok(binding?.githubFileCommit, `${label}: expansion-tolerant proof lost its commit binding`);
+    assert.equal(binding.githubFileCommit.readbackByteExact, false,
+      `${label}: inexact proof mislabeled byte-exact`);
+    assert.equal(binding.githubFileCommit.expectedSha256, await agent._sha256Text(body));
+  }
+});
+
+test('GitHub committed-file verification resolves slash-branch scope by content', async () => {
+  const originalFetch = globalThis.fetch;
+  const body = '# Corrected document\n\nOne complete copy.\n';
+  const commitSha = '0123456789abcdef0123456789abcdef01234567';
+  const commitUrl = `https://github.com/Example/Repo/commit/${commitSha}`;
+  try {
+    const naiveUrl = `https://github.com/example/repo/raw/${commitSha}/fix-copy/docs/plan.md`;
+    const trueUrl = `https://github.com/example/repo/raw/${commitSha}/docs/plan.md`;
+    const trueBlobUrl = `https://github.com/Example/Repo/blob/${commitSha}/docs/plan.md`;
+    const seen = [];
+    globalThis.fetch = async (url) => {
+      seen.push(url);
+      if (url === trueUrl) {
+        return { ok: true, status: 200, headers: { get: () => String(body.length) }, text: async () => body };
+      }
+      return { ok: false, status: 404, headers: { get: () => '0' }, text: async () => 'Not Found' };
+    };
+    for (const [label, AgentClass, tabId] of [
+      ['chrome', AgentCh, 9459],
+      ['firefox', AgentFx, 9460],
+    ]) {
+      const agent = new AgentClass({});
+      agent._planExecutionGuards.set(tabId, {
+        enabled: true,
+        siteWorkflow: { adapterName: 'github', job: { id: 'edit-file-and-commit' } },
+      });
+      const binding = {
+        githubFileCommit: {
+          // Naive first-segment cut; the true branch is feature/fix-copy.
+          repository: 'example/repo',
+          branch: 'feature',
+          path: 'fix-copy/docs/plan.md',
+          expectedLength: body.length,
+          expectedSha256: await agent._sha256Text(body),
+          commitMessageVerified: true,
+        },
+        metadataRequirements: [],
+        preDispatchPublishedResourceIdentities: [],
+      };
+      const pageState = { workflowResourceUrls: [commitUrl, trueBlobUrl] };
+      const proof = await agent._githubCommittedFileVerification(
+        tabId, pageState, commitUrl, { verifiedFinalSubmit: true, submit: { workflowBinding: binding } },
+      );
+      assert.equal(proof.verified, true, `${label}: slash-branch commit was not verified by content`);
+      assert.equal(proof.path, 'docs/plan.md');
+      assert.equal(binding.githubFileCommit.branch, 'feature/fix-copy');
+      assert.equal(binding.githubFileCommit.path, 'docs/plan.md');
+      assert.ok(seen.includes(naiveUrl) && seen.includes(trueUrl),
+        `${label}: scope fallbacks were not probed`);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('GitHub committed-file verification ignores unattributed duplicate bytes', async () => {
+  const originalFetch = globalThis.fetch;
+  const body = '# Corrected document\n\nOne complete copy.\n';
+  const corrupt = '# Corrected document\n\nPartial write.\n';
+  const commitSha = '0123456789abcdef0123456789abcdef01234567';
+  const commitUrl = `https://github.com/Example/Repo/commit/${commitSha}`;
+  // The naive cut serves the intended bytes (pre-existing duplicate), while
+  // the true file the commit touched carries corrupt content.
+  const naiveUrl = `https://github.com/example/repo/raw/${commitSha}/fix-copy/docs/plan.md`;
+  const trueUrl = `https://github.com/example/repo/raw/${commitSha}/docs/plan.md`;
+  const trueBlobUrl = `https://github.com/Example/Repo/blob/${commitSha}/docs/plan.md`;
+  try {
+    globalThis.fetch = async (url) => {
+      if (url === naiveUrl) {
+        return { ok: true, status: 200, headers: { get: () => String(body.length) }, text: async () => body };
+      }
+      if (url === trueUrl) {
+        return { ok: true, status: 200, headers: { get: () => String(corrupt.length) }, text: async () => corrupt };
+      }
+      return { ok: false, status: 404, headers: { get: () => '0' }, text: async () => 'Not Found' };
+    };
+    for (const [label, AgentClass, tabId] of [
+      ['chrome', AgentCh, 9466],
+      ['firefox', AgentFx, 9467],
+    ]) {
+      const agent = new AgentClass({});
+      agent._planExecutionGuards.set(tabId, {
+        enabled: true,
+        siteWorkflow: { adapterName: 'github', job: { id: 'edit-file-and-commit' } },
+      });
+      const binding = {
+        githubFileCommit: {
+          repository: 'example/repo',
+          branch: 'feature',
+          path: 'fix-copy/docs/plan.md',
+          expectedLength: body.length,
+          expectedSha256: await agent._sha256Text(body),
+          commitMessageVerified: true,
+        },
+        metadataRequirements: [],
+        preDispatchPublishedResourceIdentities: [],
+      };
+      // The observed commit page lists only the true file as changed.
+      const pageState = { workflowResourceUrls: [commitUrl, trueBlobUrl] };
+      const proof = await agent._githubCommittedFileVerification(
+        tabId, pageState, commitUrl, { verifiedFinalSubmit: true, submit: { workflowBinding: binding } },
+      );
+      assert.equal(proof.verified, false, `${label}: duplicate bytes at an untouched path verified a corrupt commit`);
+      assert.equal(proof.reason, 'commit_file_list_mismatch', `${label}: unattributed match misreported`);
+      assert.equal(binding.githubFileCommit.path, 'fix-copy/docs/plan.md',
+        `${label}: binding was rewritten to an unattributed path`);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('GitHub committed-file verification requires file-list evidence for alternate scope', async () => {
+  const originalFetch = globalThis.fetch;
+  const body = '# Corrected document\n\nOne complete copy.\n';
+  const commitSha = '0123456789abcdef0123456789abcdef01234567';
+  const commitUrl = `https://github.com/Example/Repo/commit/${commitSha}`;
+  const naiveUrl = `https://github.com/example/repo/raw/${commitSha}/fix-copy/docs/plan.md`;
+  const trueUrl = `https://github.com/example/repo/raw/${commitSha}/docs/plan.md`;
+  try {
+    const seen = [];
+    globalThis.fetch = async (url) => {
+      seen.push(url);
+      if (url === trueUrl) {
+        return { ok: true, status: 200, headers: { get: () => String(body.length) }, text: async () => body };
+      }
+      return { ok: false, status: 404, headers: { get: () => '0' }, text: async () => 'Not Found' };
+    };
+    for (const [label, AgentClass, tabId] of [
+      ['chrome', AgentCh, 9468],
+      ['firefox', AgentFx, 9469],
+    ]) {
+      const agent = new AgentClass({});
+      agent._planExecutionGuards.set(tabId, {
+        enabled: true,
+        siteWorkflow: { adapterName: 'github', job: { id: 'edit-file-and-commit' } },
+      });
+      const binding = {
+        githubFileCommit: {
+          repository: 'example/repo',
+          branch: 'feature',
+          path: 'fix-copy/docs/plan.md',
+          expectedLength: body.length,
+          expectedSha256: await agent._sha256Text(body),
+          commitMessageVerified: true,
+        },
+        metadataRequirements: [],
+        preDispatchPublishedResourceIdentities: [],
+      };
+      // No changed-file list was observed: the true path must not verify on
+      // content alone, and alternates must not even be fetched.
+      const pageState = { workflowResourceUrls: [commitUrl] };
+      const proof = await agent._githubCommittedFileVerification(
+        tabId, pageState, commitUrl, { verifiedFinalSubmit: true, submit: { workflowBinding: binding } },
+      );
+      assert.equal(proof.verified, false, `${label}: alternate scope verified without file-list evidence`);
+      assert.equal(proof.reason, 'commit_scope_unproven', `${label}: missing scope evidence misreported`);
+      assert.equal(binding.githubFileCommit.branch, 'feature');
+      assert.equal(binding.githubFileCommit.path, 'fix-copy/docs/plan.md');
+      assert.ok(seen.includes(naiveUrl) && !seen.includes(trueUrl),
+        `${label}: evidence-less alternates were probed`);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('commit page blob links feed verification scope evidence', () => {
+  for (const rel of [
+    'src/chrome/src/agent/agent.js',
+    'src/firefox/src/agent/agent.js',
+  ]) {
+    const source = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    assert.match(source, /blob\\\\\/\[0-9a-f\]\{7,40\}/,
+      `${rel}: page-state harvester misses commit blob links`);
+  }
+});
+
+test('edit-file scope keeps Git paths byte-exact', () => {
+  for (const [label, AgentClass] of [['chrome', AgentCh], ['firefox', AgentFx]]) {
+    const agent = new AgentClass({});
+    // Ingestion keeps the verbatim request text next to the normalized value.
+    const details = agent._normalizeWorkflowMetadataRequirementsDetails([
+      { field: 'path', value: 'Ａ.txt' },
+    ]);
+    assert.equal(details.items[0]?.value, 'A.txt', `${label}: normalized value changed shape`);
+    assert.equal(details.items[0]?.rawValue, 'Ａ.txt', `${label}: verbatim path was not preserved`);
+    // Re-ingestion keeps the original verbatim text instead of re-deriving
+    // it from the already-normalized value.
+    const again = agent._normalizeWorkflowMetadataRequirementsDetails(details.items);
+    assert.equal(again.items[0]?.rawValue, 'Ａ.txt', `${label}: re-ingestion lost the verbatim path`);
+    // Fullwidth Ａ (U+FF21) survives percent-decoding on the route and must
+    // match byte-exactly: NFKC would fold it to A and null the scope.
+    assert.deepEqual(agent._workflowGithubEditFileScope(
+      'https://github.com/Example/Repo/edit/main/%EF%BC%A1.txt',
+      [{ field: 'path', value: 'A.txt', rawValue: 'Ａ.txt' }],
+    ), {
+      repository: 'example/repo',
+      branch: 'main',
+      path: 'Ａ.txt',
+    }, `${label}: NFKC-sensitive path did not resolve byte-exactly`);
+    // Significant trailing whitespace likewise survives.
+    assert.deepEqual(agent._workflowGithubEditFileScope(
+      'https://github.com/Example/Repo/edit/main/docs/plan.md%20',
+      [{ field: 'path', value: 'docs/plan.md', rawValue: 'docs/plan.md ' }],
+    ), {
+      repository: 'example/repo',
+      branch: 'main',
+      path: 'docs/plan.md ',
+    }, `${label}: trailing-space path did not resolve byte-exactly`);
+    // The explicitly supported leading-slash tolerance still applies.
+    assert.deepEqual(agent._workflowGithubEditFileScope(
+      'https://github.com/Example/Repo/edit/main/docs/plan.md',
+      [{ field: 'path', value: '/docs/plan.md', rawValue: '/docs/plan.md' }],
+    ), {
+      repository: 'example/repo',
+      branch: 'main',
+      path: 'docs/plan.md',
+    }, `${label}: leading-slash tolerance regressed`);
+  }
+});
+
+test('commit gate hashes the verbatim message text', async () => {
+  for (const [label, AgentClass, resolveJob, tabId] of [
+    ['chrome', AgentCh, resolveAdapterWorkflowJob, 9514],
+    ['firefox', AgentFx, resolveAdapterWorkflowJobFx, 9515],
+  ]) {
+    const agent = new AgentClass({});
+    const pageUrl = 'https://github.com/Example/Repo/edit/main/docs/plan.md';
+    agent._planExecutionGuards.set(tabId, {
+      enabled: true,
+      siteWorkflow: resolveJob(pageUrl, 'edit-file-and-commit'),
+      workflowMetadataRequirements: [{ field: 'commit_message', value: 'A', rawValue: 'Ａ' }],
+      workflowMetadataRequirementsResolved: true,
+    });
+    agent._taskTokens.set(tabId, 'task-verbatim');
+    const body = '# Doc\n';
+    const bodySha256 = await agent._sha256Text(body);
+    const editorRecord = {
+      key: 'ax:doc:ref_editor',
+      locatorType: 'ax',
+      refId: 'ref_editor',
+      documentToken: 'doc',
+      pageUrl,
+      ambiguous: false,
+      expectedLength: body.length,
+      expectedSha256: bodySha256,
+      expectedFp: agent._workflowInventoryFingerprint(body),
+      fieldMeta: { contentEditable: true, ariaLabelledByText: 'Editing file contents' },
+      readbackLength: body.length,
+      readbackSha256: bodySha256,
+      verifiedAt: Date.now(),
+      taskToken: 'task-verbatim',
+    };
+    const messageRecordFor = async (text) => ({
+      key: 'ax:doc:ref_msg',
+      locatorType: 'ax',
+      refId: 'ref_msg',
+      documentToken: 'doc',
+      pageUrl,
+      ambiguous: false,
+      expectedLength: text.length,
+      expectedSha256: await agent._sha256Text(text),
+      expectedFp: agent._workflowInventoryFingerprint(text),
+      fieldMeta: { id: 'commit-message-input', name: 'commit-message-input' },
+      readbackLength: text.length,
+      readbackSha256: await agent._sha256Text(text),
+      verifiedAt: Date.now(),
+      taskToken: 'task-verbatim',
+    });
+    // An exact write of the verbatim request authorizes.
+    agent._verifiedTextReplacements.set(tabId, new Map([
+      ['ax:doc:ref_editor', editorRecord],
+      ['ax:doc:ref_msg', await messageRecordFor('Ａ')],
+    ]));
+    assert.ok(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit,
+      `${label}: exact verbatim commit message did not authorize`);
+    // The NFKC fold is different bytes from the request: must not.
+    agent._verifiedTextReplacements.set(tabId, new Map([
+      ['ax:doc:ref_editor', editorRecord],
+      ['ax:doc:ref_msg', await messageRecordFor('A')],
+    ]));
+    assert.equal(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit, undefined,
+      `${label}: normalized rewrite authorized a different message`);
+  }
+});
+
+test('multi-line commit messages bind summary plus description', async () => {
+  for (const [label, AgentClass, resolveJob, tabId] of [
+    ['chrome', AgentCh, resolveAdapterWorkflowJob, 9542],
+    ['firefox', AgentFx, resolveAdapterWorkflowJobFx, 9543],
+  ]) {
+    const agent = new AgentClass({});
+    const pageUrl = 'https://github.com/Example/Repo/edit/main/docs/plan.md';
+    agent._planExecutionGuards.set(tabId, {
+      enabled: true,
+      siteWorkflow: resolveJob(pageUrl, 'edit-file-and-commit'),
+      workflowMetadataRequirements: [{ field: 'commit_message', value: 'Title\n\nDetails' }],
+      workflowMetadataRequirementsResolved: true,
+    });
+    agent._taskTokens.set(tabId, 'task-multiline');
+    const editorBody = '# Doc\n';
+    const editorRecord = {
+      key: 'ax:doc:ref_editor',
+      locatorType: 'ax',
+      refId: 'ref_editor',
+      documentToken: 'doc',
+      pageUrl,
+      ambiguous: false,
+      expectedLength: editorBody.length,
+      expectedSha256: await agent._sha256Text(editorBody),
+      expectedFp: agent._workflowInventoryFingerprint(editorBody),
+      fieldMeta: { contentEditable: true, ariaLabelledByText: 'Editing file contents' },
+      readbackLength: editorBody.length,
+      readbackSha256: await agent._sha256Text(editorBody),
+      verifiedAt: Date.now(),
+      taskToken: 'task-multiline',
+    };
+    const messageRecordFor = async (key, text, fieldMeta) => ({
+      key,
+      locatorType: 'ax',
+      refId: 'ref_msg',
+      documentToken: 'doc',
+      pageUrl,
+      ambiguous: false,
+      expectedLength: text.length,
+      expectedSha256: await agent._sha256Text(text),
+      expectedFp: agent._workflowInventoryFingerprint(text),
+      fieldMeta,
+      readbackLength: text.length,
+      readbackSha256: await agent._sha256Text(text),
+      verifiedAt: Date.now(),
+      taskToken: 'task-multiline',
+    });
+    const summaryMeta = { tag: 'input', id: 'commit-message-input' };
+    const descriptionMeta = { tag: 'textarea', name: 'commit_message' };
+    // Summary plus description proofs authorize the composed message.
+    agent._verifiedTextReplacements.set(tabId, new Map([
+      ['ax:doc:ref_editor', editorRecord],
+      ['ax:doc:ref_summary', await messageRecordFor('ax:doc:ref_summary', 'Title', summaryMeta)],
+      ['ax:doc:ref_desc', await messageRecordFor('ax:doc:ref_desc', 'Details', descriptionMeta)],
+    ]));
+    assert.ok(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit,
+      `${label}: split summary/body proofs did not authorize`);
+    // Swapped roles must not: the composed bytes would differ.
+    agent._verifiedTextReplacements.set(tabId, new Map([
+      ['ax:doc:ref_editor', editorRecord],
+      ['ax:doc:ref_summary', await messageRecordFor('ax:doc:ref_summary', 'Details', summaryMeta)],
+      ['ax:doc:ref_desc', await messageRecordFor('ax:doc:ref_desc', 'Title', descriptionMeta)],
+    ]));
+    assert.equal(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit, undefined,
+      `${label}: swapped summary/body authorized a different message`);
+    // Summary alone is not the whole message.
+    agent._verifiedTextReplacements.set(tabId, new Map([
+      ['ax:doc:ref_editor', editorRecord],
+      ['ax:doc:ref_summary', await messageRecordFor('ax:doc:ref_summary', 'Title', summaryMeta)],
+    ]));
+    assert.equal(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit, undefined,
+      `${label}: summary alone authorized a multi-line message`);
+  }
+});
+
+test('commit description identifiers authorize with kind-consistent refresh', async () => {
+  for (const [label, AgentClass] of [['chrome', AgentCh], ['firefox', AgentFx]]) {
+    const agent = new AgentClass({});
+    // Identity matrix: all four spellings, id/name independence, negatives.
+    for (const [meta, expected, note] of [
+      [{ id: 'commit-message-input' }, true, 'summary id'],
+      [{ name: 'commit_message' }, true, 'message name'],
+      [{ id: 'commit-description-input' }, true, 'description id'],
+      [{ name: 'commit_description' }, true, 'description name'],
+      [{ id: 'unrelated-id', name: 'commit_message' }, true, 'name laid over a foreign id'],
+      [{ id: 'commit-message-input', name: 'unrelated-name' }, true, 'id laid over a foreign name'],
+      [{ id: 'comment-box' }, false, 'unrelated field'],
+      [{}, false, 'empty metadata'],
+      [null, false, 'missing metadata'],
+    ]) {
+      assert.equal(agent._isGithubCommitMessageField(meta), expected,
+        `${label}: commit-field identity wrong for ${note}`);
+    }
+  }
+  const originalChrome = globalThis.chrome;
+  const originalBrowser = globalThis.browser;
+  try {
+    const pageUrl = 'https://github.com/Example/Repo/edit/main/docs/plan.md';
+    for (const [label, AgentClass, resolveJob, tabId] of [
+      ['chrome', AgentCh, resolveAdapterWorkflowJob, 9544],
+      ['firefox', AgentFx, resolveAdapterWorkflowJobFx, 9545],
+    ]) {
+      const agent = new AgentClass({});
+      agent._planExecutionGuards.set(tabId, {
+        enabled: true,
+        siteWorkflow: resolveJob(pageUrl, 'edit-file-and-commit'),
+        workflowMetadataRequirements: [{ field: 'commit_message', value: 'Title\n\nDetails' }],
+        workflowMetadataRequirementsResolved: true,
+      });
+      agent._taskTokens.set(tabId, 'task-desc-id');
+      const editorBody = '# Doc\n';
+      const editorRecord = {
+        key: 'ax:doc:ref_editor', locatorType: 'ax', refId: 'ref_editor',
+        documentToken: 'doc', pageUrl, ambiguous: false,
+        expectedLength: editorBody.length, expectedSha256: await agent._sha256Text(editorBody),
+        expectedFp: agent._workflowInventoryFingerprint(editorBody),
+        fieldMeta: { contentEditable: true, ariaLabelledByText: 'Editing file contents' },
+        readbackLength: editorBody.length, readbackSha256: await agent._sha256Text(editorBody),
+        verifiedAt: Date.now(), taskToken: 'task-desc-id',
+      };
+      const messageRecordFor = async (key, text, fieldMeta) => ({
+        key, locatorType: 'ax', refId: 'ref_msg', documentToken: 'doc', pageUrl, ambiguous: false,
+        expectedLength: text.length, expectedSha256: await agent._sha256Text(text),
+        expectedFp: agent._workflowInventoryFingerprint(text), fieldMeta,
+        readbackLength: text.length, readbackSha256: await agent._sha256Text(text),
+        verifiedAt: Date.now(), taskToken: 'task-desc-id',
+      });
+      // Extended description identified by its own id (not the summary's).
+      agent._verifiedTextReplacements.set(tabId, new Map([
+        ['ax:doc:ref_editor', editorRecord],
+        ['ax:doc:ref_summary', await messageRecordFor('ax:doc:ref_summary', 'Title',
+          { tag: 'input', id: 'commit-message-input' })],
+        ['ax:doc:ref_desc', await messageRecordFor('ax:doc:ref_desc', 'Details',
+          { tag: 'textarea', id: 'commit-description-input' })],
+      ]));
+      assert.ok(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit,
+        `${label}: description-identified body did not authorize`);
+      // Cross-kind repoint with identical bytes: an editor proof now reading
+      // a commit field (and vice versa) must drop, not keep stale metadata.
+      const liveMeta = { tag: 'input', id: 'commit-message-input' };
+      const tabs = {
+        async sendMessage(_tabId, message) {
+          assert.equal(message.action, 'field_value_digest');
+          return { success: true,
+            valueLength: editorBody.length, valueSha256: await agent._sha256Text(editorBody),
+            fieldMeta: { ...liveMeta } };
+        },
+      };
+      globalThis.chrome = { tabs };
+      globalThis.browser = { tabs };
+      await agent._refreshGithubTextReplacementProofs(tabId, pageUrl);
+      assert.ok(!agent._verifiedTextReplacements.get(tabId)?.has('ax:doc:ref_editor'),
+        `${label}: editor proof repointed at a commit field survived refresh`);
+    }
+  } finally {
+    if (originalChrome === undefined) delete globalThis.chrome;
+    else globalThis.chrome = originalChrome;
+    if (originalBrowser === undefined) delete globalThis.browser;
+    else globalThis.browser = originalBrowser;
+  }
+});
+
+test('terminal path match compares verbatim request text', async () => {
+  for (const [label, AgentClass, tabId] of [
+    ['chrome', AgentCh, 9516],
+    ['firefox', AgentFx, 9517],
+  ]) {
+    const agent = new AgentClass({});
+    const body = '# Normalized path document\n\nOne complete copy.\n';
+    const sha = await agent._sha256Text(body);
+    const state = { siteWorkflow: { adapterName: 'github', job: { id: 'edit-file-and-commit' } } };
+    const commitUrl = 'https://github.com/Example/Repo/commit/0123456789abcdef0123456789abcdef01234567';
+    const bindingFor = (requirements) => ({
+      metadataRequirements: requirements,
+      githubFileCommit: {
+        repository: 'example/repo',
+        branch: 'main',
+        path: 'Ａ.txt',
+        expectedLength: body.length,
+        expectedSha256: sha,
+        commitMessageVerified: true,
+      },
+    });
+    const pageState = {
+      githubCommittedFileVerification: {
+        verified: true,
+        repository: 'example/repo',
+        path: 'Ａ.txt',
+        expectedSha256: sha,
+      },
+    };
+    // Verbatim request matches the byte-exact bound path.
+    assert.equal(agent._workflowPublishedResourcePayloadMatch(
+      bindingFor([{ field: 'path', value: 'A.txt', rawValue: 'Ａ.txt' }]),
+      state, pageState, commitUrl, {},
+    ), true, `${label}: verbatim path did not match the bound blob`);
+    // A genuinely different path still reports missing evidence.
+    assert.equal(agent._workflowPublishedResourcePayloadMatch(
+      bindingFor([{ field: 'path', value: 'other.md', rawValue: 'other.md' }]),
+      state, pageState, commitUrl, {},
+    ), false, `${label}: mismatched path reported evidence`);
+  }
+});
+
+test('GitHub edit-file workflow verifies the exact committed raw blob', async () => {
+  const originalFetch = globalThis.fetch;
+  const body = '# Corrected document\n\nOne complete copy.\n';
+  const duplicate = body + body;
+  const commitSha = '0123456789abcdef0123456789abcdef01234567';
+  const unrelatedCommitSha = '89abcdef0123456789abcdef0123456789abcdef';
+  const editUrl = 'https://github.com/Example/Repo/edit/main/docs/plan.md';
+  const commitUrl = `https://github.com/Example/Repo/commit/${commitSha}`;
+  try {
+    for (const [label, AgentClass, resolveJob] of [
+      ['chrome', AgentCh, resolveAdapterWorkflowJob],
+      ['firefox', AgentFx, resolveAdapterWorkflowJobFx],
+    ]) {
+      const agent = new AgentClass({});
+      const tabId = label === 'chrome' ? 9445 : 9446;
+      // Proofs bind to the active task token, minted here as _startTraceRun does.
+      agent._taskTokens.set(tabId, `task-blob-${tabId}`);
+      const siteWorkflow = resolveJob(editUrl, 'edit-file-and-commit');
+      assert.equal(siteWorkflow?.job?.id, 'edit-file-and-commit');
+      assert.deepEqual(agent._workflowGithubEditFileScope(
+        'https://github.com/Example/Repo/edit/feature/fix-copy/docs/plan.md',
+        [{ field: 'branch', value: 'feature/fix-copy' }],
+      ), {
+        repository: 'example/repo',
+        branch: 'feature/fix-copy',
+        path: 'docs/plan.md',
+      }, `${label}: an explicit slash-containing branch was split into the file path`);
+      const workflowGuard = {
+        enabled: true,
+        siteWorkflow,
+        workflowMetadataRequirements: [
+          { field: 'path', value: 'docs/plan.md' },
+          { field: 'branch', value: 'main' },
+          { field: 'commit_message', value: 'Translate plan' },
+        ],
+        workflowMetadataRequirementsResolved: true,
+      };
+      agent._planExecutionGuards.set(tabId, workflowGuard);
+      agent._lastAxScopes.set(tabId, { documentToken: 'doc', pageUrl: editUrl });
+      let liveEditorValue = body;
+      let liveCommitMessage = 'Translate plan';
+      agent._textMutationValueDigest = async (_tabId, target, expected = null) => {
+        const commitMessage = target?.refId === 'ref_commit_message';
+        const value = commitMessage ? liveCommitMessage : liveEditorValue;
+        return {
+          valueLength: value.length,
+          valueSha256: await agent._sha256Text(value),
+          verified: typeof expected === 'string' && expected === value,
+          fieldMeta: commitMessage
+            ? { contentEditable: false, id: 'commit-message-input', labelText: 'Commit message' }
+            : { contentEditable: true, ariaLabelledByText: 'Editing file contents' },
+        };
+      };
+      const editorTarget = agent._textMutationTarget(tabId, 'set_field', { ref_id: 'ref_editor' });
+      const commitTarget = agent._textMutationTarget(tabId, 'set_field', { ref_id: 'ref_commit_message' });
+      const makeEditorRecord = () => agent._verifiedTextReplacementRecord(
+        tabId, editorTarget, body, { contentEditable: true, ariaLabelledByText: 'Editing file contents' },
+      );
+      const makeCommitRecord = () => agent._verifiedTextReplacementRecord(
+        tabId, commitTarget, 'Translate plan',
+        { contentEditable: false, id: 'commit-message-input', labelText: 'Commit message' },
+      );
+      agent._verifiedTextReplacements.set(tabId, new Map([
+        [editorTarget.key, await makeEditorRecord()],
+        [commitTarget.key, await makeCommitRecord()],
+      ]));
+      const binding = agent._workflowSubmitBindingForAttempt(tabId, editUrl, {});
+      assert.ok(binding?.githubFileCommit, `${label}: commit-message replacement was mistaken for the file editor`);
+      assert.deepEqual(binding.githubFileCommit.path, 'docs/plan.md');
+      assert.deepEqual(binding.githubFileCommit.branch, 'main');
+      assert.deepEqual(binding.githubFileCommit.repository, 'example/repo');
+      const replacements = agent._verifiedTextReplacements.get(tabId);
+      const commitRecord = replacements.get('ax:doc:ref_commit_message');
+      const commitMessageSha256 = commitRecord.expectedSha256;
+      agent._currentUrl = async () => editUrl;
+      commitRecord.expectedSha256 = '0'.repeat(64);
+      assert.equal(agent._workflowSubmitBindingForAttempt(tabId, editUrl, {}).githubFileCommit, undefined,
+        `${label}: a mismatched requested commit message received a commit binding`);
+      assert.equal(await agent._workflowPreSubmitDispatchBlock(
+        tabId,
+        'click_ax',
+        {},
+        {
+          isSubmit: true,
+          validationSubmitEvidence: 'heuristic',
+          githubCommitDialogLauncher: true,
+          fields: [{ label: 'Editing file contents' }],
+        },
+      ), null, `${label}: the reversible commit-dialog launcher was blocked before its message field existed`);
+      assert.equal((await agent._workflowPreSubmitDispatchBlock(
+        tabId,
+        'click_ax',
+        {},
+        {
+          isSubmit: true,
+          validationSubmitEvidence: 'heuristic',
+          fields: [{ label: 'Editing file contents' }],
+        },
+      ))?.noDispatch, true, `${label}: an unrelated heuristic submit was mistaken for the dialog launcher`);
+      assert.equal((await agent._workflowPreSubmitDispatchBlock(
+        tabId, 'set_field', { ref_id: 'ref_editor', text: body, submit: true }, null,
+      ))?.noDispatch, true, `${label}: an unprobed set_field submission bypassed the final commit guard`);
+      const blockedSubmit = await agent._workflowPreSubmitDispatchBlock(
+        tabId,
+        'click_ax',
+        {},
+        {
+          isSubmit: true,
+          validationSubmitEvidence: 'heuristic',
+          fields: [{ label: 'Commit message' }],
+        },
+      );
+      assert.equal(blockedSubmit?.noDispatch, true, `${label}: unverified commit metadata reached submission`);
+      assert.equal(blockedSubmit?.recoveryRequired, 'verify_or_restore_field');
+      commitRecord.expectedSha256 = commitMessageSha256;
+      workflowGuard.workflowMetadataRequirementsIncomplete = true;
+      workflowGuard.workflowMetadataRequirementsResolved = false;
+      assert.equal((await agent._workflowPreSubmitDispatchBlock(
+        tabId, 'click_ax', {}, { isSubmit: true, validationSubmitEvidence: 'strong' },
+      ))?.noDispatch, true, `${label}: unresolved requested metadata reached commit submission`);
+      workflowGuard.workflowMetadataRequirementsIncomplete = false;
+      workflowGuard.workflowMetadataRequirementsResolved = true;
+      assert.equal(await agent._workflowPreSubmitDispatchBlock(
+        tabId, 'click_ax', {}, { isSubmit: true, validationSubmitEvidence: 'strong' },
+      ), null, `${label}: exact editor and commit metadata remained blocked`);
+      await agent._finalizeTextMutationResult(
+        tabId, 'press_keys', { key: ';' }, { success: true, dispatched: true },
+      );
+      liveEditorValue = `${body};`;
+      assert.equal((await agent._workflowPreSubmitDispatchBlock(
+        tabId, 'click_ax', {}, { isSubmit: true, validationSubmitEvidence: 'strong' },
+      ))?.noDispatch, true, `${label}: a stale editor digest authorized commit after a later keystroke`);
+      liveEditorValue = body;
+      replacements.set(editorTarget.key, await makeEditorRecord());
+      replacements.set('selector:doc:[contenteditable="true"].other', {
+        key: 'selector:doc:[contenteditable="true"].other',
+        locatorType: 'selector',
+        selector: '[contenteditable="true"].other',
+        documentToken: 'doc',
+        pageUrl: editUrl,
+        ambiguous: false,
+        fieldMeta: { contentEditable: true, ariaLabelledByText: 'Editing file contents' },
+        expectedLength: duplicate.length,
+        expectedSha256: await agent._sha256Text(duplicate),
+        readbackLength: duplicate.length,
+        readbackSha256: await agent._sha256Text(duplicate),
+        taskToken: `task-blob-${tabId}`,
+      });
+      assert.equal(agent._workflowSubmitBindingForAttempt(tabId, editUrl, {}).githubFileCommit, undefined,
+        `${label}: conflicting editor payloads must fail closed`);
+      replacements.delete('selector:doc:[contenteditable="true"].other');
+      binding.preDispatchPublishedResourceIdentities = [];
+      const submissionEvidence = {
+        verifiedFinalSubmit: true,
+        submit: { workflowBinding: binding },
+      };
+      const pageState = {
+        workflowPageText: 'Translate plan\nCommitted file details',
+        workflowResourceUrls: [
+          commitUrl,
+          `https://github.com/Example/Repo/commit/${unrelatedCommitSha}`,
+        ],
+      };
+      let served = body;
+      globalThis.fetch = async (url) => {
+        if (url !== `https://github.com/example/repo/raw/${commitSha}/docs/plan.md`) {
+          return { ok: false, status: 404, headers: { get: () => '0' }, text: async () => 'Not Found' };
+        }
+        return {
+          ok: true,
+          status: 200,
+          headers: { get: () => String(served.length) },
+          text: async () => served,
+        };
+      };
+      const verified = await agent._githubCommittedFileVerification(
+        tabId, pageState, commitUrl, submissionEvidence,
+      );
+      assert.equal(verified.verified, true, `${label}: exact committed blob was not verified`);
+      assert.equal(binding.publishedResourceIdentity, `github:github.com/example/repo/commit/${commitSha}`);
+      assert.equal(agent._workflowPublishedResourcePayloadMatch(
+        binding,
+        { siteWorkflow },
+        { ...pageState, githubCommittedFileVerification: verified },
+        commitUrl,
+        submissionEvidence.submit,
+      ), true);
+      assert.equal(agent._workflowPublishedResourcePayloadMatch(
+        {
+          ...binding,
+          githubFileCommit: { ...binding.githubFileCommit, commitMessageVerified: false },
+        },
+        { siteWorkflow },
+        { ...pageState, githubCommittedFileVerification: verified },
+        commitUrl,
+        submissionEvidence.submit,
+      ), false, `${label}: an unverified requested commit message was accepted`);
+
+      served = duplicate;
+      const rejectedDuplicate = await agent._githubCommittedFileVerification(
+        tabId, pageState, commitUrl, submissionEvidence,
+      );
+      assert.equal(rejectedDuplicate.verified, false, `${label}: duplicated committed content was accepted`);
+      assert.equal(rejectedDuplicate.actualLength, duplicate.length);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('GitHub edit-file workflow fails closed when submit detection is inconclusive', async () => {
+  const editUrl = 'https://github.com/Example/Repo/edit/main/docs/plan.md';
+  for (const [label, AgentClass, tabId] of [
+    ['chrome', AgentCh, 9451],
+    ['firefox', AgentFx, 9452],
+  ]) {
+    const agent = new AgentClass({});
+    agent._planExecutionGuards.set(tabId, {
+      enabled: true,
+      siteWorkflow: { adapterName: 'github', job: { id: 'edit-file-and-commit' } },
+      workflowMetadataRequirements: [],
+      workflowMetadataRequirementsResolved: true,
+    });
+    agent._currentUrl = async () => editUrl;
+    agent._workflowSubmitBindingForAttempt = () => ({ metadataRequirementsIncomplete: true });
+    // click_ax with only a ref_id and no probe evidence cannot be proven to be
+    // a non-submit, so it must block until the exact binding exists.
+    const inconclusiveAx = await agent._workflowPreSubmitDispatchBlock(
+      tabId, 'click_ax', { ref_id: 'ref_commit' }, null,
+    );
+    assert.equal(inconclusiveAx?.noDispatch, true, `${label}: inconclusive click_ax bypassed the commit guard`);
+    assert.equal(inconclusiveAx?.inconclusiveSubmitDetection, true, `${label}: inconclusive block was not marked`);
+    assert.equal(inconclusiveAx?.recoveryRequired, 'verify_or_restore_field');
+    // click({text:'Commit changes'}) is classified as a submit even without probe evidence.
+    const commitText = await agent._workflowPreSubmitDispatchBlock(
+      tabId, 'click', { text: 'Commit changes' }, null,
+    );
+    assert.equal(commitText?.noDispatch, true, `${label}: text commit click bypassed the commit guard`);
+    assert.equal(commitText?.inconclusiveSubmitDetection, undefined, `${label}: label-classified submit mislabeled as inconclusive`);
+    // Enter in a field is submit-capable and stays blocked; other keys and
+    // non-submit field writes remain allowed.
+    const inconclusiveEnter = await agent._workflowPreSubmitDispatchBlock(
+      tabId, 'press_keys', { key: 'Enter' }, null,
+    );
+    assert.equal(inconclusiveEnter?.noDispatch, true, `${label}: inconclusive Enter bypassed the commit guard`);
+    assert.equal(await agent._workflowPreSubmitDispatchBlock(
+      tabId, 'press_keys', { key: 'ArrowDown' }, null,
+    ), null, `${label}: non-submit key was blocked`);
+    assert.equal(await agent._workflowPreSubmitDispatchBlock(
+      tabId, 'set_field', { ref_id: 'ref_editor', text: 'draft' }, null,
+    ), null, `${label}: non-submit field write was blocked`);
+    // Once the exact binding exists, inconclusive actions are allowed again.
+    agent._workflowSubmitBindingForAttempt = () => ({
+      githubFileCommit: {
+        repository: 'example/repo', branch: 'main', path: 'docs/plan.md',
+      },
+    });
+    assert.equal(await agent._workflowPreSubmitDispatchBlock(
+      tabId, 'click_ax', { ref_id: 'ref_commit' }, null,
+    ), null, `${label}: bound inconclusive action remained blocked`);
+  }
+});
+
+test('GitHub edit-file workflow passes resolved navigation links', async () => {
+  for (const rel of [
+    'src/chrome/src/agent/agent.js',
+    'src/firefox/src/agent/agent.js',
+  ]) {
+    const source = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    assert.match(source, /const isNavigationLinkTarget = \(el\) => \{/,
+      `${rel}: navigation-link probe is missing`);
+    assert.match(source, /resolvedNavigationTarget: true/,
+      `${rel}: navigation resolution is not propagated`);
+    assert.match(source, /javascript\|data\|vbscript/,
+      `${rel}: script-executing hrefs are not excluded from navigation`);
+  }
+  const editUrl = 'https://github.com/Example/Repo/edit/main/docs/plan.md';
+  for (const [label, AgentClass, tabId] of [
+    ['chrome', AgentCh, 9512],
+    ['firefox', AgentFx, 9513],
+  ]) {
+    const agent = new AgentClass({});
+    agent._planExecutionGuards.set(tabId, {
+      enabled: true,
+      siteWorkflow: { adapterName: 'github', job: { id: 'edit-file-and-commit' } },
+      workflowMetadataRequirements: [],
+      workflowMetadataRequirementsResolved: true,
+    });
+    agent._currentUrl = async () => editUrl;
+    agent._workflowSubmitBindingForAttempt = () => ({ metadataRequirementsIncomplete: true });
+    // The blob page's Edit control resolves to a pure navigation link: it
+    // cannot submit or mutate fields, so it passes without a binding (which
+    // cannot exist before the /edit route is even reached).
+    assert.equal(await agent._workflowPreSubmitDispatchBlock(
+      tabId, 'click_ax', { ref_id: 'ref_edit_link' },
+      { isSubmit: false, resolvedNavigationTarget: true },
+    ), null, `${label}: resolved navigation link stayed blocked`);
+    // Unresolved clicks stay fail-closed.
+    assert.equal((await agent._workflowPreSubmitDispatchBlock(
+      tabId, 'click_ax', { ref_id: 'ref_edit_link' }, null,
+    ))?.noDispatch, true, `${label}: unresolved click escaped the commit guard`);
+    // A submit-looking label still takes the binding path even with the
+    // flag: positive navigation evidence only lifts the inconclusive gate.
+    assert.equal((await agent._workflowPreSubmitDispatchBlock(
+      tabId, 'click', { text: 'Commit changes' },
+      { isSubmit: false, resolvedNavigationTarget: true },
+    ))?.noDispatch, true, `${label}: label-classified submit bypassed the binding`);
+    // The flag is click-scoped: Enter stays blocked.
+    assert.equal((await agent._workflowPreSubmitDispatchBlock(
+      tabId, 'press_keys', { key: 'Enter' },
+      { isSubmit: false, resolvedNavigationTarget: true },
+    ))?.noDispatch, true, `${label}: flagged Enter escaped the commit guard`);
+  }
+});
+
+test('GitHub edit-file workflow blocks compound submit actions on existing bindings', async () => {
+  const editUrl = 'https://github.com/Example/Repo/edit/main/docs/plan.md';
+  for (const [label, AgentClass, tabId] of [
+    ['chrome', AgentCh, 9461],
+    ['firefox', AgentFx, 9462],
+  ]) {
+    const agent = new AgentClass({});
+    agent._planExecutionGuards.set(tabId, {
+      enabled: true,
+      siteWorkflow: { adapterName: 'github', job: { id: 'edit-file-and-commit' } },
+    });
+    agent._currentUrl = async () => editUrl;
+    agent._workflowSubmitBindingForAttempt = () => ({
+      githubFileCommit: {
+        repository: 'example/repo', branch: 'main', path: 'docs/plan.md',
+      },
+    });
+    // A non-mutating final activation may still use the binding.
+    assert.equal(await agent._workflowPreSubmitDispatchBlock(
+      tabId, 'click_ax', { ref_id: 'ref_commit' },
+      { isSubmit: true, validationSubmitEvidence: 'strong' },
+    ), null, `${label}: bound click activation was blocked`);
+    // set_field+submit, Enter, and execute_js can all rewrite the verified
+    // values in the same dispatch, so they must split write and submit even
+    // though a binding exists.
+    const compoundField = await agent._workflowPreSubmitDispatchBlock(
+      tabId, 'set_field', { ref_id: 'ref_editor', text: 'late change', submit: true }, null,
+    );
+    assert.equal(compoundField?.noDispatch, true, `${label}: compound field submission reused stale proofs`);
+    assert.equal(compoundField?.splitWriteRequired, true, `${label}: compound block was not marked`);
+    assert.match(compoundField?.error || '', /non-submit/i, `${label}: compound block misguides recovery`);
+    const compoundEnter = await agent._workflowPreSubmitDispatchBlock(
+      tabId, 'press_keys', { key: 'Enter' }, null,
+    );
+    assert.equal(compoundEnter?.noDispatch, true, `${label}: Enter reused stale proofs`);
+    assert.equal(compoundEnter?.splitWriteRequired, true, `${label}: Enter block was not marked`);
+    const compoundJs = await agent._workflowPreSubmitDispatchBlock(
+      tabId, 'execute_js', { code: 'document.querySelector("form").requestSubmit()' }, null,
+    );
+    assert.equal(compoundJs?.noDispatch, true, `${label}: execute_js reused stale proofs`);
+    assert.equal(compoundJs?.splitWriteRequired, true, `${label}: execute_js block was not marked`);
+    assert.match(compoundJs?.error || '', /javascript/i, `${label}: execute_js block misguides recovery`);
+    const benignJs = await agent._workflowPreSubmitDispatchBlock(
+      tabId, 'execute_js', { code: 'return document.title' }, null,
+    );
+    assert.equal(benignJs?.noDispatch, true, `${label}: benign execute_js bypassed the mutation gate`);
+    assert.equal(benignJs?.splitWriteRequired, true, `${label}: benign execute_js block was not marked`);
+  }
+});
+
+test('GitHub edit-file workflow passes clicks on resolved editable fields', async () => {
+  const editUrl = 'https://github.com/Example/Repo/edit/main/docs/plan.md';
+  for (const [label, AgentClass, tabId] of [
+    ['chrome', AgentCh, 9476],
+    ['firefox', AgentFx, 9477],
+  ]) {
+    const agent = new AgentClass({});
+    agent._planExecutionGuards.set(tabId, {
+      enabled: true,
+      siteWorkflow: { adapterName: 'github', job: { id: 'edit-file-and-commit' } },
+    });
+    agent._workflowSubmitBindingForAttempt = () => ({ metadataRequirementsIncomplete: true });
+    // Focusing the editor (or the commit-message input) cannot submit, so the
+    // probe-resolved click passes even though no binding exists yet.
+    assert.equal(await agent._workflowPreSubmitDispatchBlock(
+      tabId, 'click_ax', { ref_id: 'ref_editor' },
+      { isSubmit: false, resolvedEditableTarget: true },
+    ), null, `${label}: focus click on an editable field was blocked`);
+    // No probe evidence at all stays blocked (fail-closed baseline).
+    assert.equal((await agent._workflowPreSubmitDispatchBlock(
+      tabId, 'click_ax', { ref_id: 'ref_editor' }, null,
+    ))?.noDispatch, true, `${label}: unevidenced click bypassed the commit guard`);
+    // The flag is meaningless off the click family: a writing tool stays gated.
+    assert.equal((await agent._workflowPreSubmitDispatchBlock(
+      tabId, 'set_field', { ref_id: 'ref_editor', text: 'x', submit: true },
+      { isSubmit: false, resolvedEditableTarget: true },
+    ))?.noDispatch, true, `${label}: flagged field submission bypassed the commit guard`);
+  }
+});
+
+test('submit detection propagates resolved editable click targets', async () => {
+  const originalChrome = globalThis.chrome;
+  const originalBrowser = globalThis.browser;
+  try {
+    const probeResult = {
+      isSubmit: false,
+      resolvedEditableTarget: true,
+      host: 'github.com',
+      reason: 'click target resolves to an editable field',
+    };
+    globalThis.chrome = { scripting: { executeScript: async () => [{ frameId: 0, result: probeResult }] } };
+    globalThis.browser = { tabs: { executeScript: async () => [probeResult] } };
+    for (const [label, AgentClass, tabId] of [
+      ['chrome', AgentCh, 9478],
+      ['firefox', AgentFx, 9479],
+    ]) {
+      const agent = new AgentClass({});
+      // The chrome stub above also satisfies Firefox's scripting branch, so
+      // force the browser-tabs path per build.
+      if (label === 'firefox') globalThis.chrome = {};
+      else globalThis.chrome = { scripting: { executeScript: async () => [{ frameId: 0, result: probeResult }] } };
+      const detected = await agent._detectLikelySubmitAction(tabId, 'click_ax', { ref_id: 'ref_editor' });
+      assert.equal(detected?.isSubmit, false, `${label}: editable click misclassified as submit`);
+      assert.equal(detected?.resolvedEditableTarget, true, `${label}: editable evidence was dropped`);
+      assert.equal(detected?.tool, 'click_ax');
+    }
+  } finally {
+    if (originalChrome === undefined) delete globalThis.chrome;
+    else globalThis.chrome = originalChrome;
+    if (originalBrowser === undefined) delete globalThis.browser;
+    else globalThis.browser = originalBrowser;
+  }
+});
+
+test('submit probe marks editable click targets as proven non-submits', () => {
+  const originalDocument = globalThis.document;
+  const originalLocation = globalThis.location;
+  const originalWindow = globalThis.window;
+  try {
+    globalThis.document = {};
+    globalThis.location = {
+      hostname: 'github.com',
+      host: 'github.com',
+      href: 'https://github.com/o/r/edit/main/f.md',
+    };
+    const fakeTextarea = {
+      nodeType: 1, tagName: 'TEXTAREA', isContentEditable: false,
+      getAttribute: () => null, hasAttribute: () => false,
+    };
+    const fakeCheckbox = {
+      nodeType: 1, tagName: 'INPUT', type: 'checkbox', isContentEditable: false, form: null,
+      getAttribute: (name) => name === 'type' ? 'checkbox' : null, hasAttribute: () => false,
+    };
+    globalThis.window = {
+      __wb_ax_lookup: (refId) => refId === 'ref_editor' ? fakeTextarea : fakeCheckbox,
+    };
+    for (const [label, AgentClass] of [['chrome', AgentCh], ['firefox', AgentFx]]) {
+      const editable = AgentClass._submitActionProbe('click_ax', { ref_id: 'ref_editor' });
+      assert.equal(editable?.isSubmit, false, `${label}: editable click misclassified`);
+      assert.equal(editable?.resolvedEditableTarget, true, `${label}: editable proof missing`);
+      assert.equal(editable?.host, 'github.com');
+      assert.equal(AgentClass._submitActionProbe('click_ax', { ref_id: 'ref_box' }), null,
+        `${label}: checkbox click must stay inconclusive`);
+    }
+  } finally {
+    if (originalDocument === undefined) delete globalThis.document;
+    else globalThis.document = originalDocument;
+    if (originalLocation === undefined) delete globalThis.location;
+    else globalThis.location = originalLocation;
+    if (originalWindow === undefined) delete globalThis.window;
+    else globalThis.window = originalWindow;
+  }
+});
+
+test('GitHub commit-dialog launcher detection is locale-independent', () => {
+  for (const rel of [
+    'src/chrome/src/agent/agent.js',
+    'src/firefox/src/agent/agent.js',
+  ]) {
+    const source = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    assert.match(source,
+      /githubCommitDialogLauncher: githubEditPage[\s\S]*!controlInModal[\s\S]*\|\| controlOpensDialog/,
+      `${rel}: launcher flag lost its locale-independent fallback`);
+    assert.match(source, /data-show-dialog-id/,
+      `${rel}: dialog-trigger attribute probe missing`);
+    assert.match(source, /aria-haspopup/,
+      `${rel}: dialog-trigger ARIA probe missing`);
+  }
+});
+
+test('GitHub replacement proofs are scoped to the verifying task', async () => {
+  for (const [label, AgentClass, resolveJob, tabId] of [
+    ['chrome', AgentCh, resolveAdapterWorkflowJob, 9463],
+    ['firefox', AgentFx, resolveAdapterWorkflowJobFx, 9464],
+  ]) {
+    const agent = new AgentClass({});
+    const pageUrl = 'https://github.com/Example/Repo/edit/main/docs/plan.md';
+    agent._planExecutionGuards.set(tabId, {
+      enabled: true,
+      siteWorkflow: resolveJob(pageUrl, 'edit-file-and-commit'),
+      workflowMetadataRequirements: [],
+      workflowMetadataRequirementsResolved: true,
+    });
+    // A proof verified by a prior task in the same tab: same URL, same field,
+    // live bytes unchanged — but a different task token.
+    agent._verifiedTextReplacements.set(tabId, new Map([['ax:doc:ref_editor', {
+      key: 'ax:doc:ref_editor',
+      locatorType: 'ax',
+      refId: 'ref_editor',
+      documentToken: 'doc',
+      pageUrl,
+      ambiguous: false,
+      expectedLength: 4,
+      expectedSha256: await agent._sha256Text('body'),
+      expectedFp: agent._workflowInventoryFingerprint('body'),
+      fieldMeta: { contentEditable: true, ariaLabelledByText: 'Editing file contents' },
+      readbackLength: 4,
+      readbackSha256: await agent._sha256Text('body'),
+      verifiedAt: Date.now(),
+      taskToken: 'task-one',
+    }]]));
+    agent._taskTokens.set(tabId, 'task-two');
+    assert.equal(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit, undefined,
+      `${label}: prior-task proof authorized a commit for a new task`);
+    agent._taskTokens.set(tabId, 'task-one');
+    assert.ok(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit,
+      `${label}: same-task proof was rejected`);
+    // Records minted by the helper carry the active task token.
+    const record = await agent._verifiedTextReplacementRecord(
+      tabId, agent._textMutationTarget(tabId, 'set_field', { ref_id: 'ref_editor' }), 'body', null,
+    );
+    assert.equal(record.taskToken, 'task-one', `${label}: replacement record lost its task binding`);
+  }
+});
+
+test('replacement proof task tokens do not depend on tracing', () => {
+  for (const rel of [
+    'src/chrome/src/agent/agent.js',
+    'src/firefox/src/agent/agent.js',
+  ]) {
+    const source = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    assert.match(source, /this\._taskTokens\.set\(tabId, `task_\$\{secureRandomBase36Token\(12\)\}`\)/,
+      `${rel}: task token is not minted per task`);
+    assert.match(source, /this\._taskTokens\.delete\(tabId\)/,
+      `${rel}: task token is never discarded`);
+    // The mint must precede the recorder call so recorder/storage failures
+    // cannot return before the token exists.
+    const startFn = source.slice(source.indexOf('async _startTraceRun('));
+    assert.ok(startFn.indexOf('this._taskTokens.set(tabId') < startFn.indexOf('trace.startRun('),
+      `${rel}: task token minted after optional tracing starts`);
+  }
+});
+
+test('GitHub replacement proofs require a nonempty task token', async () => {
+  for (const [label, AgentClass, resolveJob, tabId] of [
+    ['chrome', AgentCh, resolveAdapterWorkflowJob, 9472],
+    ['firefox', AgentFx, resolveAdapterWorkflowJobFx, 9473],
+  ]) {
+    const agent = new AgentClass({});
+    const pageUrl = 'https://github.com/Example/Repo/edit/main/docs/plan.md';
+    agent._planExecutionGuards.set(tabId, {
+      enabled: true,
+      siteWorkflow: resolveJob(pageUrl, 'edit-file-and-commit'),
+      workflowMetadataRequirements: [],
+      workflowMetadataRequirementsResolved: true,
+    });
+    const record = {
+      key: 'ax:doc:ref_editor',
+      locatorType: 'ax',
+      refId: 'ref_editor',
+      documentToken: 'doc',
+      pageUrl,
+      ambiguous: false,
+      expectedLength: 4,
+      expectedSha256: await agent._sha256Text('body'),
+      expectedFp: agent._workflowInventoryFingerprint('body'),
+      fieldMeta: { contentEditable: true, ariaLabelledByText: 'Editing file contents' },
+      readbackLength: 4,
+      readbackSha256: await agent._sha256Text('body'),
+      verifiedAt: Date.now(),
+    };
+    // Tokenless proof with a live task token: rejected.
+    agent._verifiedTextReplacements.set(tabId, new Map([['ax:doc:ref_editor', { ...record }]]));
+    agent._taskTokens.set(tabId, 'task-live');
+    assert.equal(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit, undefined,
+      `${label}: tokenless proof authorized a commit`);
+    // Live proof with no active token: rejected.
+    agent._verifiedTextReplacements.set(tabId, new Map([['ax:doc:ref_editor', { ...record, taskToken: 'task-live' }]]));
+    agent._taskTokens.delete(tabId);
+    assert.equal(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit, undefined,
+      `${label}: proof authorized without an active task`);
+  }
+});
+
+test('trusted continuations reuse the task token for the same task', async () => {
+  for (const [label, AgentClass, tabId] of [
+    ['chrome', AgentCh, 9480],
+    ['firefox', AgentFx, 9481],
+  ]) {
+    const agent = new AgentClass({});
+    agent.conversationIds.set(tabId, 'conv-continue');
+    agent._taskTokens.set(tabId, 'task-original');
+    assert.equal(agent._storeContinuationTaskToken(tabId), true,
+      `${label}: continuation token was not stashed`);
+    agent._taskTokens.delete(tabId);
+    // Trusted continuation of the same conversation reuses the stashed token.
+    assert.equal(agent._takeContinuationTaskToken(tabId), 'task-original',
+      `${label}: trusted continuation lost its task token`);
+    // Single-use: a second take finds nothing.
+    assert.equal(agent._takeContinuationTaskToken(tabId), null,
+      `${label}: continuation token was reusable`);
+    // Conversation mismatch rejects the stash.
+    agent._taskTokens.set(tabId, 'task-other');
+    agent._storeContinuationTaskToken(tabId);
+    agent.conversationIds.set(tabId, 'conv-new');
+    assert.equal(agent._takeContinuationTaskToken(tabId), null,
+      `${label}: continuation token crossed conversations`);
+    agent.conversationIds.set(tabId, 'conv-continue');
+    agent._continuationTaskTokens.delete(tabId);
+  }
+  for (const rel of [
+    'src/chrome/src/agent/agent.js',
+    'src/firefox/src/agent/agent.js',
+  ]) {
+    const source = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    assert.match(source, /trustedContinuation === true/,
+      `${rel}: task token mint lost its trusted-continuation branch`);
+    assert.match(source, /_takeContinuationTaskToken\(tabId\)/,
+      `${rel}: trusted continuation does not restore the stashed task token`);
+    assert.match(source, /_storeContinuationTaskToken\(tabId\)/,
+      `${rel}: run teardown does not stash the task token for continuations`);
+  }
+});
+
+test('focused editor and commit-message writes authorize a commit', async () => {
+  const originalChrome = globalThis.chrome;
+  const originalBrowser = globalThis.browser;
+  try {
+    const body = '# Focused document\n\nOne complete copy.\n';
+    const commitMsg = 'Update docs/plan.md';
+    // Digest probe answers for the then-focused field at write time (focus
+    // stays on the edited field through verification), and for the stable
+    // refresh selectors pre-submit (focus has moved by then). Mutating the
+    // live values below simulates a user/page edit between proof and submit,
+    // which refresh must catch fail-closed.
+    const makeTabs = (agent, live) => ({
+      async sendMessage(_tabId, message) {
+        assert.equal(message.action, 'field_value_digest');
+        const expected = message.params?.expected;
+        const selector = message.params?.selector;
+        const editorMeta = { contentEditable: true, ariaLabelledByText: 'Editing file contents' };
+        const messageMeta = { id: 'commit-message-input', name: 'commit-message-input' };
+        // Write-time focused mint (focus is still on the edited field).
+        if (expected === body) {
+          return {
+            success: true, verified: true,
+            valueLength: live.body.length,
+            valueSha256: await agent._sha256Text(live.body),
+            fieldMeta: editorMeta,
+            stableSelector: '[contenteditable="true"]',
+            documentToken: 'doc-focused', refScopeUrl: 'https://github.com/example/repo/edit/main/docs/plan.md',
+          };
+        }
+        if (expected === commitMsg) {
+          return {
+            success: true, verified: true,
+            valueLength: live.msg.length,
+            valueSha256: await agent._sha256Text(live.msg),
+            fieldMeta: messageMeta,
+            stableSelector: '#commit-message-input',
+            documentToken: 'doc-focused', refScopeUrl: 'https://github.com/example/repo/edit/main/docs/plan.md',
+          };
+        }
+        // Pre-submit stable-selector revalidation (focus has moved).
+        if (selector === '[contenteditable="true"]') {
+          return {
+            success: true,
+            valueLength: live.body.length,
+            valueSha256: await agent._sha256Text(live.body),
+            fieldMeta: editorMeta,
+            stableSelector: '[contenteditable="true"]',
+          };
+        }
+        if (selector === '#commit-message-input') {
+          return {
+            success: true,
+            valueLength: live.msg.length,
+            valueSha256: await agent._sha256Text(live.msg),
+            fieldMeta: messageMeta,
+            stableSelector: '#commit-message-input',
+          };
+        }
+        return { success: false, documentToken: 'doc-focused', refScopeUrl: 'https://github.com/example/repo/edit/main/docs/plan.md' };
+      },
+    });
+    for (const [label, AgentClass, resolveJob, tabId] of [
+      ['chrome', AgentCh, resolveAdapterWorkflowJob, 9482],
+      ['firefox', AgentFx, resolveAdapterWorkflowJobFx, 9483],
+    ]) {
+      const agent = new AgentClass({});
+      const pageUrl = 'https://github.com/Example/Repo/edit/main/docs/plan.md';
+      agent._planExecutionGuards.set(tabId, {
+        enabled: true,
+        siteWorkflow: resolveJob(pageUrl, 'edit-file-and-commit'),
+        workflowMetadataRequirements: [{ field: 'commit_message', value: commitMsg }],
+        workflowMetadataRequirementsResolved: true,
+      });
+      agent._taskTokens.set(tabId, 'task-focused');
+      agent._lastAxScopes.set(tabId, { documentToken: 'doc-focused', pageUrl });
+      const live = { body, msg: commitMsg };
+      const tabs = makeTabs(agent, live);
+      globalThis.chrome = { tabs };
+      globalThis.browser = { tabs };
+      // Documented flow: click the editor, then type_text({text, clear:true})
+      // with no selector. Chrome reports focusedField via CDP; Firefox (and
+      // the content fallback) reports fieldMeta. Both must bind.
+      const editorResult = label === 'chrome'
+        ? { success: true, verified: true, method: 'cdp-insert-focused', focusedField: { tag: 'DIV', type: '', name: '', contentEditable: true } }
+        : { success: true, verified: true, method: 'contenteditable', fieldMeta: { contentEditable: true, ariaLabelledByText: 'Editing file contents' } };
+      await agent._finalizeTextMutationResult(tabId, 'type_text', { text: body, clear: true }, editorResult);
+      const editorKeys = [...(agent._verifiedTextReplacements.get(tabId)?.keys() || [])];
+      assert.ok(editorKeys.some(key => String(key).endsWith(':editor')),
+        `${label}: focused editor write did not mint a distinct editor proof (keys: ${editorKeys})`);
+      const editorRecord = [...agent._verifiedTextReplacements.get(tabId).values()]
+        .find(record => record?.focusedKind === 'editor');
+      assert.equal(editorRecord?.ambiguous, false, `${label}: focused editor proof stayed ambiguous`);
+      assert.ok(editorRecord?.readbackSha256, `${label}: focused editor proof lacks a live readback`);
+      // Commit message via the same focused form coexists on a distinct key.
+      const messageResult = label === 'chrome'
+        ? { success: true, verified: true, method: 'cdp-insert-focused', focusedField: { tag: 'INPUT', type: 'text', name: 'commit-message-input', contentEditable: false } }
+        : { success: true, verified: true, fieldMeta: { id: 'commit-message-input', name: 'commit-message-input' } };
+      await agent._finalizeTextMutationResult(tabId, 'type_text', { text: commitMsg, clear: true }, messageResult);
+      const keys = [...(agent._verifiedTextReplacements.get(tabId)?.keys() || [])];
+      const editorKey = keys.find(key => String(key).endsWith(':editor'));
+      const messageKey = keys.find(key => String(key).includes(':commit-message:'));
+      assert.ok(editorKey && messageKey && editorKey !== messageKey,
+        `${label}: focused editor and commit-message proofs collided (keys: ${keys})`);
+      const binding = agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {});
+      assert.ok(binding?.githubFileCommit, `${label}: focused proofs did not authorize a commit`);
+      // Pre-submit refresh (focus now elsewhere) must keep focused proofs
+      // via their stable selectors, and must drop them fail-closed when the
+      // live field no longer matches (user/page edited after the proof).
+      await agent._refreshGithubTextReplacementProofs(tabId, pageUrl);
+      assert.ok(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit,
+        `${label}: refresh dropped a focused proof after focus moved`);
+      live.body = `${body}\nExternal edit.\n`;
+      await agent._refreshGithubTextReplacementProofs(tabId, pageUrl);
+      assert.equal(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit, undefined,
+        `${label}: stale focused editor proof authorized a commit after an external edit`);
+      live.body = body;
+      // Re-verify the editor to restore the binding for the append check.
+      await agent._finalizeTextMutationResult(tabId, 'type_text', { text: body, clear: true }, editorResult);
+      await agent._finalizeTextMutationResult(tabId, 'type_text', { text: commitMsg, clear: true }, messageResult);
+      assert.ok(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit,
+        `${label}: re-verified focused proofs did not restore the binding`);
+      // Same-kind focused append invalidates only its own kind.
+      await agent._finalizeTextMutationResult(tabId, 'type_text', { text: ' typo' }, {
+        success: true, verified: true,
+        ...(label === 'chrome'
+          ? { focusedField: { tag: 'DIV', type: '', name: '', contentEditable: true } }
+          : { fieldMeta: { contentEditable: true, ariaLabelledByText: 'Editing file contents' } }),
+      });
+      const afterKeys = [...(agent._verifiedTextReplacements.get(tabId)?.keys() || [])];
+      assert.ok(!afterKeys.some(key => String(key).endsWith(':editor')),
+        `${label}: focused editor append kept a stale editor proof`);
+      assert.ok(afterKeys.some(key => String(key).includes(':commit-message:')),
+        `${label}: focused editor append cleared the commit-message proof`);
+    }
+  } finally {
+    if (originalChrome === undefined) delete globalThis.chrome;
+    else globalThis.chrome = originalChrome;
+    if (originalBrowser === undefined) delete globalThis.browser;
+    else globalThis.browser = originalBrowser;
+  }
+});
+
+test('bound focused typing preserves contentEditable for commit proofs', () => {
+  // The dispatch-binding focused branch is the normal click-then-type path;
+  // it must forward prepared.contentEditable or the editor proof classifier
+  // below can never fire for it.
+  const source = fs.readFileSync(path.join(ROOT, 'src/chrome/src/agent/agent.js'), 'utf8');
+  const branchStart = source.indexOf("focusedField: {");
+  assert.ok(branchStart >= 0, 'chrome: bound focused branch lost its focusedField');
+  const branch = source.slice(branchStart, branchStart + 400);
+  assert.match(branch, /contentEditable: prepared\.contentEditable === true/,
+    'chrome: bound focused typing drops the editor metadata its proof path requires');
+  for (const [label, AgentClass] of [['chrome', AgentCh], ['firefox', AgentFx]]) {
+    const agent = new AgentClass({});
+    // Exactly what the bound branch returns for GitHub's file editor.
+    assert.equal(agent._focusedGithubFieldKind(agent._normalizeFocusedFieldMeta(
+      { tag: 'DIV', type: '', name: '', contentEditable: true }, null,
+    )), 'editor', `${label}: bound-branch editor metadata misclassified`);
+    // Commit-message input reports its stable id through name.
+    assert.equal(agent._focusedGithubFieldKind(agent._normalizeFocusedFieldMeta(
+      { tag: 'INPUT', type: 'text', name: 'commit-message-input', contentEditable: false }, null,
+    )), 'commit-message', `${label}: bound-branch commit-message metadata misclassified`);
+    // Without contentEditable and without an identity, nothing may bind.
+    assert.equal(agent._focusedGithubFieldKind(agent._normalizeFocusedFieldMeta(
+      { tag: 'DIV', type: '', name: '' }, null,
+    )), '', `${label}: identity-less focused metadata bound a proof`);
+  }
+});
+
+test('focused proofs revalidate through element-derived locators', async () => {
+  for (const rel of [
+    'src/chrome/src/content/content.js',
+    'src/firefox/src/content/content.js',
+  ]) {
+    const source = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    assert.match(source, /function _stableFieldSelector\(el\)/,
+      `${rel}: digest lost its element-derived stable selector`);
+    assert.match(source, /resolvesUniquelyToEl/,
+      `${rel}: stable selector lost its uniqueness check`);
+  }
+  const originalChrome = globalThis.chrome;
+  const originalBrowser = globalThis.browser;
+  try {
+    const body = '# Aria document\n\nOne complete copy.\n';
+    const commitMsg = 'Update docs/plan.md';
+    for (const [label, AgentClass, resolveJob, tabId] of [
+      ['chrome', AgentCh, resolveAdapterWorkflowJob, 9496],
+      ['firefox', AgentFx, resolveAdapterWorkflowJobFx, 9497],
+    ]) {
+      const agent = new AgentClass({});
+      const pageUrl = 'https://github.com/Example/Repo/edit/main/docs/plan.md';
+      agent._planExecutionGuards.set(tabId, {
+        enabled: true,
+        siteWorkflow: resolveJob(pageUrl, 'edit-file-and-commit'),
+        workflowMetadataRequirements: [{ field: 'commit_message', value: commitMsg }],
+        workflowMetadataRequirementsResolved: true,
+      });
+      agent._taskTokens.set(tabId, 'task-aria');
+      agent._lastAxScopes.set(tabId, { documentToken: 'doc-aria', pageUrl });
+      // Textarea-backed editor: classified by accessible label, NOT
+      // contentEditable. The live digest derives a stable locator for the
+      // verified element itself.
+      const ariaEditorMeta = {
+        contentEditable: false, tag: 'textarea', id: 'file-editor',
+        ariaLabelledByText: 'Editing file contents',
+      };
+      const live = { msg: commitMsg };
+      const tabs = {
+        async sendMessage(_tabId, message) {
+          const expected = message.params?.expected;
+          const selector = message.params?.selector;
+          if (expected === body) {
+            return { success: true, verified: true,
+              valueLength: body.length, valueSha256: await agent._sha256Text(body),
+              fieldMeta: ariaEditorMeta, stableSelector: '#file-editor',
+              documentToken: 'doc-aria', refScopeUrl: pageUrl };
+          }
+          if (expected === commitMsg) {
+            return { success: true, verified: true,
+              valueLength: commitMsg.length, valueSha256: await agent._sha256Text(commitMsg),
+              fieldMeta: { id: 'commit-message-input', name: 'commit-message-input' },
+              stableSelector: '#commit-message-input',
+              documentToken: 'doc-aria', refScopeUrl: pageUrl };
+          }
+          if (selector === '#file-editor') {
+            return { success: true,
+              valueLength: body.length, valueSha256: await agent._sha256Text(body),
+              fieldMeta: ariaEditorMeta, stableSelector: '#file-editor' };
+          }
+          if (selector === '#commit-message-input') {
+            return { success: true,
+              valueLength: live.msg.length, valueSha256: await agent._sha256Text(live.msg),
+              fieldMeta: { id: 'commit-message-input', name: 'commit-message-input' },
+              stableSelector: '#commit-message-input' };
+          }
+          return { success: false, documentToken: 'doc-aria', refScopeUrl: pageUrl };
+        },
+      };
+      globalThis.chrome = { tabs };
+      globalThis.browser = { tabs };
+      // Chrome bound-branch shape (prepared metadata + verified fieldMeta);
+      // Firefox/content shape (full fieldMeta). Both must bind the editor
+      // through the accessible label with an element-derived locator.
+      const editorResult = label === 'chrome'
+        ? { success: true, verified: true, method: 'cdp-insert-focused',
+            focusedField: { tag: 'TEXTAREA', type: '', name: 'file-editor', contentEditable: false },
+            fieldMeta: ariaEditorMeta }
+        : { success: true, verified: true, method: 'contenteditable', fieldMeta: ariaEditorMeta };
+      await agent._finalizeTextMutationResult(tabId, 'type_text', { text: body, clear: true }, editorResult);
+      const editorRecord = [...(agent._verifiedTextReplacements.get(tabId)?.values() || [])]
+        .find(record => record?.focusedKind === 'editor');
+      assert.ok(editorRecord, `${label}: aria-labelled editor minted no focused proof`);
+      assert.equal(editorRecord?.refreshSelector, '#file-editor',
+        `${label}: proof kept a hard-coded locator instead of the derived one`);
+      const messageResult = label === 'chrome'
+        ? { success: true, verified: true, method: 'cdp-insert-focused',
+            focusedField: { tag: 'INPUT', type: 'text', name: 'commit-message-input', contentEditable: false } }
+        : { success: true, verified: true, fieldMeta: { id: 'commit-message-input', name: 'commit-message-input' } };
+      await agent._finalizeTextMutationResult(tabId, 'type_text', { text: commitMsg, clear: true }, messageResult);
+      assert.ok(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit,
+        `${label}: element-derived proofs did not authorize a commit`);
+      // Refresh re-reads the derived elements (not [contenteditable]).
+      await agent._refreshGithubTextReplacementProofs(tabId, pageUrl);
+      assert.ok(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit,
+        `${label}: derived-locator refresh dropped a good proof`);
+      // An edit to the real editor drops the proof fail-closed.
+      live.msg = `${commitMsg} (amended)`;
+      await agent._refreshGithubTextReplacementProofs(tabId, pageUrl);
+      assert.equal(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit, undefined,
+        `${label}: stale proof survived an edit to the derived element`);
+      // No unique locator: the proof cannot be revalidated and must not
+      // authorize, rather than probing a hard-coded selector.
+      live.msg = commitMsg;
+      await agent._finalizeTextMutationResult(tabId, 'type_text', { text: body, clear: true }, editorResult);
+      await agent._finalizeTextMutationResult(tabId, 'type_text', { text: commitMsg, clear: true }, messageResult);
+      const reRecord = [...(agent._verifiedTextReplacements.get(tabId)?.values() || [])]
+        .find(record => record?.focusedKind === 'editor');
+      reRecord.refreshSelector = null;
+      await agent._refreshGithubTextReplacementProofs(tabId, pageUrl);
+      assert.equal(agent._verifiedTextReplacements.get(tabId)?.get(reRecord.key), undefined,
+        `${label}: locator-less proof survived refresh`);
+    }
+  } finally {
+    if (originalChrome === undefined) delete globalThis.chrome;
+    else globalThis.chrome = originalChrome;
+    if (originalBrowser === undefined) delete globalThis.browser;
+    else globalThis.browser = originalBrowser;
+  }
+});
+
+test('commit gate requires editor-specific identity', async () => {
+  for (const [label, AgentClass, resolveJob, tabId] of [
+    ['chrome', AgentCh, resolveAdapterWorkflowJob, 9498],
+    ['firefox', AgentFx, resolveAdapterWorkflowJobFx, 9499],
+  ]) {
+    const agent = new AgentClass({});
+    const pageUrl = 'https://github.com/Example/Repo/edit/main/docs/plan.md';
+    agent._planExecutionGuards.set(tabId, {
+      enabled: true,
+      siteWorkflow: resolveJob(pageUrl, 'edit-file-and-commit'),
+      workflowMetadataRequirements: [],
+      workflowMetadataRequirementsResolved: true,
+    });
+    agent._taskTokens.set(tabId, 'task-identity');
+    const body = '# Doc\n';
+    const bodySha256 = await agent._sha256Text(body);
+    const recordFor = (key, fieldMeta) => ({
+      key,
+      locatorType: 'ax',
+      refId: 'ref_x',
+      documentToken: 'doc',
+      pageUrl,
+      ambiguous: false,
+      expectedLength: body.length,
+      expectedSha256: bodySha256,
+      expectedFp: agent._workflowInventoryFingerprint(body),
+      fieldMeta,
+      readbackLength: body.length,
+      readbackSha256: bodySha256,
+      verifiedAt: Date.now(),
+      taskToken: 'task-identity',
+    });
+    // Linked editor proof authorizes.
+    agent._verifiedTextReplacements.set(tabId, new Map([
+      ['ax:doc:ref_editor', recordFor('ax:doc:ref_editor',
+        { contentEditable: true, ariaLabelledByText: 'Editing file contents' })],
+    ]));
+    assert.ok(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit,
+      `${label}: linked editor proof did not authorize`);
+    // Bare contentEditable with no linkage must not: it could be any other
+    // contenteditable on the edit route.
+    agent._verifiedTextReplacements.set(tabId, new Map([
+      ['ax:doc:ref_other', recordFor('ax:doc:ref_other', { contentEditable: true })],
+    ]));
+    assert.equal(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit, undefined,
+      `${label}: an unlinked contenteditable authorized a commit`);
+    // A contenteditable-looking key alone must not either.
+    agent._verifiedTextReplacements.set(tabId, new Map([
+      ['selector:doc:[contenteditable="true"]', recordFor('selector:doc:[contenteditable="true"]',
+        { contentEditable: true, id: 'comment-box' })],
+    ]));
+    assert.equal(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit, undefined,
+      `${label}: a key-substring contenteditable authorized a commit`);
+  }
+});
+
+test('commit gate accepts locale-independent editor structure', async () => {
+  for (const rel of [
+    'src/chrome/src/content/content.js',
+    'src/firefox/src/content/content.js',
+  ]) {
+    const source = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    assert.match(source, /codeMirror/,
+      `${rel}: field metadata lost its locale-independent editor flag`);
+    assert.match(source, /cm-content/,
+      `${rel}: editor structure probe misses the CodeMirror lineage`);
+  }
+  for (const [label, AgentClass, resolveJob, tabId] of [
+    ['chrome', AgentCh, resolveAdapterWorkflowJob, 9504],
+    ['firefox', AgentFx, resolveAdapterWorkflowJobFx, 9505],
+  ]) {
+    const agent = new AgentClass({});
+    const pageUrl = 'https://github.com/Example/Repo/edit/main/docs/plan.md';
+    agent._planExecutionGuards.set(tabId, {
+      enabled: true,
+      siteWorkflow: resolveJob(pageUrl, 'edit-file-and-commit'),
+      workflowMetadataRequirements: [],
+      workflowMetadataRequirementsResolved: true,
+    });
+    agent._taskTokens.set(tabId, 'task-locale');
+    const body = '# Doc\n';
+    const bodySha256 = await agent._sha256Text(body);
+    const recordFor = (key, fieldMeta) => ({
+      key,
+      locatorType: 'ax',
+      refId: 'ref_x',
+      documentToken: 'doc',
+      pageUrl,
+      ambiguous: false,
+      expectedLength: body.length,
+      expectedSha256: bodySha256,
+      expectedFp: agent._workflowInventoryFingerprint(body),
+      fieldMeta,
+      readbackLength: body.length,
+      readbackSha256: bodySha256,
+      verifiedAt: Date.now(),
+      taskToken: 'task-locale',
+    });
+    // Localized UI: no English accessible label anywhere, but CodeMirror
+    // editor structure on a contenteditable — must authorize.
+    agent._verifiedTextReplacements.set(tabId, new Map([
+      ['ax:doc:ref_editor', recordFor('ax:doc:ref_editor',
+        { contentEditable: true, codeMirror: true, ariaLabelledByText: 'Dateiinhalt bearbeiten' })],
+    ]));
+    assert.ok(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit,
+      `${label}: locale-independent editor structure did not authorize`);
+    // Structure without editability (e.g. gutter chrome inside cm-editor)
+    // must not.
+    agent._verifiedTextReplacements.set(tabId, new Map([
+      ['ax:doc:ref_other', recordFor('ax:doc:ref_other',
+        { contentEditable: false, codeMirror: true })],
+    ]));
+    assert.equal(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit, undefined,
+      `${label}: non-editable CodeMirror chrome authorized a commit`);
+  }
+});
+
+test('refresh revalidates label-identified editor proofs', async () => {
+  const originalChrome = globalThis.chrome;
+  const originalBrowser = globalThis.browser;
+  try {
+    const pageUrl = 'https://github.com/Example/Repo/edit/main/docs/plan.md';
+    const body = '# Labelled document\n\nOne complete copy.\n';
+    for (const [label, AgentClass, tabId] of [
+      ['chrome', AgentCh, 9506],
+      ['firefox', AgentFx, 9507],
+    ]) {
+      const agent = new AgentClass({});
+      // Textarea-backed editor identified through aria-label (not
+      // labelledby, not contentEditable): the binding gate accepts it, so
+      // refresh must re-digest it too instead of skipping it as stale-safe.
+      const ariaMeta = { contentEditable: false, tag: 'textarea', id: 'file-editor', ariaLabel: 'Editing file contents' };
+      const live = { text: body };
+      const tabs = {
+        async sendMessage(_tabId, message) {
+          assert.equal(message.action, 'field_value_digest');
+          assert.equal(message.params?.ref_id, 'ref_aria');
+          return { success: true,
+            valueLength: live.text.length,
+            valueSha256: await agent._sha256Text(live.text),
+            fieldMeta: ariaMeta };
+        },
+      };
+      globalThis.chrome = { tabs };
+      globalThis.browser = { tabs };
+      const record = {
+        key: 'ax:doc:ref_aria',
+        locatorType: 'ax',
+        refId: 'ref_aria',
+        documentToken: 'doc',
+        pageUrl,
+        ambiguous: false,
+        expectedLength: body.length,
+        expectedSha256: await agent._sha256Text(body),
+        expectedFp: agent._workflowInventoryFingerprint(body),
+        fieldMeta: ariaMeta,
+        readbackLength: body.length,
+        readbackSha256: await agent._sha256Text(body),
+        verifiedAt: Date.now(),
+        taskToken: 'task-refresh-sync',
+      };
+      agent._taskTokens.set(tabId, 'task-refresh-sync');
+      agent._verifiedTextReplacements.set(tabId, new Map([['ax:doc:ref_aria', record]]));
+      // Live bytes match: kept.
+      await agent._refreshGithubTextReplacementProofs(tabId, pageUrl);
+      assert.ok(agent._verifiedTextReplacements.get(tabId)?.has('ax:doc:ref_aria'),
+        `${label}: matching label-identified proof was dropped`);
+      // Page changed after verification: must be re-digested and dropped,
+      // not skipped as unauthorized-yet-authorized.
+      live.text = `${body}\nExternal edit.\n`;
+      await agent._refreshGithubTextReplacementProofs(tabId, pageUrl);
+      assert.ok(!agent._verifiedTextReplacements.get(tabId)?.has('ax:doc:ref_aria'),
+        `${label}: stale label-identified proof skipped refresh`);
+    }
+  } finally {
+    if (originalChrome === undefined) delete globalThis.chrome;
+    else globalThis.chrome = originalChrome;
+    if (originalBrowser === undefined) delete globalThis.browser;
+    else globalThis.browser = originalBrowser;
+  }
+});
+
+test('refresh drops proofs whose locator repoints after rerender', async () => {
+  const originalChrome = globalThis.chrome;
+  const originalBrowser = globalThis.browser;
+  try {
+    const pageUrl = 'https://github.com/Example/Repo/edit/main/docs/plan.md';
+    const body = '# Rerender document\n\nOne complete copy.\n';
+    for (const [label, AgentClass, tabId] of [
+      ['chrome', AgentCh, 9522],
+      ['firefox', AgentFx, 9523],
+    ]) {
+      const agent = new AgentClass({});
+      const storedMeta = {
+        tag: 'div', contentEditable: true, id: 'file-editor', name: 'editor',
+        labelText: 'Editing file contents', ariaLabelledByText: 'Editing file contents',
+      };
+      // The locator repoints at a different field holding the same bytes
+      // while the real editor changed: provably distinct live metadata.
+      const live = {
+        text: body,
+        meta: { ...storedMeta },
+      };
+      const tabs = {
+        async sendMessage(_tabId, message) {
+          assert.equal(message.action, 'field_value_digest');
+          assert.equal(message.params?.ref_id, 'ref_editor');
+          return { success: true,
+            valueLength: live.text.length,
+            valueSha256: await agent._sha256Text(live.text),
+            fieldMeta: { ...live.meta } };
+        },
+      };
+      globalThis.chrome = { tabs };
+      globalThis.browser = { tabs };
+      const mint = async () => {
+        const sha = await agent._sha256Text(body);
+        agent._verifiedTextReplacements.set(tabId, new Map([['ax:doc:ref_editor', {
+          key: 'ax:doc:ref_editor',
+          locatorType: 'ax',
+          refId: 'ref_editor',
+          documentToken: 'doc',
+          pageUrl,
+          ambiguous: false,
+          expectedLength: body.length,
+          expectedSha256: sha,
+          expectedFp: agent._workflowInventoryFingerprint(body),
+          fieldMeta: { ...storedMeta },
+          readbackLength: body.length,
+          readbackSha256: sha,
+          verifiedAt: Date.now(),
+          taskToken: 'task-rerender',
+        }]]));
+        agent._taskTokens.set(tabId, 'task-rerender');
+      };
+      // Unchanged element and bytes: kept.
+      await mint();
+      await agent._refreshGithubTextReplacementProofs(tabId, pageUrl);
+      assert.ok(agent._verifiedTextReplacements.get(tabId)?.has('ax:doc:ref_editor'),
+        `${label}: matching proof was dropped`);
+      // Same bytes on a provably different element: dropped even though the
+      // digest matches, or the stale proof could authorize a changed editor.
+      live.meta = { tag: 'div', contentEditable: true, id: 'comment-box', name: 'comment', labelText: 'Add a comment' };
+      await agent._refreshGithubTextReplacementProofs(tabId, pageUrl);
+      assert.ok(!agent._verifiedTextReplacements.get(tabId)?.has('ax:doc:ref_editor'),
+        `${label}: repointed proof survived on matching bytes`);
+      // Same bytes on an unlinked editable: kind drift alone drops it.
+      await mint();
+      live.meta = { tag: 'div', contentEditable: true, id: 'plain' };
+      await agent._refreshGithubTextReplacementProofs(tabId, pageUrl);
+      assert.ok(!agent._verifiedTextReplacements.get(tabId)?.has('ax:doc:ref_editor'),
+        `${label}: kind-drifted proof survived on matching bytes`);
+    }
+  } finally {
+    if (originalChrome === undefined) delete globalThis.chrome;
+    else globalThis.chrome = originalChrome;
+    if (originalBrowser === undefined) delete globalThis.browser;
+    else globalThis.browser = originalBrowser;
+  }
+});
+
+test('minted proofs carry the live digest scope', async () => {
+  const originalChrome = globalThis.chrome;
+  const originalBrowser = globalThis.browser;
+  try {
+    const pageUrl = 'https://github.com/Example/Repo/edit/main/docs/plan.md';
+    const body = '# Live scope document\n\nOne complete copy.\n';
+    for (const [label, AgentClass, resolveJob, tabId, controlTabId] of [
+      ['chrome', AgentCh, resolveAdapterWorkflowJob, 9508, 9510],
+      ['firefox', AgentFx, resolveAdapterWorkflowJobFx, 9509, 9511],
+    ]) {
+      const agent = new AgentClass({});
+      agent._planExecutionGuards.set(tabId, {
+        enabled: true,
+        siteWorkflow: resolveJob(pageUrl, 'edit-file-and-commit'),
+        workflowMetadataRequirements: [],
+        workflowMetadataRequirementsResolved: true,
+      });
+      // No AX-tree read ever happened: the target carries empty scope, but
+      // the digest answers from the live document.
+      const tabs = {
+        async sendMessage(_tabId, message) {
+          assert.equal(message.action, 'field_value_digest');
+          return { success: true, verified: true,
+            valueLength: body.length, valueSha256: await agent._sha256Text(body),
+            fieldMeta: { contentEditable: true, ariaLabelledByText: 'Editing file contents' },
+            documentToken: 'doc-live', refScopeUrl: pageUrl };
+        },
+      };
+      globalThis.chrome = { tabs };
+      globalThis.browser = { tabs };
+      const record = await agent._verifiedTextReplacementRecord(
+        tabId, agent._textMutationTarget(tabId, 'type_text', { selector: '#ed' }), body, null,
+      );
+      assert.equal(record.documentToken, 'doc-live',
+        `${label}: proof kept the empty scope instead of the live token`);
+      assert.equal(record.pageUrl, pageUrl,
+        `${label}: proof kept the empty scope instead of the live URL`);
+      assert.ok(String(record.key).includes('doc-live'),
+        `${label}: proof key was not rebuilt for the live scope (key: ${record.key})`);
+      assert.ok(record.readbackSha256,
+        `${label}: scoped proof lost its readback`);
+      // Stale cache variant: same treatment, never the cached token.
+      const stale = new AgentClass({});
+      stale._planExecutionGuards.set(controlTabId, {
+        enabled: true,
+        siteWorkflow: resolveJob(pageUrl, 'edit-file-and-commit'),
+        workflowMetadataRequirements: [],
+        workflowMetadataRequirementsResolved: true,
+      });
+      stale._lastAxScopes.set(controlTabId, { documentToken: 'doc-stale', pageUrl });
+      const staleRecord = await stale._verifiedTextReplacementRecord(
+        controlTabId, stale._textMutationTarget(controlTabId, 'type_text', { selector: '#ed' }), body, null,
+      );
+      assert.equal(staleRecord.documentToken, 'doc-live',
+        `${label}: proof kept the stale token instead of the live one`);
+      assert.ok(!String(staleRecord.key).includes('doc-stale'),
+        `${label}: proof key kept the stale scope (key: ${staleRecord.key})`);
+    }
+  } finally {
+    if (originalChrome === undefined) delete globalThis.chrome;
+    else globalThis.chrome = originalChrome;
+    if (originalBrowser === undefined) delete globalThis.browser;
+    else globalThis.browser = originalBrowser;
+  }
+});
+
+test('uncertain selector writes capture live metadata for distinctness', async () => {
+  const originalChrome = globalThis.chrome;
+  const originalBrowser = globalThis.browser;
+  try {
+    const pageUrl = 'https://example.test/form';
+    const fieldMetaA = { id: 'field-a', name: 'field-a', labelText: 'First' };
+    const fieldMetaB = { id: 'field-b', name: 'field-b', labelText: 'Second' };
+    for (const [label, AgentClass, tabId] of [
+      ['chrome', AgentCh, 9526],
+      ['firefox', AgentFx, 9527],
+    ]) {
+      const agent = new AgentClass({});
+      agent._lastAxScopes.set(tabId, { documentToken: 'doc-multi', pageUrl });
+      const tabs = {
+        captureMeta: false,
+        async sendMessage(_tabId, message) {
+          assert.equal(message.action, 'field_value_digest');
+          const selector = message.params?.selector;
+          // Record-time probes carry no expected text: live scope first,
+          // identity capture second.
+          if (selector === '#a' && message.params?.expected === undefined) {
+            if (!tabs.captureMeta) {
+              return { success: false, documentToken: 'doc-multi', refScopeUrl: pageUrl };
+            }
+            return { success: true, valueLength: 5, valueSha256: await agent._sha256Text('alpha'),
+              fieldMeta: fieldMetaA, documentToken: 'doc-multi', refScopeUrl: pageUrl };
+          }
+          if (selector === '#b') {
+            return { success: true, valueLength: 4, valueSha256: await agent._sha256Text('beta'), fieldMeta: fieldMetaB };
+          }
+          return { success: false, documentToken: 'doc-multi', refScopeUrl: pageUrl };
+        },
+      };
+      globalThis.chrome = { tabs };
+      globalThis.browser = { tabs };
+      // CDP-shaped failure: dispatched, uncertain, and no field metadata.
+      await agent._finalizeTextMutationResult(
+        tabId, 'type_text', { selector: '#a', text: 'alpha', clear: true },
+        { success: false, dispatched: true, verified: false },
+      );
+      assert.equal(agent._uncertainTextMutations.get(tabId)?.get('selector:doc-multi:#a')?.fieldMeta ?? null, null,
+        `${label}: debt unexpectedly carries identity without a capture source`);
+      // Same failure, but the live element answers the capture probe.
+      tabs.captureMeta = true;
+      await agent._finalizeTextMutationResult(
+        tabId, 'type_text', { selector: '#a', text: 'alpha', clear: true },
+        { success: false, dispatched: true, verified: false },
+      );
+      assert.deepEqual(agent._uncertainTextMutations.get(tabId)?.get('selector:doc-multi:#a')?.fieldMeta, fieldMetaA,
+        `${label}: record-time capture missed the selector identity`);
+      // The distinctness escape now fires for the other field.
+      const allowed = await agent._uncertainTextMutationBlock(
+        tabId, 'type_text', { selector: '#b', text: 'beta' },
+      );
+      assert.equal(allowed, null, `${label}: distinct selector field stayed blocked without debt metadata`);
+      assert.equal(agent._uncertainTextMutations.get(tabId)?.size, 1,
+        `${label}: distinct-field dispatch dropped the original debt`);
+    }
+  } finally {
+    if (originalChrome === undefined) delete globalThis.chrome;
+    else globalThis.chrome = originalChrome;
+    if (originalBrowser === undefined) delete globalThis.browser;
+    else globalThis.browser = originalBrowser;
+  }
+});
+
+test('selector writes to proven-distinct fields bypass unrelated debt', async () => {
+  const originalChrome = globalThis.chrome;
+  const originalBrowser = globalThis.browser;
+  try {
+    const pageUrl = 'https://example.test/form';
+    const fieldMetaA = { id: 'field-a', name: 'field-a', labelText: 'First' };
+    // Demonstrably different field: two differing identity fields, none shared.
+    const fieldMetaB = { id: 'field-b', name: 'field-b', labelText: 'Second' };
+    // Same label: shares one identity field, so not provably distinct.
+    const fieldMetaC = { id: 'field-c', name: 'field-c', labelText: 'First' };
+    for (const [label, AgentClass, tabId, controlTabId] of [
+      ['chrome', AgentCh, 9500, 9502],
+      ['firefox', AgentFx, 9501, 9503],
+    ]) {
+      const agent = new AgentClass({});
+      agent._lastAxScopes.set(tabId, { documentToken: 'doc-multi', pageUrl });
+      const tabs = {
+        async sendMessage(_tabId, message) {
+          const selector = message.params?.selector;
+          if (selector === '#a') {
+            return { success: false, documentToken: 'doc-multi', refScopeUrl: pageUrl };
+          }
+          if (selector === '#b') {
+            return { success: true, valueLength: 3, valueSha256: 'b'.repeat(64), fieldMeta: fieldMetaB };
+          }
+          if (selector === '#c') {
+            return { success: true, valueLength: 3, valueSha256: 'c'.repeat(64), fieldMeta: fieldMetaC };
+          }
+          return { success: false, documentToken: 'doc-multi', refScopeUrl: pageUrl };
+        },
+      };
+      globalThis.chrome = { tabs };
+      globalThis.browser = { tabs };
+      await agent._finalizeTextMutationResult(
+        tabId, 'type_text', { selector: '#a', text: 'alpha', clear: true },
+        { success: false, dispatched: true, verified: false, fieldMeta: fieldMetaA },
+      );
+      assert.equal(agent._uncertainTextMutations.get(tabId)?.size, 1, `${label}: debt was not recorded`);
+      // Provably different field: allowed, and the original debt is kept.
+      const allowed = await agent._uncertainTextMutationBlock(
+        tabId, 'type_text', { selector: '#b', text: 'beta' },
+      );
+      assert.equal(allowed, null, `${label}: distinct selector field stayed blocked by unrelated debt`);
+      assert.equal(agent._uncertainTextMutations.get(tabId)?.size, 1,
+        `${label}: distinct-field dispatch dropped the original debt`);
+      // Shared identity field: fail-closed, still blocked.
+      const control = new AgentClass({});
+      control._lastAxScopes.set(controlTabId, { documentToken: 'doc-multi', pageUrl });
+      await control._finalizeTextMutationResult(
+        controlTabId, 'type_text', { selector: '#a', text: 'alpha', clear: true },
+        { success: false, dispatched: true, verified: false, fieldMeta: fieldMetaA },
+      );
+      const blocked = await control._uncertainTextMutationBlock(
+        controlTabId, 'type_text', { selector: '#c', text: 'gamma' },
+      );
+      assert.equal(blocked?.repeatBlocked, true,
+        `${label}: unprovable selector field escaped the debt guard`);
+    }
+  } finally {
+    if (originalChrome === undefined) delete globalThis.chrome;
+    else globalThis.chrome = originalChrome;
+    if (originalBrowser === undefined) delete globalThis.browser;
+    else globalThis.browser = originalBrowser;
+  }
+});
+
+test('distinctness escape covers focused and mixed-locator debts', async () => {
+  const originalChrome = globalThis.chrome;
+  const originalBrowser = globalThis.browser;
+  try {
+    const pageUrl = 'https://example.test/form';
+    const editorMeta = { tag: 'div', contentEditable: true, id: 'editor-1', ariaLabelledByText: 'Editing file contents' };
+    const fieldMetaB = { tag: 'input', id: 'field-b', name: 'field-b', labelText: 'Second', contentEditable: false };
+    for (const [label, AgentClass, tabId, controlTabId] of [
+      ['chrome', AgentCh, 9530, 9532],
+      ['firefox', AgentFx, 9531, 9533],
+    ]) {
+      const agent = new AgentClass({});
+      agent._lastAxScopes.set(tabId, { documentToken: 'doc-cross', pageUrl });
+      const tabs = {
+        async sendMessage(_tabId, message) {
+          assert.equal(message.action, 'field_value_digest');
+          if (message.params?.focused === true) {
+            return { success: true,
+              valueLength: 5, valueSha256: await agent._sha256Text('alpha'),
+              fieldMeta: { ...editorMeta },
+              documentToken: 'doc-cross', refScopeUrl: pageUrl };
+          }
+          if (message.params?.selector === '#b') {
+            return { success: true, valueLength: 4, valueSha256: await agent._sha256Text('beta'),
+              fieldMeta: { ...fieldMetaB } };
+          }
+          return { success: false, documentToken: 'doc-cross', refScopeUrl: pageUrl };
+        },
+      };
+      globalThis.chrome = { tabs };
+      globalThis.browser = { tabs };
+      // Uncertain selectorless write to the editor; identity captured live.
+      await agent._finalizeTextMutationResult(
+        tabId, 'type_text', { text: 'alpha', clear: true },
+        { success: false, dispatched: true, verified: false },
+      );
+      assert.equal(agent._uncertainTextMutations.get(tabId)?.size, 1, `${label}: focused debt was not recorded`);
+      // A demonstrably different selector field must not be blocked by it.
+      const allowed = await agent._uncertainTextMutationBlock(
+        tabId, 'type_text', { selector: '#b', text: 'beta' },
+      );
+      assert.equal(allowed, null, `${label}: distinct field stayed blocked by a focused debt`);
+      assert.equal(agent._uncertainTextMutations.get(tabId)?.size, 1,
+        `${label}: distinct-field dispatch dropped the focused debt`);
+      // Reverse direction: selector debt, focused retry on a distinct field.
+      const control = new AgentClass({});
+      control._lastAxScopes.set(controlTabId, { documentToken: 'doc-cross', pageUrl });
+      const controlTabs = {
+        async sendMessage(_tabId, message) {
+          assert.equal(message.action, 'field_value_digest');
+          if (message.params?.selector === '#a') {
+            return { success: true, valueLength: 5, valueSha256: await control._sha256Text('alpha'),
+              fieldMeta: { tag: 'input', id: 'field-a', name: 'field-a', labelText: 'First', contentEditable: false } };
+          }
+          if (message.params?.focused === true) {
+            return { success: true,
+              valueLength: 5, valueSha256: await control._sha256Text('delta'),
+              fieldMeta: { ...fieldMetaB },
+              documentToken: 'doc-cross', refScopeUrl: pageUrl };
+          }
+          return { success: false, documentToken: 'doc-cross', refScopeUrl: pageUrl };
+        },
+      };
+      globalThis.chrome = { tabs: controlTabs };
+      globalThis.browser = { tabs: controlTabs };
+      await control._finalizeTextMutationResult(
+        controlTabId, 'type_text', { selector: '#a', text: 'alpha', clear: true },
+        { success: false, dispatched: true, verified: false },
+      );
+      const reverseAllowed = await control._uncertainTextMutationBlock(
+        controlTabId, 'type_text', { text: 'delta' },
+      );
+      assert.equal(reverseAllowed, null, `${label}: distinct focused retry stayed blocked by a selector debt`);
+    }
+  } finally {
+    if (originalChrome === undefined) delete globalThis.chrome;
+    else globalThis.chrome = originalChrome;
+    if (originalBrowser === undefined) delete globalThis.browser;
+    else globalThis.browser = originalBrowser;
+  }
+});
+
+test('focused field_value_digest and live scope cover selectorless writes', async () => {
+  for (const rel of [
+    'src/chrome/src/content/content.js',
+    'src/firefox/src/content/content.js',
+  ]) {
+    const source = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    assert.match(source, /focused === true/,
+      `${rel}: field_value_digest lost its focused-field proof path`);
+  }
+  const originalChrome = globalThis.chrome;
+  const originalBrowser = globalThis.browser;
+  try {
+    // Phase-aware probe: the uncertain write lands while the live page is
+    // still the old document; the retry happens after a full navigation no
+    // AX read ever observed.
+    const liveDoc = { documentToken: 'doc-old', refScopeUrl: 'https://example.test/form' };
+    const tabs = {
+      async sendMessage(_tabId, message) {
+        assert.equal(message.action, 'field_value_digest');
+        return { success: false, documentToken: liveDoc.documentToken, refScopeUrl: liveDoc.refScopeUrl };
+      },
+    };
+    globalThis.chrome = { tabs };
+    globalThis.browser = { tabs };
+    for (const [label, AgentClass, tabId] of [
+      ['chrome', AgentCh, 9484],
+      ['firefox', AgentFx, 9485],
+    ]) {
+      liveDoc.documentToken = 'doc-old';
+      liveDoc.refScopeUrl = 'https://example.test/form';
+      const agent = new AgentClass({});
+      agent._lastAxScopes.set(tabId, { documentToken: 'doc-old', pageUrl: 'https://example.test/form' });
+      await agent._finalizeTextMutationResult(
+        tabId, 'type_text', { selector: '#field', text: 'draft', clear: true },
+        { success: false, dispatched: true, verified: false },
+      );
+      assert.equal(agent._uncertainTextMutations.get(tabId)?.size, 1, `${label}: debt was not recorded`);
+      // Full navigation with no AX read: the cached scope still points at the
+      // old document, but the live probe proves the move.
+      liveDoc.documentToken = 'doc-new';
+      liveDoc.refScopeUrl = 'https://other.test/page';
+      const live = await agent._liveTextMutationScope(tabId, 'type_text', { text: 'fresh' });
+      assert.equal(live?.documentToken, 'doc-new', `${label}: focused live scope returned no token`);
+      const allowed = await agent._uncertainTextMutationBlock(tabId, 'type_text', { text: 'fresh' });
+      assert.equal(allowed, null, `${label}: stale debt blocked a focused write on a new document`);
+      assert.equal(agent._uncertainTextMutations.get(tabId)?.size, 1,
+        `${label}: scoped debt was discarded instead of retained for return`);
+    }
+  } finally {
+    if (originalChrome === undefined) delete globalThis.chrome;
+    else globalThis.chrome = originalChrome;
+    if (originalBrowser === undefined) delete globalThis.browser;
+    else globalThis.browser = originalBrowser;
+  }
+});
+
+test('uncertain write after navigation records live scoped debt', async () => {
+  const originalChrome = globalThis.chrome;
+  const originalBrowser = globalThis.browser;
+  try {
+    for (const [label, AgentClass, tabId] of [
+      ['chrome', AgentCh, 9490],
+      ['firefox', AgentFx, 9491],
+    ]) {
+      const agent = new AgentClass({});
+      // Cached scope predates a full navigation no AX read ever observed;
+      // the live page is already the new document.
+      agent._lastAxScopes.set(tabId, { documentToken: 'doc-old', pageUrl: 'https://example.test/form' });
+      const tabs = {
+        async sendMessage(_tabId, message) {
+          assert.equal(message.action, 'field_value_digest');
+          return { success: false, documentToken: 'doc-new', refScopeUrl: 'https://other.test/page' };
+        },
+      };
+      globalThis.chrome = { tabs };
+      globalThis.browser = { tabs };
+      await agent._finalizeTextMutationResult(
+        tabId, 'type_text', { selector: '#field', text: 'hello', clear: true },
+        { success: false, dispatched: true, verified: false },
+      );
+      const keys = [...(agent._uncertainTextMutations.get(tabId)?.keys() || [])];
+      assert.ok(keys.some(key => String(key).includes('doc-new')),
+        `${label}: navigation-first debt kept the stale document token (keys: ${keys})`);
+      assert.ok(!keys.some(key => String(key).includes('doc-old')),
+        `${label}: stale-token debt survived the live refresh`);
+      assert.equal(agent._lastAxScopes.get(tabId)?.documentToken, 'doc-new',
+        `${label}: live scope was not adopted before recording`);
+      // The very next append belongs to the current document, so the live
+      // check must keep the guard instead of clearing it as stale debt.
+      const blocked = await agent._uncertainTextMutationBlock(
+        tabId, 'type_text', { selector: '#field', text: 'hello appended' },
+      );
+      assert.equal(blocked?.repeatBlocked, true,
+        `${label}: append escaped the guard after a navigation-first debt`);
+    }
+  } finally {
+    if (originalChrome === undefined) delete globalThis.chrome;
+    else globalThis.chrome = originalChrome;
+    if (originalBrowser === undefined) delete globalThis.browser;
+    else globalThis.browser = originalBrowser;
+  }
+});
+
+test('focused uncertain writes recover on exact same-field readback', async () => {
+  const originalChrome = globalThis.chrome;
+  const originalBrowser = globalThis.browser;
+  try {
+    const text = 'hello focused';
+    const editorMeta = { tag: 'div', contentEditable: true, id: 'editor-1', ariaLabelledByText: 'Editing file contents' };
+    for (const [label, AgentClass, tabId, controlTabId] of [
+      ['chrome', AgentCh, 9518, 9520],
+      ['firefox', AgentFx, 9519, 9521],
+    ]) {
+      const agent = new AgentClass({});
+      agent._lastAxScopes.set(tabId, { documentToken: 'doc-focus', pageUrl: 'https://example.test/form' });
+      // Commit-proof workflow so recovery mints a full readback record.
+      agent._planExecutionGuards.set(tabId, {
+        enabled: true,
+        siteWorkflow: { adapterName: 'github', job: { id: 'edit-file-and-commit' } },
+      });
+      // Record phase: the uncertain write carries no metadata, but focus is
+      // still on the indebted field, so the capture digest identifies it.
+      // Retry phase: the same focused field verifies the exact text.
+      const tabs = {
+        async sendMessage(_tabId, message) {
+          assert.equal(message.action, 'field_value_digest');
+          if (message.params?.expected !== undefined && message.params.expected !== text) {
+            return { success: false, documentToken: 'doc-focus', refScopeUrl: 'https://example.test/form' };
+          }
+          return { success: true,
+            ...(typeof message.params?.expected === 'string' ? { verified: true } : {}),
+            valueLength: text.length,
+            valueSha256: await agent._sha256Text(text),
+            fieldMeta: { ...editorMeta },
+            documentToken: 'doc-focus', refScopeUrl: 'https://example.test/form' };
+        },
+      };
+      globalThis.chrome = { tabs };
+      globalThis.browser = { tabs };
+      await agent._finalizeTextMutationResult(
+        tabId, 'type_text', { text, clear: true },
+        { success: false, dispatched: true, verified: false },
+      );
+      const debt = [...(agent._uncertainTextMutations.get(tabId)?.values() || [])][0];
+      assert.deepEqual(debt?.fieldMeta, editorMeta,
+        `${label}: record-time capture missed the focused identity`);
+      const recovered = await agent._uncertainTextMutationBlock(
+        tabId, 'type_text', { text, clear: true },
+      );
+      assert.equal(recovered?.success, true, `${label}: exact focused readback did not recover`);
+      assert.equal(recovered?.recoveredUncertainMutation, true);
+      assert.equal(recovered?.noDispatch, true);
+      assert.equal(agent._uncertainTextMutations.has(tabId), false, `${label}: recovered focused debt retained`);
+      const proof = [...(agent._verifiedTextReplacements.get(tabId)?.values() || [])]
+        .find(record => record?.focusedKind === 'editor');
+      assert.ok(proof?.readbackSha256, `${label}: recovery minted no editor proof`);
+      // Control: record-time focus already lost (identity capture fails), so
+      // even a later exact readback cannot prove the same field.
+      const control = new AgentClass({});
+      control._lastAxScopes.set(controlTabId, { documentToken: 'doc-focus', pageUrl: 'https://example.test/form' });
+      const controlTabs = {
+        async sendMessage(_tabId, message) {
+          assert.equal(message.action, 'field_value_digest');
+          // Probes without expected text (live-scope refresh, identity
+          // capture): nothing focused yet.
+          if (message.params?.expected === undefined) {
+            return { success: false, documentToken: 'doc-focus', refScopeUrl: 'https://example.test/form' };
+          }
+          if (message.params.expected !== text) {
+            return { success: false, documentToken: 'doc-focus', refScopeUrl: 'https://example.test/form' };
+          }
+          return { success: true, verified: true,
+            valueLength: text.length,
+            valueSha256: await control._sha256Text(text),
+            fieldMeta: { ...editorMeta },
+            documentToken: 'doc-focus', refScopeUrl: 'https://example.test/form' };
+        },
+      };
+      globalThis.chrome = { tabs: controlTabs };
+      globalThis.browser = { tabs: controlTabs };
+      await control._finalizeTextMutationResult(
+        controlTabId, 'type_text', { text, clear: true },
+        { success: false, dispatched: true, verified: false },
+      );
+      const blocked = await control._uncertainTextMutationBlock(
+        controlTabId, 'type_text', { text, clear: true },
+      );
+      assert.equal(blocked?.repeatBlocked, true,
+        `${label}: identity-less focused debt was cleared by an unattributed readback`);
+      assert.equal(control._uncertainTextMutations.get(controlTabId)?.size, 1,
+        `${label}: identity-less focused debt was not retained`);
+      assert.equal(control._verifiedTextReplacements.has(controlTabId), false,
+        `${label}: identity-less recovery minted proof for the wrong field`);
+    }
+  } finally {
+    if (originalChrome === undefined) delete globalThis.chrome;
+    else globalThis.chrome = originalChrome;
+    if (originalBrowser === undefined) delete globalThis.browser;
+    else globalThis.browser = originalBrowser;
+  }
+});
+
+test('focused field identity matching is strict', () => {
+  for (const [label, AgentClass] of [['chrome', AgentCh], ['firefox', AgentFx]]) {
+    const agent = new AgentClass({});
+    const base = { tag: 'div', contentEditable: true, id: 'editor-1', ariaLabelledByText: 'Editing file contents' };
+    assert.equal(agent._focusedFieldIdentityMatches(base, { ...base }), true, `${label}: identical metadata rejected`);
+    assert.equal(agent._focusedFieldIdentityMatches(
+      { tag: 'input', name: 'q' }, { tag: 'input', name: 'q' }), true, `${label}: name+tag rejected`);
+    assert.equal(agent._focusedFieldIdentityMatches(
+      { tag: 'input', name: 'q' }, { tag: 'textarea', name: 'q' }), false, `${label}: cross-tag name matched`);
+    assert.equal(agent._focusedFieldIdentityMatches(
+      { tag: 'textarea', labelText: 'Notes' }, { tag: 'textarea', labelText: 'Notes', contentEditable: false }), false,
+      `${label}: editability drift matched`);
+    assert.equal(agent._focusedFieldIdentityMatches(
+      { tag: 'textarea', labelText: 'Notes' }, { tag: 'textarea', labelText: 'Notes' }), true,
+      `${label}: label+tag identity rejected`);
+    assert.equal(agent._focusedFieldIdentityMatches(
+      { id: 'a', labelText: 'X' }, { id: 'b', labelText: 'X' }), false,
+      `${label}: shared label overrode differing ids`);
+    assert.equal(agent._focusedFieldIdentityMatches(null, base), false, `${label}: null matched`);
+    assert.equal(agent._focusedFieldIdentityMatches(base, null), false, `${label}: null matched`);
+    assert.equal(agent._focusedFieldIdentityMatches(
+      { tag: 'div' }, { tag: 'div' }), false, `${label}: identity-less metadata matched`);
+  }
+});
+
+test('empty selector appends report a proven no-op without dispatch', async () => {
+  for (const rel of [
+    'src/chrome/src/content/content.js',
+    'src/firefox/src/content/content.js',
+  ]) {
+    const source = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    assert.match(source, /!typedText && !params\.clear/,
+      `${rel}: empty appends still dispatch instead of short-circuiting`);
+    assert.match(source, /noop: true/,
+      `${rel}: empty appends do not report a proven no-op`);
+  }
+  const cdpSource = fs.readFileSync(path.join(ROOT, 'src/chrome/src/cdp/cdp-client.js'), 'utf8');
+  assert.match(cdpSource, /String\(text \?\? ''\) === '' && clear !== true/,
+    'chrome: CDP typeText still dispatches empty appends');
+  const originalSendCommand = cdpClientCh.sendCommand;
+  const originalAttach = cdpClientCh.attach;
+  const originalEvaluate = cdpClientCh.evaluate;
+  const originalResolveSelector = cdpClientCh.resolveSelector;
+  try {
+    const inputDispatches = [];
+    cdpClientCh.sendCommand = async (_tabId, method) => {
+      if (String(method).startsWith('Input.')) inputDispatches.push(method);
+      return {};
+    };
+    cdpClientCh.attach = async () => ({ attached: true });
+    cdpClientCh.evaluate = async () => ({ result: { value: null } });
+    // Resolved text control + empty append: proven no-op, no input dispatch.
+    cdpClientCh.resolveSelector = async () => ({ tag: 'INPUT' });
+    const noop = await cdpClientCh.typeText(9991, '#field', '', false);
+    assert.equal(noop?.success, true, 'empty append was not successful');
+    assert.equal(noop?.noDispatch, true, 'empty append was dispatched');
+    assert.equal(noop?.noop, true, 'empty append was not marked as a no-op');
+    assert.equal(noop?.dispatched ?? false, false, 'empty append claimed a dispatch');
+    assert.equal(inputDispatches.length, 0, 'empty append dispatched input');
+    // A select resolving to an empty-valued option still navigates to it:
+    // choosing it IS the requested mutation, not a no-op.
+    cdpClientCh.resolveSelector = async () => ({ tag: 'SELECT' });
+    let evaluations = 0;
+    cdpClientCh.evaluate = async () => {
+      evaluations += 1;
+      if (evaluations === 1) {
+        return { result: { value: {
+          success: true, currentIndex: 0, targetIndex: 1, targetText: 'None', targetValue: '',
+        } } };
+      }
+      return { result: { value: { verified: true, selectedText: 'None', selectedValue: '' } } };
+    };
+    const selected = await cdpClientCh.typeText(9991, '#choice', '', false);
+    assert.equal(selected?.success, true, 'empty select choice failed');
+    assert.equal(selected?.noop ?? false, false, 'empty select choice was misreported as a no-op');
+    assert.equal(selected?.method, 'select-keyboard', 'empty select choice skipped option navigation');
+    assert.equal(selected?.verified, true, 'empty select choice was not verified');
+    assert.equal(selected?.keyPresses, 1, 'empty select choice sent no navigation keys');
+    assert.ok(inputDispatches.some(method => method === 'Input.dispatchKeyEvent'),
+      'empty select choice dispatched no keyboard input');
+    // clear:true with empty text still empties the field: not a no-op.
+    cdpClientCh.resolveSelector = originalResolveSelector;
+    const cleared = await cdpClientCh.typeText(9991, '#field', '', true);
+    assert.equal(cleared?.noop ?? false, false, 'clear-only call was misreported as a no-op');
+  } finally {
+    cdpClientCh.sendCommand = originalSendCommand;
+    cdpClientCh.attach = originalAttach;
+    cdpClientCh.evaluate = originalEvaluate;
+    cdpClientCh.resolveSelector = originalResolveSelector;
+  }
+});
+
+test('proven no-ops create no debt and keep proofs', async () => {
+  for (const [label, AgentClass, tabId] of [
+    ['chrome', AgentCh, 9528],
+    ['firefox', AgentFx, 9529],
+  ]) {
+    const agent = new AgentClass({});
+    agent._lastAxScopes.set(tabId, { documentToken: 'doc-noop', pageUrl: 'https://example.test/form' });
+    const proof = {
+      key: 'selector:doc-noop:#ed',
+      locatorType: 'selector',
+      selector: '#ed',
+      documentToken: 'doc-noop',
+      pageUrl: 'https://example.test/form',
+      ambiguous: false,
+      expectedLength: 4,
+      expectedSha256: await agent._sha256Text('body'),
+      fieldMeta: { contentEditable: true },
+      readbackLength: 4,
+      readbackSha256: await agent._sha256Text('body'),
+      verifiedAt: Date.now(),
+      taskToken: 'task-noop',
+    };
+    agent._verifiedTextReplacements.set(tabId, new Map([[proof.key, { ...proof }]]));
+    const input = { success: true, dispatched: false, noDispatch: true, noop: true };
+    const output = await agent._finalizeTextMutationResult(
+      tabId, 'type_text', { selector: '#ed', text: '' }, input,
+    );
+    assert.deepEqual(output, input, `${label}: proven no-op was rewritten`);
+    assert.equal(output.mutationMayHaveOccurred, undefined, `${label}: no-op recorded mutation doubt`);
+    assert.equal(output.repeatBlocked, undefined, `${label}: no-op blocked repeats`);
+    assert.equal(agent._uncertainTextMutations.has(tabId), false, `${label}: no-op recorded debt`);
+    assert.ok(agent._verifiedTextReplacements.get(tabId)?.has(proof.key),
+      `${label}: no-op invalidated an unrelated proof`);
+  }
+});
+
+test('first live token bootstraps tokenless debt by URL', async () => {
+  const originalChrome = globalThis.chrome;
+  const originalBrowser = globalThis.browser;
+  try {
+    const oldUrl = 'https://example.test/form';
+    const newUrl = 'https://other.test/page';
+    for (const [label, AgentClass, tabId, controlTabId] of [
+      ['chrome', AgentCh, 9492, 9494],
+      ['firefox', AgentFx, 9493, 9495],
+    ]) {
+      // No scope ever cached. Record-phase probe unreachable; the tabs URL
+      // channel still reports the old page for the debt bootstrap URL.
+      globalThis.chrome = { tabs: { async sendMessage() { return { success: false }; } } };
+      globalThis.browser = globalThis.chrome;
+      const agent = new AgentClass({});
+      agent._currentUrl = async () => oldUrl;
+      await agent._finalizeTextMutationResult(
+        tabId, 'type_text', { selector: '#field', text: 'draft', clear: true },
+        { success: false, dispatched: true, verified: false },
+      );
+      const debt = [...(agent._uncertainTextMutations.get(tabId)?.values() || [])][0];
+      assert.equal(debt?.documentToken, '', `${label}: debt unexpectedly carries a token`);
+      assert.equal(debt?.pageUrl, oldUrl, `${label}: tokenless debt kept no bootstrap URL`);
+      // Full navigation: the first live token plus a new URL drops the
+      // predated debt instead of blocking the unrelated destination.
+      const navTabs = { async sendMessage() {
+        return { success: false, documentToken: 'doc-first', refScopeUrl: newUrl };
+      } };
+      globalThis.chrome = { tabs: navTabs };
+      globalThis.browser = { tabs: navTabs };
+      const allowed = await agent._uncertainTextMutationBlock(
+        tabId, 'type_text', { selector: '#other', text: 'fresh' },
+      );
+      assert.equal(allowed, null, `${label}: predated tokenless debt blocked the new document`);
+      assert.equal(agent._uncertainTextMutations.has(tabId), false,
+        `${label}: predated tokenless debt survived the bootstrap`);
+      assert.equal(agent._lastAxScopes.get(tabId)?.documentToken, 'doc-first',
+        `${label}: first live token was not adopted`);
+      // Same-URL control: the first token on the SAME page keeps the guard.
+      globalThis.chrome = { tabs: { async sendMessage() { return { success: false }; } } };
+      globalThis.browser = globalThis.chrome;
+      const samePage = new AgentClass({});
+      samePage._currentUrl = async () => oldUrl;
+      await samePage._finalizeTextMutationResult(
+        controlTabId, 'type_text', { selector: '#field', text: 'draft', clear: true },
+        { success: false, dispatched: true, verified: false },
+      );
+      const sameTabs = { async sendMessage() {
+        return { success: false, documentToken: 'doc-first', refScopeUrl: oldUrl };
+      } };
+      globalThis.chrome = { tabs: sameTabs };
+      globalThis.browser = { tabs: sameTabs };
+      const blocked = await samePage._uncertainTextMutationBlock(
+        controlTabId, 'type_text', { selector: '#field', text: 'draft appended' },
+      );
+      assert.equal(blocked?.repeatBlocked, true,
+        `${label}: same-page tokenless debt was dropped by the bootstrap`);
+      assert.equal(samePage._uncertainTextMutations.get(controlTabId)?.size, 1,
+        `${label}: same-page tokenless debt was not retained`);
+    }
+  } finally {
+    if (originalChrome === undefined) delete globalThis.chrome;
+    else globalThis.chrome = originalChrome;
+    if (originalBrowser === undefined) delete globalThis.browser;
+    else globalThis.browser = originalBrowser;
+  }
+});
+
+test('clearConversation preserves document-scoped mutation debt', async () => {
+  for (const [label, AgentClass, tabId] of [
+    ['chrome', AgentCh, 9524],
+    ['firefox', AgentFx, 9525],
+  ]) {
+    const agent = new AgentClass({});
+    agent._lastAxScopes.set(tabId, { documentToken: 'doc-conv', pageUrl: 'https://example.test/form' });
+    await agent._finalizeTextMutationResult(
+      tabId, 'type_text', { selector: '#field', text: 'maybe landed', clear: true },
+      { success: false, dispatched: true, verified: false },
+    );
+    assert.equal(agent._uncertainTextMutations.get(tabId)?.size, 1, `${label}: debt was not recorded`);
+    // A verified proof stands in for task-scoped state that must not cross.
+    agent._verifiedTextReplacements.set(tabId, new Map([['k', { pageUrl: 'https://example.test/form' }]]));
+    agent.clearConversation(tabId);
+    assert.equal(agent._uncertainTextMutations.get(tabId)?.size, 1,
+      `${label}: conversation clear dropped the document guard`);
+    assert.equal(agent._verifiedTextReplacements.has(tabId), false,
+      `${label}: task-scoped proofs survived the conversation clear`);
+    // The next run on the unchanged document stays guarded.
+    const blocked = await agent._uncertainTextMutationBlock(
+      tabId, 'type_text', { selector: '#field', text: 'maybe landed appended' },
+    );
+    assert.equal(blocked?.repeatBlocked, true,
+      `${label}: post-clear retry escaped the retained guard`);
+    // Tab removal still drops everything.
+    agent._cleanupTab(tabId);
+    assert.equal(agent._uncertainTextMutations.has(tabId), false,
+      `${label}: tab removal kept mutation debt`);
+  }
+});
+
+test('clearConversation retains scope for first-try debt recovery', async () => {
+  const originalChrome = globalThis.chrome;
+  const originalBrowser = globalThis.browser;
+  try {
+    const tabs = {
+      async sendMessage(_tabId, message) {
+        if (message.action === 'ax_verify_field_value') {
+          assert.equal(message.params?.ref_id, 'ref_a');
+          assert.equal(message.params?.expected, 'hello');
+          return { success: true, verified: true, fieldMeta: { id: 'field-a' } };
+        }
+        assert.equal(message.action, 'field_value_digest');
+        return { success: false, documentToken: 'doc-scope', refScopeUrl: 'https://example.test/form' };
+      },
+    };
+    globalThis.chrome = { tabs };
+    globalThis.browser = { tabs };
+    for (const [label, AgentClass, tabId] of [
+      ['chrome', AgentCh, 9540],
+      ['firefox', AgentFx, 9541],
+    ]) {
+      const agent = new AgentClass({});
+      agent._lastAxScopes.set(tabId, { documentToken: 'doc-scope', pageUrl: 'https://example.test/form' });
+      await agent._finalizeTextMutationResult(
+        tabId, 'set_field', { ref_id: 'ref_a', text: 'hello' },
+        { success: false, dispatched: true, verified: false },
+      );
+      agent.clearConversation(tabId);
+      assert.deepEqual(agent._lastAxScopes.get(tabId),
+        { documentToken: 'doc-scope', pageUrl: 'https://example.test/form' },
+        `${label}: conversation clear dropped the document scope`);
+      // The first exact retry keys identically and recovers immediately —
+      // no second call needed.
+      const recovered = await agent._uncertainTextMutationBlock(
+        tabId, 'set_field', { ref_id: 'ref_a', text: 'hello' },
+      );
+      assert.equal(recovered?.recoveredUncertainMutation, true,
+        `${label}: retained debt did not recover on the first retry`);
+      assert.equal(agent._uncertainTextMutations.has(tabId), false,
+        `${label}: recovered debt was retained`);
+    }
+  } finally {
+    if (originalChrome === undefined) delete globalThis.chrome;
+    else globalThis.chrome = originalChrome;
+    if (originalBrowser === undefined) delete globalThis.browser;
+    else globalThis.browser = originalBrowser;
+  }
+});
+
+test('sync SHA-256 helper matches the async subtle digest', async () => {
+  for (const [label, AgentClass] of [['chrome', AgentCh], ['firefox', AgentFx]]) {
+    const agent = new AgentClass({});
+    // Known vector first, so a broken table fails loudly instead of
+    // self-consistently (sync-vs-sync would hide a wrong constant).
+    assert.equal(agent._sha256TextSync('abc'),
+      'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',
+      `${label}: sync SHA-256 mismatches the 'abc' vector`);
+    for (const text of ['', 'body', 'Update docs/plan.md', 'PSgOcTcQ', '9SHghNQJ', 'héllo wörld ✓', 'x'.repeat(1000)]) {
+      assert.equal(agent._sha256TextSync(text), await agent._sha256Text(text),
+        `${label}: sync/async SHA-256 disagree on ${JSON.stringify(text.slice(0, 20))}`);
+    }
+  }
+});
+
+test('commit message gate compares SHA-256, not FNV-1a', async () => {
+  for (const [label, AgentClass, resolveJob, tabId] of [
+    ['chrome', AgentCh, resolveAdapterWorkflowJob, 9486],
+    ['firefox', AgentFx, resolveAdapterWorkflowJobFx, 9487],
+  ]) {
+    const agent = new AgentClass({});
+    // Premise pin: the review's pair really collides under FNV-1a, so a
+    // fingerprint-only gate would confuse them.
+    assert.equal(agent._workflowInventoryFingerprint('PSgOcTcQ'), agent._workflowInventoryFingerprint('9SHghNQJ'),
+      `${label}: FNV-1a collision premise broken`);
+    assert.notEqual(await agent._sha256Text('PSgOcTcQ'), await agent._sha256Text('9SHghNQJ'),
+      `${label}: SHA-256 collision (essentially impossible)`);
+    const pageUrl = 'https://github.com/Example/Repo/edit/main/docs/plan.md';
+    agent._planExecutionGuards.set(tabId, {
+      enabled: true,
+      siteWorkflow: resolveJob(pageUrl, 'edit-file-and-commit'),
+      workflowMetadataRequirements: [{ field: 'commit_message', value: 'PSgOcTcQ' }],
+      workflowMetadataRequirementsResolved: true,
+    });
+    agent._taskTokens.set(tabId, 'task-sha-msg');
+    const body = '# Doc\n';
+    const editorRecord = {
+      key: 'ax:doc:ref_editor',
+      locatorType: 'ax',
+      refId: 'ref_editor',
+      documentToken: 'doc',
+      pageUrl,
+      ambiguous: false,
+      expectedLength: body.length,
+      expectedSha256: await agent._sha256Text(body),
+      expectedFp: agent._workflowInventoryFingerprint(body),
+      fieldMeta: { contentEditable: true, ariaLabelledByText: 'Editing file contents' },
+      readbackLength: body.length,
+      readbackSha256: await agent._sha256Text(body),
+      verifiedAt: Date.now(),
+      taskToken: 'task-sha-msg',
+    };
+    const messageRecordFor = async (text) => ({
+      key: 'ax:doc:ref_msg',
+      locatorType: 'ax',
+      refId: 'ref_msg',
+      documentToken: 'doc',
+      pageUrl,
+      ambiguous: false,
+      expectedLength: text.length,
+      expectedSha256: await agent._sha256Text(text),
+      expectedFp: agent._workflowInventoryFingerprint(text),
+      fieldMeta: { id: 'commit-message-input', name: 'commit-message-input' },
+      readbackLength: text.length,
+      readbackSha256: await agent._sha256Text(text),
+      verifiedAt: Date.now(),
+      taskToken: 'task-sha-msg',
+    });
+    // Same length, same FNV-1a, different bytes: must not verify.
+    agent._verifiedTextReplacements.set(tabId, new Map([
+      ['ax:doc:ref_editor', editorRecord],
+      ['ax:doc:ref_msg', await messageRecordFor('9SHghNQJ')],
+    ]));
+    assert.equal(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit, undefined,
+      `${label}: an FNV-1a colliding commit message authorized a commit`);
+    // The exact requested message verifies.
+    agent._verifiedTextReplacements.set(tabId, new Map([
+      ['ax:doc:ref_editor', editorRecord],
+      ['ax:doc:ref_msg', await messageRecordFor('PSgOcTcQ')],
+    ]));
+    assert.ok(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit,
+      `${label}: the exact commit message was rejected`);
+  }
+});
+
+test('slash-branch verification derives candidates from changed-file evidence', async () => {
+  const originalFetch = globalThis.fetch;
+  const body = '# Deeply nested document\n\nOne complete copy.\n';
+  const commitSha = '0123456789abcdef0123456789abcdef01234567';
+  const commitUrl = `https://github.com/Example/Repo/commit/${commitSha}`;
+  // Branch feature/fix with a 10-segment path: 12 segments total, so the
+  // true cut (after segment 2) sits beyond the old end-backward 10-attempt
+  // cap and was never fetched even though the commit page lists it.
+  const trueBranch = 'feature/fix';
+  const truePath = 'a/b/c/d/e/f/g/h/i/plan.md';
+  const naiveBranch = 'feature';
+  const naivePath = `fix/${truePath}`;
+  const naiveUrl = `https://github.com/example/repo/raw/${commitSha}/${naivePath.split('/').map(encodeURIComponent).join('/')}`;
+  const trueUrl = `https://github.com/example/repo/raw/${commitSha}/${truePath.split('/').map(encodeURIComponent).join('/')}`;
+  const trueBlobUrl = `https://github.com/Example/Repo/blob/${commitSha}/${truePath}`;
+  try {
+    const seen = [];
+    globalThis.fetch = async (url) => {
+      seen.push(url);
+      if (url === trueUrl) {
+        return { ok: true, status: 200, headers: { get: () => String(body.length) }, text: async () => body };
+      }
+      return { ok: false, status: 404, headers: { get: () => '0' }, text: async () => 'Not Found' };
+    };
+    for (const [label, AgentClass, tabId] of [
+      ['chrome', AgentCh, 9488],
+      ['firefox', AgentFx, 9489],
+    ]) {
+      seen.length = 0;
+      const agent = new AgentClass({});
+      agent._planExecutionGuards.set(tabId, {
+        enabled: true,
+        siteWorkflow: { adapterName: 'github', job: { id: 'edit-file-and-commit' } },
+      });
+      const binding = {
+        githubFileCommit: {
+          repository: 'example/repo',
+          branch: naiveBranch,
+          path: naivePath,
+          expectedLength: body.length,
+          expectedSha256: await agent._sha256Text(body),
+          commitMessageVerified: true,
+        },
+        metadataRequirements: [],
+        preDispatchPublishedResourceIdentities: [],
+      };
+      const pageState = { workflowResourceUrls: [commitUrl, trueBlobUrl] };
+      const proof = await agent._githubCommittedFileVerification(
+        tabId, pageState, commitUrl, { verifiedFinalSubmit: true, submit: { workflowBinding: binding } },
+      );
+      assert.equal(proof.verified, true, `${label}: evidenced deep slash-branch scope was not verified`);
+      assert.equal(proof.path, truePath);
+      assert.equal(binding.githubFileCommit.branch, trueBranch);
+      assert.equal(binding.githubFileCommit.path, truePath);
+      assert.ok(seen.includes(naiveUrl) && seen.includes(trueUrl),
+        `${label}: naive cut and evidenced scope were not both probed`);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('explicit scope verifies without file-listing the path', async () => {
+  const originalFetch = globalThis.fetch;
+  const body = '# Explicit scope document\n\nOne complete copy.\n';
+  const commitSha = '0123456789abcdef0123456789abcdef01234567';
+  const commitUrl = `https://github.com/Example/Repo/commit/${commitSha}`;
+  const naiveUrl = `https://github.com/example/repo/raw/${commitSha}/docs/plan.md`;
+  try {
+    const seen = [];
+    globalThis.fetch = async (url) => {
+      seen.push(url);
+      if (url === naiveUrl) {
+        return { ok: true, status: 200, headers: { get: () => String(body.length) }, text: async () => body };
+      }
+      return { ok: false, status: 404, headers: { get: () => '0' }, text: async () => 'Not Found' };
+    };
+    for (const [label, AgentClass, tabId] of [
+      ['chrome', AgentCh, 9534],
+      ['firefox', AgentFx, 9535],
+    ]) {
+      seen.length = 0;
+      const agent = new AgentClass({});
+      agent._planExecutionGuards.set(tabId, {
+        enabled: true,
+        siteWorkflow: { adapterName: 'github', job: { id: 'edit-file-and-commit' } },
+      });
+      // Explicitly requested scope: the naive cut IS the requested file, so
+      // its content match verifies even though a 200-link truncation cut its
+      // blob link from the observed file list (201 unrelated entries here).
+      const unrelatedBlobs = Array.from({ length: 201 }, (_, index) =>
+        `https://github.com/Example/Repo/blob/${commitSha}/other${index}.md`);
+      const binding = {
+        githubFileCommit: {
+          repository: 'example/repo',
+          branch: 'main',
+          path: 'docs/plan.md',
+          expectedLength: body.length,
+          expectedSha256: await agent._sha256Text(body),
+          commitMessageVerified: true,
+        },
+        metadataRequirements: [
+          { field: 'path', value: 'docs/plan.md' },
+          { field: 'branch', value: 'main' },
+        ],
+        preDispatchPublishedResourceIdentities: [],
+      };
+      const pageState = { workflowResourceUrls: [commitUrl, ...unrelatedBlobs] };
+      const proof = await agent._githubCommittedFileVerification(
+        tabId, pageState, commitUrl, { verifiedFinalSubmit: true, submit: { workflowBinding: binding } },
+      );
+      assert.equal(proof.verified, true, `${label}: exact explicit scope was not verified without listing`);
+      assert.equal(proof.path, 'docs/plan.md');
+      assert.ok(seen.includes(naiveUrl), `${label}: exact path was not fetched`);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('committed blobs verify byte-exact through a leading BOM', async () => {
+  const originalFetch = globalThis.fetch;
+  // Real Response.text() strips a leading BOM during UTF-8 decoding; the
+  // mock emulates that so only byte reads can match.
+  const body = '\uFEFF# BOM document\n\nOne complete copy.\n';
+  const commitSha = '0123456789abcdef0123456789abcdef01234567';
+  const commitUrl = `https://github.com/Example/Repo/commit/${commitSha}`;
+  const naiveUrl = `https://github.com/example/repo/raw/${commitSha}/docs/plan.md`;
+  try {
+    globalThis.fetch = async (url) => {
+      if (url === naiveUrl) {
+        return { ok: true, status: 200,
+          headers: { get: () => String(new TextEncoder().encode(body).byteLength) },
+          arrayBuffer: async () => new TextEncoder().encode(body).buffer,
+          text: async () => body.slice(1) };
+      }
+      if (String(url).startsWith('https://api.github.com/')) {
+        return { ok: true, status: 200, headers: { get: () => '16' },
+          text: async () => JSON.stringify([{ name: 'main' }]) };
+      }
+      return { ok: false, status: 404, headers: { get: () => '0' }, text: async () => 'Not Found' };
+    };
+    for (const [label, AgentClass, tabId] of [
+      ['chrome', AgentCh, 9536],
+      ['firefox', AgentFx, 9537],
+    ]) {
+      const agent = new AgentClass({});
+      agent._planExecutionGuards.set(tabId, {
+        enabled: true,
+        siteWorkflow: { adapterName: 'github', job: { id: 'edit-file-and-commit' } },
+      });
+      const binding = {
+        githubFileCommit: {
+          repository: 'example/repo',
+          branch: 'main',
+          path: 'docs/plan.md',
+          expectedLength: body.length,
+          expectedSha256: await agent._sha256Text(body),
+          commitMessageVerified: true,
+        },
+        metadataRequirements: [
+          { field: 'path', value: 'docs/plan.md' },
+          { field: 'branch', value: 'main' },
+        ],
+        preDispatchPublishedResourceIdentities: [],
+      };
+      const pageState = { workflowResourceUrls: [commitUrl] };
+      const proof = await agent._githubCommittedFileVerification(
+        tabId, pageState, commitUrl, { verifiedFinalSubmit: true, submit: { workflowBinding: binding } },
+      );
+      assert.equal(proof.verified, true, `${label}: BOM-led blob was reported as a content mismatch`);
+      assert.equal(proof.path, 'docs/plan.md');
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('verification rejects commits unattributed to the requested branch', async () => {
+  const originalFetch = globalThis.fetch;
+  const body = '# Branch attribution document\n\nOne complete copy.\n';
+  const commitSha = '0123456789abcdef0123456789abcdef01234567';
+  const commitUrl = `https://github.com/Example/Repo/commit/${commitSha}`;
+  const naiveUrl = `https://github.com/example/repo/raw/${commitSha}/docs/plan.md`;
+  const apiUrl = `https://api.github.com/repos/example/repo/commits/${commitSha}/branches-where-head?per_page=100`;
+  const sameHostUrl = `https://github.com/example/repo/branch_commits/${commitSha}`;
+  const branchHtml = (...names) => '<div><ul class="branches-list">'
+    + names.map(name => `<li class="branch"><a href="/example/repo">${name}</a></li>`).join('')
+    + '</ul></div>';
+  try {
+    let sameHost = { ok: true, status: 200, body: branchHtml('main') };
+    let apiResponse = { ok: true, status: 200, body: JSON.stringify([{ name: 'main' }]) };
+    const seen = [];
+    globalThis.fetch = async (url) => {
+      seen.push(url);
+      if (url === naiveUrl) {
+        return { ok: true, status: 200, headers: { get: () => String(body.length) }, text: async () => body };
+      }
+      if (url === sameHostUrl) {
+        return { ok: sameHost.ok, status: sameHost.status,
+          headers: { get: () => String(sameHost.body.length) },
+          text: async () => sameHost.body };
+      }
+      if (url === apiUrl) {
+        return { ok: apiResponse.ok, status: apiResponse.status,
+          headers: { get: () => String(apiResponse.body.length) },
+          text: async () => apiResponse.body };
+      }
+      return { ok: false, status: 404, headers: { get: () => '0' }, text: async () => 'Not Found' };
+    };
+    for (const [label, AgentClass, tabId] of [
+      ['chrome', AgentCh, 9538],
+      ['firefox', AgentFx, 9539],
+    ]) {
+      seen.length = 0;
+      const agent = new AgentClass({});
+      agent._planExecutionGuards.set(tabId, {
+        enabled: true,
+        siteWorkflow: { adapterName: 'github', job: { id: 'edit-file-and-commit' } },
+      });
+      const sha = await agent._sha256Text(body);
+      const bindingFor = () => ({
+        githubFileCommit: {
+          repository: 'example/repo',
+          branch: 'main',
+          path: 'docs/plan.md',
+          expectedLength: body.length,
+          expectedSha256: sha,
+          commitMessageVerified: true,
+        },
+        metadataRequirements: [
+          { field: 'path', value: 'docs/plan.md' },
+          { field: 'branch', value: 'main' },
+        ],
+        preDispatchPublishedResourceIdentities: [],
+      });
+      const pageState = { workflowResourceUrls: [commitUrl] };
+      const verify = (binding) => agent._githubCommittedFileVerification(
+        tabId, pageState, commitUrl, { verifiedFinalSubmit: true, submit: { workflowBinding: binding } },
+      );
+      // Same-host list names the requested branch: verified without the API.
+      seen.length = 0;
+      sameHost = { ok: true, status: 200, body: branchHtml('main') };
+      assert.equal((await verify(bindingFor())).verified, true,
+        `${label}: branch-attributed commit was not verified`);
+      assert.ok(!seen.includes(apiUrl),
+        `${label}: same-host attribution needlessly consulted the token API`);
+      // Same-host list names only the PR branch: rejected.
+      sameHost = { ok: true, status: 200, body: branchHtml('user-patch-1') };
+      const wrongBranch = await verify(bindingFor());
+      assert.equal(wrongBranch.verified, false,
+        `${label}: commit on another branch reported full success`);
+      assert.equal(wrongBranch.reason, 'commit_wrong_branch',
+        `${label}: wrong-branch commit misreported (${wrongBranch.reason})`);
+      // Unparseable same-host page falls back to the API.
+      sameHost = { ok: true, status: 200, body: '<div>redesigned</div>' };
+      apiResponse = { ok: true, status: 200, body: JSON.stringify([{ name: 'main' }]) };
+      assert.equal((await verify(bindingFor())).verified, true,
+        `${label}: API fallback did not confirm the branch`);
+      // Inconclusive outcomes on both sources keep the content verdict.
+      sameHost = { ok: false, status: 404, body: 'Not Found' };
+      apiResponse = { ok: false, status: 403, body: 'rate limited' };
+      assert.equal((await verify(bindingFor())).verified, true,
+        `${label}: rate-limited branch check blocked verification`);
+      apiResponse = { ok: true, status: 200, body: '[]' };
+      assert.equal((await verify(bindingFor())).verified, true,
+        `${label}: empty branch list blocked verification`);
+      assert.ok(seen.includes(naiveUrl) && seen.includes(sameHostUrl),
+        `${label}: raw blob and branch attribution were not both consulted`);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('Firefox selector debt recovers on exact digest readback', async () => {
+  const originalChrome = globalThis.chrome;
+  const originalBrowser = globalThis.browser;
+  try {
+    const tabs = {
+      async sendMessage(_tabId, message) {
+        assert.equal(message.action, 'field_value_digest');
+        assert.equal(message.params.selector, '[contenteditable="true"]');
+        assert.equal(message.params.expected, 'changed');
+        return {
+          success: true,
+          verified: true,
+          valueLength: 'changed'.length,
+          valueSha256: 'a'.repeat(64),
+          fieldMeta: { contentEditable: true },
+        };
+      },
+    };
+    globalThis.chrome = { tabs };
+    globalThis.browser = { tabs };
+    const agent = new AgentFx({});
+    const tabId = 9465;
+    agent._lastAxScopes.set(tabId, {
+      documentToken: 'doc-fx-selector',
+      pageUrl: 'https://github.com/example/repo/edit/main/docs/plan.md',
+    });
+    await agent._finalizeTextMutationResult(
+      tabId,
+      'type_text',
+      { selector: '[contenteditable="true"]', text: 'changed', clear: true },
+      { success: false, dispatched: true, verified: false },
+    );
+    assert.equal(agent._uncertainTextMutations.get(tabId)?.size, 1, 'selector debt was not recorded');
+    const recovered = await agent._uncertainTextMutationBlock(
+      tabId, 'type_text', { selector: '[contenteditable="true"]', text: 'changed', clear: true },
+    );
+    assert.equal(recovered?.success, true, 'exact selector readback did not recover the write');
+    assert.equal(recovered?.recoveredUncertainMutation, true);
+    assert.equal(recovered?.noDispatch, true);
+    assert.equal(agent._uncertainTextMutations.has(tabId), false, 'recovered selector debt was retained');
+    // A different selector with the same text stays blocked: no positive identity.
+    await agent._finalizeTextMutationResult(
+      tabId,
+      'type_text',
+      { selector: '[contenteditable="true"]', text: 'changed', clear: true },
+      { success: false, dispatched: true, verified: false },
+    );
+    const blocked = await agent._uncertainTextMutationBlock(
+      tabId, 'type_text', { selector: '[contenteditable="true"].other', text: 'changed', clear: true },
+    );
+    assert.equal(blocked?.repeatBlocked, true, 'cross-selector readback cleared another target debt');
+  } finally {
+    if (originalChrome === undefined) delete globalThis.chrome;
+    else globalThis.chrome = originalChrome;
+    if (originalBrowser === undefined) delete globalThis.browser;
+    else globalThis.browser = originalBrowser;
+  }
+});
+
+test('verified value with unobserved submission is not mutation debt', async () => {
+  for (const [label, AgentClass, tabId] of [
+    ['chrome', AgentCh, 9470],
+    ['firefox', AgentFx, 9471],
+  ]) {
+    const agent = new AgentClass({});
+    agent._lastAxScopes.set(tabId, {
+      documentToken: 'doc-submit',
+      pageUrl: 'https://example.test/search',
+    });
+    // set_field({submit:true}) proving the value while submission observation
+    // fails: the text demonstrably landed, so no debt may be recorded and the
+    // success must survive with submission doubt kept separate.
+    const result = await agent._finalizeTextMutationResult(
+      tabId,
+      'set_field',
+      { ref_id: 'ref_search', text: 'query', submit: true },
+      { success: true, verified: true, outcomeUnknown: true, dispatched: true, fieldMeta: { id: 'search' } },
+    );
+    assert.equal(result.success, true, `${label}: verified write was converted into failure`);
+    assert.equal(result.verified, true);
+    assert.equal(result.outcomeUnknown, true, `${label}: submission doubt was dropped`);
+    assert.equal(result.mutationMayHaveOccurred, undefined, `${label}: verified write marked as mutation`);
+    assert.equal(result.repeatBlocked, undefined, `${label}: verified write blocked repeats`);
+    assert.equal(agent._uncertainTextMutations.has(tabId), false, `${label}: verified write recorded debt`);
+    // Follow-up writes on the same document proceed (e.g. correcting the search).
+    assert.equal(await agent._uncertainTextMutationBlock(
+      tabId, 'set_field', { ref_id: 'ref_search', text: 'refined query' },
+    ), null, `${label}: follow-up write stayed blocked`);
+    // And the verified write still mints its replacement proof.
+    assert.ok(agent._verifiedTextReplacements.get(tabId)?.has('ax:doc-submit:ref_search'),
+      `${label}: verified write lost its replacement proof`);
+  }
+});
+
+test('navigation scopes stale text-mutation debt to its document', async () => {
+  const originalChrome = globalThis.chrome;
+  const originalBrowser = globalThis.browser;
+  try {
+    // Phase-aware probe: the debt is recorded while the live page is still
+    // the old document; the retry runs after a full navigation no AX read
+    // ever observed.
+    const liveDoc = { documentToken: 'doc-old', refScopeUrl: 'https://example.test/form' };
+    const tabs = {
+      async sendMessage(_tabId, message) {
+        assert.equal(message.action, 'field_value_digest');
+        // Live page is a new document the cached scope never observed.
+        return { success: false, documentToken: liveDoc.documentToken, refScopeUrl: liveDoc.refScopeUrl };
+      },
+    };
+    globalThis.chrome = { tabs };
+    globalThis.browser = { tabs };
+    for (const [label, AgentClass, tabId] of [
+      ['chrome', AgentCh, 9474],
+      ['firefox', AgentFx, 9475],
+    ]) {
+      liveDoc.documentToken = 'doc-old';
+      liveDoc.refScopeUrl = 'https://example.test/form';
+      const agent = new AgentClass({});
+      agent._lastAxScopes.set(tabId, {
+        documentToken: 'doc-old',
+        pageUrl: 'https://example.test/form',
+      });
+      await agent._finalizeTextMutationResult(
+        tabId,
+        'type_text',
+        { selector: '#field', text: 'draft', clear: true },
+        { success: false, dispatched: true, verified: false },
+      );
+      assert.equal(agent._uncertainTextMutations.get(tabId)?.size, 1, `${label}: debt was not recorded`);
+      // No AX read happened after the navigation: the cached scope still
+      // points at the old document, but the live check proves the move. The
+      // write is allowed, while the scoped debt is retained boundedly.
+      liveDoc.documentToken = 'doc-new';
+      liveDoc.refScopeUrl = 'https://other.test/page';
+      const allowed = await agent._uncertainTextMutationBlock(
+        tabId, 'type_text', { selector: '#other', text: 'fresh' },
+      );
+      assert.equal(allowed, null, `${label}: stale debt blocked a new document`);
+      assert.equal(agent._uncertainTextMutations.get(tabId)?.size, 1,
+        `${label}: scoped debt was discarded instead of retained for return`);
+      assert.equal(agent._lastAxScopes.get(tabId)?.documentToken, 'doc-new',
+        `${label}: live scope was not adopted`);
+      // Back-forward return restores the guard on the same field.
+      liveDoc.documentToken = 'doc-old';
+      liveDoc.refScopeUrl = 'https://example.test/form';
+      const backBlocked = await agent._uncertainTextMutationBlock(
+        tabId, 'type_text', { selector: '#field', text: 'draft appended' },
+      );
+      assert.equal(backBlocked?.repeatBlocked, true,
+        `${label}: back-forward return lost the mutation guard`);
+    }
+  } finally {
+    if (originalChrome === undefined) delete globalThis.chrome;
+    else globalThis.chrome = originalChrome;
+    if (originalBrowser === undefined) delete globalThis.browser;
+    else globalThis.browser = originalBrowser;
   }
 });
 
@@ -76510,12 +79913,13 @@ test('submit detector source covers submit controls, Enter, set_field, iframes, 
     assert.match(agent, /candidate\.closest\?\.\('nav,\[role="navigation"\],header,\[role="banner"\]'\)/, `${label}: a navigation control that only opens a composer should not count as a publish`);
     assert.match(agent, /\|\| socialPublishComposerFor\(candidate\)/, `${label}: the composer should stand in for the missing form when summarizing the publish`);
     assert.match(agent, /Composer on \$\{action\} \(no enclosing HTML form\)/, `${label}: publish confirmations should summarize a form-less composer`);
-    assert.match(agent, /const submitInfo = \(form, reason, pendingEl = null, pendingValue = null, validationSubmitEvidence = 'strong', submitTarget = null\)/, `${label}: submit summaries should carry preflight evidence strength`);
+    assert.match(agent, /const submitInfo = \(form, reason, pendingEl = null, pendingValue = null, validationSubmitEvidence = 'strong', submitControl = null\)/, `${label}: submit summaries should carry preflight evidence strength and the resolved control`);
     assert.match(agent, /const publicationAccountEvidence = \(submitTarget\) => \{/, `${label}: social publication submits should bind the active account`);
     assert.match(agent, /AppTabBar_Profile_Link/, `${label}: X publishing account should use the app-owned profile navigation link`);
     assert.match(agent, /publicationAccountIdentityComplete: publicationAccount\.complete/, `${label}: account evidence completeness should survive the page probe`);
     assert.match(agent, /evidence\.strong \? 'strong' : 'heuristic'/, `${label}: custom submit probes should label strong and heuristic evidence`);
     assert.match(agent, /detected\.validationSubmitEvidence === 'strong' \? 'strong' : 'heuristic'/, `${label}: submit evidence strength should survive page-probe normalization`);
+    assert.match(agent, /githubCommitDialogLauncher: githubEditPage[\s\S]*!controlInModal[\s\S]*commit changes/, `${label}: GitHub's reversible commit-dialog launcher must be target- and modal-bound`);
     assert.match(agent, /const findTopmostModal = \(\) => \{[\s\S]*dialog\[open\][\s\S]*\[role="dialog"\]\[aria-modal="true"\][\s\S]*\[class\*="DialogOverlay"\]/, `${label}: text submit probing should mirror modal scoping`);
     assert.match(agent, /Array\.from\(\(findTopmostModal\(\) \|\| doc\)\.querySelectorAll/, `${label}: text submit probing should search inside the topmost modal when present`);
   }
@@ -86984,8 +90388,9 @@ test('publication workflows classify and bind requested payload fields', async (
     ], `${AgentClass.name}: trusted publication payload fields were not retained`);
     const prompt = agent._progressIntentClassifierMessages(taskText, classifierContext)[0].content;
     assert.match(prompt, /publish-release/);
-    assert.match(prompt, /\bcanonical field names tag, title, notes, body, visibility, or attachment\b/);
+    assert.match(prompt, /\bcanonical field names tag, title, notes, body, visibility, attachment, path, branch, or commit_message\b/);
     assert.match(prompt, /for publish-post only, also use account/);
+    assert.match(prompt, /For edit-file-and-commit, include path, branch, and commit_message only when the user explicitly supplied them/);
   }
 });
 

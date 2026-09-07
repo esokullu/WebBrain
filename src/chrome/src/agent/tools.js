@@ -130,7 +130,7 @@ export const AGENT_TOOLS = [
     type: 'function',
     function: {
       name: 'set_field',
-      description: 'Atomically focus + (optionally clear) + type text into a form field by ref_id, then verify the exact settled value. Prefer set_field({submit:true}) for search fields. Enter is sent only after verification succeeds; a failed verification returns recoveryRequired:"fresh_tree".',
+      description: 'Focus + (optionally clear) + type text into a form field by ref_id, then verify the exact settled value. Prefer set_field({submit:true}) for search fields. Enter is sent only after verification succeeds. If dispatch occurred but exact readback fails, the result reports mutationMayHaveOccurred:true and recoveryRequired:"verify_or_restore_field"; do not switch typing tools or resend text blindly.',
       parameters: {
         type: 'object',
         properties: {
@@ -364,7 +364,7 @@ export const AGENT_TOOLS = [
     type: 'function',
     function: {
       name: 'type_text',
-      description: 'Type text into an input field. TWO WAYS to use it: (1) provide a CSS selector to find the field by selector, or (2) provide ONLY the text (no selector) to type into the currently focused element — use this RIGHT AFTER clicking a field. The second form is the most reliable for forms with weird selectors (e.g. GitHub release[name], Stripe nested inputs): click the field with `click({text: ...})` or `click({index: ...})` or `click_ax({ref_id: ...})`, then immediately call `type_text({text: "..."})` with no selector. DO NOT pass an `index` parameter — type_text does not support indices. To type into an indexed field, call `click({index: N})` first, then `type_text({text: "..."})`.',
+      description: 'Type text into an input field. TWO WAYS to use it: (1) provide a CSS selector to find the field by selector, or (2) provide ONLY the text (no selector) to type into the currently focused element — use this RIGHT AFTER clicking a field. The second form is the most reliable for forms with weird selectors (e.g. GitHub release[name], Stripe nested inputs). DO NOT pass an index. With clear:true, WebBrain proves the field empty before inserting; if that proof fails, it inserts nothing and blocks blind retries.',
       parameters: {
         type: 'object',
         properties: {

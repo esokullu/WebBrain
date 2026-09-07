@@ -15791,12 +15791,22 @@ const ADAPTERS = [
   {
     name: 'github',
     category: 'general',
-    revision: 3,
+    revision: 4,
     regions: ['global'],
-    jobs: ['publish-release', 'upload-release-assets', 'review-pull-request', 'resolve-review-threads'],
+    jobs: ['edit-file-and-commit', 'publish-release', 'upload-release-assets', 'review-pull-request', 'resolve-review-threads'],
     workflow: {
       schema: ADAPTER_WORKFLOW_SCHEMA,
       jobs: {
+        'edit-file-and-commit': {
+          description: 'Edit one repository file, commit it, and verify the committed blob exactly.',
+          template: 'publish',
+          stateChange: true,
+          requiresSubmission: true,
+          requiresLedger: false,
+          stages: ['access_gate', 'fill', 'review', 'commit', 'verify', 'deliver'],
+          successEvidence: ['A new commit in the intended repository contains the intended path with the exact verified editor content.'],
+          partialEvidence: ['The edited path, commit state, and exact content or submission verification blocker are reported without claiming success.'],
+        },
         'publish-release': {
           description: 'Prepare, publish, and verify a GitHub release.',
           template: 'publish',
@@ -15847,7 +15857,7 @@ const ADAPTERS = [
 - EDITING an existing release (URL pattern /<owner>/<repo>/releases/edit/<tag>): the file upload input is \`input#releases-upload\` (NOT a generic input[type="file"] — there are several on the page). Use \`upload_file({selector: "input#releases-upload", filePath: "..."})\` for each binary. After each upload, GitHub renders a small chip listing the filename in the "Attach binaries" area below the body editor — verify the chip appears with the correct filename before moving on. The commit button is green and says "Update release"; navigating away from the edit page WITHOUT clicking it discards the uploads. If you can't see "Update release" without scrolling, scroll down before clicking — don't navigate back to the dist folder thinking you need to re-fetch.
 - Files in a /tree/.../<folder> view (e.g. /tree/main/dist) can be downloaded via raw URLs of the form https://github.com/<owner>/<repo>/raw/<branch>/<path>. Once downloaded, the file is on local disk; do not re-download to "verify".
 - Creating a pull request: when no exact title was supplied, prefer the title field's Copilot button; for a blank description, prefer Copilot > "Summary". Review both suggestions and add missing rationale/testing context. Summary ignores existing description text, so preserve repository templates and user content; if Copilot is unavailable, draft normally. PR descriptions/comments use CodeMirror with a separate Markdown preview.
-- File browser: pressing "t" opens the fuzzy file finder (faster than navigating folders).
+- File browser: pressing "t" opens the fuzzy file finder (faster than navigating folders). When editing a repository file, verify the complete editor value before clicking "Commit changes"; then open or observe the new /commit/<sha> link so WebBrain can verify the raw file at that exact commit and reject duplicated or partial content.
 - Settings/admin actions often require re-entering the repo name as a confirmation — read the modal carefully.`,
   },
   {

@@ -23,6 +23,58 @@
  */
 
 let pdfjsModule = null;
+const DEFAULT_PDF_HANDLER_PAGE = 'src/ui/pdf-handler.html';
+
+function pdfHandlerPage(runtime) {
+  const manifest = typeof runtime?.getManifest === 'function' ? runtime.getManifest() : null;
+  return manifest?.mime_types_handler?.['application/pdf']?.handler_url || DEFAULT_PDF_HANDLER_PAGE;
+}
+
+function unwrapPdfHandlerUrl(url, runtime) {
+  if (url.protocol !== 'chrome-extension:' && url.protocol !== 'moz-extension:') return url;
+  if (typeof runtime?.getURL !== 'function') return url;
+  let handler;
+  try {
+    handler = new URL(runtime.getURL(pdfHandlerPage(runtime)));
+  } catch {
+    return url;
+  }
+  if (url.origin !== handler.origin || url.pathname !== handler.pathname) return url;
+  const inner = url.searchParams.get('url');
+  if (!inner) return url;
+  try {
+    return new URL(inner);
+  } catch {
+    return url;
+  }
+}
+
+export function pdfUrlFromTabUrl(value, runtime = globalThis.browser?.runtime || globalThis.chrome?.runtime) {
+  let url;
+  try {
+    url = new URL(String(value || ''));
+  } catch {
+    return String(value || '');
+  }
+  return unwrapPdfHandlerUrl(url, runtime).href;
+}
+
+// Our viewer page is only ever opened for a response we already identified as
+// a PDF, so a handler tab is a PDF tab by construction. Callers use this to
+// skip the Content-Type probe, which would otherwise decide the question for
+// wrapped URLs like `/download?id=42` — and servers routinely answer HEAD with
+// 405, or drop the Content-Type, or burn a one-shot signed download link.
+export function isPdfHandlerTabUrl(value, runtime = globalThis.browser?.runtime || globalThis.chrome?.runtime) {
+  let url;
+  try {
+    url = new URL(String(value || ''));
+  } catch {
+    return false;
+  }
+  // unwrapPdfHandlerUrl returns the same object when there was nothing to
+  // unwrap, so identity is the "this was our handler page" signal.
+  return unwrapPdfHandlerUrl(url, runtime) !== url;
+}
 
 /**
  * Lazy-load pdfjs only on first PDF read. The legacy bundle is ~1 MB
