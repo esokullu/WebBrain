@@ -86487,6 +86487,21 @@ test('social publication workflow follows the live X or Bluesky destination and 
         'report on X adoption without non-social destination should publish to X'],
       ['Publish on X and in the survey: Update', ['twitter'],
         'coordinated publish on X and in survey should publish to X'],
+      // Leading non-social destinations followed by source platforms
+      ['Publish in the survey a summary of posts on X', [],
+        'leading survey destination before summary of posts on X was treated as publish destination'],
+      ['Publish into the form a collection of updates on Bluesky', [],
+        'leading form destination before collection of updates on Bluesky was treated as publish destination'],
+      ['Publica en la encuesta un resumen de publicaciones en X', [],
+        'Spanish leading survey destination before summary of publications on X was treated as publish destination'],
+      ['Publie dans le formulaire un résumé des posts sur X', [],
+        'French leading form destination before summary of posts on X was treated as publish destination'],
+      ['Veröffentliche in der Umfrage eine Zusammenfassung von Beiträgen auf X', [],
+        'German leading survey destination before summary of posts on X was treated as publish destination'],
+      ['Publish in the survey and on X: Update', ['twitter'],
+        'coordinated publish in survey and on X should publish to X'],
+      ['Publish into the form and to Bluesky: Update', ['bluesky'],
+        'coordinated publish into form and to Bluesky should publish to Bluesky'],
     ]) {
       assert.deepEqual(
         [...agent._trustedSocialPublishTargetAdapters({ taskText })],

@@ -246,7 +246,7 @@ const SOCIAL_PUBLISH_DESTINATION_LEAD = new RegExp(
   'iu',
 );
 
-const NON_SOCIAL_DESTINATION_NOUNS = '(?:survey|form|questionnaire|poll|spreadsheet|sheet|doc|document|report|ticket|table|database|email|mail|inbox|slack|discord|notion|airtable|crm|system|file|input|field|box|website|portal|blog|formulario|formulaire|formular|encuesta|fragebogen|relat[oó]rio|rapport|bericht|tabela|tabelle|tableau|scheda|sondage|sondaggio|questionario|pesquisa|informe|postfach|buz[oó]n|bo[iî]te|casella|sitio|s[ií]tio|site|webseite|portale?|\u043e\u043f\u0440\u043e\u0441|\u0430\u043d\u043a\u0435\u0442\u0430|\u0444\u043e\u0440\u043c\u0430|\u0442\u0430\u0431\u043b\u0438\u0446\u0430|\u043e\u0442\u0447[e\u0451]\u0442|\u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442|\u0444\u0430\u0439\u043b|\u043f\u043e\u0447\u0442\u0430|\u0441\u0430\u0439\u0442)';
+const NON_SOCIAL_DESTINATION_NOUNS = '(?:survey|form|questionnaire|poll|spreadsheet|sheet|doc|document|report|ticket|table|database|email|mail|inbox|slack|discord|notion|airtable|crm|system|file|input|field|box|website|portal|blog|formulario|formulaire|formular|encuesta|fragebogen|relat[oó]rio|rapport|bericht|tabela|tabelle|tableau|scheda|sondage|sondaggio|questionario|pesquisa|informe|postfach|buz[oó]n|bo[iî]te|casella|sitio|s[ií]tio|site|webseite|portale?|umfragen?|\u043e\u043f\u0440\u043e\u0441|\u0430\u043d\u043a\u0435\u0442\u0430|\u0444\u043e\u0440\u043c\u0430|\u0442\u0430\u0431\u043b\u0438\u0446\u0430|\u043e\u0442\u0447[e\u0451]\u0442|\u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442|\u0444\u0430\u0439\u043b|\u043f\u043e\u0447\u0442\u0430|\u0441\u0430\u0439\u0442)';
 const NON_SOCIAL_DESTINATION_PREPS = '(?:in|into|to|within|inside|through|en|dans|auf|em|para|su|sur|\u00e0|au|nel|nella|in\\s+der|im|\u0432|\u0432\\s+\u044d\u0442\u043e\u0442|\u043d\u0430)';
 const NON_SOCIAL_DESTINATION_ARTICLES = '(?:the\\s+|an?\\s+|un\\s+|une\\s+|el\\s+|la\\s+|los\\s+|las\\s+|der\\s+|die\\s+|das\\s+|dem\\s+|den\\s+|o\\s+|a\\s+|os\\s+|as\\s+|il\\s+|lo\\s+|gli\\s+|le\\s+|d\\w*\\s+)?';
 
@@ -13408,7 +13408,11 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           const verbWord = verb[0] || '';
           const afterVerbText = targetText.slice(verbIndex + verbWord.length);
           if (SOCIAL_POST_NEGATION.test(afterVerbText.trim())) continue;
-          if (SOCIAL_NOUN_LIKE_PUBLISH.test(verbWord) && SOCIAL_READ_VERBS.test(afterVerbText)) continue;
+          if (SOCIAL_NOUN_LIKE_PUBLISH.test(verbWord) && (
+            SOCIAL_READ_VERBS.test(afterVerbText)
+            || /(?<![\p{L}\p{N}_])(?:of|about|regarding|concerning|sur|de|des|du|von|su|sobre|über|all|these|those|some|any|the|my|our|their|his|her|user's|recent|latest|past|old|new|more)\s+$/iu.test(beforeVerbClause)
+            || NON_SOCIAL_DESTINATION_IN_TEXT.test(beforeVerbClause)
+          )) continue;
           if (/^shares?$/i.test(verbWord) && /(?<![\p{L}\p{N}_])(?:market|mind|revenue|profit|traffic|audience|wallet|fair|lion's|stock|equity|file|screen|time)\s+$/iu.test(beforeVerbClause)) continue;
           const afterVerb = targetText.slice(verbIndex + verbWord.length);
           const beforeVerb = targetText.slice(0, verbIndex);
@@ -13418,8 +13422,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
             const afterPlat = afterVerb.slice((matchAfter.index ?? 0) + matchAfter[0].length);
             const isSourceOnly = SOURCE_MODIFIER_BEFORE_PLATFORM.test(beforePlat)
               || NON_SOCIAL_DESTINATION_AFTER_PLATFORM.test(afterPlat)
+              || (NON_SOCIAL_DESTINATION_IN_TEXT.test(beforePlat)
+                  && !/(?:and|und|et|e|y|ve|и|oder|or|as\s+well\s+as)\s+$/i.test(beforePlat))
               || ((TOPIC_NOUN_BEFORE_PLATFORM.test(beforePlat) || TOPIC_NOUN_AFTER_PLATFORM.test(afterPlat))
-                  && NON_SOCIAL_DESTINATION_IN_TEXT.test(afterPlat)
+                  && (NON_SOCIAL_DESTINATION_IN_TEXT.test(afterPlat) || NON_SOCIAL_DESTINATION_IN_TEXT.test(beforePlat))
                   && !/^\s*(?:and|und|et|e|y|ve|и|oder|or|as\s+well\s+as)\s+/i.test(afterPlat));
             if (!isSourceOnly) return true;
           }
@@ -13430,6 +13436,8 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
             const isSourceOnly = SOURCE_MODIFIER_BEFORE_PLATFORM.test(beforePlat)
               || NON_SOCIAL_DESTINATION_AFTER_PLATFORM.test(afterPlat)
               || NON_SOCIAL_DESTINATION_IN_TEXT.test(afterVerb)
+              || (NON_SOCIAL_DESTINATION_IN_TEXT.test(beforePlat)
+                  && !/(?:and|und|et|e|y|ve|и|oder|or|as\s+well\s+as)\s+$/i.test(beforePlat))
               || ((TOPIC_NOUN_BEFORE_PLATFORM.test(beforePlat) || TOPIC_NOUN_AFTER_PLATFORM.test(afterPlat))
                   && (NON_SOCIAL_DESTINATION_IN_TEXT.test(afterPlat) || NON_SOCIAL_DESTINATION_IN_TEXT.test(afterVerb))
                   && !/^\s*(?:and|und|et|e|y|ve|и|oder|or|as\s+well\s+as)\s+/i.test(afterPlat));
@@ -13449,6 +13457,8 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
               const afterPlat = pTargetText.slice((matchPrev.index ?? 0) + matchPrev[0].length);
               const isSourceOnly = SOURCE_MODIFIER_BEFORE_PLATFORM.test(beforePlat)
                 || NON_SOCIAL_DESTINATION_AFTER_PLATFORM.test(afterPlat)
+                || (NON_SOCIAL_DESTINATION_IN_TEXT.test(beforePlat)
+                    && !/(?:and|und|et|e|y|ve|и|oder|or|as\s+well\s+as)\s+$/i.test(beforePlat))
                 || ((TOPIC_NOUN_BEFORE_PLATFORM.test(beforePlat) || TOPIC_NOUN_AFTER_PLATFORM.test(afterPlat))
                     && NON_SOCIAL_DESTINATION_IN_TEXT.test(afterPlat)
                     && !/^\s*(?:and|und|et|e|y|ve|и|oder|or|as\s+well\s+as)\s+/i.test(afterPlat));
@@ -13480,6 +13490,8 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
               const afterPlat = nextTargetText.slice((matchNext.index ?? 0) + matchNext[0].length);
               const isSourceOnly = SOURCE_MODIFIER_BEFORE_PLATFORM.test(beforePlat)
                 || NON_SOCIAL_DESTINATION_AFTER_PLATFORM.test(afterPlat)
+                || (NON_SOCIAL_DESTINATION_IN_TEXT.test(beforePlat)
+                    && !/(?:and|und|et|e|y|ve|и|oder|or|as\s+well\s+as)\s+$/i.test(beforePlat))
                 || ((TOPIC_NOUN_BEFORE_PLATFORM.test(beforePlat) || TOPIC_NOUN_AFTER_PLATFORM.test(afterPlat))
                     && NON_SOCIAL_DESTINATION_IN_TEXT.test(afterPlat)
                     && !/^\s*(?:and|und|et|e|y|ve|и|oder|or|as\s+well\s+as)\s+/i.test(afterPlat));
