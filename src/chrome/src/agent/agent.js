@@ -2474,9 +2474,13 @@ export class Agent extends LoopDetector {
         const naiveAttempt = attempt.branch === expected.branch && attempt.path === expected.path;
         // Alternate cuts are only meaningful against the observed changed
         // file list: accepting one on content alone would bless bytes that
-        // pre-exist at an untouched path. The naive cut keeps its
-        // content-match fallback so ordinary commits verify without forcing
-        // every flow through the commit page.
+        // pre-exist at an untouched path. An explicitly requested scope
+        // names its path exactly, so the naive cut verifies on content
+        // alone — the 200-link harvest cap may have cut its blob link, and
+        // there is no scope ambiguity to resolve. Ambiguous cuts keep the
+        // listing requirement (and the content-match fallback when no file
+        // list was observed, so ordinary commits verify without forcing
+        // every flow through the commit page).
         if (!naiveAttempt && commitBlobPaths.size === 0) {
           alternatesSkippedForEvidence = true;
           continue;
@@ -2507,7 +2511,7 @@ export class Agent extends LoopDetector {
           && text.length === expected.expectedLength
           && actualSha256 === expected.expectedSha256;
         if (contentMatches
-            && (commitBlobPaths.size === 0 || commitBlobPaths.has(attempt.path))) {
+            && ((naiveAttempt && !scopeAmbiguous) || commitBlobPaths.size === 0 || commitBlobPaths.has(attempt.path))) {
           if (attempt.branch !== expected.branch || attempt.path !== expected.path) {
             binding.githubFileCommit = { ...expected, branch: attempt.branch, path: attempt.path };
           }
@@ -21095,6 +21099,41 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       } catch { /* an unavailable probe cannot prove that this is a different field */ }
       return selectorReadback;
     };
+    let focusedTargetMeta = null;
+    let focusedTargetMetaAttempted = false;
+    const readFocusedTargetMeta = async () => {
+      if (focusedTargetMetaAttempted) return focusedTargetMeta;
+      focusedTargetMetaAttempted = true;
+      if (!(name === 'type_text' && !args.selector && args.index == null
+          && target.locatorType === 'focused')) return null;
+      try {
+        const readback = await this._textMutationValueDigest(tabId, { locatorType: 'focused', ambiguous: false });
+        focusedTargetMeta = readback?.fieldMeta || null;
+      } catch { /* an unavailable probe cannot prove that this is a different field */ }
+      return focusedTargetMeta;
+    };
+    // Live metadata of the current target for the distinctness check below,
+    // probed once per call no matter how many debts are retained. Any
+    // locator type qualifies: ambiguity is about the stored debt's locator,
+    // not about reading the live target.
+    let targetMeta = null;
+    let targetMetaAttempted = false;
+    const readTargetMeta = async () => {
+      if (targetMetaAttempted) return targetMeta;
+      targetMetaAttempted = true;
+      try {
+        if ((name === 'set_field' || name === 'type_ax') && typeof args.ref_id === 'string') {
+          const readback = await readAxTarget();
+          if (readback?.success === true) targetMeta = readback.fieldMeta || null;
+        } else if (name === 'type_text' && typeof args.selector === 'string' && args.selector.trim()) {
+          const readback = await readSelectorTarget();
+          if (readback) targetMeta = readback.fieldMeta || null;
+        } else {
+          targetMeta = await readFocusedTargetMeta();
+        }
+      } catch { targetMeta = null; }
+      return targetMeta;
+    };
     let debt = null;
     // Shared with the post-adoption re-scope below: out-of-scope debts are
     // skipped (retained for a back-forward return), never deleted here.
@@ -21102,28 +21141,17 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       for (const candidate of debts.values()) {
         if (candidate.documentToken && target.documentToken
             && candidate.documentToken !== target.documentToken) continue;
-        if (candidate.ambiguous || target.ambiguous || candidate.key === target.key) return candidate;
-        const distinctAxRefs = candidate.key.startsWith('ax:')
-          && target.key.startsWith('ax:')
-          && candidate.key !== target.key;
-        if (distinctAxRefs) {
-          const readback = await readAxTarget();
-          if (readback?.success === true
-              && this._textMutationFieldsProvenDistinct(candidate.fieldMeta, readback.fieldMeta)) continue;
-        }
-        // Mirror the AX escape hatch for selector pairs: the digest probe can
-        // read the target's live metadata, so a demonstrably different field
-        // (two or more differing identity fields, no shared one) must not be
-        // blocked by another field's debt. The debt is kept — only this
-        // dispatch is allowed — and an unprovable target stays blocked.
-        const distinctSelectors = candidate.locatorType === 'selector'
-          && target.locatorType === 'selector'
-          && typeof candidate.selector === 'string'
-          && typeof target.selector === 'string'
-          && candidate.selector !== target.selector;
-        if (distinctSelectors) {
-          const readback = await readSelectorTarget();
-          if (readback && this._textMutationFieldsProvenDistinct(candidate.fieldMeta, readback.fieldMeta)) continue;
+        // Same locator instance: the recovery path below decides (with
+        // positive same-field identity for focused pairs).
+        if (candidate.key === target.key) return candidate;
+        // Positive distinctness across ALL locator types: a demonstrably
+        // different field (two or more differing identity fields, no shared
+        // one) is never blocked by another field's debt — focused and
+        // mixed-locator pairs included. The debt is kept; only this dispatch
+        // is allowed. Anything unprovable stays blocked.
+        if (candidate.fieldMeta) {
+          const liveMeta = await readTargetMeta();
+          if (liveMeta && this._textMutationFieldsProvenDistinct(candidate.fieldMeta, liveMeta)) continue;
         }
         return candidate;
       }

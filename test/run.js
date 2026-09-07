@@ -77296,6 +77296,88 @@ test('selector writes to proven-distinct fields bypass unrelated debt', async ()
   }
 });
 
+test('distinctness escape covers focused and mixed-locator debts', async () => {
+  const originalChrome = globalThis.chrome;
+  const originalBrowser = globalThis.browser;
+  try {
+    const pageUrl = 'https://example.test/form';
+    const editorMeta = { tag: 'div', contentEditable: true, id: 'editor-1', ariaLabelledByText: 'Editing file contents' };
+    const fieldMetaB = { tag: 'input', id: 'field-b', name: 'field-b', labelText: 'Second', contentEditable: false };
+    for (const [label, AgentClass, tabId, controlTabId] of [
+      ['chrome', AgentCh, 9530, 9532],
+      ['firefox', AgentFx, 9531, 9533],
+    ]) {
+      const agent = new AgentClass({});
+      agent._lastAxScopes.set(tabId, { documentToken: 'doc-cross', pageUrl });
+      const tabs = {
+        async sendMessage(_tabId, message) {
+          assert.equal(message.action, 'field_value_digest');
+          if (message.params?.focused === true) {
+            return { success: true,
+              valueLength: 5, valueSha256: await agent._sha256Text('alpha'),
+              fieldMeta: { ...editorMeta },
+              documentToken: 'doc-cross', refScopeUrl: pageUrl };
+          }
+          if (message.params?.selector === '#b') {
+            return { success: true, valueLength: 4, valueSha256: await agent._sha256Text('beta'),
+              fieldMeta: { ...fieldMetaB } };
+          }
+          return { success: false, documentToken: 'doc-cross', refScopeUrl: pageUrl };
+        },
+      };
+      globalThis.chrome = { tabs };
+      globalThis.browser = { tabs };
+      // Uncertain selectorless write to the editor; identity captured live.
+      await agent._finalizeTextMutationResult(
+        tabId, 'type_text', { text: 'alpha', clear: true },
+        { success: false, dispatched: true, verified: false },
+      );
+      assert.equal(agent._uncertainTextMutations.get(tabId)?.size, 1, `${label}: focused debt was not recorded`);
+      // A demonstrably different selector field must not be blocked by it.
+      const allowed = await agent._uncertainTextMutationBlock(
+        tabId, 'type_text', { selector: '#b', text: 'beta' },
+      );
+      assert.equal(allowed, null, `${label}: distinct field stayed blocked by a focused debt`);
+      assert.equal(agent._uncertainTextMutations.get(tabId)?.size, 1,
+        `${label}: distinct-field dispatch dropped the focused debt`);
+      // Reverse direction: selector debt, focused retry on a distinct field.
+      const control = new AgentClass({});
+      control._lastAxScopes.set(controlTabId, { documentToken: 'doc-cross', pageUrl });
+      const controlTabs = {
+        async sendMessage(_tabId, message) {
+          assert.equal(message.action, 'field_value_digest');
+          if (message.params?.selector === '#a') {
+            return { success: true, valueLength: 5, valueSha256: await control._sha256Text('alpha'),
+              fieldMeta: { tag: 'input', id: 'field-a', name: 'field-a', labelText: 'First', contentEditable: false } };
+          }
+          if (message.params?.focused === true) {
+            return { success: true,
+              valueLength: 5, valueSha256: await control._sha256Text('delta'),
+              fieldMeta: { ...fieldMetaB },
+              documentToken: 'doc-cross', refScopeUrl: pageUrl };
+          }
+          return { success: false, documentToken: 'doc-cross', refScopeUrl: pageUrl };
+        },
+      };
+      globalThis.chrome = { tabs: controlTabs };
+      globalThis.browser = { tabs: controlTabs };
+      await control._finalizeTextMutationResult(
+        controlTabId, 'type_text', { selector: '#a', text: 'alpha', clear: true },
+        { success: false, dispatched: true, verified: false },
+      );
+      const reverseAllowed = await control._uncertainTextMutationBlock(
+        controlTabId, 'type_text', { text: 'delta' },
+      );
+      assert.equal(reverseAllowed, null, `${label}: distinct focused retry stayed blocked by a selector debt`);
+    }
+  } finally {
+    if (originalChrome === undefined) delete globalThis.chrome;
+    else globalThis.chrome = originalChrome;
+    if (originalBrowser === undefined) delete globalThis.browser;
+    else globalThis.browser = originalBrowser;
+  }
+});
+
 test('focused field_value_digest and live scope cover selectorless writes', async () => {
   for (const rel of [
     'src/chrome/src/content/content.js',
@@ -77838,6 +77920,64 @@ test('slash-branch verification derives candidates from changed-file evidence', 
       assert.equal(binding.githubFileCommit.path, truePath);
       assert.ok(seen.includes(naiveUrl) && seen.includes(trueUrl),
         `${label}: naive cut and evidenced scope were not both probed`);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('explicit scope verifies without file-listing the path', async () => {
+  const originalFetch = globalThis.fetch;
+  const body = '# Explicit scope document\n\nOne complete copy.\n';
+  const commitSha = '0123456789abcdef0123456789abcdef01234567';
+  const commitUrl = `https://github.com/Example/Repo/commit/${commitSha}`;
+  const naiveUrl = `https://github.com/example/repo/raw/${commitSha}/docs/plan.md`;
+  try {
+    const seen = [];
+    globalThis.fetch = async (url) => {
+      seen.push(url);
+      if (url === naiveUrl) {
+        return { ok: true, status: 200, headers: { get: () => String(body.length) }, text: async () => body };
+      }
+      return { ok: false, status: 404, headers: { get: () => '0' }, text: async () => 'Not Found' };
+    };
+    for (const [label, AgentClass, tabId] of [
+      ['chrome', AgentCh, 9534],
+      ['firefox', AgentFx, 9535],
+    ]) {
+      seen.length = 0;
+      const agent = new AgentClass({});
+      agent._planExecutionGuards.set(tabId, {
+        enabled: true,
+        siteWorkflow: { adapterName: 'github', job: { id: 'edit-file-and-commit' } },
+      });
+      // Explicitly requested scope: the naive cut IS the requested file, so
+      // its content match verifies even though a 200-link truncation cut its
+      // blob link from the observed file list (201 unrelated entries here).
+      const unrelatedBlobs = Array.from({ length: 201 }, (_, index) =>
+        `https://github.com/Example/Repo/blob/${commitSha}/other${index}.md`);
+      const binding = {
+        githubFileCommit: {
+          repository: 'example/repo',
+          branch: 'main',
+          path: 'docs/plan.md',
+          expectedLength: body.length,
+          expectedSha256: await agent._sha256Text(body),
+          commitMessageVerified: true,
+        },
+        metadataRequirements: [
+          { field: 'path', value: 'docs/plan.md' },
+          { field: 'branch', value: 'main' },
+        ],
+        preDispatchPublishedResourceIdentities: [],
+      };
+      const pageState = { workflowResourceUrls: [commitUrl, ...unrelatedBlobs] };
+      const proof = await agent._githubCommittedFileVerification(
+        tabId, pageState, commitUrl, { verifiedFinalSubmit: true, submit: { workflowBinding: binding } },
+      );
+      assert.equal(proof.verified, true, `${label}: exact explicit scope was not verified without listing`);
+      assert.equal(proof.path, 'docs/plan.md');
+      assert.ok(seen.includes(naiveUrl), `${label}: exact path was not fetched`);
     }
   } finally {
     globalThis.fetch = originalFetch;
