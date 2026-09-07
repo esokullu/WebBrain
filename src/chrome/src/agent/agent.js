@@ -1783,9 +1783,7 @@ export class Agent extends LoopDetector {
       && record?.taskToken === activeTaskToken
       && !!record?.readbackSha256
       && this._normalizeUrl(record.pageUrl || '') === this._normalizeUrl(pageUrl)
-      && /^(?:commit-message-input|commit_message)$/i.test(String(
-        record?.fieldMeta?.id || record?.fieldMeta?.name || '',
-      ))
+      && this._isGithubCommitMessageField(record?.fieldMeta)
     ));
     const summaryVerified = !!expectedSummarySha256 && commitFieldRecords.some(record => (
       String(record?.fieldMeta?.tag || '').toLowerCase() !== 'textarea'
@@ -20935,9 +20933,21 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     return record?.fieldMeta?.contentEditable === true && record?.fieldMeta?.codeMirror === true;
   }
 
+  // Commit-message field identity shared by mint classification, the
+  // binding filter, refresh, and per-kind invalidation: summary
+  // (commit-message-input / commit_message) and extended-description
+  // (commit-description-input / commit_description) spellings, matching id
+  // OR name independently — a non-matching id must never shadow a matching
+  // name or vice versa.
+  _isGithubCommitMessageField(meta = null) {
+    if (!meta || typeof meta !== 'object') return false;
+    const pattern = /^(?:commit-(?:message-input|description-input)|commit_(?:message|description))$/i;
+    return pattern.test(String(meta.id || '')) || pattern.test(String(meta.name || ''));
+  }
+
   _focusedGithubFieldKind(meta = null) {
     if (!meta || typeof meta !== 'object') return '';
-    if (/^(?:commit-message-input|commit_message)$/i.test(String(meta.id || meta.name || ''))) {
+    if (this._isGithubCommitMessageField(meta)) {
       return 'commit-message';
     }
     if (meta.contentEditable === true) return 'editor';
@@ -20966,19 +20976,33 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     return fallbackMeta || null;
   }
 
-  _focusedReplacementTarget(tabId, kind) {
+  // Stable per-field discriminator for focused commit-message proofs so the
+  // summary and extended-description proofs coexist (and invalidate
+  // independently). Lowercase alphanumerics; anything unusable → 'field'.
+  _focusedCommitFieldRef(meta = null) {
+    const ref = String(meta?.id || meta?.name || meta?.tag || 'field')
+      .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+    return ref || 'field';
+  }
+
+  _focusedReplacementTarget(tabId, kind, fieldMeta = null) {
     const scope = this._lastAxScopes.get(tabId) || {};
     const documentToken = String(scope.documentToken || '');
     const pageUrl = String(scope.pageUrl || '');
     const doc = documentToken || pageUrl || 'document';
+    // Commit-message proofs scope per field (summary vs extended
+    // description); editor proofs keep the single stable key. The ref rides
+    // along on the record so per-field invalidation needs no key parsing.
+    const commitFieldRef = kind === 'commit-message' ? this._focusedCommitFieldRef(fieldMeta) : '';
     return {
-      key: `focused:${doc}:${kind}`,
+      key: `focused:${doc}:${kind}${commitFieldRef ? `:${commitFieldRef}` : ''}`,
       locatorType: 'focused',
       documentToken,
       pageUrl,
       ambiguous: false,
       focusedProof: true,
       focusedKind: kind,
+      ...(commitFieldRef ? { commitFieldRef } : {}),
       // Pre-submit revalidation locator, filled from the write-time live
       // digest's element-derived stableSelector when the replacement record
       // is minted. Stays null until then: refresh drops locator-less proofs
@@ -21091,9 +21115,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         } catch { current = null; }
         const kindOk = record.focusedKind === 'editor'
           ? this._isGithubFileEditorRecord({ fieldMeta: current?.fieldMeta })
-          : /^(?:commit-message-input|commit_message)$/i.test(String(
-            current?.fieldMeta?.id || current?.fieldMeta?.name || '',
-          ));
+          : this._isGithubCommitMessageField(current?.fieldMeta);
         if (!current
             || !record.readbackSha256
             || !kindOk
@@ -21107,9 +21129,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       // Same identity as the authorization filter by construction — every
       // editor proof the gate can authorize is re-digested here.
       const githubEditor = this._isGithubFileEditorRecord(record);
-      const commitMessage = /^(?:commit-message-input|commit_message)$/i.test(String(
-        record?.fieldMeta?.id || record?.fieldMeta?.name || '',
-      ));
+      const commitMessage = this._isGithubCommitMessageField(record?.fieldMeta);
       if (!githubEditor && !commitMessage) continue;
       const current = await this._textMutationValueDigest(tabId, record);
       // Revalidate against the CURRENT element, not the stale record: a DOM
@@ -21119,12 +21139,15 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       // and must not be proven distinct from the stored metadata — otherwise
       // the proof is dropped fail-closed instead of authorizing the commit.
       const currentEditor = this._isGithubFileEditorRecord({ fieldMeta: current?.fieldMeta });
-      const currentMessage = /^(?:commit-message-input|commit_message)$/i.test(String(
-        current?.fieldMeta?.id || current?.fieldMeta?.name || '',
-      ));
+      const currentMessage = this._isGithubCommitMessageField(current?.fieldMeta);
+      // Kind consistency: the refreshed element must still prove the SAME
+      // kind the record was bound as. A locator repointed across kinds with
+      // identical bytes (editor proof now reading a commit field or vice
+      // versa) would otherwise keep stale original metadata authorizing a
+      // changed field — so require (editor, editor) or (message, message).
       if (!current
           || !record.readbackSha256
-          || (!currentEditor && !currentMessage)
+          || !((githubEditor && currentEditor) || (commitMessage && currentMessage))
           || this._textMutationFieldsProvenDistinct(record.fieldMeta, current.fieldMeta)
           || current.valueLength !== record.readbackLength
           || current.valueSha256 !== record.readbackSha256) {
@@ -21338,7 +21361,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
             verifiedReplacements = new Map();
             this._verifiedTextReplacements.set(tabId, verifiedReplacements);
           }
-          const effectiveTarget = this._focusedReplacementTarget(tabId, focusedKind);
+          const effectiveTarget = this._focusedReplacementTarget(tabId, focusedKind, normalizedFocusedMeta);
           verifiedReplacements.set(effectiveTarget.key, await this._verifiedTextReplacementRecord(
             tabId, effectiveTarget, text, normalizedFocusedMeta,
           ));
@@ -21563,7 +21586,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         );
         const focusedKind = this._focusedGithubFieldKind(normalizedFocusedMeta);
         if ((focusedKind === 'editor' || focusedKind === 'commit-message') && args.clear === true) {
-          effectiveTarget = this._focusedReplacementTarget(tabId, focusedKind);
+          effectiveTarget = this._focusedReplacementTarget(tabId, focusedKind, normalizedFocusedMeta);
           effectiveFieldMeta = normalizedFocusedMeta;
         }
       }
@@ -21574,20 +21597,31 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       const verifiedReplacements = this._verifiedTextReplacements.get(tabId);
       if (verifiedReplacements instanceof Map) {
         if (target.ambiguous && name === 'type_text') {
-          const focusedKind = this._focusedGithubFieldKind(this._normalizeFocusedFieldMeta(
+          const normalizedNewMeta = this._normalizeFocusedFieldMeta(
             result.focusedField || null, result.fieldMeta || null,
-          ));
+          );
+          const focusedKind = this._focusedGithubFieldKind(normalizedNewMeta);
           if (focusedKind === 'editor' || focusedKind === 'commit-message') {
+            const newCommitRef = focusedKind === 'commit-message'
+              ? this._focusedCommitFieldRef(normalizedNewMeta)
+              : '';
             for (const [key, record] of verifiedReplacements) {
               const recordKind = record?.focusedKind
                 || this._focusedGithubFieldKind(record?.fieldMeta || null)
                 || (/contenteditable/i.test(String(record?.key || key)) ? 'editor' : '');
-              const sameKind = focusedKind === 'editor'
-                ? (recordKind === 'editor' || record?.fieldMeta?.contentEditable === true
-                  || /contenteditable/i.test(String(record?.key || key)))
-                : (/^(?:commit-message-input|commit_message)$/i.test(String(
-                  record?.fieldMeta?.id || record?.fieldMeta?.name || '',
-                )) || recordKind === 'commit-message');
+              let sameKind = false;
+              if (focusedKind === 'editor') {
+                sameKind = recordKind === 'editor' || record?.fieldMeta?.contentEditable === true
+                  || /contenteditable/i.test(String(record?.key || key));
+              } else if (this._isGithubCommitMessageField(record?.fieldMeta) || recordKind === 'commit-message') {
+                // Per-field scoping for focused proofs: a write to one
+                // commit field keeps the other's proof. Anything
+                // unidentifiable drops fail-closed, as do all non-focused
+                // commit proofs (same field, new value).
+                const recordRef = record?.focusedProof === true
+                  ? String(record.commitFieldRef || '') : '';
+                sameKind = !recordRef || !newCommitRef || recordRef === newCommitRef;
+              }
               if (sameKind) verifiedReplacements.delete(key);
             }
           } else verifiedReplacements.clear();

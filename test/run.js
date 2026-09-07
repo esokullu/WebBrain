@@ -75953,6 +75953,93 @@ test('multi-line commit messages bind summary plus description', async () => {
   }
 });
 
+test('commit description identifiers authorize with kind-consistent refresh', async () => {
+  for (const [label, AgentClass] of [['chrome', AgentCh], ['firefox', AgentFx]]) {
+    const agent = new AgentClass({});
+    // Identity matrix: all four spellings, id/name independence, negatives.
+    for (const [meta, expected, note] of [
+      [{ id: 'commit-message-input' }, true, 'summary id'],
+      [{ name: 'commit_message' }, true, 'message name'],
+      [{ id: 'commit-description-input' }, true, 'description id'],
+      [{ name: 'commit_description' }, true, 'description name'],
+      [{ id: 'unrelated-id', name: 'commit_message' }, true, 'name laid over a foreign id'],
+      [{ id: 'commit-message-input', name: 'unrelated-name' }, true, 'id laid over a foreign name'],
+      [{ id: 'comment-box' }, false, 'unrelated field'],
+      [{}, false, 'empty metadata'],
+      [null, false, 'missing metadata'],
+    ]) {
+      assert.equal(agent._isGithubCommitMessageField(meta), expected,
+        `${label}: commit-field identity wrong for ${note}`);
+    }
+  }
+  const originalChrome = globalThis.chrome;
+  const originalBrowser = globalThis.browser;
+  try {
+    const pageUrl = 'https://github.com/Example/Repo/edit/main/docs/plan.md';
+    for (const [label, AgentClass, resolveJob, tabId] of [
+      ['chrome', AgentCh, resolveAdapterWorkflowJob, 9544],
+      ['firefox', AgentFx, resolveAdapterWorkflowJobFx, 9545],
+    ]) {
+      const agent = new AgentClass({});
+      agent._planExecutionGuards.set(tabId, {
+        enabled: true,
+        siteWorkflow: resolveJob(pageUrl, 'edit-file-and-commit'),
+        workflowMetadataRequirements: [{ field: 'commit_message', value: 'Title\n\nDetails' }],
+        workflowMetadataRequirementsResolved: true,
+      });
+      agent._taskTokens.set(tabId, 'task-desc-id');
+      const editorBody = '# Doc\n';
+      const editorRecord = {
+        key: 'ax:doc:ref_editor', locatorType: 'ax', refId: 'ref_editor',
+        documentToken: 'doc', pageUrl, ambiguous: false,
+        expectedLength: editorBody.length, expectedSha256: await agent._sha256Text(editorBody),
+        expectedFp: agent._workflowInventoryFingerprint(editorBody),
+        fieldMeta: { contentEditable: true, ariaLabelledByText: 'Editing file contents' },
+        readbackLength: editorBody.length, readbackSha256: await agent._sha256Text(editorBody),
+        verifiedAt: Date.now(), taskToken: 'task-desc-id',
+      };
+      const messageRecordFor = async (key, text, fieldMeta) => ({
+        key, locatorType: 'ax', refId: 'ref_msg', documentToken: 'doc', pageUrl, ambiguous: false,
+        expectedLength: text.length, expectedSha256: await agent._sha256Text(text),
+        expectedFp: agent._workflowInventoryFingerprint(text), fieldMeta,
+        readbackLength: text.length, readbackSha256: await agent._sha256Text(text),
+        verifiedAt: Date.now(), taskToken: 'task-desc-id',
+      });
+      // Extended description identified by its own id (not the summary's).
+      agent._verifiedTextReplacements.set(tabId, new Map([
+        ['ax:doc:ref_editor', editorRecord],
+        ['ax:doc:ref_summary', await messageRecordFor('ax:doc:ref_summary', 'Title',
+          { tag: 'input', id: 'commit-message-input' })],
+        ['ax:doc:ref_desc', await messageRecordFor('ax:doc:ref_desc', 'Details',
+          { tag: 'textarea', id: 'commit-description-input' })],
+      ]));
+      assert.ok(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit,
+        `${label}: description-identified body did not authorize`);
+      // Cross-kind repoint with identical bytes: an editor proof now reading
+      // a commit field (and vice versa) must drop, not keep stale metadata.
+      const liveMeta = { tag: 'input', id: 'commit-message-input' };
+      const tabs = {
+        async sendMessage(_tabId, message) {
+          assert.equal(message.action, 'field_value_digest');
+          return { success: true,
+            valueLength: editorBody.length, valueSha256: await agent._sha256Text(editorBody),
+            fieldMeta: { ...liveMeta } };
+        },
+      };
+      globalThis.chrome = { tabs };
+      globalThis.browser = { tabs };
+      await agent._refreshGithubTextReplacementProofs(tabId, pageUrl);
+      assert.ok(!agent._verifiedTextReplacements.get(tabId)?.has('ax:doc:ref_editor'),
+        `${label}: editor proof repointed at a commit field survived refresh`);
+    }
+  } finally {
+    if (originalChrome === undefined) delete globalThis.chrome;
+    else globalThis.chrome = originalChrome;
+    if (originalBrowser === undefined) delete globalThis.browser;
+    else globalThis.browser = originalBrowser;
+  }
+});
+
 test('terminal path match compares verbatim request text', async () => {
   for (const [label, AgentClass, tabId] of [
     ['chrome', AgentCh, 9516],
@@ -76723,7 +76810,9 @@ test('focused editor and commit-message writes authorize a commit', async () => 
         : { success: true, verified: true, fieldMeta: { id: 'commit-message-input', name: 'commit-message-input' } };
       await agent._finalizeTextMutationResult(tabId, 'type_text', { text: commitMsg, clear: true }, messageResult);
       const keys = [...(agent._verifiedTextReplacements.get(tabId)?.keys() || [])];
-      assert.ok(keys.some(key => String(key).endsWith(':editor')) && keys.some(key => String(key).endsWith(':commit-message')),
+      const editorKey = keys.find(key => String(key).endsWith(':editor'));
+      const messageKey = keys.find(key => String(key).includes(':commit-message:'));
+      assert.ok(editorKey && messageKey && editorKey !== messageKey,
         `${label}: focused editor and commit-message proofs collided (keys: ${keys})`);
       const binding = agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {});
       assert.ok(binding?.githubFileCommit, `${label}: focused proofs did not authorize a commit`);
@@ -76753,7 +76842,7 @@ test('focused editor and commit-message writes authorize a commit', async () => 
       const afterKeys = [...(agent._verifiedTextReplacements.get(tabId)?.keys() || [])];
       assert.ok(!afterKeys.some(key => String(key).endsWith(':editor')),
         `${label}: focused editor append kept a stale editor proof`);
-      assert.ok(afterKeys.some(key => String(key).endsWith(':commit-message')),
+      assert.ok(afterKeys.some(key => String(key).includes(':commit-message:')),
         `${label}: focused editor append cleared the commit-message proof`);
     }
   } finally {
