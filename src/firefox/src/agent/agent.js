@@ -2075,6 +2075,35 @@ export class Agent extends LoopDetector {
     }
   }
 
+  // Confirm a fresh commit is the head of the requested branch: the commit
+  // dialog can create a new branch + PR instead of committing to the URL
+  // branch, while everything else here is SHA-addressed and branch-blind.
+  // Returns true (confirmed), false (affirmatively elsewhere), or null
+  // (inconclusive — auth, rate limit, empty or oversize list — keep today's
+  // behavior). Only an affirmative mismatch ever rejects.
+  async _githubCommitBranchHeadMatches(repository, branch, sha) {
+    try {
+      if (!repository || !branch || !sha) return null;
+      const response = await fetch(
+        `https://api.github.com/repos/${repository}/commits/${sha}/branches-where-head?per_page=100`,
+        { headers: { Accept: 'application/vnd.github+json' }, cache: 'no-store' },
+      );
+      if (!response.ok) return null;
+      const length = Number(response.headers?.get?.('content-length') || 0);
+      if (length > 65536) return null;
+      const text = await response.text();
+      if (!text || text.length > 65536) return null;
+      let entries = null;
+      try { entries = JSON.parse(text); } catch { return null; }
+      if (!Array.isArray(entries) || entries.length === 0 || entries.length >= 100) return null;
+      const names = entries.map(entry => String(entry?.name || '')).filter(Boolean);
+      if (names.length === 0) return null;
+      return names.includes(branch);
+    } catch {
+      return null;
+    }
+  }
+
   async _githubCommittedFileVerification(tabId, pageState, pageUrl, submissionEvidence) {
     const state = this._planExecutionGuards.get(tabId);
     if (state?.siteWorkflow?.adapterName !== 'github'
@@ -2218,7 +2247,26 @@ export class Agent extends LoopDetector {
         }
         const contentLength = Number(response.headers?.get?.('content-length') || 0);
         if (contentLength > 2_000_000) return { verified: false, reason: 'raw_file_too_large' };
-        const text = await response.text();
+        // Hash the raw response bytes: Response.text() strips a leading
+        // UTF-8 BOM during decoding while the expected length/SHA were
+        // computed from the exact editor string including it, so decoding
+        // first would mismatch every BOM-led file after a good commit.
+        let text = null;
+        try {
+          if (typeof response.arrayBuffer === 'function') {
+            const buffer = await response.arrayBuffer();
+            if (buffer.byteLength > 2_000_000) return { verified: false, reason: 'raw_file_too_large' };
+            text = new TextDecoder('utf-8', { ignoreBOM: true }).decode(buffer);
+          }
+        } catch { text = null; }
+        if (text == null) {
+          try {
+            text = await response.text();
+          } catch {
+            lastFetchReason = 'raw_file_read_failed';
+            continue;
+          }
+        }
         if (text.length > 2_000_000) return { verified: false, reason: 'raw_file_too_large' };
         const actualSha256 = await this._sha256Text(text);
         const contentMatches = !!actualSha256
@@ -2228,6 +2276,25 @@ export class Agent extends LoopDetector {
             && ((naiveAttempt && !scopeAmbiguous) || commitBlobPaths.size === 0 || commitBlobPaths.has(attempt.path))) {
           if (attempt.branch !== expected.branch || attempt.path !== expected.path) {
             binding.githubFileCommit = { ...expected, branch: attempt.branch, path: attempt.path };
+          }
+          // Branch attribution: the dialog may have created a new branch +
+          // PR instead of committing to the requested branch, while
+          // everything above is SHA-addressed and branch-blind. Only an
+          // affirmative mismatch rejects; inconclusive API outcomes keep the
+          // content verdict. Skipped for fully-ambiguous scopes, where no
+          // branch was requested to check against.
+          if (!scopeAmbiguous && await this._githubCommitBranchHeadMatches(
+            commit.repository, expected.branch, commit.sha,
+          ) === false) {
+            return {
+              verified: false,
+              reason: 'commit_wrong_branch',
+              repository: commit.repository,
+              commitSha: commit.sha,
+              path: attempt.path,
+              expectedLength: expected.expectedLength,
+              expectedSha256: expected.expectedSha256,
+            };
           }
           return {
             verified: true,

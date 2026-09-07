@@ -77984,6 +77984,141 @@ test('explicit scope verifies without file-listing the path', async () => {
   }
 });
 
+test('committed blobs verify byte-exact through a leading BOM', async () => {
+  const originalFetch = globalThis.fetch;
+  // Real Response.text() strips a leading BOM during UTF-8 decoding; the
+  // mock emulates that so only byte reads can match.
+  const body = '\uFEFF# BOM document\n\nOne complete copy.\n';
+  const commitSha = '0123456789abcdef0123456789abcdef01234567';
+  const commitUrl = `https://github.com/Example/Repo/commit/${commitSha}`;
+  const naiveUrl = `https://github.com/example/repo/raw/${commitSha}/docs/plan.md`;
+  try {
+    globalThis.fetch = async (url) => {
+      if (url === naiveUrl) {
+        return { ok: true, status: 200,
+          headers: { get: () => String(new TextEncoder().encode(body).byteLength) },
+          arrayBuffer: async () => new TextEncoder().encode(body).buffer,
+          text: async () => body.slice(1) };
+      }
+      if (String(url).startsWith('https://api.github.com/')) {
+        return { ok: true, status: 200, headers: { get: () => '16' },
+          text: async () => JSON.stringify([{ name: 'main' }]) };
+      }
+      return { ok: false, status: 404, headers: { get: () => '0' }, text: async () => 'Not Found' };
+    };
+    for (const [label, AgentClass, tabId] of [
+      ['chrome', AgentCh, 9536],
+      ['firefox', AgentFx, 9537],
+    ]) {
+      const agent = new AgentClass({});
+      agent._planExecutionGuards.set(tabId, {
+        enabled: true,
+        siteWorkflow: { adapterName: 'github', job: { id: 'edit-file-and-commit' } },
+      });
+      const binding = {
+        githubFileCommit: {
+          repository: 'example/repo',
+          branch: 'main',
+          path: 'docs/plan.md',
+          expectedLength: body.length,
+          expectedSha256: await agent._sha256Text(body),
+          commitMessageVerified: true,
+        },
+        metadataRequirements: [
+          { field: 'path', value: 'docs/plan.md' },
+          { field: 'branch', value: 'main' },
+        ],
+        preDispatchPublishedResourceIdentities: [],
+      };
+      const pageState = { workflowResourceUrls: [commitUrl] };
+      const proof = await agent._githubCommittedFileVerification(
+        tabId, pageState, commitUrl, { verifiedFinalSubmit: true, submit: { workflowBinding: binding } },
+      );
+      assert.equal(proof.verified, true, `${label}: BOM-led blob was reported as a content mismatch`);
+      assert.equal(proof.path, 'docs/plan.md');
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('verification rejects commits unattributed to the requested branch', async () => {
+  const originalFetch = globalThis.fetch;
+  const body = '# Branch attribution document\n\nOne complete copy.\n';
+  const commitSha = '0123456789abcdef0123456789abcdef01234567';
+  const commitUrl = `https://github.com/Example/Repo/commit/${commitSha}`;
+  const naiveUrl = `https://github.com/example/repo/raw/${commitSha}/docs/plan.md`;
+  const apiUrl = `https://api.github.com/repos/example/repo/commits/${commitSha}/branches-where-head?per_page=100`;
+  try {
+    let apiResponse = { ok: true, status: 200, body: JSON.stringify([{ name: 'main' }]) };
+    const seen = [];
+    globalThis.fetch = async (url) => {
+      seen.push(url);
+      if (url === naiveUrl) {
+        return { ok: true, status: 200, headers: { get: () => String(body.length) }, text: async () => body };
+      }
+      if (url === apiUrl) {
+        return { ok: apiResponse.ok, status: apiResponse.status,
+          headers: { get: () => String(apiResponse.body.length) },
+          text: async () => apiResponse.body };
+      }
+      return { ok: false, status: 404, headers: { get: () => '0' }, text: async () => 'Not Found' };
+    };
+    for (const [label, AgentClass, tabId] of [
+      ['chrome', AgentCh, 9538],
+      ['firefox', AgentFx, 9539],
+    ]) {
+      const agent = new AgentClass({});
+      agent._planExecutionGuards.set(tabId, {
+        enabled: true,
+        siteWorkflow: { adapterName: 'github', job: { id: 'edit-file-and-commit' } },
+      });
+      const sha = await agent._sha256Text(body);
+      const bindingFor = () => ({
+        githubFileCommit: {
+          repository: 'example/repo',
+          branch: 'main',
+          path: 'docs/plan.md',
+          expectedLength: body.length,
+          expectedSha256: sha,
+          commitMessageVerified: true,
+        },
+        metadataRequirements: [
+          { field: 'path', value: 'docs/plan.md' },
+          { field: 'branch', value: 'main' },
+        ],
+        preDispatchPublishedResourceIdentities: [],
+      });
+      const pageState = { workflowResourceUrls: [commitUrl] };
+      const verify = (binding) => agent._githubCommittedFileVerification(
+        tabId, pageState, commitUrl, { verifiedFinalSubmit: true, submit: { workflowBinding: binding } },
+      );
+      // Commit is the head of the requested branch: verified.
+      apiResponse = { ok: true, status: 200, body: JSON.stringify([{ name: 'main' }]) };
+      assert.equal((await verify(bindingFor())).verified, true,
+        `${label}: branch-attributed commit was not verified`);
+      // Commit landed on a new PR branch instead: rejected.
+      apiResponse = { ok: true, status: 200, body: JSON.stringify([{ name: 'user-patch-1' }]) };
+      const wrongBranch = await verify(bindingFor());
+      assert.equal(wrongBranch.verified, false,
+        `${label}: commit on another branch reported full success`);
+      assert.equal(wrongBranch.reason, 'commit_wrong_branch',
+        `${label}: wrong-branch commit misreported (${wrongBranch.reason})`);
+      // Inconclusive API outcomes keep the content verdict.
+      apiResponse = { ok: false, status: 403, body: 'rate limited' };
+      assert.equal((await verify(bindingFor())).verified, true,
+        `${label}: rate-limited branch check blocked verification`);
+      apiResponse = { ok: true, status: 200, body: '[]' };
+      assert.equal((await verify(bindingFor())).verified, true,
+        `${label}: empty branch list blocked verification`);
+      assert.ok(seen.includes(naiveUrl) && seen.includes(apiUrl),
+        `${label}: raw blob and branch API were not both consulted`);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('Firefox selector debt recovers on exact digest readback', async () => {
   const originalChrome = globalThis.chrome;
   const originalBrowser = globalThis.browser;
