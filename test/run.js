@@ -24649,6 +24649,54 @@ test('publication resource records keep the owning social card when it embeds an
     assert.equal(foreignRecord.root, foreignCard, `${label}: authored permalink discarded the owning card`);
     assert.deepEqual(foreignRecord.excluded, [], `${label}: authored foreign permalink was treated as an embedded post`);
     assert.deepEqual(foreignRecord.authored, [foreignBodyNode], `${label}: authored body containing foreign permalink was lost`);
+
+    // A card with multiple distinct embedded posts excludes all of them without
+    // letting the first exclusion short-circuit later embedded post exclusions.
+    const embedCandidate1 = {
+      getAttribute: () => '/other/status/333',
+      href: '/other/status/333',
+      closest: sel => (sel && (sel.includes('quote') || sel.includes('embed')) ? embedContainer1 : null),
+    };
+    const embedContainer1 = {
+      querySelectorAll: () => [embedCandidate1],
+      contains: node => node === embedCandidate1 || node === embedContainer1,
+    };
+    embedCandidate1.parentElement = embedContainer1;
+
+    const embedCandidate2 = {
+      getAttribute: () => '/other/status/444',
+      href: '/other/status/444',
+      closest: sel => (sel && (sel.includes('quote') || sel.includes('embed')) ? embedContainer2 : null),
+    };
+    const embedContainer2 = {
+      querySelectorAll: () => [embedCandidate2],
+      contains: node => node === embedCandidate2 || node === embedContainer2,
+    };
+    embedCandidate2.parentElement = embedContainer2;
+
+    const multiEmbedPermalink = {
+      innerText: '2m',
+      getAttribute: () => '/me/status/222',
+      href: '/me/status/222',
+      closest: () => multiEmbedCard,
+    };
+    const multiEmbedCard = {
+      innerText: 'Author\nQuoting two posts',
+      querySelectorAll: selector => {
+        const s = String(selector);
+        if (s.includes('Text')) return [];
+        return [multiEmbedPermalink, embedCandidate1, embedCandidate2];
+      },
+      contains: node => [multiEmbedCard, multiEmbedPermalink, embedCandidate1, embedContainer1, embedCandidate2, embedContainer2].includes(node),
+    };
+    multiEmbedPermalink.parentElement = multiEmbedCard;
+    embedContainer1.parentElement = multiEmbedCard;
+    embedContainer2.parentElement = multiEmbedCard;
+
+    const multiEmbedRecord = invariant.publicationResourceRecordRoot(multiEmbedPermalink, identity, identityOf);
+    assert.equal(multiEmbedRecord.root, multiEmbedCard, `${label}: multi-embed discarded the owning card`);
+    assert.deepEqual(multiEmbedRecord.excluded, [embedContainer1, embedContainer2],
+      `${label}: failed to exclude multiple distinct embedded posts`);
   }
 
   for (const [label, rel] of [
@@ -86338,6 +86386,10 @@ test('social publication workflow follows the live X or Bluesky destination and 
         'long quoted body before to Bluesky was cut off by character window'],
       ['Post "Check our thoughts on X" to Bluesky', ['bluesky'],
         'platform mentioned inside quoted body leaked into target detection'],
+      ['Post "This is a very long announcement body that contains far more than fifty or sixty characters and explains everything clearly" on https://x.com/home', ['twitter'],
+        'long quoted body before on https://x.com/home was cut off by character window'],
+      ['Post "This is a very long announcement body that contains far more than fifty or sixty characters and explains everything clearly" to https://bsky.app/', ['bluesky'],
+        'long quoted body before to https://bsky.app/ was cut off by character window'],
     ]) {
       assert.deepEqual(
         [...agent._trustedSocialPublishTargetAdapters({ taskText })],

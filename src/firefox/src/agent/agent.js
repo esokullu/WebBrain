@@ -13108,11 +13108,8 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       // so it is a destination only when publication language governs it.
       // A composer route needs no verb: it is a destination by construction,
       // in any language.
-      const before = trustedContext.slice(Math.max(0, match.index - 60), match.index);
-      const after = trustedContext.slice(
-        match.index + match[0].length,
-        match.index + match[0].length + 60,
-      );
+      const before = trustedContext.slice(0, match.index);
+      const after = trustedContext.slice(match.index + match[0].length);
       const beforeClauses = this._socialPublicationClauses(before);
       let lastBeforeClause = beforeClauses[beforeClauses.length - 1];
       if (lastBeforeClause && !lastBeforeClause.text.trim()) {

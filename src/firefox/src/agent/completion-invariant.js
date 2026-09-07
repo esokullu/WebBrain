@@ -330,7 +330,7 @@ export function publicationResourceRecordRoot(link, identity, publicationResourc
       const found = identityOf(candidate);
       if (!found || found === value) continue;
       if (isInsideAuthoredText(candidate)) continue;
-      if (excluded.some(node => node === candidate || node.contains?.(node))) continue;
+      if (excluded.some(node => node === candidate || node.contains?.(candidate))) continue;
       let embedContainer = null;
       if (embedSelector) {
         try {
