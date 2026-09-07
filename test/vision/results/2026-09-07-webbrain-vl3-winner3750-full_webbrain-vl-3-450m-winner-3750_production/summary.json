@@ -1,0 +1,247 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-09-07T12:51:35.015Z",
+  "model": "webbrain-vl-3-450m-winner-3750",
+  "endpoint": "http://127.0.0.1:8335/v1/chat/completions",
+  "promptMode": "production",
+  "productionUserText": "Describe this screenshot of the current browser viewport for a web-automation agent. Follow the format in the system prompt.",
+  "promptSha256": "8465a0e60af8f3e4dcc5ff188a7682c22b1d52974db54ccb42ff8a1a5346a207",
+  "overall": {
+    "cases": 100,
+    "scored": 100,
+    "errors": 0,
+    "successes": 26,
+    "successRate": 0.26,
+    "meanScore": 0.6934979187479189,
+    "meanLatencyMs": 3577.16
+  },
+  "byDifficulty": {
+    "easy": {
+      "cases": 20,
+      "scored": 20,
+      "errors": 0,
+      "successes": 9,
+      "successRate": 0.45,
+      "meanScore": 0.7508748196248197,
+      "meanLatencyMs": 2816.45
+    },
+    "basic": {
+      "cases": 20,
+      "scored": 20,
+      "errors": 0,
+      "successes": 5,
+      "successRate": 0.25,
+      "meanScore": 0.7353693528693529,
+      "meanLatencyMs": 4673.7
+    },
+    "intermediate": {
+      "cases": 20,
+      "scored": 20,
+      "errors": 0,
+      "successes": 7,
+      "successRate": 0.35,
+      "meanScore": 0.7659314296814297,
+      "meanLatencyMs": 3230.85
+    },
+    "advanced": {
+      "cases": 20,
+      "scored": 20,
+      "errors": 0,
+      "successes": 3,
+      "successRate": 0.15,
+      "meanScore": 0.5534627872127872,
+      "meanLatencyMs": 3917.4
+    },
+    "challenging": {
+      "cases": 20,
+      "scored": 20,
+      "errors": 0,
+      "successes": 2,
+      "successRate": 0.1,
+      "meanScore": 0.6618512043512043,
+      "meanLatencyMs": 3247.4
+    }
+  },
+  "byCategory": {
+    "authentication": {
+      "cases": 5,
+      "scored": 5,
+      "errors": 0,
+      "successes": 1,
+      "successRate": 0.2,
+      "meanScore": 0.7395804195804196,
+      "meanLatencyMs": 3890.8
+    },
+    "search-results": {
+      "cases": 5,
+      "scored": 5,
+      "errors": 0,
+      "successes": 1,
+      "successRate": 0.2,
+      "meanScore": 0.7721212121212121,
+      "meanLatencyMs": 3279.4
+    },
+    "checkout": {
+      "cases": 5,
+      "scored": 5,
+      "errors": 0,
+      "successes": 1,
+      "successRate": 0.2,
+      "meanScore": 0.758041958041958,
+      "meanLatencyMs": 3177.8
+    },
+    "form-validation": {
+      "cases": 5,
+      "scored": 5,
+      "errors": 0,
+      "successes": 0,
+      "successRate": 0,
+      "meanScore": 0.74,
+      "meanLatencyMs": 3910
+    },
+    "modal-overlay": {
+      "cases": 5,
+      "scored": 5,
+      "errors": 0,
+      "successes": 0,
+      "successRate": 0,
+      "meanScore": 0.6909090909090908,
+      "meanLatencyMs": 3172
+    },
+    "toast-notification": {
+      "cases": 5,
+      "scored": 5,
+      "errors": 0,
+      "successes": 2,
+      "successRate": 0.4,
+      "meanScore": 0.7333333333333333,
+      "meanLatencyMs": 2411.6
+    },
+    "loading-state": {
+      "cases": 5,
+      "scored": 5,
+      "errors": 0,
+      "successes": 0,
+      "successRate": 0,
+      "meanScore": 0.5734848484848485,
+      "meanLatencyMs": 2061.6
+    },
+    "consent-banner": {
+      "cases": 5,
+      "scored": 5,
+      "errors": 0,
+      "successes": 3,
+      "successRate": 0.6,
+      "meanScore": 0.74,
+      "meanLatencyMs": 3340.2
+    },
+    "dashboard": {
+      "cases": 5,
+      "scored": 5,
+      "errors": 0,
+      "successes": 3,
+      "successRate": 0.6,
+      "meanScore": 0.8266666666666668,
+      "meanLatencyMs": 5615.2
+    },
+    "chart-reading": {
+      "cases": 5,
+      "scored": 5,
+      "errors": 0,
+      "successes": 2,
+      "successRate": 0.4,
+      "meanScore": 0.825,
+      "meanLatencyMs": 2545.4
+    },
+    "data-table": {
+      "cases": 5,
+      "scored": 5,
+      "errors": 0,
+      "successes": 1,
+      "successRate": 0.2,
+      "meanScore": 0.6,
+      "meanLatencyMs": 2939.2
+    },
+    "email-compose": {
+      "cases": 5,
+      "scored": 5,
+      "errors": 0,
+      "successes": 0,
+      "successRate": 0,
+      "meanScore": 0.6283333333333333,
+      "meanLatencyMs": 4648.8
+    },
+    "kanban-board": {
+      "cases": 5,
+      "scored": 5,
+      "errors": 0,
+      "successes": 2,
+      "successRate": 0.4,
+      "meanScore": 0.5714285714285714,
+      "meanLatencyMs": 2743
+    },
+    "calendar": {
+      "cases": 5,
+      "scored": 5,
+      "errors": 0,
+      "successes": 0,
+      "successRate": 0,
+      "meanScore": 0.5238095238095238,
+      "meanLatencyMs": 6215.2
+    },
+    "map-and-travel": {
+      "cases": 5,
+      "scored": 5,
+      "errors": 0,
+      "successes": 3,
+      "successRate": 0.6,
+      "meanScore": 0.79,
+      "meanLatencyMs": 3050.6
+    },
+    "photo-understanding": {
+      "cases": 5,
+      "scored": 5,
+      "errors": 0,
+      "successes": 3,
+      "successRate": 0.6,
+      "meanScore": 0.8444444444444444,
+      "meanLatencyMs": 2319
+    },
+    "multilingual-ocr": {
+      "cases": 5,
+      "scored": 5,
+      "errors": 0,
+      "successes": 0,
+      "successRate": 0,
+      "meanScore": 0.4525252525252525,
+      "meanLatencyMs": 5833.8
+    },
+    "occlusion-and-contrast": {
+      "cases": 5,
+      "scored": 5,
+      "errors": 0,
+      "successes": 2,
+      "successRate": 0.4,
+      "meanScore": 0.74,
+      "meanLatencyMs": 3756.6
+    },
+    "security-challenge": {
+      "cases": 5,
+      "scored": 5,
+      "errors": 0,
+      "successes": 0,
+      "successRate": 0,
+      "meanScore": 0.5202797202797202,
+      "meanLatencyMs": 3094.4
+    },
+    "uncertainty-calibration": {
+      "cases": 5,
+      "scored": 5,
+      "errors": 0,
+      "successes": 2,
+      "successRate": 0.4,
+      "meanScore": 0.8,
+      "meanLatencyMs": 3538.6
+    }
+  }
+}

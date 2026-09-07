@@ -1,0 +1,207 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-09-07T13:10:25.843Z",
+  "id": "081",
+  "model": "webbrain-vl-2-450m-bf16-rerun",
+  "endpoint": "http://127.0.0.1:8335/v1/chat/completions",
+  "promptMode": "production",
+  "question": {
+    "schemaVersion": 1,
+    "id": "081",
+    "difficulty": {
+      "level": 5,
+      "slug": "challenging",
+      "label": "Challenging"
+    },
+    "category": "authentication",
+    "title": "Session expired",
+    "image": "images/081.png",
+    "question": "What is preventing the user from completing Sign in again? Focus on the “Session expired” screen.",
+    "defaultPromptMode": "production"
+  },
+  "image": {
+    "path": "images/081.png",
+    "bytes": 147068,
+    "sha256": "574e324e980c65e83e921b97719134b5eeda7d5945cfb5f6376e8f8a0d00de0d"
+  },
+  "request": {
+    "systemPrompt": "You are the vision subsystem of a web-automation agent. A screenshot of the current browser viewport is attached. Describe what is on screen so the planning agent can decide its next action.\n\nFormat — keep it terse, structured, no flowery prose:\n\n1) Page purpose: one line (e.g. \"GitHub repo issue list\", \"Gmail compose\", \"Stripe checkout form\").\n2) Visible text: list the EXACT strings on buttons, links, headings, tabs, and menu items. Quote them verbatim. Do not paraphrase.\n3) Inputs: list each visible form field with its label, placeholder, current value, and whether it is focused/disabled.\n4) State signals: loading spinners, toasts, modals, error banners, success messages, CAPTCHAs, cookie/consent banners, overlays.\n5) Blockers: anything that would prevent the next likely action (overlay, disabled submit, missing data, auth prompt).\n6) Unknowns: if you cannot read something clearly, say so. Do not guess numbers, names, or identifiers.\n\nRules: no prose intro, no conclusion, no \"this screenshot shows...\", no layout description unless it matters (e.g. \"left nav is collapsed\"). If the page is blank or still loading, say that in one line and stop.",
+    "userText": "Describe this screenshot of the current browser viewport for a web-automation agent. Follow the format in the system prompt.",
+    "foldSystem": false,
+    "temperature": 0,
+    "maxTokens": 800,
+    "chatTemplateKwargs": {
+      "enable_thinking": false,
+      "think": false,
+      "thinking": false
+    }
+  },
+  "response": {
+    "status": 200,
+    "content": "1) Page purpose: Web-scene login form for session expiration\n2) Visible text: \"Web-Scene\", \"Home\", \"Workspace\", \"Activity\", \"Session expired\", \"Use your account to continue\", \"Email\", \"Password\", \"Enter password\", \"Too many attempts. Try again in 14:32\", \"Sign in again\", \"Need help?\"\n3) Inputs:\n- Label: \"Email\", Value: \"nora@example.com\", Focused: No\n- Label: \"Password\", Value: \"Enter password\", Focused: No\n4) State signals: \"Too many attempts. Try again in 14:32\" (red text on a light red background)\n5) Blockers: \"Sign in again\" button is disabled (dark background with white text) and the error message indicates \"Too many attempts.\"\n6) Unknowns: None",
+    "reasoningChars": 0,
+    "usage": {
+      "prompt_tokens": 1103,
+      "completion_tokens": 185,
+      "total_tokens": 1288
+    },
+    "timings": null
+  },
+  "latencyMs": {
+    "headers": 2562,
+    "total": 2563
+  },
+  "score": {
+    "success": false,
+    "ratio": 0.7692307692307693,
+    "earned": 10,
+    "possible": 13,
+    "threshold": 0.72,
+    "sectionCount": 6,
+    "criticalFailures": [
+      "blocker"
+    ],
+    "dimensions": {
+      "page_purpose": {
+        "earned": 1,
+        "possible": 1,
+        "ratio": 1
+      },
+      "visible_text": {
+        "earned": 4,
+        "possible": 4,
+        "ratio": 1
+      },
+      "inputs": {
+        "earned": 1,
+        "possible": 2,
+        "ratio": 0.5
+      },
+      "blockers": {
+        "earned": 0,
+        "possible": 2,
+        "ratio": 0
+      },
+      "state_signals": {
+        "earned": 2,
+        "possible": 2,
+        "ratio": 1
+      }
+    },
+    "checks": [
+      {
+        "id": "purpose",
+        "dimension": "page_purpose",
+        "section": 1,
+        "kind": "any",
+        "values": [
+          "sign in",
+          "login",
+          "identity verification",
+          "session expired"
+        ],
+        "weight": 1,
+        "critical": true,
+        "passed": true,
+        "matched": [
+          "login"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "heading",
+        "dimension": "visible_text",
+        "section": 2,
+        "kind": "literal",
+        "value": "Session expired",
+        "weight": 2,
+        "critical": true,
+        "caseSensitive": true,
+        "passed": true,
+        "matched": [
+          "Session expired"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "button",
+        "dimension": "visible_text",
+        "section": 2,
+        "kind": "literal",
+        "value": "Sign in again",
+        "weight": 2,
+        "critical": true,
+        "caseSensitive": true,
+        "passed": true,
+        "matched": [
+          "Sign in again"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "email-input",
+        "dimension": "inputs",
+        "section": 3,
+        "kind": "all",
+        "values": [
+          "Email",
+          "nora@example.com"
+        ],
+        "weight": 1,
+        "critical": false,
+        "passed": true,
+        "matched": [
+          "Email",
+          "nora@example.com"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "blocker",
+        "dimension": "blockers",
+        "section": 5,
+        "kind": "any",
+        "values": [
+          "rate",
+          "limit"
+        ],
+        "weight": 2,
+        "critical": true,
+        "passed": false,
+        "matched": [],
+        "scopeFound": true
+      },
+      {
+        "id": "status",
+        "dimension": "state_signals",
+        "section": 4,
+        "kind": "literal",
+        "value": "Too many attempts. Try again in 14:32",
+        "weight": 2,
+        "critical": true,
+        "caseSensitive": true,
+        "passed": true,
+        "matched": [
+          "Too many attempts. Try again in 14:32"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "disabled",
+        "dimension": "inputs",
+        "section": 3,
+        "kind": "any",
+        "values": [
+          "disabled",
+          "unavailable"
+        ],
+        "weight": 1,
+        "critical": false,
+        "passed": false,
+        "matched": [],
+        "scopeFound": true
+      }
+    ]
+  },
+  "error": null
+}

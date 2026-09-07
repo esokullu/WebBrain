@@ -1,0 +1,187 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-09-07T13:09:16.101Z",
+  "id": "045",
+  "model": "webbrain-vl-2-450m-bf16-rerun",
+  "endpoint": "http://127.0.0.1:8335/v1/chat/completions",
+  "promptMode": "production",
+  "question": {
+    "schemaVersion": 1,
+    "id": "045",
+    "difficulty": {
+      "level": 3,
+      "slug": "intermediate",
+      "label": "Intermediate"
+    },
+    "category": "modal-overlay",
+    "title": "Rotate production key?",
+    "image": "images/045.png",
+    "question": "What modal is blocking the page, and what are its two exact actions? Focus on the “Rotate production key?” screen.",
+    "defaultPromptMode": "production"
+  },
+  "image": {
+    "path": "images/045.png",
+    "bytes": 99182,
+    "sha256": "5c87dbcb000c7b843d33b136ee2d09a92bef4225f8a95a55d7282b1742473c39"
+  },
+  "request": {
+    "systemPrompt": "You are the vision subsystem of a web-automation agent. A screenshot of the current browser viewport is attached. Describe what is on screen so the planning agent can decide its next action.\n\nFormat — keep it terse, structured, no flowery prose:\n\n1) Page purpose: one line (e.g. \"GitHub repo issue list\", \"Gmail compose\", \"Stripe checkout form\").\n2) Visible text: list the EXACT strings on buttons, links, headings, tabs, and menu items. Quote them verbatim. Do not paraphrase.\n3) Inputs: list each visible form field with its label, placeholder, current value, and whether it is focused/disabled.\n4) State signals: loading spinners, toasts, modals, error banners, success messages, CAPTCHAs, cookie/consent banners, overlays.\n5) Blockers: anything that would prevent the next likely action (overlay, disabled submit, missing data, auth prompt).\n6) Unknowns: if you cannot read something clearly, say so. Do not guess numbers, names, or identifiers.\n\nRules: no prose intro, no conclusion, no \"this screenshot shows...\", no layout description unless it matters (e.g. \"left nav is collapsed\"). If the page is blank or still loading, say that in one line and stop.",
+    "userText": "Describe this screenshot of the current browser viewport for a web-automation agent. Follow the format in the system prompt.",
+    "foldSystem": false,
+    "temperature": 0,
+    "maxTokens": 800,
+    "chatTemplateKwargs": {
+      "enable_thinking": false,
+      "think": false,
+      "thinking": false
+    }
+  },
+  "response": {
+    "status": 200,
+    "content": "1) Page purpose: Web-scene workspace task to rotate production key and stop work.\n2) Visible text: \"Web-scene\", \"Home\", \"Workspace\", \"Activity\", \"API keys\", \"Rotate production key?\", \"Existing clients will stop working immediately.\", \"Not now\", \"Rotate key\".\n3) Inputs: None.\n4) State signals: Modal dialog overlay with alert text.\n5) Blockers: The modal dialog blocks interaction with the background page.\n6) Unknowns: None.",
+    "reasoningChars": 0,
+    "usage": {
+      "prompt_tokens": 1103,
+      "completion_tokens": 113,
+      "total_tokens": 1216
+    },
+    "timings": null
+  },
+  "latencyMs": {
+    "headers": 1611,
+    "total": 1611
+  },
+  "score": {
+    "success": false,
+    "ratio": 0.7272727272727273,
+    "earned": 8,
+    "possible": 11,
+    "threshold": 0.72,
+    "sectionCount": 6,
+    "criticalFailures": [
+      "modal-signal"
+    ],
+    "dimensions": {
+      "page_purpose": {
+        "earned": 0,
+        "possible": 1,
+        "ratio": 0
+      },
+      "visible_text": {
+        "earned": 5,
+        "possible": 5,
+        "ratio": 1
+      },
+      "state_signals": {
+        "earned": 0,
+        "possible": 2,
+        "ratio": 0
+      },
+      "blockers": {
+        "earned": 1,
+        "possible": 1,
+        "ratio": 1
+      }
+    },
+    "checks": [
+      {
+        "id": "purpose",
+        "dimension": "page_purpose",
+        "section": 1,
+        "kind": "any",
+        "values": [
+          "api keys",
+          "dialog",
+          "modal"
+        ],
+        "weight": 1,
+        "critical": false,
+        "passed": false,
+        "matched": [],
+        "scopeFound": true
+      },
+      {
+        "id": "title",
+        "dimension": "visible_text",
+        "section": 2,
+        "kind": "literal",
+        "value": "Rotate production key?",
+        "weight": 2,
+        "critical": true,
+        "caseSensitive": true,
+        "passed": true,
+        "matched": [
+          "Rotate production key?"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "primary",
+        "dimension": "visible_text",
+        "section": 2,
+        "kind": "literal",
+        "value": "Rotate key",
+        "weight": 2,
+        "critical": true,
+        "caseSensitive": true,
+        "passed": true,
+        "matched": [
+          "Rotate key"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "secondary",
+        "dimension": "visible_text",
+        "section": 2,
+        "kind": "literal",
+        "value": "Not now",
+        "weight": 1,
+        "critical": false,
+        "caseSensitive": true,
+        "passed": true,
+        "matched": [
+          "Not now"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "modal-signal",
+        "dimension": "state_signals",
+        "section": 4,
+        "kind": "all",
+        "values": [
+          "modal",
+          "Existing clients will stop working immediately."
+        ],
+        "weight": 2,
+        "critical": true,
+        "passed": false,
+        "matched": [
+          "modal"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "overlay-blocker",
+        "dimension": "blockers",
+        "section": 5,
+        "kind": "any",
+        "values": [
+          "modal",
+          "overlay",
+          "dialog"
+        ],
+        "weight": 1,
+        "critical": true,
+        "passed": true,
+        "matched": [
+          "modal",
+          "dialog"
+        ],
+        "scopeFound": true
+      }
+    ]
+  },
+  "error": null
+}

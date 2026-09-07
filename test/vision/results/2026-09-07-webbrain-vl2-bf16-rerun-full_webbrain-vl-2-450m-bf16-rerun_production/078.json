@@ -1,0 +1,174 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-09-07T13:10:19.432Z",
+  "id": "078",
+  "model": "webbrain-vl-2-450m-bf16-rerun",
+  "endpoint": "http://127.0.0.1:8335/v1/chat/completions",
+  "promptMode": "production",
+  "question": {
+    "schemaVersion": 1,
+    "id": "078",
+    "difficulty": {
+      "level": 4,
+      "slug": "advanced",
+      "label": "Advanced"
+    },
+    "category": "occlusion-and-contrast",
+    "title": "Canvas editor",
+    "image": "images/078.png",
+    "question": "What action is partially covered, and what visible overlay or widget causes the obstruction? Focus on the “Canvas editor” screen.",
+    "defaultPromptMode": "production"
+  },
+  "image": {
+    "path": "images/078.png",
+    "bytes": 90320,
+    "sha256": "8b5544b8d4f4b42f7d115a7efcbd17777f751f63d023daea21f239a9bf457ff4"
+  },
+  "request": {
+    "systemPrompt": "You are the vision subsystem of a web-automation agent. A screenshot of the current browser viewport is attached. Describe what is on screen so the planning agent can decide its next action.\n\nFormat — keep it terse, structured, no flowery prose:\n\n1) Page purpose: one line (e.g. \"GitHub repo issue list\", \"Gmail compose\", \"Stripe checkout form\").\n2) Visible text: list the EXACT strings on buttons, links, headings, tabs, and menu items. Quote them verbatim. Do not paraphrase.\n3) Inputs: list each visible form field with its label, placeholder, current value, and whether it is focused/disabled.\n4) State signals: loading spinners, toasts, modals, error banners, success messages, CAPTCHAs, cookie/consent banners, overlays.\n5) Blockers: anything that would prevent the next likely action (overlay, disabled submit, missing data, auth prompt).\n6) Unknowns: if you cannot read something clearly, say so. Do not guess numbers, names, or identifiers.\n\nRules: no prose intro, no conclusion, no \"this screenshot shows...\", no layout description unless it matters (e.g. \"left nav is collapsed\"). If the page is blank or still loading, say that in one line and stop.",
+    "userText": "Describe this screenshot of the current browser viewport for a web-automation agent. Follow the format in the system prompt.",
+    "foldSystem": false,
+    "temperature": 0,
+    "maxTokens": 800,
+    "chatTemplateKwargs": {
+      "enable_thinking": false,
+      "think": false,
+      "thinking": false
+    }
+  },
+  "response": {
+    "status": 200,
+    "content": "1) Page purpose: Canvas editor task interface for configuring a workspace.\n2) Visible text: \"WebScene\", \"Home\", \"Workspace\", \"Activity\", \"Canvas editor\", \"Update settings, then save your work.\", \"Name\", \"Example workspace\", \"Description\", \"Production configuration\", \"Publish\", \"Connection lost\".\n3) Inputs:\n- Label: \"Name\", Value: \"Example workspace\", Focused: No\n- Label: \"Description\", Value: \"Production configuration\", Focused: No\n- Button: \"Publish\", Enabled: Yes\n4) State signals: \"Connection lost\" overlay on the bottom right.\n5) Blockers: \"Connection lost\" overlay prevents interaction with the form.\n6) Unknowns: None.",
+    "reasoningChars": 0,
+    "usage": {
+      "prompt_tokens": 1103,
+      "completion_tokens": 165,
+      "total_tokens": 1268
+    },
+    "timings": null
+  },
+  "latencyMs": {
+    "headers": 2302,
+    "total": 2302
+  },
+  "score": {
+    "success": true,
+    "ratio": 1,
+    "earned": 10,
+    "possible": 10,
+    "threshold": 0.72,
+    "sectionCount": 6,
+    "criticalFailures": [],
+    "dimensions": {
+      "page_purpose": {
+        "earned": 1,
+        "possible": 1,
+        "ratio": 1
+      },
+      "visible_text": {
+        "earned": 3,
+        "possible": 3,
+        "ratio": 1
+      },
+      "state_signals": {
+        "earned": 2,
+        "possible": 2,
+        "ratio": 1
+      },
+      "blockers": {
+        "earned": 2,
+        "possible": 2,
+        "ratio": 1
+      }
+    },
+    "checks": [
+      {
+        "id": "purpose",
+        "dimension": "page_purpose",
+        "section": 1,
+        "kind": "any",
+        "values": [
+          "account",
+          "pricing",
+          "report",
+          "editor",
+          "trading"
+        ],
+        "weight": 1,
+        "critical": false,
+        "passed": true,
+        "matched": [
+          "editor"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "heading",
+        "dimension": "visible_text",
+        "section": 2,
+        "kind": "literal",
+        "value": "Canvas editor",
+        "weight": 1,
+        "critical": false,
+        "caseSensitive": true,
+        "passed": true,
+        "matched": [
+          "Canvas editor"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "target",
+        "dimension": "visible_text",
+        "section": 2,
+        "kind": "literal",
+        "value": "Publish",
+        "weight": 2,
+        "critical": true,
+        "caseSensitive": true,
+        "passed": true,
+        "matched": [
+          "Publish"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "cover",
+        "dimension": "state_signals",
+        "section": 4,
+        "kind": "literal",
+        "value": "Connection lost",
+        "weight": 2,
+        "critical": true,
+        "caseSensitive": true,
+        "passed": true,
+        "matched": [
+          "Connection lost"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "occlusion",
+        "dimension": "blockers",
+        "section": 5,
+        "kind": "any",
+        "values": [
+          "cover",
+          "overlap",
+          "overlay",
+          "obstruct",
+          "block"
+        ],
+        "weight": 2,
+        "critical": true,
+        "passed": true,
+        "matched": [
+          "overlay",
+          "block"
+        ],
+        "scopeFound": true
+      }
+    ]
+  },
+  "error": null
+}

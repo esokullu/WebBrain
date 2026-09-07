@@ -1,0 +1,174 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-09-07T12:49:11.597Z",
+  "id": "060",
+  "model": "webbrain-vl-3-450m-winner-3750",
+  "endpoint": "http://127.0.0.1:8335/v1/chat/completions",
+  "promptMode": "production",
+  "question": {
+    "schemaVersion": 1,
+    "id": "060",
+    "difficulty": {
+      "level": 3,
+      "slug": "intermediate",
+      "label": "Intermediate"
+    },
+    "category": "uncertainty-calibration",
+    "title": "Scanned receipt",
+    "image": "images/060.png",
+    "question": "Which characters are actually legible, and which information must remain unknown? Focus on the “Scanned receipt” screen.",
+    "defaultPromptMode": "production"
+  },
+  "image": {
+    "path": "images/060.png",
+    "bytes": 79943,
+    "sha256": "da113cf036792a628b8d44678653a3f88dd8acbac1f0185eef117dd425d0defd"
+  },
+  "request": {
+    "systemPrompt": "You are the vision subsystem of a web-automation agent. A screenshot of the current browser viewport is attached. Describe what is on screen so the planning agent can decide its next action.\n\nFormat — keep it terse, structured, no flowery prose:\n\n1) Page purpose: one line (e.g. \"GitHub repo issue list\", \"Gmail compose\", \"Stripe checkout form\").\n2) Visible text: list the EXACT strings on buttons, links, headings, tabs, and menu items. Quote them verbatim. Do not paraphrase.\n3) Inputs: list each visible form field with its label, placeholder, current value, and whether it is focused/disabled.\n4) State signals: loading spinners, toasts, modals, error banners, success messages, CAPTCHAs, cookie/consent banners, overlays.\n5) Blockers: anything that would prevent the next likely action (overlay, disabled submit, missing data, auth prompt).\n6) Unknowns: if you cannot read something clearly, say so. Do not guess numbers, names, or identifiers.\n\nRules: no prose intro, no conclusion, no \"this screenshot shows...\", no layout description unless it matters (e.g. \"left nav is collapsed\"). If the page is blank or still loading, say that in one line and stop.",
+    "userText": "Describe this screenshot of the current browser viewport for a web-automation agent. Follow the format in the system prompt.",
+    "foldSystem": false,
+    "temperature": 0,
+    "maxTokens": 800,
+    "chatTemplateKwargs": {
+      "enable_thinking": false,
+      "think": false,
+      "thinking": false
+    }
+  },
+  "response": {
+    "status": 200,
+    "content": "1) Page purpose: Web-automation task: document viewer task\n2) Visible text: \"WebScene\", \"Home\", \"Workspace\", \"Activity\", \"DOCUMENT VIEWER\", \"Scanned receipt\", \"$42.90\", \"Total\", \"one digit is smudged\", \"Page 1 of 1\", \"125%\"\n3) Inputs: None visible\n4) State signals: \"one digit is smudged\" text on a yellow bar\n5) Blockers: None\n6) Unknowns: The content of the document view is obscured by a smudge.",
+    "reasoningChars": 0,
+    "usage": {
+      "prompt_tokens": 1103,
+      "completion_tokens": 132,
+      "total_tokens": 1235
+    },
+    "timings": null
+  },
+  "latencyMs": {
+    "headers": 3359,
+    "total": 3359
+  },
+  "score": {
+    "success": false,
+    "ratio": 0.7,
+    "earned": 7,
+    "possible": 10,
+    "threshold": 0.74,
+    "sectionCount": 6,
+    "criticalFailures": [
+      "visible-fragment"
+    ],
+    "dimensions": {
+      "page_purpose": {
+        "earned": 1,
+        "possible": 1,
+        "ratio": 1
+      },
+      "visible_text": {
+        "earned": 1,
+        "possible": 3,
+        "ratio": 0.3333333333333333
+      },
+      "unknowns": {
+        "earned": 3,
+        "possible": 3,
+        "ratio": 1
+      },
+      "visual_reasoning": {
+        "earned": 0,
+        "possible": 1,
+        "ratio": 0
+      }
+    },
+    "checks": [
+      {
+        "id": "purpose",
+        "dimension": "page_purpose",
+        "section": 1,
+        "kind": "any",
+        "values": [
+          "account",
+          "label",
+          "receipt",
+          "contract",
+          "telemetry",
+          "document"
+        ],
+        "weight": 1,
+        "critical": false,
+        "passed": true,
+        "matched": [
+          "document"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "heading",
+        "dimension": "visible_text",
+        "section": 2,
+        "kind": "literal",
+        "value": "Scanned receipt",
+        "weight": 1,
+        "critical": false,
+        "caseSensitive": true,
+        "passed": true,
+        "matched": [
+          "Scanned receipt"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "visible-fragment",
+        "dimension": "visible_text",
+        "section": 2,
+        "kind": "literal",
+        "value": "$4?.90",
+        "weight": 2,
+        "critical": true,
+        "caseSensitive": true,
+        "passed": false,
+        "matched": [],
+        "scopeFound": true
+      },
+      {
+        "id": "unknown",
+        "dimension": "unknowns",
+        "section": 6,
+        "kind": "any",
+        "values": [
+          "unknown",
+          "unreadable",
+          "blurred",
+          "smudged",
+          "redacted",
+          "cannot read"
+        ],
+        "weight": 3,
+        "critical": true,
+        "passed": true,
+        "matched": [
+          "unknown"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "no-guess",
+        "dimension": "visual_reasoning",
+        "section": null,
+        "kind": "any",
+        "values": [
+          "$4?.90"
+        ],
+        "weight": 1,
+        "critical": false,
+        "passed": false,
+        "matched": [],
+        "scopeFound": true
+      }
+    ]
+  },
+  "error": null
+}

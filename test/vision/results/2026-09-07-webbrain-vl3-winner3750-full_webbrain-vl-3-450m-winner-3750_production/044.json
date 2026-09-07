@@ -1,0 +1,202 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-09-07T12:48:21.598Z",
+  "id": "044",
+  "model": "webbrain-vl-3-450m-winner-3750",
+  "endpoint": "http://127.0.0.1:8335/v1/chat/completions",
+  "promptMode": "production",
+  "question": {
+    "schemaVersion": 1,
+    "id": "044",
+    "difficulty": {
+      "level": 3,
+      "slug": "intermediate",
+      "label": "Intermediate"
+    },
+    "category": "form-validation",
+    "title": "Invite teammate",
+    "image": "images/044.png",
+    "question": "Which field is invalid, what value does it contain, and what exact error is shown? Focus on the “Invite teammate” screen.",
+    "defaultPromptMode": "production"
+  },
+  "image": {
+    "path": "images/044.png",
+    "bytes": 115129,
+    "sha256": "42b3a9f448b2ba00543981fefa7f63b57d61fe7d97d629cb933fcc2773a2e06d"
+  },
+  "request": {
+    "systemPrompt": "You are the vision subsystem of a web-automation agent. A screenshot of the current browser viewport is attached. Describe what is on screen so the planning agent can decide its next action.\n\nFormat — keep it terse, structured, no flowery prose:\n\n1) Page purpose: one line (e.g. \"GitHub repo issue list\", \"Gmail compose\", \"Stripe checkout form\").\n2) Visible text: list the EXACT strings on buttons, links, headings, tabs, and menu items. Quote them verbatim. Do not paraphrase.\n3) Inputs: list each visible form field with its label, placeholder, current value, and whether it is focused/disabled.\n4) State signals: loading spinners, toasts, modals, error banners, success messages, CAPTCHAs, cookie/consent banners, overlays.\n5) Blockers: anything that would prevent the next likely action (overlay, disabled submit, missing data, auth prompt).\n6) Unknowns: if you cannot read something clearly, say so. Do not guess numbers, names, or identifiers.\n\nRules: no prose intro, no conclusion, no \"this screenshot shows...\", no layout description unless it matters (e.g. \"left nav is collapsed\"). If the page is blank or still loading, say that in one line and stop.",
+    "userText": "Describe this screenshot of the current browser viewport for a web-automation agent. Follow the format in the system prompt.",
+    "foldSystem": false,
+    "temperature": 0,
+    "maxTokens": 800,
+    "chatTemplateKwargs": {
+      "enable_thinking": false,
+      "think": false,
+      "thinking": false
+    }
+  },
+  "response": {
+    "status": 200,
+    "content": "1) Page purpose: Webinar invite form.\n2) Visible text: \"WebScene\", \"Home\", \"Workspace\", \"Activity\", \"Invite teammate\", \"Complete the required details.\", \"Work email\", \"Lee@sample\", \"Email domain is incomplete\", \"Notes\", \"Optional\", \"Send invite\".\n3) Inputs: label='Work email', value='Lee@sample', invalid=true.\n4) State signals: Error message \"Email domain is incomplete\" displayed in red text.\n5) Blockers: The email field is marked invalid, and the \"Email domain is incomplete\" error prevents the \"Send invite\" button from functioning.\n6) Unknowns: The specific email address \"Lee@sample\" is not visible in the screenshot.",
+    "reasoningChars": 0,
+    "usage": {
+      "prompt_tokens": 1103,
+      "completion_tokens": 158,
+      "total_tokens": 1261
+    },
+    "timings": null
+  },
+  "latencyMs": {
+    "headers": 3796,
+    "total": 3796
+  },
+  "score": {
+    "success": false,
+    "ratio": 0.8,
+    "earned": 8,
+    "possible": 10,
+    "threshold": 0.72,
+    "sectionCount": 6,
+    "criticalFailures": [
+      "input"
+    ],
+    "dimensions": {
+      "page_purpose": {
+        "earned": 1,
+        "possible": 1,
+        "ratio": 1
+      },
+      "visible_text": {
+        "earned": 2,
+        "possible": 2,
+        "ratio": 1
+      },
+      "inputs": {
+        "earned": 0,
+        "possible": 2,
+        "ratio": 0
+      },
+      "state_signals": {
+        "earned": 2,
+        "possible": 2,
+        "ratio": 1
+      },
+      "blockers": {
+        "earned": 1,
+        "possible": 1,
+        "ratio": 1
+      }
+    },
+    "checks": [
+      {
+        "id": "purpose",
+        "dimension": "page_purpose",
+        "section": 1,
+        "kind": "any",
+        "values": [
+          "form",
+          "profile",
+          "shipping",
+          "invite",
+          "dataset",
+          "tax"
+        ],
+        "weight": 1,
+        "critical": false,
+        "passed": true,
+        "matched": [
+          "form",
+          "invite"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "heading",
+        "dimension": "visible_text",
+        "section": 2,
+        "kind": "literal",
+        "value": "Invite teammate",
+        "weight": 1,
+        "critical": false,
+        "caseSensitive": true,
+        "passed": true,
+        "matched": [
+          "Invite teammate"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "button",
+        "dimension": "visible_text",
+        "section": 2,
+        "kind": "literal",
+        "value": "Send invite",
+        "weight": 1,
+        "critical": false,
+        "caseSensitive": true,
+        "passed": true,
+        "matched": [
+          "Send invite"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "input",
+        "dimension": "inputs",
+        "section": 3,
+        "kind": "all",
+        "values": [
+          "Work email",
+          "lee@sample",
+          "name@company.com"
+        ],
+        "weight": 2,
+        "critical": true,
+        "passed": false,
+        "matched": [
+          "Work email",
+          "lee@sample"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "error",
+        "dimension": "state_signals",
+        "section": 4,
+        "kind": "literal",
+        "value": "Email domain is incomplete",
+        "weight": 2,
+        "critical": true,
+        "caseSensitive": true,
+        "passed": true,
+        "matched": [
+          "Email domain is incomplete"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "blocker",
+        "dimension": "blockers",
+        "section": 5,
+        "kind": "any",
+        "values": [
+          "invalid",
+          "required",
+          "incomplete",
+          "missing",
+          "format"
+        ],
+        "weight": 1,
+        "critical": true,
+        "passed": true,
+        "matched": [
+          "invalid",
+          "incomplete"
+        ],
+        "scopeFound": true
+      }
+    ]
+  },
+  "error": null
+}
