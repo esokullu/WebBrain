@@ -86502,10 +86502,40 @@ test('social publication workflow follows the live X or Bluesky destination and 
         'coordinated publish in survey and on X should publish to X'],
       ['Publish into the form and to Bluesky: Update', ['bluesky'],
         'coordinated publish into form and to Bluesky should publish to Bluesky'],
+      // Multi-platform coordination across conjunctions
+      ['Post on X and Bluesky', ['twitter', 'bluesky'],
+        'coordinated destinations on X and Bluesky should both be targeted'],
+      ['Post to X or Bluesky: Launch announcement', ['twitter', 'bluesky'],
+        'coordinated destination with "or" should target both platforms'],
+      ['Publish on X, Threads, and Bluesky', ['twitter', 'bluesky'],
+        'coordinated destination list with intervening platforms should target supported platforms'],
+      ['Publica en X y Bluesky', ['twitter', 'bluesky'],
+        'Spanish coordinated destinations on X and Bluesky should both be targeted'],
+      ['Publie sur X et Bluesky', ['twitter', 'bluesky'],
+        'French coordinated destinations on X and Bluesky should both be targeted'],
+      ['Veröffentliche auf X und Bluesky', ['twitter', 'bluesky'],
+        'German coordinated destinations on X and Bluesky should both be targeted'],
+      ['Posta su X e Bluesky', ['twitter', 'bluesky'],
+        'Italian coordinated destinations on X and Bluesky should both be targeted'],
+      // Content links should not be treated as competing destinations
+      ['Post a link to the survey on X', ['twitter'],
+        'content link to survey should not compete with X publish destination'],
+      ['Publish a link to the form on Bluesky', ['bluesky'],
+        'content link to form should not compete with Bluesky publish destination'],
+      ['Share the URL to the spreadsheet on X', ['twitter'],
+        'URL to spreadsheet should not compete with X publish destination'],
+      ['Post an invite to the survey on Bluesky', ['bluesky'],
+        'invite to survey should not compete with Bluesky publish destination'],
+      ['Publica un enlace a la encuesta en X', ['twitter'],
+        'Spanish content link to survey should not compete with X publish destination'],
+      ['Publie un lien vers le formulaire sur Bluesky', ['bluesky'],
+        'French content link to form should not compete with Bluesky publish destination'],
+      ['Veröffentliche einen Link zur Umfrage auf X', ['twitter'],
+        'German content link to survey should not compete with X publish destination'],
     ]) {
       assert.deepEqual(
-        [...agent._trustedSocialPublishTargetAdapters({ taskText })],
-        expected,
+        [...agent._trustedSocialPublishTargetAdapters({ taskText })].sort(),
+        expected.slice().sort(),
         AgentClass.name + ': ' + why,
       );
     }
@@ -88064,6 +88094,68 @@ test('attachment verification matches specific attachment names without substrin
       { attachments: [{ type: 'image', src: 'https://pbs.twimg.com/media/old-chart.png' }] }
     );
     assert.equal(cleanedPrefixRejected, false, AgentClass.name + ': an image of chart.png should reject old-chart.png');
+
+    // Multiple specific attachment targets
+    const multiSpecificReq = agent._parseWorkflowAttachmentRequirement({ value: 'cat.png and dog.jpg' });
+    assert.equal(multiSpecificReq.expectedCount, 2, AgentClass.name + ': expectedCount for cat.png and dog.jpg should be 2');
+    assert.equal(multiSpecificReq.hasExplicitCardinality, true, AgentClass.name + ': hasExplicitCardinality should be true for multi-target');
+    assert.deepEqual(multiSpecificReq.specificTargets, ['cat.png', 'dog.jpg'], AgentClass.name + ': specific targets parsed correctly');
+
+    const bothMatched = agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'cat.png and dog.jpg' },
+      {
+        attachments: [
+          { type: 'image', src: 'https://pbs.twimg.com/media/cat.png' },
+          { type: 'image', src: 'https://pbs.twimg.com/media/dog.jpg' },
+        ],
+      }
+    );
+    assert.equal(bothMatched, true, AgentClass.name + ': both distinct attachments matched should satisfy requirement');
+
+    const duplicateAttachment = agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'cat.png and dog.jpg' },
+      {
+        attachments: [
+          { type: 'image', src: 'https://pbs.twimg.com/media/cat.png' },
+          { type: 'image', src: 'https://pbs.twimg.com/media/cat.png' },
+        ],
+      }
+    );
+    assert.equal(duplicateAttachment, false, AgentClass.name + ': duplicate single attachment cannot satisfy two distinct targets');
+
+    const missingAttachment = agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'cat.png and dog.jpg' },
+      {
+        attachments: [
+          { type: 'image', src: 'https://pbs.twimg.com/media/cat.png' },
+        ],
+      }
+    );
+    assert.equal(missingAttachment, false, AgentClass.name + ': missing second attachment should reject');
+
+    const wrongSecondAttachment = agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'cat.png and dog.jpg' },
+      {
+        attachments: [
+          { type: 'image', src: 'https://pbs.twimg.com/media/cat.png' },
+          { type: 'image', src: 'https://pbs.twimg.com/media/bird.png' },
+        ],
+      }
+    );
+    assert.equal(wrongSecondAttachment, false, AgentClass.name + ': wrong second attachment should reject');
+
+    // Multilingual conjunctions / delimiters in specific targets
+    for (const conjCase of [
+      'image1.png, image2.png',
+      'chart.png und graphic.png',
+      'foto1.jpg y foto2.jpg',
+      'pic1.png & pic2.png',
+      'diagram1.png et diagram2.png',
+    ]) {
+      const parsedConj = agent._parseWorkflowAttachmentRequirement({ value: conjCase });
+      assert.equal(parsedConj.expectedCount, 2, AgentClass.name + `: expectedCount should be 2 for "${conjCase}"`);
+      assert.equal(parsedConj.specificTargets.length, 2, AgentClass.name + `: should parse 2 targets for "${conjCase}"`);
+    }
 
     // Negative attachment requirements
     for (const negReq of [

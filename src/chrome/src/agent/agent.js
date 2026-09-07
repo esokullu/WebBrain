@@ -327,6 +327,29 @@ const NON_SOCIAL_DESTINATION_IN_TEXT = new RegExp(
   'iu',
 );
 
+const NON_SOCIAL_DESTINATION_GOVERNING_AFTER_VERB = new RegExp(
+  `^\\s*(?:(?:right\\s+)?now\\s+|today\\s+|immediately\\s+|directly\\s+)?${NON_SOCIAL_DESTINATION_PREPS}\\s+${NON_SOCIAL_DESTINATION_ARTICLES}${NON_SOCIAL_DESTINATION_NOUNS}\\b`,
+  'iu',
+);
+
+const NON_SOCIAL_DESTINATION_GOVERNING_BEFORE_VERB = new RegExp(
+  `^[\\s,;:]*${NON_SOCIAL_DESTINATION_PREPS}\\s+${NON_SOCIAL_DESTINATION_ARTICLES}${NON_SOCIAL_DESTINATION_NOUNS}\\b`,
+  'iu',
+);
+
+const CONTENT_LINK_PHRASE = new RegExp(
+  `\\b(?:links?|urls?|invites?|invitations?|pointers?|references?|redirects?|routes?|access|updates?|results?|summaries|summary|reports?|articles?|pieces?|stories|story|posts?|drafts?|notes?`
+  + `|enlaces?|v[ií]nculos?|invitaci[oó]n(?:es)?|acceso|res[uú]men(?:es)?|informes?|reportes?|noticias?`
+  + `|liens?|invitations?|acc[eè]s|r[eé]sum[eé]s?|rapports?`
+  + `|verkn[uü]pfungen?|anbindung|einladungen?|zugang|zusammenfassungen?|berichte?`
+  + `|collegament[oi]|inviti?|accesso|riassunt[oi]|relazioni?`
+  + `|liga[cç][oõ]es|convites?|acesso|resumos?|relat[oó]rios?`
+  + `|ссылк[аиу]|ссылок|приглашени[ея]|доступ|отч[eё]т(?:ы|а)?|резюме)`
+  + `\\s+(?:to|towards|into|for|about|regarding|vers|pour|[aà]|para|zu|zur|zum|auf|in|nel|nella|su|на|в|о|об)\\s+`
+  + `${NON_SOCIAL_DESTINATION_ARTICLES}${NON_SOCIAL_DESTINATION_NOUNS}\\b`,
+  'iu',
+);
+
 const SOURCE_MODIFIER_BEFORE_PLATFORM = new RegExp(
   '(?:available|found|seen|reported|trending|existing|visible|present|hosted|stored|gathered|collected|shown|featured|sourced|read|heard|posted|published|shared'
   + '|disponible|verf\u00fcgbar|encontrado|trouv\u00e9|trovato|gefunden|h\u00e9berg\u00e9|hospedado|pr\u00e9sent|presente|affich\u00e9|mostrado|gezeigt|recopilado|gesammelt|rassembl\u00e9|accessible|accesible|zug\u00e4nglich'
@@ -2494,6 +2517,22 @@ export class Agent extends LoopDetector {
     );
   }
 
+  _parseSpecificAttachmentTargets(value) {
+    let text = String(value || '').trim();
+    if (!text) return [];
+    text = text.replace(/^['"“”«»`]+|['"“”«»`]+$/g, '').trim();
+    const splitRegex = /(?:\s*[,;\n，、]\s*(?:and|und|et|e|y|ve|и|oder|or|as\s+well\s+as|&)\s*|\s*[,;\n，、]\s*|\s+(?:and|und|et|e|y|ve|и|oder|or|as\s+well\s+as|&)\s+|[와과및]\s*|[和与及以及]\s*|(?<=\.[a-z0-9]{2,5})\s*(?:と|や)\s*)/i;
+    const parts = text.split(splitRegex).map(p => p.trim()).filter(Boolean);
+    const targets = [];
+    for (const part of parts) {
+      const cleaned = this._cleanSpecificAttachmentTarget(part);
+      if (cleaned && !targets.includes(cleaned)) {
+        targets.push(cleaned);
+      }
+    }
+    return targets.length > 0 ? targets : (text ? [this._cleanSpecificAttachmentTarget(text)] : []);
+  }
+
   _cleanSpecificAttachmentTarget(value) {
     let text = String(value || '').trim();
     text = text.replace(/^['"“”«»`]+|['"“”«»`]+$/g, '').trim();
@@ -2609,8 +2648,9 @@ export class Agent extends LoopDetector {
   }
 
   _parseWorkflowAttachmentRequirement(value) {
-    const text = String(value || '').trim().toLowerCase();
-    if (!text) return { isGeneric: true, expectedCount: 1, expectedImageCount: 0, expectedVideoCount: 0, wantsImage: false, wantsVideo: false, wantsGif: false, normalized: '' };
+    const rawVal = (typeof value === 'object' && value !== null && 'value' in value) ? value.value : value;
+    const text = String(rawVal || '').trim().toLowerCase();
+    if (!text) return { isGeneric: true, expectedCount: 1, expectedImageCount: 0, expectedVideoCount: 0, wantsImage: false, wantsVideo: false, wantsGif: false, specificTargets: [], normalized: '' };
 
     if (this._isNegativeAttachmentRequirement(text)) {
       return {
@@ -2778,9 +2818,16 @@ export class Agent extends LoopDetector {
       if (wantsImage && wantsVideo && expectedCount < 2) {
         expectedCount = 2;
       }
+    } else {
+      const specificTargets = this._parseSpecificAttachmentTargets(rawVal);
+      if (specificTargets.length > 1) {
+        expectedCount = Math.max(expectedCount, specificTargets.length);
+        hasExplicitGenericCount = true;
+      }
     }
 
     const hasExplicitCardinality = hasExplicitImageCount || hasExplicitVideoCount || hasExplicitGenericCount;
+    const specificTargets = isGeneric ? [] : this._parseSpecificAttachmentTargets(rawVal);
 
     return {
       isGeneric,
@@ -2793,6 +2840,7 @@ export class Agent extends LoopDetector {
       wantsImage,
       wantsVideo,
       wantsGif,
+      specificTargets,
       normalized: text,
     };
   }
@@ -2890,25 +2938,48 @@ export class Agent extends LoopDetector {
       return true;
     }
 
-    const specificTarget = this._cleanSpecificAttachmentTarget(parsed.normalized);
-    const targetNames = this._targetAttachmentNames(specificTarget);
+    const specificTargets = this._parseSpecificAttachmentTargets(parsed.normalized);
+    const targetsToCheck = specificTargets.length > 0
+      ? specificTargets
+      : [this._cleanSpecificAttachmentTarget(parsed.normalized)].filter(Boolean);
 
-    const matchesSpecific = matchingAttachments.some(att => {
-      const candidates = this._extractAttachmentCandidateNames(att);
-      return targetNames.some(target => {
-        const targetHasExt = /\.[a-z0-9]+$/i.test(target);
-        return candidates.some(candidate => {
-          if (candidate === target) return true;
-          if (!targetHasExt) {
-            const candidateBase = candidate.replace(/\.[a-z0-9]+$/i, '');
-            if (candidateBase === target) return true;
-          }
-          return false;
+    if (targetsToCheck.length === 0) {
+      return true;
+    }
+
+    if (matchingAttachments.length < targetsToCheck.length) {
+      return false;
+    }
+
+    const canMatchAll = (targetIdx, usedIndices) => {
+      if (targetIdx >= targetsToCheck.length) return true;
+      const target = targetsToCheck[targetIdx];
+      const targetNames = this._targetAttachmentNames(target);
+      for (let i = 0; i < matchingAttachments.length; i++) {
+        if (usedIndices.has(i)) continue;
+        const att = matchingAttachments[i];
+        const candidates = this._extractAttachmentCandidateNames(att);
+        const isMatch = targetNames.some(t => {
+          const targetHasExt = /\.[a-z0-9]+$/i.test(t);
+          return candidates.some(candidate => {
+            if (candidate === t) return true;
+            if (!targetHasExt) {
+              const candidateBase = candidate.replace(/\.[a-z0-9]+$/i, '');
+              if (candidateBase === t) return true;
+            }
+            return false;
+          });
         });
-      });
-    });
+        if (isMatch) {
+          usedIndices.add(i);
+          if (canMatchAll(targetIdx + 1, usedIndices)) return true;
+          usedIndices.delete(i);
+        }
+      }
+      return false;
+    };
 
-    return matchesSpecific;
+    return canMatchAll(0, new Set());
   }
 
   _workflowGithubReleaseIdentityParts(identity) {
@@ -15589,11 +15660,22 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     // matching would leave it unbound.
     const clauses = this._socialPublicationClauses(trustedContext);
     const publishesTo = (platform) => {
+      const destPreps = '(?:on|onto|to|via|in|at|en|sur|sobre|\u00e0|au|auf|su|em|na|no|nos|nas|para|\u0432|\u043d\u0430)';
+      const coordConj = '(?:and|und|et|e|y|ve|и|oder|or|ou|o|as\\s+well\\s+as|&|\\/)';
+      const coordItem = `(?:the\\s+)?[a-z0-9_.-]+(?:\\s+page|\\s+account|\\s+profile)?`;
+      const coordPrefix = `(?:${coordItem}(?:\\s*,\\s*${coordItem})*\\s*(?:,\\s*${coordConj}|,|;|\\s+${coordConj})\\s+(?:the\\s+)?)`;
       const platformPattern = new RegExp(
-        `(?<![${SOCIAL_WORD_EDGE}])(?:on|onto|to|via|in|at|en|sur|sobre|\u00e0|au|auf|su|em|na|no|nos|nas|para|\u0432|\u043d\u0430)(?![${SOCIAL_WORD_EDGE}])\\s+(?:the\\s+)?${platform}(?![${SOCIAL_WORD_EDGE}])`
-        + `|[\\u5230\\u81f3\\u5728]\\s*${platform}(?![a-z0-9_])`
-        + `|(?:\u5728\\s*)?${platform}\\s*[\\u306b\\u3078\\u3067\\u4e0a\\uc5d0\\ub85c](?![a-z0-9_])`
-        + `|${platform}\\s*\\uc73c\\ub85c(?![a-z0-9_])`,
+        `(?<![${SOCIAL_WORD_EDGE}])${destPreps}(?![${SOCIAL_WORD_EDGE}])\\s+(?:the\\s+)?(?:${coordPrefix})?${platform}(?![${SOCIAL_WORD_EDGE}])`
+        + `|[\\u5230\\u81f3\\u5728]\\s*(?:[^\\s,;:.?!]+\\s*(?:和|与|及|以及|,|、)\\s*)*${platform}(?![a-z0-9_])`
+        + `|(?:\u5728\\s*)?${platform}(?:\\s*(?:と|や|、)\\s*(?:[^\\s,;:.?!]+\\s*(?:と|や|、)\\s*)*[^\\s,;:.?!]+)?\\s*[\\u306b\\u3078\\u3067\\u4e0a\\uc5d0\\ub85c](?![a-z0-9_])`
+        + `|${platform}(?:\\s*(?:와|과|및|,)\\s*(?:[^\\s,;:.?!]+\\s*(?:와|과|및|,)\\s*)*[^\\s,;:.?!]+)?\\s*\\uc73c\\ub85c(?![a-z0-9_])`,
+        'giu',
+      );
+      const coordPlatformPattern = new RegExp(
+        `(?<![${SOCIAL_WORD_EDGE}])(?:${destPreps}(?![${SOCIAL_WORD_EDGE}])\\s+)?(?:the\\s+)?(?:${coordPrefix})?${platform}(?![${SOCIAL_WORD_EDGE}])`
+        + `|(?:[\\u5230\\u81f3\\u5728]\\s*)?(?:[^\\s,;:.?!]+\\s*(?:和|与|及|以及|,|、)\\s*)*${platform}(?![a-z0-9_])`
+        + `|(?:\u5728\\s*)?${platform}(?:\\s*(?:と|や|、)\\s*(?:[^\\s,;:.?!]+\\s*(?:と|や|、)\\s*)*[^\\s,;:.?!]+)?\\s*[\\u306b\\u3078\\u3067\\u4e0a\\uc5d0\\ub85c]?(?![a-z0-9_])`
+        + `|${platform}(?:\\s*(?:와|과|및|,)\\s*(?:[^\\s,;:.?!]+\\s*(?:와|과|및|,)\\s*)*[^\\s,;:.?!]+)?\\s*(?:\\uc73c\\ub85c)?(?![a-z0-9_])`,
         'giu',
       );
       const verbPattern = new RegExp(SOCIAL_PUBLISH_VERBS.source, 'giu');
@@ -15622,10 +15704,16 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
             const afterPlat = afterVerb.slice((matchAfter.index ?? 0) + matchAfter[0].length);
             const isSourceOnly = SOURCE_MODIFIER_BEFORE_PLATFORM.test(beforePlat)
               || NON_SOCIAL_DESTINATION_AFTER_PLATFORM.test(afterPlat)
-              || (NON_SOCIAL_DESTINATION_IN_TEXT.test(beforePlat)
+              || (NON_SOCIAL_DESTINATION_GOVERNING_AFTER_VERB.test(beforePlat)
+                  && !CONTENT_LINK_PHRASE.test(beforePlat)
                   && !/(?:and|und|et|e|y|ve|и|oder|or|as\s+well\s+as)\s+$/i.test(beforePlat))
+              || (NON_SOCIAL_DESTINATION_GOVERNING_BEFORE_VERB.test(beforeVerb)
+                  && !CONTENT_LINK_PHRASE.test(beforeVerb)
+                  && (TOPIC_NOUN_BEFORE_PLATFORM.test(beforePlat) || SOURCE_MODIFIER_BEFORE_PLATFORM.test(beforePlat)))
               || ((TOPIC_NOUN_BEFORE_PLATFORM.test(beforePlat) || TOPIC_NOUN_AFTER_PLATFORM.test(afterPlat))
-                  && (NON_SOCIAL_DESTINATION_IN_TEXT.test(afterPlat) || NON_SOCIAL_DESTINATION_IN_TEXT.test(beforePlat))
+                  && (NON_SOCIAL_DESTINATION_IN_TEXT.test(afterPlat)
+                      || (NON_SOCIAL_DESTINATION_GOVERNING_AFTER_VERB.test(beforePlat)
+                          && !CONTENT_LINK_PHRASE.test(beforePlat)))
                   && !/^\s*(?:and|und|et|e|y|ve|и|oder|or|as\s+well\s+as)\s+/i.test(afterPlat));
             if (!isSourceOnly) return true;
           }
@@ -15633,13 +15721,16 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           for (const matchBefore of beforeVerb.matchAll(platformPattern)) {
             const beforePlat = beforeVerb.slice(0, matchBefore.index);
             const afterPlat = beforeVerb.slice((matchBefore.index ?? 0) + matchBefore[0].length);
+            const hasCompeteInAfterVerb = NON_SOCIAL_DESTINATION_IN_TEXT.test(afterVerb)
+              && !CONTENT_LINK_PHRASE.test(afterVerb);
             const isSourceOnly = SOURCE_MODIFIER_BEFORE_PLATFORM.test(beforePlat)
               || NON_SOCIAL_DESTINATION_AFTER_PLATFORM.test(afterPlat)
-              || NON_SOCIAL_DESTINATION_IN_TEXT.test(afterVerb)
-              || (NON_SOCIAL_DESTINATION_IN_TEXT.test(beforePlat)
+              || hasCompeteInAfterVerb
+              || (NON_SOCIAL_DESTINATION_GOVERNING_AFTER_VERB.test(beforePlat)
+                  && !CONTENT_LINK_PHRASE.test(beforePlat)
                   && !/(?:and|und|et|e|y|ve|и|oder|or|as\s+well\s+as)\s+$/i.test(beforePlat))
               || ((TOPIC_NOUN_BEFORE_PLATFORM.test(beforePlat) || TOPIC_NOUN_AFTER_PLATFORM.test(afterPlat))
-                  && (NON_SOCIAL_DESTINATION_IN_TEXT.test(afterPlat) || NON_SOCIAL_DESTINATION_IN_TEXT.test(afterVerb))
+                  && (NON_SOCIAL_DESTINATION_AFTER_PLATFORM.test(afterPlat) || hasCompeteInAfterVerb)
                   && !/^\s*(?:and|und|et|e|y|ve|и|oder|or|as\s+well\s+as)\s+/i.test(afterPlat));
             if (!isSourceOnly) return true;
           }
@@ -15651,16 +15742,21 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
             const pTargetText = pClause.maskedText || pClause.text;
             if (SOCIAL_PUBLISH_VERBS.test(pTargetText)) break;
             let foundLeadingPlatform = false;
-            for (const matchPrev of pTargetText.matchAll(platformPattern)) {
+            const hasLeadingPrep = clauses.slice(0, clauseIdx).some(c =>
+              new RegExp(`(?<![${SOCIAL_WORD_EDGE}])${destPreps}(?![${SOCIAL_WORD_EDGE}])`, 'iu').test(c.maskedText || c.text)
+            );
+            const prevPattern = hasLeadingPrep ? coordPlatformPattern : platformPattern;
+            for (const matchPrev of pTargetText.matchAll(prevPattern)) {
               if (SOCIAL_READ_VERBS.test(pTargetText)) break;
               const beforePlat = pTargetText.slice(0, matchPrev.index);
               const afterPlat = pTargetText.slice((matchPrev.index ?? 0) + matchPrev[0].length);
               const isSourceOnly = SOURCE_MODIFIER_BEFORE_PLATFORM.test(beforePlat)
                 || NON_SOCIAL_DESTINATION_AFTER_PLATFORM.test(afterPlat)
-                || (NON_SOCIAL_DESTINATION_IN_TEXT.test(beforePlat)
+                || (NON_SOCIAL_DESTINATION_GOVERNING_AFTER_VERB.test(beforePlat)
+                    && !CONTENT_LINK_PHRASE.test(beforePlat)
                     && !/(?:and|und|et|e|y|ve|и|oder|or|as\s+well\s+as)\s+$/i.test(beforePlat))
                 || ((TOPIC_NOUN_BEFORE_PLATFORM.test(beforePlat) || TOPIC_NOUN_AFTER_PLATFORM.test(afterPlat))
-                    && NON_SOCIAL_DESTINATION_IN_TEXT.test(afterPlat)
+                    && NON_SOCIAL_DESTINATION_AFTER_PLATFORM.test(afterPlat)
                     && !/^\s*(?:and|und|et|e|y|ve|и|oder|or|as\s+well\s+as)\s+/i.test(afterPlat));
               if (!isSourceOnly) {
                 foundLeadingPlatform = true;
@@ -15668,7 +15764,9 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
               }
             }
             if (foundLeadingPlatform) {
-              if (!NON_SOCIAL_DESTINATION_IN_TEXT.test(afterVerb)) {
+              const hasCompeteInAfterVerb = NON_SOCIAL_DESTINATION_IN_TEXT.test(afterVerb)
+                && !CONTENT_LINK_PHRASE.test(afterVerb);
+              if (!hasCompeteInAfterVerb) {
                 return true;
               }
               break;
@@ -15685,15 +15783,16 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
             const nextTargetText = nextClause.maskedText || nextClause.text;
             if (SOCIAL_READ_VERBS.test(nextTargetText)) break;
             if (SOCIAL_PUBLISH_VERBS.test(nextTargetText)) break;
-            for (const matchNext of nextTargetText.matchAll(platformPattern)) {
+            for (const matchNext of nextTargetText.matchAll(coordPlatformPattern)) {
               const beforePlat = nextTargetText.slice(0, matchNext.index);
               const afterPlat = nextTargetText.slice((matchNext.index ?? 0) + matchNext[0].length);
               const isSourceOnly = SOURCE_MODIFIER_BEFORE_PLATFORM.test(beforePlat)
                 || NON_SOCIAL_DESTINATION_AFTER_PLATFORM.test(afterPlat)
-                || (NON_SOCIAL_DESTINATION_IN_TEXT.test(beforePlat)
+                || (NON_SOCIAL_DESTINATION_GOVERNING_AFTER_VERB.test(beforePlat)
+                    && !CONTENT_LINK_PHRASE.test(beforePlat)
                     && !/(?:and|und|et|e|y|ve|и|oder|or|as\s+well\s+as)\s+$/i.test(beforePlat))
                 || ((TOPIC_NOUN_BEFORE_PLATFORM.test(beforePlat) || TOPIC_NOUN_AFTER_PLATFORM.test(afterPlat))
-                    && NON_SOCIAL_DESTINATION_IN_TEXT.test(afterPlat)
+                    && NON_SOCIAL_DESTINATION_AFTER_PLATFORM.test(afterPlat)
                     && !/^\s*(?:and|und|et|e|y|ve|и|oder|or|as\s+well\s+as)\s+/i.test(afterPlat));
               if (!isSourceOnly) return true;
             }
