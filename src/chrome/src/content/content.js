@@ -1881,6 +1881,14 @@
       return noDispatchFailure(`Cannot type into <${tag}> — it is not an editable field. If you wanted to activate it, use click instead. If the real target is a nearby input, click the input first, then call type_text({text: "..."}) with no selector.`);
     }
 
+    // Empty appends mutate nothing: skip focus/dispatch entirely and report
+    // a proven no-op so no uncertainty debt is recorded downstream.
+    // (clear:true still empties below and takes the verified path. Native
+    // selects are excluded: choosing an empty-valued option IS a mutation.)
+    if (!typedText && !params.clear && !(el instanceof HTMLSelectElement)) {
+      return { success: true, dispatched: false, noDispatch: true, noop: true, method: 'noop-empty-append' };
+    }
+
     if (actionDeadlineExpired()) return deadlineFailure();
     el.focus();
     if (actionDeadlineExpired()) return deadlineFailure();
@@ -1904,7 +1912,7 @@
       el.dispatchEvent(new Event('change', { bubbles: true }));
       const verified = await verifyValue(el, typedText, params.clear === true, beforeValue);
       if (actionDeadlineExpired()) return deadlineFailure();
-      return { success: true, ...(verified === true ? { verified: true } : {}), method: 'contenteditable', value: el.textContent.slice(0, 100) };
+      return { success: true, ...(verified === true ? { verified: true } : {}), method: 'contenteditable', value: el.textContent.slice(0, 100), fieldMeta: _fieldMeta(el) };
     }
 
     // <select>: match by value, then by visible option text.
@@ -1969,7 +1977,7 @@
     }
     _lastTypeFieldIdent = routeStayedCurrent ? fieldIdent : null;
 
-    return { success: true, ...(verified === true ? { verified: true } : {}), value: (el.value || '').slice(0, 100), ...(typeWarning ? { warning: typeWarning } : {}) };
+    return { success: true, ...(verified === true ? { verified: true } : {}), value: (el.value || '').slice(0, 100), fieldMeta: _fieldMeta(el), ...(typeWarning ? { warning: typeWarning } : {}) };
   }
 
   /**
@@ -4030,6 +4038,14 @@
         tag,
         type: fieldType,
         contentEditable: !!el.isContentEditable,
+        // Locale-independent file-editor structure: CodeMirror (GitHub's
+        // file editor) marks its editable lineage with stable classes that
+        // survive UI translation, unlike accessible labels.
+        codeMirror: (() => {
+          try {
+            return !!el.isContentEditable && !!el.closest?.('.cm-content, .cm-editor, .CodeMirror');
+          } catch { return false; }
+        })(),
         name: el.getAttribute ? el.getAttribute('name') : null,
         id: elId,
         role: el.getAttribute ? el.getAttribute('role') : null,
@@ -4043,6 +4059,51 @@
       const toolbarCandidate = _richTextToolbarCandidate(el, meta);
       if (toolbarCandidate) meta.toolbarCandidate = toolbarCandidate;
       return meta;
+    } catch { return null; }
+  }
+
+  // Derive a document-unique selector for a verified field so the agent can
+  // re-digest the SAME element later (e.g. pre-submit proof refresh after
+  // focus moved on). Each candidate is accepted only when it resolves back
+  // to exactly this element — never a hard-coded guess that could match a
+  // different field. Returns null when nothing identifies it uniquely.
+  function _stableFieldSelector(el) {
+    try {
+      if (!el || el.nodeType !== 1 || !el.isConnected) return null;
+      const resolvesUniquelyToEl = (selector) => {
+        try {
+          if (!selector) return false;
+          const matches = document.querySelectorAll(selector);
+          return matches.length === 1 && matches[0] === el;
+        } catch { return false; }
+      };
+      const quoted = (value) => String(value ?? '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+      const elId = el.id || null;
+      if (elId) {
+        let selector = null;
+        try {
+          selector = (window.CSS && typeof window.CSS.escape === 'function')
+            ? `#${window.CSS.escape(elId)}`
+            : `#${quoted(elId)}`;
+        } catch { selector = null; }
+        if (selector && resolvesUniquelyToEl(selector)) return selector;
+      }
+      const tag = String(el.tagName || '').toLowerCase();
+      const name = typeof el.getAttribute === 'function' ? el.getAttribute('name') : null;
+      if (tag && name) {
+        const selector = `${tag}[name="${quoted(name)}"]`;
+        if (resolvesUniquelyToEl(selector)) return selector;
+      }
+      const ariaLabel = typeof el.getAttribute === 'function' ? el.getAttribute('aria-label') : null;
+      if (tag && ariaLabel) {
+        const selector = `${tag}[aria-label="${quoted(ariaLabel)}"]`;
+        if (resolvesUniquelyToEl(selector)) return selector;
+      }
+      if (el.isContentEditable) {
+        const selector = '[contenteditable="true"]';
+        if (resolvesUniquelyToEl(selector)) return selector;
+      }
+      return null;
     } catch { return null; }
   }
 
@@ -4430,6 +4491,7 @@
     return {
       success: true,
       verified,
+      fieldMeta: _fieldMeta(el),
       rect: {
         x: Math.round(rect.x),
         y: Math.round(rect.y),
@@ -6212,7 +6274,7 @@
           if (!el.isConnected) {
             return failure(
               `ref_id ${ref_id} was replaced while the value was being typed. Re-read the accessibility tree and retry with the current field ref_id.`,
-              { ref_id, verified: false, recoveryRequired: 'fresh_tree', failureScope: `field-value:${ref_id}`, retryable: false, fieldMeta },
+              { ref_id, verified: false, recoveryRequired: 'verify_or_restore_field', failureScope: `field-value:${ref_id}`, retryable: false, fieldMeta },
             );
           }
           const actual = el.isContentEditable ? _editableTextValue(el) : (el.value || '');
@@ -6232,7 +6294,7 @@
                 fieldMeta,
                 fallbackAttempted,
                 ...(selectExpected === null ? { _expectedValue: (clear ? '' : previous) + text } : {}),
-                recoveryRequired: 'fresh_tree',
+                recoveryRequired: 'verify_or_restore_field',
                 failureScope: `field-value:${ref_id}`,
                 retryable: false,
               },
@@ -6370,7 +6432,7 @@
           if (!el.isConnected) {
             return failure(
               `ref_id ${ref_id} was replaced while the value was being set. Re-read the accessibility tree and retry with the current field ref_id.`,
-              { ref_id, verified: false, recoveryRequired: 'fresh_tree', failureScope: `field-value:${ref_id}`, retryable: false },
+              { ref_id, verified: false, recoveryRequired: 'verify_or_restore_field', failureScope: `field-value:${ref_id}`, retryable: false },
             );
           }
           const actual = el.isContentEditable ? _editableTextValue(el) : (el.value || '');
@@ -6516,7 +6578,7 @@
                 fieldMeta,
                 fallbackAttempted,
                 _expectedValue: (clear ? '' : prevValue) + text,
-                recoveryRequired: 'fresh_tree',
+                recoveryRequired: 'verify_or_restore_field',
                 failureScope: `field-value:${ref_id}`,
                 retryable: false,
               },
@@ -6616,6 +6678,71 @@
           };
         } catch (error) {
           return { success: false, verified: false, error: error && error.message || String(error) };
+        }
+      },
+      'field_value_digest': async () => {
+        try {
+          const { ref_id, selector, expected, focused } = msg.params || {};
+          let el = null;
+          if (typeof ref_id === 'string' && ref_id) {
+            if (typeof window.__wb_ax_lookup !== 'function') {
+              return { success: false, error: 'accessibility-tree.js not injected' };
+            }
+            el = window.__wb_ax_lookup(ref_id);
+          } else if (typeof selector === 'string' && selector.trim()) {
+            const queryDeep = (root) => {
+              const match = root.querySelector(selector.trim());
+              if (match) return match;
+              const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+              let node = walker.currentNode;
+              while (node) {
+                if (node.shadowRoot) {
+                  const nested = queryDeep(node.shadowRoot);
+                  if (nested) return nested;
+                }
+                node = walker.nextNode();
+              }
+              return null;
+            };
+            el = queryDeep(document);
+          } else if (focused === true) {
+            // Focused-field proof path for selectorless type_text({text}).
+            // Digests the deep active element so a verified focused write can
+            // bind to live field metadata. Failures still carry the live
+            // documentToken/refScopeUrl via the dispatcher scope wrap, so the
+            // agent's live-scope check can use this as a document oracle.
+            try {
+              let active = document.activeElement;
+              while (active?.shadowRoot?.activeElement) active = active.shadowRoot.activeElement;
+              el = active && active !== document.body && active !== document.documentElement ? active : null;
+            } catch { el = null; }
+            if (!el || !el.isConnected) return { success: false, error: 'no focused editable element' };
+          } else {
+            return { success: false, error: 'ref_id or selector is required' };
+          }
+          if (!el || !el.isConnected) return { success: false, error: 'field is stale or unavailable' };
+          const tag = String(el.tagName || '').toUpperCase();
+          if (!(el.isContentEditable || tag === 'INPUT' || tag === 'TEXTAREA')) {
+            return { success: false, error: 'target is not a text field' };
+          }
+          const value = String(el.isContentEditable ? _editableTextValue(el) : (el.value || ''));
+          if (!globalThis.crypto?.subtle) return { success: false, error: 'SHA-256 is unavailable' };
+          const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+          const valueSha256 = [...new Uint8Array(digest)]
+            .map(byte => byte.toString(16).padStart(2, '0'))
+            .join('');
+          return {
+            success: true,
+            ...(typeof expected === 'string' ? {
+              verified: _setFieldValueMatches(value, '', expected, true, el.isContentEditable),
+            } : {}),
+            valueLength: value.length,
+            valueSha256,
+            fieldMeta: _fieldMeta(el),
+            stableSelector: _stableFieldSelector(el),
+          };
+        } catch (error) {
+          return { success: false, error: error && error.message || String(error) };
         }
       },
       'resolve_visual_target': () => {
@@ -6967,16 +7094,35 @@
       return;
     }
 
+    // Readback probes double as live document-identity oracles: the agent
+    // uses their token to tell a same-document route change (keep text
+    // guards) from a full navigation no AX scope ever observed (drop stale
+    // debt). Attach on every return path, including failures.
+    const withLiveDocumentScope = (value) => {
+      if ((msg.action === 'field_value_digest' || msg.action === 'ax_verify_field_value')
+          && value && typeof value === 'object') {
+        try {
+          if (!value.documentToken) value.documentToken = _axDocumentToken();
+          if (!value.refScopeUrl) value.refScopeUrl = location.href;
+        } catch { /* identity is best-effort; never break the response */ }
+      }
+      return value;
+    };
+
     const result = handler();
     if (result instanceof Promise) {
       // Always settle sendResponse — a rejecting handler (e.g. a throwing
       // DOM API) must not leave the caller's await hanging forever.
-      result.then(sendResponse, (err) => {
-        sendResponse({ success: false, error: `${msg.action} failed: ${err?.message || String(err)}` });
-      });
+      result.then(
+        (value) => sendResponse(withLiveDocumentScope(value)),
+        (err) => sendResponse(withLiveDocumentScope({
+          success: false,
+          error: `${msg.action} failed: ${err?.message || String(err)}`,
+        })),
+      );
       return true; // async
     }
-    sendResponse(result);
+    sendResponse(withLiveDocumentScope(result));
   });
 
   // ─── Tab attention flash ────────────────────────────────────────────

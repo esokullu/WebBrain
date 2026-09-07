@@ -655,6 +655,8 @@ export class Agent extends LoopDetector {
     this.persistTimers = new Map(); // tabId -> debounce handle
     this.abortFlags = new Map(); // tabId -> boolean
     this.currentRunId = new Map(); // tabId -> active trace runId (for recorder hooks)
+    this._taskTokens = new Map(); // tabId -> per-task proof-scoping token, independent of optional tracing
+    this._continuationTaskTokens = new Map(); // tabId -> stashed task token carried only by trusted continuations
     this._latestWorkflowDrafts = new Map(); // tabId -> sanitized, session-scoped workflow draft
     this.currentCostState = new Map(); // tabId -> active cloud/router cost state
     this.maxSteps = 130; // safety limit for autonomous loops (configurable via settings)
@@ -813,6 +815,11 @@ export class Agent extends LoopDetector {
     this._lastClickProgress = new Map(); // tabId -> { ident, snapshot }
     this._clickAxCdpFallbacks = new Map(); // tabId -> Set(documentToken|ref_id), one trusted fallback per document target
     this._lastAxScopes = new Map(); // tabId -> { documentToken, pageUrl }, captured by the latest AX read
+    this._uncertainTextMutations = new Map(); // tabId -> Map(target -> unresolved, potentially applied text write; no raw text)
+    this._verifiedTextReplacements = new Map(); // tabId -> exact replacement digest bound to the live document
+    // tabId -> recent document tokens (bounded) whose mutation records are
+    // retained so a back-forward cache return restores their guards.
+    this._recentTextMutationDocuments = new Map();
     this._richTextToolbarGuard = new RichTextToolbarGuard();
     this._richTextToolbarProbe = new RichTextToolbarProbe(this);
     this._uploadSelectorRecoveryRequired = new Map(); // tabId -> prior ambiguous match count; cleared only by inspection/navigation/cleanup
@@ -1710,6 +1717,110 @@ export class Agent extends LoopDetector {
       || metadataDetails.incomplete === true
       || (this._workflowJobStoresMetadataRequirements(siteWorkflow)
         && guard.workflowMetadataRequirementsResolved !== true);
+    const replacementRecords = this._verifiedTextReplacements.get(tabId);
+    const replacementRecordValues = [...(replacementRecords instanceof Map
+      ? replacementRecords.values()
+      : (replacementRecords ? [replacementRecords] : []))];
+    // Proofs authorize a commit only for the task that verified them. Records
+    // survive run teardown, so without this a later run in the same tab could
+    // authorize a stale replacement it never verified. The match requires a
+    // nonempty token on both sides: two tokenless runs must never satisfy it
+    // (e.g. a persistent recorder failure must not collapse every task into
+    // one identity).
+    const activeTaskToken = this._taskTokens.get(tabId);
+    const activeTaskTokenValid = typeof activeTaskToken === 'string' && activeTaskToken.length > 0;
+    // Editor identity must be GitHub-specific (see _isGithubFileEditorRecord,
+    // shared with the refresh classifier so the two cannot drift): a bare
+    // contentEditable flag is not enough — any other contenteditable on the
+    // edit route could otherwise mint a commit while the real editor still
+    // holds stale content. Records store the live digest metadata, so legit
+    // flows always carry the linkage.
+    const githubEditorReplacements = replacementRecordValues
+      .filter(record => record?.ambiguous !== true
+        && activeTaskTokenValid
+        && record?.taskToken === activeTaskToken
+        && !!record?.expectedSha256
+        && !!record?.readbackSha256
+        && this._normalizeUrl(record.pageUrl || '') === this._normalizeUrl(pageUrl)
+        && this._isGithubFileEditorRecord(record));
+    const githubEditorPayloads = new Set(githubEditorReplacements
+      .map(record => `${record.expectedLength}:${record.expectedSha256}`));
+    const verifiedReplacement = githubEditorPayloads.size === 1
+      ? githubEditorReplacements.sort((left, right) => Number(right?.verifiedAt || 0) - Number(left?.verifiedAt || 0))[0]
+      : null;
+    const githubEditScope = siteWorkflow?.adapterName === 'github'
+      && siteWorkflow?.job?.id === 'edit-file-and-commit'
+      ? this._workflowGithubEditFileScope(pageUrl, metadataRequirements)
+      : null;
+    const commitMessageRequirement = metadataRequirements
+      .find(requirement => requirement?.field === 'commit_message');
+    // Verbatim requirement text: the digest gate must hash what was asked
+    // for, not its NFKC fold — otherwise an exact write is blocked while a
+    // normalized rewrite could commit different bytes. Mirrors the byte-exact
+    // path scope handling. Absent rawValue means verbatim equals normalized.
+    const expectedCommitMessage = commitMessageRequirement
+      ? String(commitMessageRequirement.rawValue ?? commitMessageRequirement.value ?? '')
+      : '';
+    // GitHub composes the commit as summary + "\n\n" + extended description
+    // across two dialog fields, so a multi-line request needs both parts
+    // proven exactly: the summary on a single-line (non-textarea) commit
+    // field and the body on the textarea description field. Tag roles keep
+    // swapped fields from authorizing. Single-line requests behave exactly
+    // as before (summary proof); multi-line requests without a blank
+    // separator cannot be composed exactly and stay shut, as does anything
+    // whose parts are missing. Comparisons are collision-resistant SHA-256
+    // (a 32-bit FNV-1a fingerprint collides practically); the sync helper
+    // matches _sha256Text and the gate stays synchronous.
+    const messageSplit = expectedCommitMessage.indexOf('\n');
+    const messageRest = messageSplit < 0 ? '' : expectedCommitMessage.slice(messageSplit + 1);
+    const expectedSummary = messageSplit < 0 ? expectedCommitMessage : expectedCommitMessage.slice(0, messageSplit);
+    const expectedBody = messageRest.startsWith('\n') ? messageRest.slice(1).replace(/\n+$/, '') : '';
+    const composableMessage = messageSplit < 0 || messageRest === '' || messageRest.startsWith('\n');
+    const expectedSummarySha256 = commitMessageRequirement
+      ? this._sha256TextSync(expectedSummary)
+      : '';
+    const expectedBodySha256 = composableMessage && expectedBody
+      ? this._sha256TextSync(expectedBody)
+      : '';
+    const commitFieldRecords = replacementRecordValues.filter(record => (
+      record?.ambiguous !== true
+      && activeTaskTokenValid
+      && record?.taskToken === activeTaskToken
+      && !!record?.readbackSha256
+      && this._normalizeUrl(record.pageUrl || '') === this._normalizeUrl(pageUrl)
+      && this._isGithubCommitMessageField(record?.fieldMeta)
+    ));
+    const summaryVerified = !!expectedSummarySha256 && commitFieldRecords.some(record => (
+      String(record?.fieldMeta?.tag || '').toLowerCase() !== 'textarea'
+      && record.expectedLength === expectedSummary.length
+      && record.expectedSha256 === expectedSummarySha256
+    ));
+    const bodyVerified = !expectedBody || (!!expectedBodySha256 && commitFieldRecords.some(record => (
+      String(record?.fieldMeta?.tag || '').toLowerCase() === 'textarea'
+      && record.expectedLength === expectedBody.length
+      && record.expectedSha256 === expectedBodySha256
+    )));
+    const commitMessageVerified = !commitMessageRequirement
+      || (composableMessage && summaryVerified && bodyVerified);
+    const githubFileCommit = !metadataIncomplete
+      && githubEditScope
+      && verifiedReplacement
+      && commitMessageVerified
+      ? {
+          ...githubEditScope,
+          expectedLength: verifiedReplacement.expectedLength,
+          expectedSha256: verifiedReplacement.expectedSha256,
+          commitMessageVerified,
+          // Chromium's contenteditable readback deterministically expands
+          // newline runs (see _contentEditableValueMatches), so a verified
+          // proof is not always byte-exact. Requiring byte-exact readback
+          // here would permanently block every newline-terminated file;
+          // record which notion of exactness authorized the binding instead.
+          // The byte-exact raw-blob check after the commit stays fail-closed.
+          readbackByteExact: verifiedReplacement.readbackLength === verifiedReplacement.expectedLength
+            && verifiedReplacement.readbackSha256 === verifiedReplacement.expectedSha256,
+        }
+      : null;
     const verificationKind = this._workflowVerificationKind(siteWorkflow);
     const normalizeOrderIdentities = values => [...new Set((Array.isArray(values) ? values : [])
       .map(value => String(value || '').trim().toUpperCase())
@@ -1752,6 +1863,7 @@ export class Agent extends LoopDetector {
         metadataRequirements: metadataRequirements.map(requirement => ({ ...requirement })),
         ...(metadataIncomplete ? { metadataRequirementsIncomplete: true } : {}),
       } : {}),
+      ...(githubFileCommit ? { githubFileCommit } : {}),
       ...(verificationKind === 'form_confirmation' ? {
         formDocumentScope: this._workflowInventoryDocumentScope(tabId, pageUrl),
         formIdentity: this._workflowFormOriginIdentity(pageUrl),
@@ -1763,6 +1875,83 @@ export class Agent extends LoopDetector {
           ? { transactionOrderIdentity: transactionOrderIdentities[0] }
           : {}),
       } : {}),
+    };
+  }
+
+  async _workflowPreSubmitDispatchBlock(tabId, name, args = {}, detectedSubmit = null) {
+    const guard = this._planExecutionGuards.get(tabId);
+    if (guard?.siteWorkflow?.adapterName !== 'github'
+        || guard.siteWorkflow?.job?.id !== 'edit-file-and-commit') return null;
+    const looksLikeSubmit = detectedSubmit?.isSubmit === true
+      || this._formValidationActionLooksSubmit(name, args, null, detectedSubmit);
+    // Fail closed when submit detection is inconclusive: a click_ax carrying
+    // only a ref_id (or any other submit-capable action whose probe produced
+    // no evidence) cannot be proven to be a non-submit, so it must clear the
+    // same binding gate as an observed submit. Non-submit-capable tools keep
+    // the early exit, as do clicks the probe resolved to an editable field
+    // (focusing it cannot submit) or to a pure navigation link such as the
+    // blob page's Edit control (navigating cannot submit or mutate fields);
+    // the positively identified reversible dialog launcher is exempted below.
+    const resolvedEditableTarget = (name === 'click' || name === 'click_ax' || name === 'iframe_click')
+      && detectedSubmit?.resolvedEditableTarget === true;
+    const resolvedNavigationTarget = (name === 'click' || name === 'click_ax' || name === 'iframe_click')
+      && detectedSubmit?.resolvedNavigationTarget === true;
+    const inconclusiveSubmitCapable = !looksLikeSubmit && !resolvedEditableTarget && !resolvedNavigationTarget
+      && this._isFormValidationCandidate(name, args);
+    if (!looksLikeSubmit && !inconclusiveSubmitCapable) return null;
+    const detectedFields = [
+      ...(Array.isArray(detectedSubmit?.fields) ? detectedSubmit.fields : []),
+      ...(Array.isArray(detectedSubmit?.changedFields) ? detectedSubmit.changedFields : []),
+    ];
+    const hasCommitMessageField = detectedFields.some(field => (
+      /\bcommit[\s_-]*message\b/i.test(String(field?.label || ''))
+    ));
+    // GitHub's first "Commit changes..." control only opens the commit dialog.
+    // It can live inside the editor form and therefore look like a heuristic
+    // submit, but the commit-message field is not present until the dialog is
+    // open. Exempt only that narrow reversible click; missing probe evidence,
+    // Enter/set_field submission, and modal controls remain fail-closed.
+    const reversibleDialogLauncher = (name === 'click' || name === 'click_ax')
+      && detectedSubmit?.githubCommitDialogLauncher === true
+      && detectedSubmit?.isSubmit === true
+      && detectedSubmit.validationSubmitEvidence === 'heuristic'
+      && !hasCommitMessageField;
+    if (reversibleDialogLauncher) return null;
+    // Compound actions can rewrite the verified values in the same dispatch:
+    // execute_js runs arbitrary page code, set_field writes text, and Enter
+    // can both submit and insert. Passing them on pre-mutation proofs would
+    // authorize bytes that were never hashed, so only a non-mutating final
+    // activation may use an existing binding. Anything else must split into
+    // a plain write (verified on its own) followed by a separate click.
+    if (name !== 'click' && name !== 'click_ax' && name !== 'iframe_click') {
+      return {
+        success: false,
+        dispatched: false,
+        noDispatch: true,
+        retryable: true,
+        repeatBlocked: true,
+        workflowJob: 'edit-file-and-commit',
+        recoveryRequired: 'verify_or_restore_field',
+        splitWriteRequired: true,
+        error: name === 'execute_js'
+          ? 'Arbitrary page JavaScript may change the editor or commit message, voiding previously verified proofs. Re-verify the complete values with field reads, then activate the commit control with a separate click; do not bundle mutation and submission.'
+          : 'This action can change field values in the same dispatch as submission, so it cannot use previously verified proofs. Write the field with a non-submit call first, verify the complete value, then activate the commit control with a separate click.',
+      };
+    }
+    const pageUrl = await this._currentUrl(tabId);
+    await this._refreshGithubTextReplacementProofs(tabId, pageUrl);
+    const binding = this._workflowSubmitBindingForAttempt(tabId, pageUrl, {}, detectedSubmit);
+    if (binding?.metadataRequirementsIncomplete !== true && binding?.githubFileCommit) return null;
+    return {
+      success: false,
+      dispatched: false,
+      noDispatch: true,
+      retryable: true,
+      repeatBlocked: true,
+      workflowJob: 'edit-file-and-commit',
+      recoveryRequired: 'verify_or_restore_field',
+      ...(inconclusiveSubmitCapable ? { inconclusiveSubmitDetection: true } : {}),
+      error: 'Commit submission is blocked because the complete GitHub file-editor replacement, requested commit message, path, or branch is not bound to exact pre-submit evidence. Resolve any uncertain text write with exact readback or reload and restore the editor, then verify the complete file and requested commit message before committing.',
     };
   }
 
@@ -1961,6 +2150,9 @@ export class Agent extends LoopDetector {
       ['seat_class', ['seat class', 'seat', 'class', 'berth', 'koltuk', '座位', '席', '좌석']],
       ['subject', ['subject', 'subject line', 'email subject', 'sujet', 'objet', 'asunto', 'assunto', 'betreff', 'oggetto', 'konu', '件名', '主题', '主旨']],
       ['body', ['body', 'post', 'post body', 'post text', 'composer']],
+      ['path', ['path', 'file path', 'repository path']],
+      ['branch', ['branch', 'git branch']],
+      ['commit_message', ['commit message', 'commit summary', 'commit title']],
       ['title', ['title', 'titre', 'título', 'titulo', 'titel', 'titolo', 'başlık', 'タイトル', '제목', '标题', '標題', 'название']],
     ];
     const paddedText = ` ${text} `;
@@ -2018,7 +2210,22 @@ export class Agent extends LoopDetector {
         discarded += 1;
         continue;
       }
-      requirements.set(field, { field, value: this._workflowMetadataValue(value.value) });
+      // Keep the byte-exact request text alongside the normalized value, but
+      // only when normalization changed something: Git paths preserve
+      // distinctions NFKC/trim fold (fullwidth Ａ vs A, significant
+      // whitespace), and scope resolution must compare those. Absent means
+      // verbatim equals normalized, so existing shapes are untouched.
+      // Re-ingestion keeps an existing rawValue instead of re-deriving it
+      // from the already-normalized value.
+      const normalizedValue = this._workflowMetadataValue(value.value);
+      const verbatimValue = typeof value.rawValue === 'string'
+        ? value.rawValue
+        : String(value.value ?? '');
+      requirements.set(field, {
+        field,
+        value: normalizedValue,
+        ...(verbatimValue !== normalizedValue ? { rawValue: verbatimValue } : {}),
+      });
     }
     return { items: [...requirements.values()], incomplete: discarded > 0 };
   }
@@ -2128,6 +2335,367 @@ export class Agent extends LoopDetector {
     }
   }
 
+  _workflowGithubCommitIdentityParts(identity) {
+    const match = /^github:github\.com\/([^/]+\/[^/]+)\/commit\/([0-9a-f]{7,40})$/i.exec(String(identity || ''));
+    return match ? { repository: match[1].toLowerCase(), sha: match[2].toLowerCase() } : null;
+  }
+
+  _workflowGithubEditFileScope(pageUrl, requirements = []) {
+    try {
+      const parsed = new URL(String(pageUrl || ''));
+      if (parsed.hostname.toLowerCase().replace(/^www\./, '') !== 'github.com') return null;
+      const match = /^\/([^/]+)\/([^/]+)\/edit\/(.+)$/i.exec(parsed.pathname);
+      if (!match) return null;
+      const repository = `${match[1]}/${match[2]}`.toLowerCase();
+      const rest = match[3].split('/').map(segment => {
+        try { return decodeURIComponent(segment); } catch { return segment; }
+      });
+      const byField = new Map((Array.isArray(requirements) ? requirements : [])
+        // Byte-exact scope values: prefer the verbatim request text kept at
+        // ingestion (rawValue). NFKC/trim would fold distinctions Git
+        // preserves (fullwidth Ａ vs A, significant whitespace), turning a
+        // valid request into a null scope. Only the documented slash
+        // tolerance applies below.
+        .map(item => [item?.field, typeof item?.rawValue === 'string' ? item.rawValue : item?.value]));
+      const requestedPath = String(byField.get('path') || '').replace(/^\/+/, '');
+      const requestedBranch = String(byField.get('branch') || '').replace(/^\/+|\/+$/g, '');
+      let branch = requestedBranch;
+      let path = requestedPath;
+      if (requestedPath) {
+        const pathParts = requestedPath.split('/');
+        if (rest.length <= pathParts.length
+            || rest.slice(-pathParts.length).join('/') !== requestedPath) return null;
+        const branchParts = rest.slice(0, -pathParts.length);
+        branch = branchParts.join('/');
+        if (requestedBranch && branch !== requestedBranch) return null;
+      } else if (requestedBranch) {
+        const routeSuffix = rest.join('/');
+        const branchPrefix = `${requestedBranch}/`;
+        if (!routeSuffix.startsWith(branchPrefix)) return null;
+        branch = requestedBranch;
+        path = routeSuffix.slice(branchPrefix.length);
+      } else {
+        branch = rest.shift() || '';
+        path = rest.join('/');
+      }
+      if (!branch || !path) return null;
+      return { repository, branch, path };
+    } catch {
+      return null;
+    }
+  }
+
+  // Confirm a fresh commit sits on the requested branch: the commit dialog
+  // can create a new branch + PR instead of committing to the URL branch,
+  // while everything else here is SHA-addressed and branch-blind.
+  // Returns true (confirmed on the branch), false (affirmatively elsewhere),
+  // or null (inconclusive — keep the content verdict). Only an affirmative
+  // mismatch ever rejects. The same-host branch list comes first so session
+  // cookies authenticate private repositories; the token-based API is the
+  // fallback for public ones. Unparseable or oversize answers are
+  // inconclusive, never evidence.
+  async _githubCommitBranchAttribution(repository, branch, sha) {
+    const sameHostAttribution = async () => {
+      const response = await fetch(
+        `https://github.com/${repository}/branch_commits/${sha}`,
+        { credentials: 'include', cache: 'no-store' },
+      );
+      if (!response.ok) return null;
+      const length = Number(response.headers?.get?.('content-length') || 0);
+      if (length > 65536) return null;
+      const html = await response.text();
+      if (!html || html.length > 65536) return null;
+      const names = [];
+      const branchItem = /<li[^>]*class="[^"]*\bbranch\b[^"]*"[^>]*>\s*<a[^>]*>([^<]*)<\/a>/gi;
+      let match = null;
+      // eslint-disable-next-line no-cond-assign
+      while ((match = branchItem.exec(html)) !== null) {
+        const name = match[1]
+          .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+          .replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim();
+        if (name) names.push(name);
+      }
+      if (names.length === 0) return null;
+      return names.includes(branch);
+    };
+    const apiAttribution = async () => {
+      const response = await fetch(
+        `https://api.github.com/repos/${repository}/commits/${sha}/branches-where-head?per_page=100`,
+        { headers: { Accept: 'application/vnd.github+json' }, cache: 'no-store' },
+      );
+      if (!response.ok) return null;
+      const length = Number(response.headers?.get?.('content-length') || 0);
+      if (length > 65536) return null;
+      const text = await response.text();
+      if (!text || text.length > 65536) return null;
+      let entries = null;
+      try { entries = JSON.parse(text); } catch { return null; }
+      if (!Array.isArray(entries) || entries.length === 0 || entries.length >= 100) return null;
+      const names = entries.map(entry => String(entry?.name || '')).filter(Boolean);
+      if (names.length === 0) return null;
+      return names.includes(branch);
+    };
+    try {
+      if (!repository || !branch || !sha) return null;
+      const sameHost = await sameHostAttribution();
+      if (sameHost !== null) return sameHost;
+      return await apiAttribution();
+    } catch {
+      return null;
+    }
+  }
+
+  async _githubCommittedFileVerification(tabId, pageState, pageUrl, submissionEvidence) {
+    const state = this._planExecutionGuards.get(tabId);
+    if (state?.siteWorkflow?.adapterName !== 'github'
+        || state.siteWorkflow?.job?.id !== 'edit-file-and-commit') return null;
+    const submit = submissionEvidence?.submit;
+    const binding = submit?.workflowBinding;
+    const expected = binding?.githubFileCommit;
+    if (!binding || !expected || submissionEvidence?.verifiedFinalSubmit !== true) {
+      return { verified: false, reason: 'missing_bound_verified_replacement' };
+    }
+    const observed = this._workflowPublishedResourceIdentities(state.siteWorkflow, [
+      pageUrl,
+      pageState?.workflowResourceUrls,
+    ], pageUrl);
+    let identity = binding.publishedResourceIdentity || '';
+    if (!identity) {
+      const baseline = new Set(binding.preDispatchPublishedResourceIdentities || []);
+      const pageIdentity = this._workflowPublishedResourceIdentity(
+        state.siteWorkflow, pageUrl, pageUrl,
+      );
+      const pageCommit = this._workflowGithubCommitIdentityParts(pageIdentity);
+      const candidates = observed.filter(value => !baseline.has(value));
+      if (pageCommit && !baseline.has(pageIdentity)) {
+        identity = pageIdentity;
+        binding.publishedResourceIdentity = identity;
+      } else if (candidates.length === 1) {
+        identity = candidates[0];
+        binding.publishedResourceIdentity = identity;
+      }
+    }
+    const commit = this._workflowGithubCommitIdentityParts(identity);
+    if (!commit || commit.repository !== expected.repository || !observed.includes(identity)) {
+      return { verified: false, reason: 'commit_identity_mismatch' };
+    }
+    // Changed-file linkage: on the observed commit page each changed file
+    // links to /blob/<sha>/<path>. A content match at a path the observed
+    // commit never touched proves nothing (identical bytes may pre-exist at
+    // another candidate path), so a match counts only on a listed path — or,
+    // when no file list was observed, on content match alone.
+    const commitBlobPaths = new Set();
+    for (const raw of [
+      pageUrl,
+      ...(Array.isArray(pageState?.workflowResourceUrls) ? pageState.workflowResourceUrls : []),
+    ]) {
+      try {
+        const parsed = new URL(String(raw || ''));
+        if (parsed.hostname.toLowerCase().replace(/^www\./, '') !== 'github.com') continue;
+        const blobMatch = /^\/([^/]+)\/([^/]+)\/blob\/([0-9a-f]{7,40})\/(.+)$/i.exec(parsed.pathname);
+        if (!blobMatch) continue;
+        if (`${blobMatch[1]}/${blobMatch[2]}`.toLowerCase() !== commit.repository) continue;
+        if (blobMatch[3].toLowerCase() !== commit.sha) continue;
+        commitBlobPaths.add(blobMatch[4].split('/').map(segment => {
+          try { return decodeURIComponent(segment); } catch { return segment; }
+        }).join('/'));
+      } catch { /* unparseable entries cannot evidence the file list */ }
+    }
+    try {
+      // The branch/path cut is ambiguous when the request named neither: a
+      // URL like /edit/feature/fix-copy/docs/plan.md may hide a slash branch
+      // behind the first segment. The commit itself always lands correctly
+      // (the page form owns the scope), so resolve the true scope here by
+      // content: every re-partition of the same segments is tried, naive cut
+      // first, and the first content match on a listed path wins, correcting
+      // the binding in place. Re-partitioning applies only when the request
+      // named neither path nor branch (an explicit scope is already exact, so
+      // it keeps the original single-path behavior). Bounded either way.
+      const requirements = Array.isArray(binding?.metadataRequirements)
+        ? binding.metadataRequirements
+        : [];
+      const requestedScopeValue = (field) => {
+        const entry = requirements.find(requirement => requirement?.field === field);
+        // Byte-exact like the scope parser: emptiness is tested on the
+        // verbatim request text, not the normalized value.
+        const raw = typeof entry?.rawValue === 'string' ? entry.rawValue : entry?.value;
+        return String(raw || '').replace(/^\/+/, '');
+      };
+      const scopeAmbiguous = !requestedScopeValue('path') && !requestedScopeValue('branch');
+      const segments = `${expected.branch}/${expected.path}`.split('/');
+      const attempts = [{ branch: expected.branch, path: expected.path }];
+      if (scopeAmbiguous) {
+        // Evidence-first: the observed commit's changed-file list names the
+        // true path. Any listed path that is an exact suffix re-partition of
+        // the same segments is the true scope by construction — queue those
+        // before the positional loop so a short slash branch with a deeply
+        // nested file can never be dropped by the attempt cap below. The
+        // count is bounded by the segment count (suffixes are distinct) and
+        // every fetch keeps the existing 2MB guards.
+        for (const blobPath of commitBlobPaths) {
+          const blobSegments = String(blobPath).split('/').filter(segment => segment);
+          if (!blobSegments.length || blobSegments.length >= segments.length) continue;
+          if (segments.slice(segments.length - blobSegments.length).join('/') !== blobPath) continue;
+          const branch = segments.slice(0, segments.length - blobSegments.length).join('/');
+          if (!branch) continue;
+          if (branch === expected.branch && blobPath === expected.path) continue;
+          if (attempts.some(attempt => attempt.branch === branch && attempt.path === blobPath)) continue;
+          attempts.push({ branch, path: blobPath });
+        }
+        for (let cut = segments.length - 1; cut >= 1 && attempts.length < 10; cut -= 1) {
+          const branch = segments.slice(0, cut).join('/');
+          const path = segments.slice(cut).join('/');
+          if (branch !== expected.branch || path !== expected.path) {
+            attempts.push({ branch, path });
+          }
+        }
+      }
+      let firstMismatch = null;
+      let unattributedMatch = null;
+      let alternatesSkippedForEvidence = false;
+      let lastFetchReason = 'raw_file_read_failed';
+      for (const attempt of attempts) {
+        const naiveAttempt = attempt.branch === expected.branch && attempt.path === expected.path;
+        // Alternate cuts are only meaningful against the observed changed
+        // file list: accepting one on content alone would bless bytes that
+        // pre-exist at an untouched path. An explicitly requested scope
+        // names its path exactly, so the naive cut verifies on content
+        // alone — the 200-link harvest cap may have cut its blob link, and
+        // there is no scope ambiguity to resolve. Ambiguous cuts keep the
+        // listing requirement (and the content-match fallback when no file
+        // list was observed, so ordinary commits verify without forcing
+        // every flow through the commit page).
+        if (!naiveAttempt && commitBlobPaths.size === 0) {
+          alternatesSkippedForEvidence = true;
+          continue;
+        }
+        const encodedPath = attempt.path.split('/').map(encodeURIComponent).join('/');
+        const rawUrl = `https://github.com/${expected.repository}/raw/${commit.sha}/${encodedPath}`;
+        let response = null;
+        try {
+          response = await fetch(rawUrl, {
+            credentials: 'include',
+            cache: 'no-store',
+            redirect: 'follow',
+          });
+        } catch {
+          lastFetchReason = 'raw_file_read_failed';
+          continue;
+        }
+        if (!response.ok) {
+          lastFetchReason = `raw_http_${response.status}`;
+          continue;
+        }
+        const contentLength = Number(response.headers?.get?.('content-length') || 0);
+        if (contentLength > 2_000_000) return { verified: false, reason: 'raw_file_too_large' };
+        // Hash the raw response bytes: Response.text() strips a leading
+        // UTF-8 BOM during decoding while the expected length/SHA were
+        // computed from the exact editor string including it, so decoding
+        // first would mismatch every BOM-led file after a good commit.
+        let text = null;
+        try {
+          if (typeof response.arrayBuffer === 'function') {
+            const buffer = await response.arrayBuffer();
+            if (buffer.byteLength > 2_000_000) return { verified: false, reason: 'raw_file_too_large' };
+            text = new TextDecoder('utf-8', { ignoreBOM: true }).decode(buffer);
+          }
+        } catch { text = null; }
+        if (text == null) {
+          try {
+            text = await response.text();
+          } catch {
+            lastFetchReason = 'raw_file_read_failed';
+            continue;
+          }
+        }
+        if (text.length > 2_000_000) return { verified: false, reason: 'raw_file_too_large' };
+        const actualSha256 = await this._sha256Text(text);
+        const contentMatches = !!actualSha256
+          && text.length === expected.expectedLength
+          && actualSha256 === expected.expectedSha256;
+        if (contentMatches
+            && ((naiveAttempt && !scopeAmbiguous) || commitBlobPaths.size === 0 || commitBlobPaths.has(attempt.path))) {
+          if (attempt.branch !== expected.branch || attempt.path !== expected.path) {
+            binding.githubFileCommit = { ...expected, branch: attempt.branch, path: attempt.path };
+          }
+          // Branch attribution: the dialog may have created a new branch +
+          // PR instead of committing to the requested branch, while
+          // everything above is SHA-addressed and branch-blind. Only an
+          // affirmative mismatch rejects; inconclusive API outcomes keep the
+          // content verdict. Skipped for fully-ambiguous scopes, where no
+          // branch was requested to check against.
+          if (!scopeAmbiguous && await this._githubCommitBranchAttribution(
+            commit.repository, expected.branch, commit.sha,
+          ) === false) {
+            return {
+              verified: false,
+              reason: 'commit_wrong_branch',
+              repository: commit.repository,
+              commitSha: commit.sha,
+              path: attempt.path,
+              expectedLength: expected.expectedLength,
+              expectedSha256: expected.expectedSha256,
+            };
+          }
+          return {
+            verified: true,
+            repository: commit.repository,
+            commitSha: commit.sha,
+            path: attempt.path,
+            expectedLength: expected.expectedLength,
+            actualLength: text.length,
+            expectedSha256: expected.expectedSha256,
+            actualSha256,
+          };
+        }
+        if (contentMatches) {
+          if (!unattributedMatch) unattributedMatch = { path: attempt.path, text, actualSha256 };
+        } else if (!firstMismatch) {
+          firstMismatch = { text, actualSha256 };
+        }
+      }
+      if (unattributedMatch) {
+        return {
+          verified: false,
+          reason: 'commit_file_list_mismatch',
+          repository: commit.repository,
+          commitSha: commit.sha,
+          path: unattributedMatch.path,
+          expectedLength: expected.expectedLength,
+          actualLength: unattributedMatch.text.length,
+          expectedSha256: expected.expectedSha256,
+          actualSha256: unattributedMatch.actualSha256,
+        };
+      }
+      if (scopeAmbiguous && alternatesSkippedForEvidence) {
+        return {
+          verified: false,
+          reason: 'commit_scope_unproven',
+          repository: commit.repository,
+          commitSha: commit.sha,
+          path: expected.path,
+          expectedLength: expected.expectedLength,
+          expectedSha256: expected.expectedSha256,
+        };
+      }
+      if (firstMismatch) {
+        return {
+          verified: false,
+          repository: commit.repository,
+          commitSha: commit.sha,
+          path: expected.path,
+          expectedLength: expected.expectedLength,
+          actualLength: firstMismatch.text.length,
+          expectedSha256: expected.expectedSha256,
+          actualSha256: firstMismatch.actualSha256,
+        };
+      }
+      return { verified: false, reason: lastFetchReason };
+    } catch {
+      return { verified: false, reason: 'raw_file_read_failed' };
+    }
+  }
+
   // The filename ledger proves which assets were uploaded, not which release
   // they landed on. Bind the saved release to the repository the dispatch came
   // from, and to the tag the request named when it named one, so the same
@@ -2146,6 +2714,36 @@ export class Agent extends LoopDetector {
   }
 
   _workflowPublishedResourcePayloadMatch(binding, state, pageState, pageUrl, submit) {
+    if (state?.siteWorkflow?.adapterName === 'github'
+        && state.siteWorkflow?.job?.id === 'edit-file-and-commit') {
+      const proof = pageState?.githubCommittedFileVerification;
+      const requirements = Array.isArray(binding?.metadataRequirements)
+        ? binding.metadataRequirements
+        : [];
+      const metadataMatched = binding?.metadataRequirementsIncomplete !== true
+        && requirements.every(requirement => {
+          if (requirement?.field === 'path') {
+            // Byte-exact like the scope parser: the bound path was resolved
+            // against the verbatim request text.
+            const raw = typeof requirement.rawValue === 'string' ? requirement.rawValue : requirement.value;
+            return String(raw || '').replace(/^\/+/, '') === binding?.githubFileCommit?.path;
+          }
+          if (requirement?.field === 'branch') {
+            return this._workflowMetadataValue(requirement.value) === this._workflowMetadataValue(
+              binding?.githubFileCommit?.branch,
+            );
+          }
+          if (requirement?.field === 'commit_message') {
+            return binding?.githubFileCommit?.commitMessageVerified === true;
+          }
+          return false;
+        });
+      return proof?.verified === true
+        && metadataMatched
+        && proof.repository === binding?.githubFileCommit?.repository
+        && proof.path === binding?.githubFileCommit?.path
+        && proof.expectedSha256 === binding?.githubFileCommit?.expectedSha256;
+    }
     if (this._workflowJobIsReleaseAssetUpload(state?.siteWorkflow)) {
       return this._workflowReleaseAssetResourceMatch(binding, pageUrl, submit);
     }
@@ -2252,6 +2850,14 @@ export class Agent extends LoopDetector {
       && /^\/[^/]+\/[^/]+\/releases\/tag\/[^/]+$/i.test(path)
     ) {
       return `github:${host}${path}`;
+    }
+    if (
+      siteWorkflow?.adapterName === 'github'
+      && siteWorkflow?.job?.id === 'edit-file-and-commit'
+      && host === 'github.com'
+      && /^\/[^/]+\/[^/]+\/commit\/[0-9a-f]{7,40}$/i.test(path)
+    ) {
+      return `github:${host}${path.toLowerCase()}`;
     }
     if (
       siteWorkflow?.adapterName === 'linkedin'
@@ -4231,7 +4837,47 @@ export class Agent extends LoopDetector {
     } else if (revisitingRoute) {
       this._clearPageLoopState(tabId);
     }
-    if (documentChanged || routeChanged) this._clearRichTextToolbarDocumentState(tabId);
+    if (documentChanged || routeChanged) {
+      this._clearRichTextToolbarDocumentState(tabId);
+    }
+    // Uncertain text writes and their verified proofs are keyed to the live
+    // document, not the URL: a query/hash change or SPA navigation can change
+    // the route while the same document and editor value persist. Clearing on
+    // a bare route change would drop the readback-only guard and let an
+    // append-style retry duplicate landed text. On a genuine document change
+    // the records are NOT discarded wholesale either: a back-forward cache
+    // return restores the exact document (same token, same heap, possibly
+    // landed text), so token-scoped records are retained boundedly and guard
+    // again on return, while per-write token checks keep other documents
+    // unblocked. Records without a token cannot be scoped and are dropped
+    // once a new documented scope arrives (except when they name it).
+    if (documentChanged) {
+      let recent = this._recentTextMutationDocuments.get(tabId);
+      if (!(recent instanceof Array)) {
+        recent = [];
+        this._recentTextMutationDocuments.set(tabId, recent);
+      }
+      for (const token of [previous?.documentToken, next.documentToken]) {
+        if (token && !recent.includes(token)) recent.push(token);
+      }
+      while (recent.length > 5) recent.shift();
+      const keep = new Set(recent);
+      for (const [owner, map] of [
+        [this._uncertainTextMutations, this._uncertainTextMutations.get(tabId)],
+        [this._verifiedTextReplacements, this._verifiedTextReplacements.get(tabId)],
+      ]) {
+        if (!(map instanceof Map)) continue;
+        for (const [key, entry] of map) {
+          if (!entry?.documentToken) {
+            if (!entry?.pageUrl || !next.pageUrl
+                || this._normalizeUrl(entry.pageUrl) !== this._normalizeUrl(next.pageUrl)) map.delete(key);
+            continue;
+          }
+          if (!keep.has(entry.documentToken)) map.delete(key);
+        }
+        if (map.size === 0) owner.delete(tabId);
+      }
+    }
     this._lastAxScopes.set(tabId, next);
   }
 
@@ -8456,6 +9102,25 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           host: 'chromewebstore.googleapis.com',
           reason: 'submit the configured Chrome Web Store release for review',
         };
+      }
+      const workflowPreSubmitBlock = await this._workflowPreSubmitDispatchBlock(
+        tabId, fnName, fnArgs, detectedSubmitAction,
+      );
+      if (workflowPreSubmitBlock) {
+        onUpdate('tool_call', { name: fnName, args: fnArgs, outcomeUnknown: false });
+        onUpdate('tool_result', { name: fnName, result: workflowPreSubmitBlock });
+        messages.push({
+          role: 'tool',
+          tool_call_id: tc.id,
+          content: this._wrapUntrusted(fnName, this._limitToolResult(workflowPreSubmitBlock)),
+        });
+        const runId = this.currentRunId.get(tabId);
+        if (runId) trace.recordToolCall(runId, step, {
+          name: fnName, args: fnArgs, result: workflowPreSubmitBlock, latencyMs: 0,
+        });
+        onUpdate('warning', { message: 'GitHub commit blocked until the exact file-editor value and requested commit metadata are verified.' });
+        if (interruptFailedBrowserAction(toolIndex, fnName)) { navNotices.length = 0; break; }
+        continue;
       }
       let priorValidationFailure = !!validationBlock;
       let correctedPriorValidationFailure = false;
@@ -13400,6 +14065,65 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     return hash.toString(16).padStart(8, '0');
   }
 
+  // Synchronous SHA-256 over the UTF-8 bytes, matching the async
+  // crypto.subtle digest in _sha256Text. Needed in the synchronous
+  // submit-binding gate: the requested commit message must be compared by
+  // collision-resistant digest (a 32-bit FNV-1a fingerprint collides
+  // practically — e.g. 'PSgOcTcQ' vs '9SHghNQJ'), and the gate cannot await.
+  _sha256TextSync(value) {
+    try {
+      const bytes = new TextEncoder().encode(String(value ?? ''));
+      const K = [
+        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+        0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+        0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+        0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+        0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+        0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+        0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+      ];
+      let h0 = 0x6a09e667; let h1 = 0xbb67ae85; let h2 = 0x3c6ef372; let h3 = 0xa54ff53a;
+      let h4 = 0x510e527f; let h5 = 0x9b05688c; let h6 = 0x1f83d9ab; let h7 = 0x5be0cd19;
+      const bitLength = bytes.length * 8;
+      const paddedLength = (((bytes.length + 8) >> 6) + 1) * 64;
+      const padded = new Uint8Array(paddedLength);
+      padded.set(bytes);
+      padded[bytes.length] = 0x80;
+      const view = new DataView(padded.buffer);
+      view.setUint32(paddedLength - 4, bitLength >>> 0, false);
+      view.setUint32(paddedLength - 8, Math.floor(bitLength / 0x100000000), false);
+      const w = new Array(64);
+      const rotr = (x, n) => (x >>> n) | (x << (32 - n));
+      for (let offset = 0; offset < paddedLength; offset += 64) {
+        for (let i = 0; i < 16; i++) w[i] = view.getUint32(offset + i * 4, false);
+        for (let i = 16; i < 64; i++) {
+          const s0 = rotr(w[i - 15], 7) ^ rotr(w[i - 15], 18) ^ (w[i - 15] >>> 3);
+          const s1 = rotr(w[i - 2], 17) ^ rotr(w[i - 2], 19) ^ (w[i - 2] >>> 10);
+          w[i] = (w[i - 16] + s0 + w[i - 7] + s1) | 0;
+        }
+        let a = h0; let b = h1; let c = h2; let d = h3;
+        let e = h4; let f = h5; let g = h6; let h = h7;
+        for (let i = 0; i < 64; i++) {
+          const S1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
+          const ch = (e & f) ^ (~e & g);
+          const t1 = (h + S1 + ch + K[i] + w[i]) | 0;
+          const S0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
+          const maj = (a & b) ^ (a & c) ^ (b & c);
+          const t2 = (S0 + maj) | 0;
+          h = g; g = f; f = e; e = (d + t1) | 0;
+          d = c; c = b; b = a; a = (t1 + t2) | 0;
+        }
+        h0 = (h0 + a) | 0; h1 = (h1 + b) | 0; h2 = (h2 + c) | 0; h3 = (h3 + d) | 0;
+        h4 = (h4 + e) | 0; h5 = (h5 + f) | 0; h6 = (h6 + g) | 0; h7 = (h7 + h) | 0;
+      }
+      return [h0, h1, h2, h3, h4, h5, h6, h7]
+        .map(word => (word >>> 0).toString(16).padStart(8, '0')).join('');
+    } catch {
+      return '';
+    }
+  }
+
   _workflowFormInventoryItems(result = {}, bindingKey = '', documentScope = '', siteWorkflow = null) {
     const text = [result?.pageContent, result?.text]
       .find(value => typeof value === 'string' && value.trim()) || '';
@@ -14438,6 +15162,21 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
   }
 
   async _startTraceRun(tabId, userMessage, mode, provider, tabInfo = null, runOptions = {}) {
+    // Mint first: proof scoping needs a task token on every path, including
+    // recorder/storage failures that return before tracing starts (and the
+    // disabled-by-default untraced path). currentRunId must not double as the
+    // task boundary since it stays empty then.
+    // Trusted continuations (max_steps Continue) reuse the previous task's
+    // token so surviving replacement proofs stay usable for the same task;
+    // independent tasks always mint fresh and discard any stashed token.
+    if (runOptions?.trustedContinuation === true) {
+      const carried = this._takeContinuationTaskToken(tabId);
+      if (carried) this._taskTokens.set(tabId, carried);
+      else this._taskTokens.set(tabId, `task_${secureRandomBase36Token(12)}`);
+    } else {
+      this._continuationTaskTokens.delete(tabId);
+      this._taskTokens.set(tabId, `task_${secureRandomBase36Token(12)}`);
+    }
     const { tabUrl, tabTitle } = this._isStandaloneChatRun(runOptions)
       ? { tabUrl: '', tabTitle: '' }
       : (tabInfo || await this._getTabUrlTitle(tabId));
@@ -14536,6 +15275,13 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       this.currentRunId.delete(tabId);
       this.adapterMatchTraceKeys.delete(runId);
     }
+    // Stash before deleting so an app-owned trusted continuation (Continue
+    // after max_steps) can reuse the same task's proofs. Independent tasks
+    // mint fresh at the next _startTraceRun and discard the stash there, so
+    // a prior task's proofs can never authorize a new task. Single-use and
+    // conversation-bound via _takeContinuationTaskToken.
+    this._storeContinuationTaskToken(tabId);
+    this._taskTokens.delete(tabId);
   }
 
   /**
@@ -17124,10 +17870,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     const label = String(args?.text || result?.name || result?.matched || result?.text || '').trim();
     const selector = String(args?.selector || '').toLowerCase();
     if (detectedSubmit?.isSubmit === true) {
-      return /^(?:continue|save|submit|post|publish|send|confirm|resolve|sign up|sign in|log in|register|place order|pay|checkout|finish)\b/i.test(label)
+      return /^(?:continue|save|submit|post|publish|send|confirm|commit|resolve|sign up|sign in|log in|register|place order|pay|checkout|finish)\b/i.test(label)
         || /(?:type\s*=\s*["']?(?:submit|image)|\bsubmit\b|\bcontinue\b|\bconfirm\b|\bcheckout\b|\bfinish\b)/.test(selector);
     }
-    if (/^(?:continue|next|create|save|submit|add|post|publish|send|confirm|resolve|sign up|sign in|log in|register|place order|pay|checkout|update|apply|finish|done)\b/i.test(label)) {
+    if (/^(?:continue|next|create|save|submit|add|post|publish|send|confirm|commit|resolve|sign up|sign in|log in|register|place order|pay|checkout|update|apply|finish|done)\b/i.test(label)) {
       return true;
     }
     return /(?:type\s*=\s*["']?(?:submit|image)|\bsubmit\b|\bcontinue\b|\bconfirm\b|\bcheckout\b|\bfinish\b)/.test(selector);
@@ -18442,6 +19188,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           summary: String(detected.summary || '').slice(0, 1200),
           fields: Array.isArray(detected.fields) ? detected.fields.slice(0, 12) : [],
           changedFields: Array.isArray(detected.changedFields) ? detected.changedFields.slice(0, 8) : [],
+          githubCommitDialogLauncher: detected.githubCommitDialogLauncher === true,
           publicationResourceUrls: Array.isArray(detected.publicationResourceUrls)
             ? detected.publicationResourceUrls.slice(0, 200)
             : [],
@@ -18453,6 +19200,37 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
             ? detected.transactionPageOrderIds.slice(0, 20)
             : [],
           transactionPageOrderIdsComplete: detected.transactionPageOrderIdsComplete === true,
+        };
+      }
+      // Explicit negative: the probe resolved the click target to an editable
+      // field, proving activation only focuses it. Propagated (not dropped
+      // like inconclusive results) so gates can pass proven non-submits while
+      // still blocking unresolvable clicks. Never a submit: isSubmit stays false.
+      const resolvedEditable = (Array.isArray(rawResults) ? rawResults : [])
+        .find(item => item && item.isSubmit !== true && item.resolvedEditableTarget === true);
+      if (resolvedEditable
+          && (name === 'click' || name === 'click_ax' || name === 'iframe_click')) {
+        return {
+          isSubmit: false,
+          host: normalizeHost(resolvedEditable.host || resolvedEditable.url || args?.urlFilter || currentUrl) || 'this site',
+          tool: name,
+          reason: String(resolvedEditable.reason || 'click target is an editable field').slice(0, 200),
+          resolvedEditableTarget: true,
+        };
+      }
+      // Explicit negative: the probe resolved the click target to a pure
+      // navigation link, proving activation only navigates. Propagated like
+      // the editable flag so the gate can pass it without verified proofs.
+      const resolvedNavigation = (Array.isArray(rawResults) ? rawResults : [])
+        .find(item => item && item.isSubmit !== true && item.resolvedNavigationTarget === true);
+      if (resolvedNavigation
+          && (name === 'click' || name === 'click_ax' || name === 'iframe_click')) {
+        return {
+          isSubmit: false,
+          host: normalizeHost(resolvedNavigation.host || resolvedNavigation.url || args?.urlFilter || currentUrl) || 'this site',
+          tool: name,
+          reason: String(resolvedNavigation.reason || 'click target is a navigation link').slice(0, 200),
+          resolvedNavigationTarget: true,
         };
       }
     } catch {
@@ -18744,20 +19522,54 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           .map((link) => {
             try { return new URL(link.getAttribute('href') || link.href || '', url).href; } catch { return ''; }
           })
-          .filter(value => /linkedin\.com\/(?:feed\/update|posts)\/|github\.com\/[^/]+\/[^/]+\/releases\/tag\/|douyin\.com\/video\/\d+/i.test(value))
+          .filter(value => /linkedin\.com\/(?:feed\/update|posts)\/|github\.com\/[^/]+\/[^/]+\/(?:releases\/tag\/|commit\/[0-9a-f]{7,40})|douyin\.com\/video\/\d+/i.test(value))
           .slice(0, 200);
       } catch {
         return [];
       }
     };
     const transactionOrderSite = /(?:^|\.)12306\.cn$/i.test(host);
-    const submitInfo = (form, reason, pendingEl = null, pendingValue = null, validationSubmitEvidence = 'strong') => {
+    const submitInfo = (form, reason, pendingEl = null, pendingValue = null, validationSubmitEvidence = 'strong', submitControl = null) => {
       const formOrders = transactionOrderSite
         ? transactionOrderScan(form)
         : { ids: [], complete: false };
       const pageOrders = transactionOrderSite
         ? transactionOrderScan(doc.body || doc.documentElement)
         : { ids: [], complete: false };
+      const control = labelControlFor(submitControl) || submitControl;
+      const controlLabel = compact(
+        control?.innerText || control?.textContent || control?.getAttribute?.('aria-label') || '',
+        120,
+      );
+      const activeModal = findTopmostModal();
+      const controlInModal = !!(control && activeModal?.contains?.(control));
+      const githubEditPage = (() => {
+        try {
+          const parsed = new URL(url);
+          return parsed.hostname.toLowerCase().replace(/^www\./, '') === 'github.com'
+            && /^\/[^/]+\/[^/]+\/edit\//i.test(parsed.pathname);
+        } catch {
+          return false;
+        }
+      })();
+      // The launcher label is localized, so English text alone cannot
+      // identify it. A dialog-opening affordance is locale-independent: the
+      // launcher reversibly opens the commit dialog instead of submitting.
+      const controlOpensDialog = (() => {
+        try {
+          if (control?.hasAttribute?.('data-show-dialog-id')) return true;
+          const triggerAttrs = [
+            control?.getAttribute?.('aria-haspopup'),
+            control?.getAttribute?.('aria-controls'),
+            control?.getAttribute?.('data-show-dialog-id'),
+            control?.getAttribute?.('data-action'),
+            control?.getAttribute?.('data-target'),
+          ].filter(Boolean).join(' ');
+          return /dialog/i.test(triggerAttrs);
+        } catch {
+          return false;
+        }
+      })();
       return {
         isSubmit: true,
         host,
@@ -18769,6 +19581,9 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         transactionOrderIdsComplete: formOrders.complete,
         transactionPageOrderIds: pageOrders.ids,
         transactionPageOrderIdsComplete: pageOrders.complete,
+        githubCommitDialogLauncher: githubEditPage
+          && !controlInModal
+          && (/^commit changes(?:\.{3}|…)?$/i.test(controlLabel) || controlOpensDialog),
         ...summarizeForm(form, pendingEl, pendingValue),
       };
     };
@@ -18821,6 +19636,45 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       return { isSubmit: false, strong: false };
     };
     const isSubmitControl = el => submitControlEvidence(el).isSubmit;
+    // Explicit negative for the commit gate: activation on an editable field
+    // only focuses it and can never submit. Unlike an inconclusive probe (no
+    // target, failed lookup), a resolved editable target proves the click is
+    // not a submit. Checkboxes, radios, file/button inputs and anything
+    // unresolvable stay inconclusive (fail-closed).
+    const isEditableActivationTarget = (el) => {
+      try {
+        if (!el || el.nodeType !== 1) return false;
+        if (el.isContentEditable) return true;
+        const tag = String(el.tagName || '').toLowerCase();
+        if (tag === 'textarea' || tag === 'select') return true;
+        if (tag !== 'input') return false;
+        const type = String(el.type || el.getAttribute?.('type') || 'text').toLowerCase();
+        return ['text', 'search', 'url', 'tel', 'password', 'number', 'email',
+          'date', 'time', 'datetime-local', 'month', 'week'].includes(type);
+      } catch {
+        return false;
+      }
+    };
+    // Explicit negative for the commit gate: activation on a pure navigation
+    // control can neither submit a form nor mutate field values, so it needs
+    // no verified proofs (the later commit click still does). Strictly
+    // positive only: an anchor with a navigating href, free of activation
+    // handlers. Anything with a handler, a submit classification, an
+    // unresolvable target, or a script-executing href stays inconclusive
+    // (fail-closed): javascript:/data:/vbscript: hrefs run code rather than
+    // navigate. type=button stays gated per the submit-candidate posture.
+    const isNavigationLinkTarget = (el) => {
+      try {
+        if (!el || el.nodeType !== 1) return false;
+        if (el.hasAttribute?.('onclick') || el.hasAttribute?.('data-action')) return false;
+        if (String(el.tagName || '').toLowerCase() !== 'a') return false;
+        const href = String(el.getAttribute?.('href') || '').trim();
+        if (!href || /^(?:javascript|data|vbscript)\s*:/i.test(href)) return false;
+        return !isSubmitControl(el);
+      } catch {
+        return false;
+      }
+    };
     const formForSubmitControl = (el) => {
       const target = labelControlFor(el) || el;
       const candidate = target?.closest?.('button,input') || target;
@@ -18984,7 +19838,32 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           null,
           null,
           evidence.strong ? 'strong' : 'heuristic',
+          target,
         );
+      }
+      if (target
+          && (toolName === 'click' || toolName === 'click_ax' || toolName === 'iframe_click')
+          && isEditableActivationTarget(target)) {
+        return {
+          isSubmit: false,
+          host,
+          url,
+          tool: toolName,
+          reason: 'click target resolves to an editable field',
+          resolvedEditableTarget: true,
+        };
+      }
+      if (target
+          && (toolName === 'click' || toolName === 'click_ax' || toolName === 'iframe_click')
+          && isNavigationLinkTarget(target)) {
+        return {
+          isSubmit: false,
+          host,
+          url,
+          tool: toolName,
+          reason: 'click target resolves to a navigation link',
+          resolvedNavigationTarget: true,
+        };
       }
     } catch {}
     return null;
@@ -20132,6 +21011,16 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     this._isPdfTabCache.delete(tabId);
     this._lastTypeFieldIdent?.delete(tabId);
     this._lastTypeFieldEpoch?.delete(tabId);
+    // A conversation clear preserves the run guard while the document (and
+    // possibly landed text) is unchanged: document-scoped mutation debt and
+    // its recent-document backlog survive, or the next run could duplicate
+    // landed text with a blind retry. Proofs stay task-scoped and are
+    // discarded with the run; tab removal drops everything.
+    if (!preserveRunGuard) {
+      this._uncertainTextMutations.delete(tabId);
+      this._recentTextMutationDocuments.delete(tabId);
+    }
+    this._verifiedTextReplacements.delete(tabId);
     this._lastCdpClickIdent?.delete(tabId);
     this._lastClickProgress?.delete(tabId);
     this._clickAxCdpFallbacks?.delete(tabId);
@@ -20172,7 +21061,13 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     this._completionSubmitStates.delete(tabId);
     this._recentSubmitClicks.delete(tabId);
     this._formValidationBlocks.delete(tabId);
-    this._lastAxScopes.delete(tabId);
+    // A conversation clear preserves the run guard while the document is
+    // unchanged: the AX scope survives alongside retained mutation debt so
+    // the first exact retry keys identically and can recover immediately.
+    // Stale scopes self-heal through the usual live checks on next use.
+    if (!preserveRunGuard) {
+      this._lastAxScopes.delete(tabId);
+    }
     this._resetRichTextToolbarAudit(tabId);
     this.recentNavUrls.delete(tabId);
     this.completionInvariants.delete(tabId);
@@ -20190,6 +21085,8 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     if (!preserveRunGuard) {
       this._runningTabs.delete(tabId);
       this.currentRunId.delete(tabId);
+      this._taskTokens.delete(tabId);
+      this._continuationTaskTokens.delete(tabId);
     }
     this._clearRunLoopState(tabId);
   }
@@ -20199,6 +21096,890 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     if (!this._lastTypeFieldEpoch) this._lastTypeFieldEpoch = new Map();
     const nextEpoch = (this._lastTypeFieldEpoch.get(tabId) || 0) + 1;
     this._lastTypeFieldEpoch.set(tabId, nextEpoch);
+  }
+
+  _textMutationTarget(tabId, name, args = {}) {
+    const scope = this._lastAxScopes.get(tabId) || {};
+    const documentToken = String(scope.documentToken || '');
+    const pageUrl = String(scope.pageUrl || '');
+    if ((name === 'set_field' || name === 'type_ax') && typeof args.ref_id === 'string') {
+      return {
+        key: `ax:${documentToken || pageUrl || 'document'}:${args.ref_id}`,
+        locatorType: 'ax',
+        refId: args.ref_id,
+        documentToken,
+        pageUrl,
+        ambiguous: false,
+      };
+    }
+    if (name === 'type_text' && typeof args.selector === 'string' && args.selector.trim()) {
+      return {
+        key: `selector:${documentToken || pageUrl || 'document'}:${args.selector.trim()}`,
+        locatorType: 'selector',
+        selector: args.selector.trim(),
+        documentToken,
+        pageUrl,
+        ambiguous: false,
+      };
+    }
+    return {
+      key: `focused:${documentToken || pageUrl || 'document'}`,
+      locatorType: 'focused',
+      documentToken,
+      pageUrl,
+      ambiguous: true,
+    };
+  }
+
+  _textMutationReplacesValue(name, args = {}) {
+    return name === 'set_field' ? args.clear !== false : args.clear === true;
+  }
+
+  _textMutationFieldsProvenDistinct(previousMeta, nextMeta) {
+    if (!previousMeta || typeof previousMeta !== 'object'
+        || !nextMeta || typeof nextMeta !== 'object') return false;
+    const normalized = (meta, field) => String(meta?.[field] || '').trim().toLowerCase();
+    const identityFields = ['id', 'name', 'ariaLabel', 'ariaLabelledByText', 'labelText', 'placeholder'];
+    for (const field of identityFields) {
+      const previous = normalized(previousMeta, field);
+      const next = normalized(nextMeta, field);
+      if (previous && next && previous === next) return false;
+    }
+    if (typeof previousMeta.contentEditable === 'boolean'
+        && typeof nextMeta.contentEditable === 'boolean'
+        && previousMeta.contentEditable !== nextMeta.contentEditable) return true;
+    const differingIdentityCount = identityFields.reduce((count, field) => {
+      const previous = normalized(previousMeta, field);
+      const next = normalized(nextMeta, field);
+      return count + (previous && next && previous !== next ? 1 : 0);
+    }, 0);
+    return differingIdentityCount >= 2;
+  }
+
+  // Positive same-field identity for focused elements: the debt's
+  // record-time metadata and the retry's live digest metadata must agree on
+  // a stable identity. Strong identifiers win outright; weaker label text
+  // only counts when neither side offers an id or name and the tag and
+  // editability also agree. Anything less stays blocked (fail-closed).
+  _focusedFieldIdentityMatches(previousMeta, nextMeta) {
+    if (!previousMeta || typeof previousMeta !== 'object'
+        || !nextMeta || typeof nextMeta !== 'object') return false;
+    const normalized = (meta, field) => String(meta?.[field] ?? '').trim().toLowerCase();
+    const previousId = normalized(previousMeta, 'id');
+    const nextId = normalized(nextMeta, 'id');
+    if (previousId || nextId) return !!previousId && previousId === nextId;
+    const previousName = normalized(previousMeta, 'name');
+    const nextName = normalized(nextMeta, 'name');
+    const sameTag = !!previousMeta.tag
+      && normalized(previousMeta, 'tag') === normalized(nextMeta, 'tag');
+    if (previousName || nextName) return !!previousName && previousName === nextName && sameTag;
+    const sameLabel = ['ariaLabel', 'ariaLabelledByText', 'labelText', 'placeholder']
+      .some(field => {
+        const previous = normalized(previousMeta, field);
+        const next = normalized(nextMeta, field);
+        return !!previous && previous === next;
+      });
+    return sameLabel && sameTag
+      && previousMeta.contentEditable === nextMeta.contentEditable;
+  }
+
+  async _sha256Text(value) {
+    try {
+      const bytes = new TextEncoder().encode(String(value ?? ''));
+      const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes);
+      return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
+    } catch {
+      return '';
+    }
+  }
+
+  async _textMutationValueDigest(tabId, target, expected = null) {
+    if (!target || (target.ambiguous === true && target.focusedProof !== true)) return null;
+    const params = target.locatorType === 'ax' && typeof target.refId === 'string'
+      ? { ref_id: target.refId }
+      : target.locatorType === 'selector' && typeof target.selector === 'string'
+        ? { selector: target.selector }
+        : target.locatorType === 'focused'
+          ? { focused: true }
+          : null;
+    if (!params) return null;
+    try {
+      const response = await chrome.tabs.sendMessage(tabId, {
+        target: 'content',
+        action: 'field_value_digest',
+        params: {
+          ...params,
+          ...(typeof expected === 'string' ? { expected } : {}),
+        },
+      });
+      if (response?.success !== true
+          || !Number.isInteger(response.valueLength)
+          || response.valueLength < 0
+          || !/^[0-9a-f]{64}$/i.test(String(response.valueSha256 || ''))) return null;
+      return {
+        valueLength: response.valueLength,
+        valueSha256: String(response.valueSha256).toLowerCase(),
+        verified: response.verified === true,
+        fieldMeta: response.fieldMeta || null,
+        // Element-derived revalidation locator (unique, content-checked);
+        // consumed for focused proofs whose focus moves before submit.
+        stableSelector: typeof response.stableSelector === 'string' && response.stableSelector.trim()
+          ? response.stableSelector.trim()
+          : null,
+        // Live scope the probe answered from (attached by the dispatcher on
+        // every return path): selector/focused writes need no AX read, so the
+        // caller may hold empty/stale scope while this is current.
+        documentToken: String(response.documentToken || ''),
+        pageUrl: String(response.refScopeUrl || ''),
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  // Live document check for stale mutation guards. Selector/focused flows
+  // need no AX read, so the cached scope can predate a full navigation and
+  // pin old debt to the new page. The digest probe answers from the live
+  // document on success and failure alike (see the dispatcher scope wrap),
+  // so any token here is current by construction.
+  // Focused writes supply neither ref nor selector, so they previously
+  // returned null here and pinned stale debt to the new page after a full
+  // navigation. Probe with empty params instead: the handler still fails
+  // (ref_id or selector required) but the wrapper attaches the live
+  // documentToken/refScopeUrl, which is all this check needs.
+  async _liveTextMutationScope(tabId, name, args = {}) {
+    try {
+      const params = (name === 'set_field' || name === 'type_ax') && typeof args.ref_id === 'string'
+        ? { ref_id: args.ref_id }
+        : name === 'type_text' && typeof args.selector === 'string' && args.selector.trim()
+          ? { selector: args.selector.trim() }
+          : {};
+      const response = await chrome.tabs.sendMessage(tabId, {
+        target: 'content',
+        action: 'field_value_digest',
+        params,
+      });
+      const documentToken = String(response?.documentToken || '');
+      const pageUrl = String(response?.refScopeUrl || '');
+      if (!documentToken && !pageUrl) return null;
+      return { documentToken, pageUrl };
+    } catch {
+      return null;
+    }
+  }
+
+  // GitHub file-editor identity shared by the commit-authorization filter
+  // and the pre-submit refresh classifier, so the two can never drift apart
+  // again: the editor exposes an accessible "Editing file contents" linkage
+  // or locale-independent CodeMirror structure. A bare contentEditable flag
+  // is not enough — any other contenteditable on the edit route could
+  // otherwise mint or keep a commit for stale editor content.
+  _isGithubFileEditorRecord(record) {
+    if (!record || typeof record !== 'object') return false;
+    if (/\bediting\b[\s\S]*\bfile contents\b/i.test(String(
+      record?.fieldMeta?.ariaLabelledByText || record?.fieldMeta?.ariaLabel || record?.fieldMeta?.labelText || '',
+    ))) return true;
+    return record?.fieldMeta?.contentEditable === true && record?.fieldMeta?.codeMirror === true;
+  }
+
+  // Commit-message field identity shared by mint classification, the
+  // binding filter, refresh, and per-kind invalidation: summary
+  // (commit-message-input / commit_message) and extended-description
+  // (commit-description-input / commit_description) spellings, matching id
+  // OR name independently — a non-matching id must never shadow a matching
+  // name or vice versa.
+  _isGithubCommitMessageField(meta = null) {
+    if (!meta || typeof meta !== 'object') return false;
+    const pattern = /^(?:commit-(?:message-input|description-input)|commit_(?:message|description))$/i;
+    return pattern.test(String(meta.id || '')) || pattern.test(String(meta.name || ''));
+  }
+
+  _focusedGithubFieldKind(meta = null) {
+    if (!meta || typeof meta !== 'object') return '';
+    if (this._isGithubCommitMessageField(meta)) {
+      return 'commit-message';
+    }
+    if (meta.contentEditable === true) return 'editor';
+    if (/\bediting\b[\s\S]*\bfile contents\b/i.test(String(
+      meta.ariaLabelledByText || meta.ariaLabel || meta.labelText || '',
+    ))) return 'editor';
+    return '';
+  }
+
+  _normalizeFocusedFieldMeta(focusedField = null, fallbackMeta = null) {
+    if (focusedField && typeof focusedField === 'object'
+        && (focusedField.tag || focusedField.name || typeof focusedField.contentEditable === 'boolean')) {
+      return {
+        ...(fallbackMeta && typeof fallbackMeta === 'object' ? fallbackMeta : {}),
+        tag: String(focusedField.tag || fallbackMeta?.tag || '').toLowerCase() || null,
+        type: String(focusedField.type || fallbackMeta?.type || '').toLowerCase() || null,
+        name: focusedField.name != null ? String(focusedField.name) : (fallbackMeta?.name ?? null),
+        id: fallbackMeta?.id ?? (focusedField.name != null ? String(focusedField.name) : null),
+        contentEditable: focusedField.contentEditable === true || fallbackMeta?.contentEditable === true,
+        ariaLabel: fallbackMeta?.ariaLabel ?? null,
+        ariaLabelledByText: fallbackMeta?.ariaLabelledByText ?? null,
+        labelText: fallbackMeta?.labelText ?? null,
+        placeholder: fallbackMeta?.placeholder ?? null,
+      };
+    }
+    return fallbackMeta || null;
+  }
+
+  // Stable per-field discriminator for focused commit-message proofs so the
+  // summary and extended-description proofs coexist (and invalidate
+  // independently). Lowercase alphanumerics; anything unusable → 'field'.
+  _focusedCommitFieldRef(meta = null) {
+    const ref = String(meta?.id || meta?.name || meta?.tag || 'field')
+      .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+    return ref || 'field';
+  }
+
+  _focusedReplacementTarget(tabId, kind, fieldMeta = null) {
+    const scope = this._lastAxScopes.get(tabId) || {};
+    const documentToken = String(scope.documentToken || '');
+    const pageUrl = String(scope.pageUrl || '');
+    const doc = documentToken || pageUrl || 'document';
+    // Commit-message proofs scope per field (summary vs extended
+    // description); editor proofs keep the single stable key. The ref rides
+    // along on the record so per-field invalidation needs no key parsing.
+    const commitFieldRef = kind === 'commit-message' ? this._focusedCommitFieldRef(fieldMeta) : '';
+    return {
+      key: `focused:${doc}:${kind}${commitFieldRef ? `:${commitFieldRef}` : ''}`,
+      locatorType: 'focused',
+      documentToken,
+      pageUrl,
+      ambiguous: false,
+      focusedProof: true,
+      focusedKind: kind,
+      ...(commitFieldRef ? { commitFieldRef } : {}),
+      // Pre-submit revalidation locator, filled from the write-time live
+      // digest's element-derived stableSelector when the replacement record
+      // is minted. Stays null until then: refresh drops locator-less proofs
+      // fail-closed instead of probing a hard-coded kind selector that may
+      // resolve to a different element (e.g. an aria-labelled textarea
+      // editor is not [contenteditable]).
+      refreshSelector: null,
+    };
+  }
+
+  // Rebuild a mutation target's key for a fresher scope, keeping the locator
+  // identical. Used when the write-time digest answers from the live
+  // document while the target still carries empty/stale scope.
+  _rekeyTextMutationTarget(target, documentToken, pageUrl) {
+    const doc = documentToken || pageUrl || 'document';
+    if (target?.locatorType === 'ax' && typeof target.refId === 'string') {
+      return `ax:${doc}:${target.refId}`;
+    }
+    if (target?.locatorType === 'selector' && typeof target.selector === 'string') {
+      return `selector:${doc}:${target.selector}`;
+    }
+    if (target?.locatorType === 'focused') {
+      return target.focusedKind ? `focused:${doc}:${target.focusedKind}` : `focused:${doc}`;
+    }
+    return target?.key;
+  }
+
+  async _verifiedTextReplacementRecord(tabId, target, text, fieldMeta = null) {
+    const workflow = this._planExecutionGuards.get(tabId)?.siteWorkflow;
+    const needsCommitProof = workflow?.adapterName === 'github'
+      && workflow?.job?.id === 'edit-file-and-commit';
+    const candidateReadback = needsCommitProof
+      ? await this._textMutationValueDigest(tabId, target, text)
+      : null;
+    const readback = candidateReadback?.verified === true ? candidateReadback : null;
+    // Live scope propagation: selector/focused writes need no AX read, so
+    // the target can carry empty/stale scope while the digest answered from
+    // the live document. Stamp the record (fields + key) with the live scope
+    // so the binding's exact-URL checks don't reject an otherwise valid
+    // proof. When both tokens agree the document is proven identical, the
+    // agent-canonical URL spelling wins (the gate compares paths
+    // case-sensitively); otherwise the live probe is authoritative.
+    // Deliberately no global adoption here — adopting would clear the maps
+    // this caller's set() still targets.
+    const tokensAgree = !!readback?.documentToken && !!target.documentToken
+      && readback.documentToken === target.documentToken;
+    const liveDocumentToken = readback?.documentToken || target.documentToken;
+    const livePageUrl = tokensAgree ? target.pageUrl : (readback?.pageUrl || target.pageUrl);
+    const liveScope = readback && (readback.documentToken || readback.pageUrl);
+    return {
+      ...target,
+      documentToken: liveDocumentToken,
+      pageUrl: livePageUrl,
+      key: liveScope
+        ? this._rekeyTextMutationTarget(target, liveDocumentToken, livePageUrl)
+        : target.key,
+      expectedLength: text.length,
+      expectedSha256: await this._sha256Text(text),
+      expectedFp: this._workflowInventoryFingerprint(text),
+      fieldMeta: readback?.fieldMeta || fieldMeta || null,
+      ...(readback ? {
+        readbackLength: readback.valueLength,
+        readbackSha256: readback.valueSha256,
+      } : {}),
+      // Bind the element-derived revalidation locator for focused proofs so
+      // pre-submit refresh re-reads the verified element itself (uniqueness
+      // already content-checked). Null when the element offered nothing
+      // unique — refresh then drops the proof fail-closed.
+      ...(target?.focusedProof === true ? {
+        refreshSelector: (readback && typeof readback.stableSelector === 'string'
+          && readback.stableSelector.trim()) || null,
+      } : {}),
+      verifiedAt: Date.now(),
+      // Bind the proof to the task that verified it: a later run in the same
+      // tab must verify its own writes instead of reusing a prior task's
+      // records, even when the URL and field match. The token is generated
+      // per task independent of optional tracing (currentRunId stays empty
+      // when tracing is disabled).
+      taskToken: this._taskTokens.get(tabId),
+    };
+  }
+
+  async _refreshGithubTextReplacementProofs(tabId, pageUrl) {
+    const records = this._verifiedTextReplacements.get(tabId);
+    if (!(records instanceof Map)) return;
+    for (const [key, record] of records) {
+      if (this._normalizeUrl(record?.pageUrl || '') !== this._normalizeUrl(pageUrl)) continue;
+      // Focused proofs are bound at write time to the then-focused field's
+      // live digest, but focus moves before submit (editor → commit dialog →
+      // commit-message input), so re-digesting via {focused:true} would
+      // compare the wrong field. Revalidate via the element-derived
+      // refreshSelector bound at mint (uniqueness content-checked there). A
+      // proof with no locator — or any mismatch, kind drift, or missing
+      // element — is dropped fail-closed: probing a hard-coded kind selector
+      // instead could re-read a different element (an aria-labelled textarea
+      // editor is not [contenteditable]) and bless stale bytes.
+      if (record?.focusedProof === true) {
+        const refreshSelector = typeof record.refreshSelector === 'string'
+          ? record.refreshSelector.trim()
+          : '';
+        if (!refreshSelector) {
+          records.delete(key);
+          continue;
+        }
+        let current = null;
+        try {
+          current = await this._textMutationValueDigest(tabId, {
+            locatorType: 'selector', selector: refreshSelector, ambiguous: false,
+          });
+        } catch { current = null; }
+        const kindOk = record.focusedKind === 'editor'
+          ? this._isGithubFileEditorRecord({ fieldMeta: current?.fieldMeta })
+          : this._isGithubCommitMessageField(current?.fieldMeta);
+        if (!current
+            || !record.readbackSha256
+            || !kindOk
+            || this._textMutationFieldsProvenDistinct(record.fieldMeta, current.fieldMeta)
+            || current.valueLength !== record.readbackLength
+            || current.valueSha256 !== record.readbackSha256) {
+          records.delete(key);
+        }
+        continue;
+      }
+      // Same identity as the authorization filter by construction — every
+      // editor proof the gate can authorize is re-digested here.
+      const githubEditor = this._isGithubFileEditorRecord(record);
+      const commitMessage = this._isGithubCommitMessageField(record?.fieldMeta);
+      if (!githubEditor && !commitMessage) continue;
+      const current = await this._textMutationValueDigest(tabId, record);
+      // Revalidate against the CURRENT element, not the stale record: a DOM
+      // rerender or insertion can repoint the locator at a different field
+      // that still holds the expected bytes while the real editor changed.
+      // The live metadata must still prove the editor/commit-message kind,
+      // and must not be proven distinct from the stored metadata — otherwise
+      // the proof is dropped fail-closed instead of authorizing the commit.
+      const currentEditor = this._isGithubFileEditorRecord({ fieldMeta: current?.fieldMeta });
+      const currentMessage = this._isGithubCommitMessageField(current?.fieldMeta);
+      // Kind consistency: the refreshed element must still prove the SAME
+      // kind the record was bound as. A locator repointed across kinds with
+      // identical bytes (editor proof now reading a commit field or vice
+      // versa) would otherwise keep stale original metadata authorizing a
+      // changed field — so require (editor, editor) or (message, message).
+      if (!current
+          || !record.readbackSha256
+          || !((githubEditor && currentEditor) || (commitMessage && currentMessage))
+          || this._textMutationFieldsProvenDistinct(record.fieldMeta, current.fieldMeta)
+          || current.valueLength !== record.readbackLength
+          || current.valueSha256 !== record.readbackSha256) {
+        records.delete(key);
+      }
+    }
+    if (records.size === 0) this._verifiedTextReplacements.delete(tabId);
+  }
+
+  // Probe the live document and adopt its scope when it differs from cache.
+  // Shared by the allow path (a stale cache must not let retained debts be
+  // skipped for the wrong document — e.g. a back-forward return) and the
+  // blocking path's last resort. Adopting routes through _rememberAxScope,
+  // so loop state resets and bounded retention pruning apply exactly as for
+  // an observed navigation. Returns the live scope when adopted, else null.
+  // Callers re-derive their target and re-scope debt selection afterwards.
+  async _adoptLiveTextMutationScope(tabId, name, args = {}, debts = null) {
+    let liveScope = null;
+    try {
+      liveScope = await this._liveTextMutationScope(tabId, name, args);
+    } catch { liveScope = null; }
+    if (!liveScope || (!liveScope.documentToken && !liveScope.pageUrl)) return null;
+    const cachedScope = this._lastAxScopes.get(tabId) || {};
+    if (String(liveScope.documentToken || '') === String(cachedScope.documentToken || '')
+        && this._normalizeUrl(liveScope.pageUrl || '') === this._normalizeUrl(cachedScope.pageUrl || '')) {
+      return null;
+    }
+    const bootstrappingFirstToken = !cachedScope.documentToken;
+    this._rememberAxScope(tabId, liveScope.documentToken || cachedScope.documentToken || '',
+      liveScope.pageUrl || cachedScope.pageUrl || '');
+    // First-token bootstrap: debts recorded before any document was observed
+    // carry no token. A tokenless debt whose recorded URL differs from the
+    // live URL provably predates this document (full navigation), so drop it
+    // instead of blocking the unrelated destination. Same-URL or URL-less
+    // debts stay blocked fail-closed — a same-document route change keeps
+    // its readback-only guard.
+    if (bootstrappingFirstToken && debts instanceof Map) {
+      for (const [key, candidate] of debts) {
+        if (!candidate.documentToken
+            && candidate.pageUrl
+            && liveScope.pageUrl
+            && this._normalizeUrl(candidate.pageUrl) !== this._normalizeUrl(liveScope.pageUrl)) {
+          debts.delete(key);
+        }
+      }
+      if (debts.size === 0) this._uncertainTextMutations.delete(tabId);
+    }
+    return liveScope;
+  }
+
+  async _uncertainTextMutationBlock(tabId, name, args = {}) {
+    if (!['set_field', 'type_ax', 'type_text'].includes(name)) return null;
+    const debts = this._uncertainTextMutations?.get(tabId);
+    if (!(debts instanceof Map) || debts.size === 0) return null;
+    let target = this._textMutationTarget(tabId, name, args);
+    // Token-scoped matching: debts retained for back-forward cache returns
+    // must not guard other documents. Debts outside the recent-document
+    // backlog are TTL-collected here; anything surviving but scoped
+    // elsewhere is skipped below, never deleted.
+    const recentDocuments = this._recentTextMutationDocuments.get(tabId);
+    const recentSet = recentDocuments instanceof Array ? new Set(recentDocuments) : null;
+    for (const [key, candidate] of debts) {
+      if (candidate.documentToken && target.documentToken
+          && candidate.documentToken !== target.documentToken
+          && (!recentSet || !recentSet.has(candidate.documentToken))) debts.delete(key);
+    }
+    if (debts.size === 0) {
+      this._uncertainTextMutations.delete(tabId);
+      return null;
+    }
+    const replacement = this._textMutationReplacesValue(name, args);
+    const text = typeof args.text === 'string' ? args.text : '';
+    const expectedSha256 = await this._sha256Text(text);
+    let axReadback = null;
+    let axReadbackAttempted = false;
+    const readAxTarget = async () => {
+      if (axReadbackAttempted) return axReadback;
+      axReadbackAttempted = true;
+      if (!((name === 'set_field' || name === 'type_ax') && typeof args.ref_id === 'string')) return null;
+      try {
+        axReadback = await chrome.tabs.sendMessage(tabId, {
+          target: 'content',
+          action: 'ax_verify_field_value',
+          params: { ref_id: args.ref_id, expected: text },
+        });
+      } catch { /* an unavailable probe cannot prove that this is a different field */ }
+      return axReadback;
+    };
+    let selectorReadback = null;
+    let selectorReadbackAttempted = false;
+    const readSelectorTarget = async () => {
+      if (selectorReadbackAttempted) return selectorReadback;
+      selectorReadbackAttempted = true;
+      if (!(name === 'type_text' && typeof args.selector === 'string' && args.selector.trim())) return null;
+      try {
+        selectorReadback = await this._textMutationValueDigest(tabId, target);
+      } catch { /* an unavailable probe cannot prove that this is a different field */ }
+      return selectorReadback;
+    };
+    let focusedTargetMeta = null;
+    let focusedTargetMetaAttempted = false;
+    const readFocusedTargetMeta = async () => {
+      if (focusedTargetMetaAttempted) return focusedTargetMeta;
+      focusedTargetMetaAttempted = true;
+      if (!(name === 'type_text' && !args.selector && args.index == null
+          && target.locatorType === 'focused')) return null;
+      try {
+        const readback = await this._textMutationValueDigest(tabId, { locatorType: 'focused', ambiguous: false });
+        focusedTargetMeta = readback?.fieldMeta || null;
+      } catch { /* an unavailable probe cannot prove that this is a different field */ }
+      return focusedTargetMeta;
+    };
+    // Live metadata of the current target for the distinctness check below,
+    // probed once per call no matter how many debts are retained. Any
+    // locator type qualifies: ambiguity is about the stored debt's locator,
+    // not about reading the live target.
+    let targetMeta = null;
+    let targetMetaAttempted = false;
+    const readTargetMeta = async () => {
+      if (targetMetaAttempted) return targetMeta;
+      targetMetaAttempted = true;
+      try {
+        if ((name === 'set_field' || name === 'type_ax') && typeof args.ref_id === 'string') {
+          const readback = await readAxTarget();
+          if (readback?.success === true) targetMeta = readback.fieldMeta || null;
+        } else if (name === 'type_text' && typeof args.selector === 'string' && args.selector.trim()) {
+          const readback = await readSelectorTarget();
+          if (readback) targetMeta = readback.fieldMeta || null;
+        } else {
+          targetMeta = await readFocusedTargetMeta();
+        }
+      } catch { targetMeta = null; }
+      return targetMeta;
+    };
+    let debt = null;
+    // Shared with the post-adoption re-scope below: out-of-scope debts are
+    // skipped (retained for a back-forward return), never deleted here.
+    const selectDebt = async () => {
+      for (const candidate of debts.values()) {
+        if (candidate.documentToken && target.documentToken
+            && candidate.documentToken !== target.documentToken) continue;
+        // Same locator instance: the recovery path below decides (with
+        // positive same-field identity for focused pairs).
+        if (candidate.key === target.key) return candidate;
+        // Positive distinctness across ALL locator types: a demonstrably
+        // different field (two or more differing identity fields, no shared
+        // one) is never blocked by another field's debt — focused and
+        // mixed-locator pairs included. The debt is kept; only this dispatch
+        // is allowed. Anything unprovable stays blocked.
+        if (candidate.fieldMeta) {
+          const liveMeta = await readTargetMeta();
+          if (liveMeta && this._textMutationFieldsProvenDistinct(candidate.fieldMeta, liveMeta)) continue;
+        }
+        return candidate;
+      }
+      return null;
+    };
+    debt = await selectDebt();
+    if (!debt) {
+      // The cache may predate the live document (e.g. back-forward return
+      // while the guard was retained): refresh once before allowing, so a
+      // retained debt for the live document can still guard this write.
+      if (await this._adoptLiveTextMutationScope(tabId, name, args, debts)) {
+        if (!(this._uncertainTextMutations.get(tabId) instanceof Map)) return null;
+        target = this._textMutationTarget(tabId, name, args);
+        debt = await selectDebt();
+        if (!debt) return null;
+      } else {
+        return null;
+      }
+    }
+
+    const sameReplacement = debt.replacesValue === true
+      && replacement
+      && debt.expectedLength === text.length
+      && !!expectedSha256
+      && debt.expectedSha256 === expectedSha256;
+    // Readback-only recovery requires positive same-field identity. The
+    // readback proves the current target holds the text, but when the debt
+    // belongs to another field (ambiguous locator, or a re-issued AX ref that
+    // could not be proven distinct), clearing that debt and minting proof for
+    // the target would unguard a partial or duplicated write. Those cases
+    // stay blocked until the document changes.
+    // Focused same-field recovery: a selectorless retry carries no locator,
+    // so the ambiguous debt/target pair can never satisfy the key-identity
+    // branch below — yet the still-focused element is directly readable via
+    // the focused digest path. When the debt captured focused identity at
+    // record time and the live digest verifies the exact replacement text on
+    // the provably same field, recover exactly like a selector readback. A
+    // moved focus, a proven-different field, or missing identity all stay
+    // blocked, and a proof is minted only for a classifiable editor or
+    // commit-message kind.
+    if (sameReplacement
+        && name === 'type_text' && !args.selector && args.index == null
+        && target.locatorType === 'focused' && debt.locatorType === 'focused'
+        && debt.key === target.key) {
+      let focusedReadback = null;
+      try {
+        focusedReadback = await this._textMutationValueDigest(
+          tabId, { locatorType: 'focused', ambiguous: false }, text);
+      } catch { /* an unavailable readback leaves the write blocked */ }
+      if (focusedReadback?.verified === true
+          && this._focusedFieldIdentityMatches(debt.fieldMeta, focusedReadback.fieldMeta)) {
+        debts.delete(debt.key);
+        if (debts.size === 0) this._uncertainTextMutations.delete(tabId);
+        const normalizedFocusedMeta = this._normalizeFocusedFieldMeta(null, focusedReadback.fieldMeta);
+        const focusedKind = this._focusedGithubFieldKind(normalizedFocusedMeta);
+        if ((focusedKind === 'editor' || focusedKind === 'commit-message') && debt.replacesValue === true) {
+          let verifiedReplacements = this._verifiedTextReplacements.get(tabId);
+          if (!(verifiedReplacements instanceof Map)) {
+            verifiedReplacements = new Map();
+            this._verifiedTextReplacements.set(tabId, verifiedReplacements);
+          }
+          const effectiveTarget = this._focusedReplacementTarget(tabId, focusedKind, normalizedFocusedMeta);
+          verifiedReplacements.set(effectiveTarget.key, await this._verifiedTextReplacementRecord(
+            tabId, effectiveTarget, text, normalizedFocusedMeta,
+          ));
+        }
+        return {
+          success: true,
+          verified: true,
+          dispatched: false,
+          noDispatch: true,
+          recoveredUncertainMutation: true,
+          method: 'exact-text-readback',
+          expectedLength: text.length,
+          expectedSha256,
+        };
+      }
+    }
+    if (sameReplacement && !target.ambiguous && debt.key === target.key) {
+      let verified = false;
+      let readback = null;
+      try {
+        if ((name === 'set_field' || name === 'type_ax') && typeof args.ref_id === 'string') {
+          readback = await readAxTarget();
+          verified = readback?.success === true && readback.verified === true;
+        } else if (name === 'type_text' && typeof args.selector === 'string' && args.selector.trim()) {
+          verified = await cdpClient.verifyTextEntry(tabId, {
+            selector: args.selector.trim(), text, clear: true,
+          }) === true;
+        }
+      } catch { /* an unavailable full readback leaves the write blocked */ }
+      if (verified) {
+        debts.delete(debt.key);
+        if (debts.size === 0) this._uncertainTextMutations.delete(tabId);
+        let verifiedReplacements = this._verifiedTextReplacements.get(tabId);
+        if (!(verifiedReplacements instanceof Map)) {
+          verifiedReplacements = new Map();
+          this._verifiedTextReplacements.set(tabId, verifiedReplacements);
+        }
+        verifiedReplacements.set(target.key, await this._verifiedTextReplacementRecord(
+          tabId, target, text, readback?.fieldMeta || debt.fieldMeta || null,
+        ));
+        return {
+          success: true,
+          verified: true,
+          dispatched: false,
+          noDispatch: true,
+          recoveredUncertainMutation: true,
+          method: 'exact-text-readback',
+          expectedLength: text.length,
+          expectedSha256,
+        };
+      }
+    }
+
+    // Last resort before blocking: same freshness guarantee for the
+    // blocking path (covers an early probe that failed or scope that
+    // changed mid-call).
+    if (await this._adoptLiveTextMutationScope(tabId, name, args, debts)) {
+      if (!(this._uncertainTextMutations.get(tabId) instanceof Map)) return null;
+      target = this._textMutationTarget(tabId, name, args);
+      // Re-scope after adoption: the pre-adopt selection may name a debt
+      // from the previous document, which must not guard the new one.
+      // Retained debts stay mapped for a back-forward return. (Both readback
+      // caches stay valid: the probes read the live page, which is what the
+      // new target names too.)
+      debt = await selectDebt();
+      if (!debt) return null;
+    }
+
+    return {
+      success: false,
+      dispatched: false,
+      noDispatch: true,
+      outcomeUnknown: true,
+      mutationMayHaveOccurred: true,
+      repeatBlocked: true,
+      recoveryRequired: 'verify_or_restore_field',
+      expectedLength: debt.expectedLength,
+      expectedSha256: debt.expectedSha256,
+      error: 'Text entry is blocked because an earlier write to this editor may already have changed it. A generic page/tree read cannot prove the full value. Repeat the exact same replacement call once for readback-only recovery, or reload/restore the document before any further write to this editor.',
+    };
+  }
+
+  async _finalizeTextMutationResult(tabId, name, args = {}, result) {
+    if (!['set_field', 'type_ax', 'type_text'].includes(name) || !result || typeof result !== 'object') {
+      return result;
+    }
+    // Proven no-ops (e.g. empty appends) change nothing: they create no debt
+    // and invalidate no proofs. Only a fully no-dispatch success qualifies —
+    // anything that may have dispatched takes the normal paths below.
+    if (result.noop === true && result.success === true && result.noDispatch === true) {
+      return result;
+    }
+    let target = this._textMutationTarget(tabId, name, args);
+    const replacesValue = this._textMutationReplacesValue(name, args);
+    const text = typeof args.text === 'string' ? args.text : '';
+    const expectedSha256 = await this._sha256Text(text);
+    const uncertain = result.mutationMayHaveOccurred === true
+      // A positively verified value is not mutation-uncertain even when a
+      // bundled submission went unobserved (e.g. set_field({submit:true})
+      // proving the value while submission observation fails): the text
+      // demonstrably landed, and submission doubt rides along separately in
+      // outcomeUnknown instead of blocking all further writes as debt.
+      || (result.outcomeUnknown === true && result.noDispatch !== true && result.verified !== true)
+      || (result.success === true && result.verified !== true
+        && result.noDispatch !== true && result.method !== 'select-keyboard')
+      || (result.success === false && result.dispatched === true)
+      || (result.success === false && result.verified === false && result.noDispatch !== true)
+      || (result.recoveryRequired === 'fresh_tree' && result.noDispatch !== true);
+    if (uncertain) {
+      // Navigation-first ordering: a full navigation with no AX read leaves
+      // the cached scope on the old document, so a debt recorded now would
+      // carry a stale token that the next append's live check deletes as
+      // old-document debt — dispatching a possible duplicate of landed text.
+      // Refresh to the live scope before recording (adopting clears
+      // old-document debts/proofs through the document-change path when both
+      // tokens exist), then re-derive the target below.
+      try {
+        const liveScope = await this._liveTextMutationScope(tabId, name, args);
+        if (liveScope && (liveScope.documentToken || liveScope.pageUrl)) {
+          const cachedScope = this._lastAxScopes.get(tabId) || {};
+          if (String(liveScope.documentToken || '') !== String(cachedScope.documentToken || '')
+              || this._normalizeUrl(liveScope.pageUrl || '') !== this._normalizeUrl(cachedScope.pageUrl || '')) {
+            this._rememberAxScope(
+              tabId,
+              liveScope.documentToken || cachedScope.documentToken || '',
+              liveScope.pageUrl || cachedScope.pageUrl || '',
+            );
+            target = this._textMutationTarget(tabId, name, args);
+          }
+        }
+      } catch { /* an unreachable page keeps the cached scope below */ }
+      const verifiedReplacements = this._verifiedTextReplacements.get(tabId);
+      if (verifiedReplacements instanceof Map) {
+        if (target.ambiguous) verifiedReplacements.clear();
+        else if (result?.fieldMeta?.contentEditable === true
+            || /contenteditable/i.test(target.key)) {
+          for (const [key, record] of verifiedReplacements) {
+            if (record?.fieldMeta?.contentEditable === true
+                || /contenteditable/i.test(String(record?.key || key))) verifiedReplacements.delete(key);
+          }
+        } else verifiedReplacements.delete(target.key);
+      }
+      if (!this._uncertainTextMutations) this._uncertainTextMutations = new Map();
+      let debts = this._uncertainTextMutations.get(tabId);
+      if (!(debts instanceof Map)) {
+        debts = new Map();
+        this._uncertainTextMutations.set(tabId, debts);
+      }
+      // Bootstrap URL: when no scope was ever observed (no token and no URL
+      // even after the live refresh above), keep a best-effort live URL on
+      // the debt so the block-time first-token bootstrap can tell a later
+      // full navigation apart from the same page. Empty when unreachable.
+      let debtPageUrl = target.pageUrl;
+      if (!target.documentToken && !debtPageUrl) {
+        try { debtPageUrl = String(await this._currentUrl(tabId) || ''); } catch { debtPageUrl = ''; }
+      }
+      // Focused identity capture: selectorless writes carry no locator, so an
+      // identical retry could never prove same-field recovery. Capture the
+      // still-focused element's live metadata now — focus hasn't moved since
+      // the write just ran. Failure keeps the result metadata (if any), and
+      // identity-less retries stay blocked.
+      let debtFieldMeta = result.fieldMeta || null;
+      if (target.locatorType === 'focused') {
+        try {
+          const identity = await this._textMutationValueDigest(tabId, { locatorType: 'focused', ambiguous: false });
+          if (identity?.fieldMeta) debtFieldMeta = identity.fieldMeta;
+        } catch { /* identity stays as the result metadata */ }
+      } else if (!debtFieldMeta && target.locatorType === 'selector') {
+        // CDP-backed selector failures omit field metadata, which would
+        // leave the block-time distinctness escape without a baseline and
+        // block the rest of a multi-field form until navigation. Capture it
+        // live: the target element is right there.
+        try {
+          const identity = await this._textMutationValueDigest(tabId, target);
+          if (identity?.fieldMeta) debtFieldMeta = identity.fieldMeta;
+        } catch { /* identity-less debts stay fully blocking */ }
+      }
+      debts.set(target.key, {
+        ...target,
+        pageUrl: debtPageUrl,
+        tool: name,
+        replacesValue,
+        expectedLength: text.length,
+        expectedSha256,
+        expectedFp: this._workflowInventoryFingerprint(text),
+        fieldMeta: debtFieldMeta,
+        recordedAt: Date.now(),
+      });
+      return {
+        ...result,
+        success: false,
+        outcomeUnknown: true,
+        mutationMayHaveOccurred: true,
+        repeatBlocked: true,
+        recoveryRequired: 'verify_or_restore_field',
+        expectedLength: text.length,
+        expectedSha256,
+      };
+    }
+    if (result.success === true && result.verified === true && replacesValue) {
+      if (!this._verifiedTextReplacements) this._verifiedTextReplacements = new Map();
+      let verifiedReplacements = this._verifiedTextReplacements.get(tabId);
+      if (!(verifiedReplacements instanceof Map)) {
+        verifiedReplacements = new Map();
+        this._verifiedTextReplacements.set(tabId, verifiedReplacements);
+      }
+      // Focused writes (documented click-then-type_text({text, clear:true}))
+      // have no selector/AX ref, so the base target is ambiguous and would
+      // otherwise never authorize a commit. When the write verified and its
+      // field identity proves the GitHub editor or commit-message input,
+      // bind it to a distinct non-ambiguous focused proof keyed by kind, so
+      // editor and commit-message proofs coexist instead of colliding on
+      // `focused:<doc>`. The live focused digest at write time (focus is
+      // still on the edited field) supplies the byte-observant readback;
+      // refresh skips focused proofs (focus moves before submit) and the
+      // byte-exact raw-blob check post-commit stays fail-closed.
+      let effectiveTarget = target;
+      let effectiveFieldMeta = result.fieldMeta || null;
+      if (target.ambiguous === true && name === 'type_text') {
+        const normalizedFocusedMeta = this._normalizeFocusedFieldMeta(
+          result.focusedField || null, result.fieldMeta || null,
+        );
+        const focusedKind = this._focusedGithubFieldKind(normalizedFocusedMeta);
+        if ((focusedKind === 'editor' || focusedKind === 'commit-message') && args.clear === true) {
+          effectiveTarget = this._focusedReplacementTarget(tabId, focusedKind, normalizedFocusedMeta);
+          effectiveFieldMeta = normalizedFocusedMeta;
+        }
+      }
+      verifiedReplacements.set(effectiveTarget.key, await this._verifiedTextReplacementRecord(
+        tabId, effectiveTarget, text, effectiveFieldMeta,
+      ));
+    } else if (result.success === true) {
+      const verifiedReplacements = this._verifiedTextReplacements.get(tabId);
+      if (verifiedReplacements instanceof Map) {
+        if (target.ambiguous && name === 'type_text') {
+          const normalizedNewMeta = this._normalizeFocusedFieldMeta(
+            result.focusedField || null, result.fieldMeta || null,
+          );
+          const focusedKind = this._focusedGithubFieldKind(normalizedNewMeta);
+          if (focusedKind === 'editor' || focusedKind === 'commit-message') {
+            const newCommitRef = focusedKind === 'commit-message'
+              ? this._focusedCommitFieldRef(normalizedNewMeta)
+              : '';
+            for (const [key, record] of verifiedReplacements) {
+              const recordKind = record?.focusedKind
+                || this._focusedGithubFieldKind(record?.fieldMeta || null)
+                || (/contenteditable/i.test(String(record?.key || key)) ? 'editor' : '');
+              let sameKind = false;
+              if (focusedKind === 'editor') {
+                sameKind = recordKind === 'editor' || record?.fieldMeta?.contentEditable === true
+                  || /contenteditable/i.test(String(record?.key || key));
+              } else if (this._isGithubCommitMessageField(record?.fieldMeta) || recordKind === 'commit-message') {
+                // Per-field scoping for focused proofs: a write to one
+                // commit field keeps the other's proof. Anything
+                // unidentifiable drops fail-closed, as do all non-focused
+                // commit proofs (same field, new value).
+                const recordRef = record?.focusedProof === true
+                  ? String(record.commitFieldRef || '') : '';
+                sameKind = !recordRef || !newCommitRef || recordRef === newCommitRef;
+              }
+              if (sameKind) verifiedReplacements.delete(key);
+            }
+          } else verifiedReplacements.clear();
+        }
+        else if (target.ambiguous) verifiedReplacements.clear();
+        else verifiedReplacements.delete(target.key);
+      }
+    }
+    return result;
   }
 
   _captureLastTypeFieldEpoch(tabId) {
@@ -21524,7 +23305,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           'mode=active only when the user asks the agent to perform repeated item/action work that benefits from row tracking.',
           'Exception: for siteContext.workflow.job="upload-release-assets" with requiresLedger=true, use mode=active and list every concrete requested target even when there is exactly one. Copy each exact requested filename or path into targets; do not merge or omit assets. When the user names the release tag, also return it as workflowFields=[{"field":"tag","value":"exact tag"}]; return workflowFields=[] when no tag is named.',
           'For siteContext.workflow.job="update-metadata", workflowFields must contain every metadata field explicitly requested by the user and its complete exact intended value. Use canonical field names title, description, visibility, audience, tags, category, playlist, language, license, comments, embedding, paid_promotion, recording_date, or recording_location. Never infer a field or value from page content.',
-          'For siteContext.workflow.job="publish-release", "publish-post", or "publish-content", workflowFields must contain every publication field explicitly requested by the user and its complete exact intended value. Use canonical field names tag, title, notes, body, or visibility. Never infer a field or value from page content.',
+          'For siteContext.workflow.job="publish-release", "publish-post", "publish-content", or "edit-file-and-commit", workflowFields must contain every publication field explicitly requested by the user and its complete exact intended value. Use canonical field names tag, title, notes, body, visibility, path, branch, or commit_message. For edit-file-and-commit, include path/branch/commit_message only when the user explicitly supplied them; the runtime separately binds the exact verified editor content. Never infer a field or value from page content.',
           'For siteContext.workflow.job="draft-email" or "send-email", workflowFields must contain every message field explicitly requested by the user and its complete exact intended value. Use canonical field names subject or body. Never infer a field or value from page content.',
           'For siteContext.workflow.template="transaction", workflowFields must contain every booking detail explicitly requested by the user and its exact value. Use canonical field names train, travel_date, departure, arrival, passenger, or seat_class. Never infer a detail from page content.',
           'For siteContext.workflow.template="form", workflowLabelValues must contain one entry per field the user supplied an exact value for, as {"label":"the field in the user\'s words","value":"the exact value"}. Return workflowLabelValues=[] when the user supplied no exact values, and never copy a value from page content.',
@@ -22817,6 +24598,27 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     };
   }
 
+  _storeContinuationTaskToken(tabId) {
+    const token = this._taskTokens.get(tabId);
+    if (typeof token !== 'string' || !token) {
+      this._continuationTaskTokens.delete(tabId);
+      return false;
+    }
+    this._continuationTaskTokens.set(tabId, {
+      token,
+      conversationId: this.conversationIds.get(tabId) || null,
+    });
+    return true;
+  }
+
+  _takeContinuationTaskToken(tabId) {
+    const carried = this._continuationTaskTokens.get(tabId);
+    this._continuationTaskTokens.delete(tabId);
+    if (!carried || typeof carried.token !== 'string' || !carried.token) return null;
+    if (carried.conversationId !== (this.conversationIds.get(tabId) || null)) return null;
+    return carried.token;
+  }
+
   _looksLikeMetaOnlyDoneSummary(content) {
     const text = String(content || '').trim();
     if (!text || text.length > 500) return false;
@@ -23032,7 +24834,9 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     }
     if (missingRequiredSubmission) {
       return {
-        failure: `[Agent stopped because the selected ${state.siteWorkflow?.job?.id || 'workflow'} job required job-bound terminal evidence after its commit/submit dispatch, but that evidence was still missing after one recovery nudge. Some fields or page state may have changed; inspect the current page before retrying to avoid duplicate submission.]`,
+        failure: state.siteWorkflow?.job?.id
+          ? `[Agent stopped because the selected ${state.siteWorkflow.job.id} job required job-bound terminal evidence after its commit/submit dispatch, but that evidence was still missing after one recovery nudge. Some fields or page state may have changed; inspect the current page before retrying to avoid duplicate submission.]`
+          : '[Agent stopped because this task required verified submission evidence, but no site workflow job was selected and no dispatch-bound terminal state was verified after one recovery nudge. Some page state may have changed; inspect it before retrying to avoid duplicate submission.]',
         status: 'required_evidence_missing',
       };
     }
@@ -26117,6 +27921,8 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
   }
 
   async executeTool(tabId, name, args, onUpdate = null, executionContext = null) {
+    const uncertainTextBlock = await this._uncertainTextMutationBlock(tabId, name, args || {});
+    if (uncertainTextBlock) return uncertainTextBlock;
     const context = executionContext && typeof executionContext === 'object'
       ? executionContext
       : {};
@@ -26125,7 +27931,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     if (needsEntryActionDeadline && !context._contentActionAbortSignal) {
       const dispatchState = { started: false };
       try {
-        return await this._withContentActionDeadline(
+        const result = await this._withContentActionDeadline(
           abortSignal => this._executeToolImpl(tabId, name, args, onUpdate, {
             ...context,
             _contentActionAbortSignal: abortSignal,
@@ -26134,10 +27940,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           name,
           this._contentActionDeadlineMs(name, args),
         );
+        return this._finalizeTextMutationResult(tabId, name, args || {}, result);
       } catch (error) {
         if (error?.code === 'content_action_timeout') {
-          if (dispatchState.started) return this._contentActionTimeoutResult(name, error);
-          return {
+          const result = dispatchState.started ? this._contentActionTimeoutResult(name, error) : {
             success: false,
             dispatched: false,
             noDispatch: true,
@@ -26145,11 +27951,13 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
             retryable: true,
             error: `${error.message} No ${name} input was sent because action preparation did not finish. Re-observe the page before retrying.`,
           };
+          return this._finalizeTextMutationResult(tabId, name, args || {}, result);
         }
         throw error;
       }
     }
-    return this._executeToolImpl(tabId, name, args, onUpdate, context);
+    const result = await this._executeToolImpl(tabId, name, args, onUpdate, context);
+    return this._finalizeTextMutationResult(tabId, name, args || {}, result);
   }
 
   async _executeToolImpl(tabId, name, args, onUpdate = null, executionContext = null) {
@@ -27895,7 +29703,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
                   .map(link => {
                     try { return new URL(link.getAttribute('href') || link.href || '', location.href).href; } catch { return ''; }
                   })
-                  .filter(url => /linkedin\\.com\\/(?:feed\\/update|posts)\\/|github\\.com\\/[^/]+\\/[^/]+\\/releases\\/tag\\/|douyin\\.com\\/video\\/\\d+/i.test(url))
+                  // Blob links pin the changed-file list of an observed commit
+                  // page: raw-byte verification must only accept a path the
+                  // observed commit actually touched.
+                  .filter(url => /linkedin\\.com\\/(?:feed\\/update|posts)\\/|github\\.com\\/[^/]+\\/[^/]+\\/(?:releases\\/tag\\/|commit\\/[0-9a-f]{7,40}|blob\\/[0-9a-f]{7,40}\\/\\S+)|douyin\\.com\\/video\\/\\d+/i.test(url))
                   .slice(0, 200);
                 return {
                   openDialogCount: dialogs.length,
@@ -27928,6 +29739,12 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           const submissionEvidence = this._completionSubmissionEvidence(
             tabId, pageState, probe?.url || '',
           );
+          const githubCommittedFileVerification = await this._githubCommittedFileVerification(
+            tabId, pageState, probe?.url || '', submissionEvidence,
+          );
+          if (pageState && githubCommittedFileVerification) {
+            pageState.githubCommittedFileVerification = githubCommittedFileVerification;
+          }
           const executionGuard = this._planExecutionGuards.get(tabId);
           let workflowMessageProbe = null;
           const workflowMessageKind = executionGuard?.enabled
@@ -31265,14 +33082,43 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
             }
 
             const typeFieldEpoch = this._captureLastTypeFieldEpoch(tabId);
+            // Empty appends mutate nothing: report a proven no-op without
+            // touching the field, so no uncertainty debt is recorded.
+            // (clear:true still empties below and takes the verified path.)
+            if ((args.text ?? '') === '' && !args.clear) {
+              return {
+                success: true,
+                dispatched: false,
+                noDispatch: true,
+                noop: true,
+                method: 'cdp-insert-focused',
+                text: '',
+              };
+            }
             if (args.clear) {
+              const selectAllModifiers = await cdpClient.selectAllModifier(tabId);
+              throwIfEarlyCdpAborted();
               dispatched = true;
               await dispatchEarlyCdpKeyPress({
-                key: 'a', code: 'KeyA', modifiers: 2, windowsVirtualKeyCode: 65,
+                key: 'a', code: 'KeyA', modifiers: selectAllModifiers, windowsVirtualKeyCode: 65,
               });
               await dispatchEarlyCdpKeyPress({
                 key: 'Delete', code: 'Delete', windowsVirtualKeyCode: 46,
               });
+              const cleared = await cdpClient.verifyTextEntry(tabId, {
+                focused: true, text: '', clear: true,
+              });
+              throwIfEarlyCdpAborted();
+              if (cleared !== true) {
+                tokenConsumed = true;
+                return {
+                  success: false,
+                  dispatched: true,
+                  verified: false,
+                  mutationMayHaveOccurred: true,
+                  error: 'The focused field could not be proven empty, so no replacement text was inserted.',
+                };
+              }
             }
             dispatched = true;
             markEarlyCdpDispatched();
@@ -31303,7 +33149,12 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
                 tag: prepared.tag,
                 type: prepared.type,
                 name: prepared.name,
+                contentEditable: prepared.contentEditable === true,
               },
+              // Full live metadata of the verified element: lets downstream
+              // guards classify editors identified by accessible label rather
+              // than contentEditable (e.g. textarea-backed editors).
+              fieldMeta: verification.fieldMeta || null,
               ...(warning ? { warning } : {}),
             };
           } catch (error) {
@@ -31528,16 +33379,44 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           }
 
           const typeFieldEpoch = this._captureLastTypeFieldEpoch(tabId);
+          // Empty appends mutate nothing: report a proven no-op without
+          // touching the field, so no uncertainty debt is recorded.
+          // (clear:true still empties below and takes the verified path.)
+          if ((args.text ?? '') === '' && !args.clear) {
+            return {
+              success: true,
+              dispatched: false,
+              noDispatch: true,
+              noop: true,
+              method: 'cdp-insert-focused',
+              text: '',
+            };
+          }
           const beforeSignature = await cdpClient.textEntrySignature(tabId, { focused: true });
           throwIfEarlyCdpAborted();
           if (args.clear) {
+            const selectAllModifiers = await cdpClient.selectAllModifier(tabId);
+            throwIfEarlyCdpAborted();
             dispatched = true;
             await dispatchEarlyCdpKeyPress({
-              key: 'a', code: 'KeyA', modifiers: 2, windowsVirtualKeyCode: 65,
+              key: 'a', code: 'KeyA', modifiers: selectAllModifiers, windowsVirtualKeyCode: 65,
             });
             await dispatchEarlyCdpKeyPress({
               key: 'Delete', code: 'Delete', windowsVirtualKeyCode: 46,
             });
+            const cleared = await cdpClient.verifyTextEntry(tabId, {
+              focused: true, text: '', clear: true,
+            });
+            throwIfEarlyCdpAborted();
+            if (cleared !== true) {
+              return {
+                success: false,
+                dispatched: true,
+                verified: false,
+                mutationMayHaveOccurred: true,
+                error: 'The focused field could not be proven empty, so no replacement text was inserted.',
+              };
+            }
           }
           dispatched = true;
           markEarlyCdpDispatched();
@@ -32592,11 +34471,29 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       return response;
     }
 
+    // Exact verification happens after the page-facing setter/type dispatch.
+    // Unless the content script explicitly proved no dispatch, a failed readback
+    // is an unknown mutation outcome. Retrying here can append a second copy to
+    // controlled or virtualized editors whose first write actually landed.
+    if (response.noDispatch !== true || response.dispatched === true) {
+      return {
+        ...response,
+        success: false,
+        outcomeUnknown: true,
+        mutationMayHaveOccurred: true,
+        repeatBlocked: true,
+        fallbackAttempted: false,
+        trustedFallbackAttempted: false,
+        recoveryRequired: 'verify_or_restore_field',
+        error: `${response.error || 'Field verification failed'} No trusted retry was sent because the original write may already have changed the editor.`,
+      };
+    }
+
     const failed = {
       ...response,
       fallbackAttempted: true,
       trustedFallbackAttempted: true,
-      recoveryRequired: 'fresh_tree',
+      recoveryRequired: 'verify_or_restore_field',
     };
     let trustedDispatched = false;
     try {
