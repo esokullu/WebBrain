@@ -310,6 +310,28 @@ const SOCIAL_PUBLISH_DESTINATION_LEAD = new RegExp(
   'iu',
 );
 
+const NON_SOCIAL_DESTINATION_NOUNS = '(?:survey|form|questionnaire|poll|spreadsheet|sheet|doc|document|report|ticket|table|database|email|mail|inbox|slack|discord|notion|airtable|crm|system|file|input|field|box|website|portal|blog|formulario|formulaire|formular|encuesta|fragebogen|relat[oó]rio|rapport|bericht|tabela|tabelle|tableau|scheda|sondage|sondaggio|questionario|pesquisa|informe|postfach|buz[oó]n|bo[iî]te|casella|sitio|s[ií]tio|site|webseite|portale?|\u043e\u043f\u0440\u043e\u0441|\u0430\u043d\u043a\u0435\u0442\u0430|\u0444\u043e\u0440\u043c\u0430|\u0442\u0430\u0431\u043b\u0438\u0446\u0430|\u043e\u0442\u0447[e\u0451]\u0442|\u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442|\u0444\u0430\u0439\u043b|\u043f\u043e\u0447\u0442\u0430|\u0441\u0430\u0439\u0442)';
+const NON_SOCIAL_DESTINATION_PREPS = '(?:in|into|to|within|inside|through|en|dans|auf|em|para|su|sur|\u00e0|au|nel|nella|in\\s+der|im|\u0432|\u0432\\s+\u044d\u0442\u043e\u0442|\u043d\u0430)';
+const NON_SOCIAL_DESTINATION_ARTICLES = '(?:the\\s+|an?\\s+|un\\s+|une\\s+|el\\s+|la\\s+|los\\s+|las\\s+|der\\s+|die\\s+|das\\s+|dem\\s+|den\\s+|o\\s+|a\\s+|os\\s+|as\\s+|il\\s+|lo\\s+|gli\\s+|le\\s+|d\\w*\\s+)?';
+
+const NON_SOCIAL_DESTINATION_AFTER_PLATFORM = new RegExp(
+  `^\\s*(?:(?:right\\s+)?now\\s+|today\\s+|immediately\\s+|directly\\s+)?${NON_SOCIAL_DESTINATION_PREPS}\\s+${NON_SOCIAL_DESTINATION_ARTICLES}${NON_SOCIAL_DESTINATION_NOUNS}\\b`,
+  'iu',
+);
+
+const NON_SOCIAL_DESTINATION_IN_TEXT = new RegExp(
+  `(?:^|\\s+)${NON_SOCIAL_DESTINATION_PREPS}\\s+${NON_SOCIAL_DESTINATION_ARTICLES}${NON_SOCIAL_DESTINATION_NOUNS}\\b`,
+  'iu',
+);
+
+const SOURCE_MODIFIER_BEFORE_PLATFORM = new RegExp(
+  '(?:available|found|seen|reported|trending|existing|visible|present|hosted|stored|gathered|collected|shown|featured|sourced|read|heard|posted|published|shared'
+  + '|disponible|verf\u00fcgbar|encontrado|trouv\u00e9|trovato|gefunden|h\u00e9berg\u00e9|hospedado|pr\u00e9sent|presente|affich\u00e9|mostrado|gezeigt|recopilado|gesammelt|rassembl\u00e9|accessible|accesible|zug\u00e4nglich'
+  + '|\u0434\u043e\u0441\u0442\u0443\u043f\u043d\u044b\u0439|\u043d\u0430\u0439\u0434\u0435\u043d\u043d\u044b\u0439|\u043e\u043f\u0443\u0431\u043b\u0438\u043a\u043e\u0432\u0430\u043d\u043d\u044b\u0439|\u0440\u0430\u0437\u043c\u0435\u0449\u0435\u043d\u043d\u044b\u0439)'
+  + '(?:\\s+(?:now|currently|presently|online|already|recently|first|originally))?\\s*$',
+  'iu',
+);
+
 const VISION_SUB_CALL_TIMEOUT_MS = 90_000;
 const CONTENT_ACTION_TIMEOUT_MS = 60_000;
 const CONTENT_ACTION_RESPONSE_GRACE_MS = 5_000;
@@ -2516,9 +2538,42 @@ export class Agent extends LoopDetector {
     return Array.from(candidateNames);
   }
 
+  _isNegativeAttachmentRequirement(text) {
+    const s = String(text || '').trim().toLowerCase();
+    if (!s) return false;
+    if (/^(?:none|no|false|0|zero|なし|無し|無|없음)$/i.test(s)) return true;
+    const negPrefix = '(?:no|without|without\\s+any|sin|sans|sem|senza|ohne|без|kein|keine|aucun|aucune|ningun|ningún|ninguna|nenhum|nenhuma|nessun|nessuno|nessuna|nie)';
+    const nounSuffix = '(?:attachments?|files?|m[eéèê]dias?|m[ií]dia|medien|medios?|uploads?|images?|photos?|pictures?|pics?|videos?|clips?|recordings?|gifs?|fichiers?|pièces?|archivos?|adjuntos?|anexos?|allegat[oi]?|anhänge?|anhang|dateien?|вложений|вложения|фото(?:графий)?|изображений|видео|файлов)';
+    if (new RegExp(`^${negPrefix}\\s+${nounSuffix}$`, 'i').test(s)) return true;
+    if (new RegExp(`^(?:0|zero)\\s*${nounSuffix}?$`, 'i').test(s)) return true;
+    if (/(?:无|没有|不带|零个|0个)\s*(?:附件|图片|照片|视频|媒体|文件)|(?:附件|图片|照片|视频|媒体|文件)\s*(?:无|没有|为0|为零)/i.test(s)) return true;
+    if (/(?:添付|メディア|画像|写真|動画|ファイル)\s*(?:なし|無し|ゼロ|0)|(?:なし|無し)\s*(?:添付|メディア|画像|写真|動画|ファイル)/i.test(s)) return true;
+    if (/(?:첨부|미디어|사진|동영상|영상|파일)\s*(?:없음|안함|0개|0)|(?:없는|없음)\s*(?:첨부|미디어|사진|동영상|영상|파일)/i.test(s)) return true;
+    if (/(?:ek|medya|fotoğraf|resim|video)\s*(?:yok|olmadan|olmasın)/i.test(s)) return true;
+    return false;
+  }
+
   _parseWorkflowAttachmentRequirement(value) {
     const text = String(value || '').trim().toLowerCase();
     if (!text) return { isGeneric: true, expectedCount: 1, expectedImageCount: 0, expectedVideoCount: 0, wantsImage: false, wantsVideo: false, wantsGif: false, normalized: '' };
+
+    if (this._isNegativeAttachmentRequirement(text)) {
+      return {
+        isGeneric: true,
+        isNegative: true,
+        wantsNone: true,
+        expectedCount: 0,
+        expectedImageCount: 0,
+        expectedVideoCount: 0,
+        hasExplicitImageCount: false,
+        hasExplicitVideoCount: false,
+        hasExplicitCardinality: true,
+        wantsImage: false,
+        wantsVideo: false,
+        wantsGif: false,
+        normalized: text,
+      };
+    }
 
     const wantsGif = /\b(?:gif|gifs)\b|\.gif(?:[?#]|$)|(?:animated[-_ ]gif|動圖|动图|움짤)/i.test(text);
     const wantsVideo = wantsGif || /\b(?:video|videos|mp4|mov|webm|mkv|clip|clips|recording|recordings|vidéo|vidéos)\b|(?:動画|视频|影片|видео|동영상|비디오|영상)/i.test(text);
@@ -2643,11 +2698,14 @@ export class Agent extends LoopDetector {
     const rawAttachments = Array.isArray(record?.attachments)
       ? record.attachments
       : (Array.isArray(record?.media) ? record.media : []);
-    if (!rawAttachments.length) return false;
     const want = this._workflowMetadataValue(requirement?.value);
-    if (!want) return true;
+    if (!want) return rawAttachments.length > 0;
 
     const parsed = this._parseWorkflowAttachmentRequirement(want);
+    if (parsed.wantsNone || parsed.expectedCount === 0 || parsed.isNegative) {
+      return rawAttachments.length === 0;
+    }
+    if (!rawAttachments.length) return false;
     const attachmentType = att => (typeof att === 'string' ? att : att?.type || att?.kind || '');
 
     const isVideoAttachment = (att) => {
@@ -15433,7 +15491,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         + `|[\\u5230\\u81f3\\u5728]\\s*${platform}(?![a-z0-9_])`
         + `|(?:\u5728\\s*)?${platform}\\s*[\\u306b\\u3078\\u3067\\u4e0a\\uc5d0\\ub85c](?![a-z0-9_])`
         + `|${platform}\\s*\\uc73c\\ub85c(?![a-z0-9_])`,
-        'iu',
+        'giu',
       );
       const verbPattern = new RegExp(SOCIAL_PUBLISH_VERBS.source, 'giu');
       return clauses.some((clause, clauseIdx) => {
@@ -15451,16 +15509,52 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           if (/^shares?$/i.test(verbWord) && /(?<![\p{L}\p{N}_])(?:market|mind|revenue|profit|traffic|audience|wallet|fair|lion's|stock|equity|file|screen|time)\s+$/iu.test(beforeVerbClause)) continue;
           const afterVerb = targetText.slice(verbIndex + verbWord.length);
           const beforeVerb = targetText.slice(0, verbIndex);
-          platformPattern.lastIndex = 0;
-          if (platformPattern.test(afterVerb) || platformPattern.test(beforeVerb)) return true;
-          if (clauseIdx > 0) {
-            const prevClause = clauses[clauseIdx - 1];
-            const prevTargetText = prevClause.maskedText || prevClause.text;
-            platformPattern.lastIndex = 0;
-            if (platformPattern.test(prevTargetText) && !SOCIAL_READ_VERBS.test(prevTargetText) && !prevClause.isNegated) {
-              return true;
+
+          for (const matchAfter of afterVerb.matchAll(platformPattern)) {
+            const beforePlat = afterVerb.slice(0, matchAfter.index);
+            const afterPlat = afterVerb.slice((matchAfter.index ?? 0) + matchAfter[0].length);
+            const isSourceOnly = SOURCE_MODIFIER_BEFORE_PLATFORM.test(beforePlat)
+              || NON_SOCIAL_DESTINATION_AFTER_PLATFORM.test(afterPlat)
+              || (/\b(?:of|about|regarding|concerning|sur|de|von|su|sobre)\s+[^.?!;:\n]*$/iu.test(beforePlat)
+                  && NON_SOCIAL_DESTINATION_IN_TEXT.test(afterPlat));
+            if (!isSourceOnly) return true;
+          }
+
+          for (const matchBefore of beforeVerb.matchAll(platformPattern)) {
+            const beforePlat = beforeVerb.slice(0, matchBefore.index);
+            const afterPlat = beforeVerb.slice((matchBefore.index ?? 0) + matchBefore[0].length);
+            const isSourceOnly = SOURCE_MODIFIER_BEFORE_PLATFORM.test(beforePlat)
+              || NON_SOCIAL_DESTINATION_AFTER_PLATFORM.test(afterPlat)
+              || NON_SOCIAL_DESTINATION_IN_TEXT.test(afterVerb);
+            if (!isSourceOnly) return true;
+          }
+
+          for (let pIdx = clauseIdx - 1; pIdx >= 0; pIdx--) {
+            if (/[.?!;\n]/.test(clauses[pIdx + 1]?.delim || '')) break;
+            const pClause = clauses[pIdx];
+            if (pClause.isNegated) break;
+            const pTargetText = pClause.maskedText || pClause.text;
+            if (SOCIAL_PUBLISH_VERBS.test(pTargetText)) break;
+            let foundLeadingPlatform = false;
+            for (const matchPrev of pTargetText.matchAll(platformPattern)) {
+              if (SOCIAL_READ_VERBS.test(pTargetText)) break;
+              const beforePlat = pTargetText.slice(0, matchPrev.index);
+              const afterPlat = pTargetText.slice((matchPrev.index ?? 0) + matchPrev[0].length);
+              const isSourceOnly = SOURCE_MODIFIER_BEFORE_PLATFORM.test(beforePlat)
+                || NON_SOCIAL_DESTINATION_AFTER_PLATFORM.test(afterPlat);
+              if (!isSourceOnly) {
+                foundLeadingPlatform = true;
+                break;
+              }
+            }
+            if (foundLeadingPlatform) {
+              if (!NON_SOCIAL_DESTINATION_IN_TEXT.test(afterVerb)) {
+                return true;
+              }
+              break;
             }
           }
+
           for (let nextIdx = clauseIdx + 1; nextIdx < clauses.length; nextIdx++) {
             const nextClause = clauses[nextIdx];
             if (nextClause.isNegated) break;
@@ -15471,8 +15565,13 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
             const nextTargetText = nextClause.maskedText || nextClause.text;
             if (SOCIAL_READ_VERBS.test(nextTargetText)) break;
             if (SOCIAL_PUBLISH_VERBS.test(nextTargetText)) break;
-            platformPattern.lastIndex = 0;
-            if (platformPattern.test(nextTargetText)) return true;
+            for (const matchNext of nextTargetText.matchAll(platformPattern)) {
+              const beforePlat = nextTargetText.slice(0, matchNext.index);
+              const afterPlat = nextTargetText.slice((matchNext.index ?? 0) + matchNext[0].length);
+              const isSourceOnly = SOURCE_MODIFIER_BEFORE_PLATFORM.test(beforePlat)
+                || NON_SOCIAL_DESTINATION_AFTER_PLATFORM.test(afterPlat);
+              if (!isSourceOnly) return true;
+            }
           }
         }
         return false;

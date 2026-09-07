@@ -86434,6 +86434,42 @@ test('social publication workflow follows the live X or Bluesky destination and 
         'Russian payload conjunction и before в X was not recognized in coordinated clause scan'],
       ['Опубликуй новости о научных исследованиях и разработках на https://x.com/home', ['twitter'],
         'Russian payload conjunction и before explicit social URL was not recognized in coordinated clause scan'],
+      // Reject source-only platform phrases after publish verbs
+      ['Publish a summary of the news available on X in the survey', [],
+        'source-only platform modifying available was treated as publish destination'],
+      ['Publish a summary of the news found on X in the survey', [],
+        'source-only platform modifying found was treated as publish destination'],
+      ['Publish a summary of the news seen on X in the survey', [],
+        'source-only platform modifying seen was treated as publish destination'],
+      ['Publish a summary of the news reported on X in the survey', [],
+        'source-only platform modifying reported was treated as publish destination'],
+      ['Publish a summary of the news available on X', [],
+        'source-only platform modifying available without destination was treated as publish destination'],
+      ['Publish a summary of the news on X in the survey', [],
+        'topic on platform followed by survey destination was treated as publish destination'],
+      ['Publica un resumen de las noticias disponibles en X en la encuesta', [],
+        'Spanish source-only platform modifying disponibles was treated as publish destination'],
+      ['Publie un résumé des actualités disponibles sur X dans le formulaire', [],
+        'French source-only platform modifying disponibles was treated as publish destination'],
+      // Preserve leading destinations across intervening clauses
+      ['On X, after reviewing the draft, publish it', ['twitter'],
+        'leading destination across intervening modifier clause was lost'],
+      ['On X, before noon, publish this update', ['twitter'],
+        'leading destination across time modifier clause was lost'],
+      ['On X, once approved, publish the draft', ['twitter'],
+        'leading destination across conditional modifier clause was lost'],
+      ['On X, today, after reviewing the draft, publish it', ['twitter'],
+        'leading destination across multiple intervening modifier clauses was lost'],
+      ['On Bluesky, after reviewing the draft, publish it', ['bluesky'],
+        'leading Bluesky destination across intervening modifier clause was lost'],
+      ['En X, tras revisar el borrador, publícalo', ['twitter'],
+        'Spanish leading destination across intervening clause was lost'],
+      ['Sur X, après avoir vérifié le brouillon, publiez-le', ['twitter'],
+        'French leading destination across intervening clause was lost'],
+      ['On X, after reviewing the draft, publish it in the survey', [],
+        'leading platform before intervening clause was wrongly kept when publish command specifies survey destination'],
+      ['Read posts on X. After reviewing the draft, publish it.', [],
+        'leading platform across sentence boundary was wrongly adopted'],
     ]) {
       assert.deepEqual(
         [...agent._trustedSocialPublishTargetAdapters({ taskText })],
@@ -87996,6 +88032,43 @@ test('attachment verification matches specific attachment names without substrin
       { attachments: [{ type: 'image', src: 'https://pbs.twimg.com/media/old-chart.png' }] }
     );
     assert.equal(cleanedPrefixRejected, false, AgentClass.name + ': an image of chart.png should reject old-chart.png');
+
+    // Negative attachment requirements
+    for (const negReq of [
+      'no attachments',
+      'without media',
+      'without any media',
+      '0 attachments',
+      'zero attachments',
+      'none',
+      'sin archivos',
+      'sans photos',
+      'sem anexos',
+      'senza allegati',
+      'ohne anhang',
+      'без вложений',
+      '添付なし',
+      '첨부 없음',
+      '无附件',
+      'ek yok',
+    ]) {
+      assert.equal(
+        agent._workflowSocialPublishedAttachmentObserved(
+          { value: negReq },
+          { attachments: [] }
+        ),
+        true,
+        AgentClass.name + `: text-only post (0 attachments) should satisfy "${negReq}"`
+      );
+      assert.equal(
+        agent._workflowSocialPublishedAttachmentObserved(
+          { value: negReq },
+          { attachments: [{ type: 'image', src: 'https://pbs.twimg.com/media/pic.jpg' }] }
+        ),
+        false,
+        AgentClass.name + `: post with attachment should reject "${negReq}"`
+      );
+    }
   }
 });
 
