@@ -86470,6 +86470,23 @@ test('social publication workflow follows the live X or Bluesky destination and 
         'leading platform before intervening clause was wrongly kept when publish command specifies survey destination'],
       ['Read posts on X. After reviewing the draft, publish it.', [],
         'leading platform across sentence boundary was wrongly adopted'],
+      // Platform names used as report topics with non-social destinations
+      ['Publish a report on X adoption in the survey', [],
+        'report on X adoption followed by survey destination was treated as publish destination'],
+      ['Publish a report on X in the survey', [],
+        'report on X followed by survey destination was treated as publish destination'],
+      ['Publish a study on Bluesky usage in the spreadsheet', [],
+        'study on Bluesky usage followed by spreadsheet destination was treated as publish destination'],
+      ['Publish research on X trends into the form', [],
+        'research on X trends into form was treated as publish destination'],
+      ['Publica un informe sobre la adopción de X en la encuesta', [],
+        'Spanish report on X adoption in survey was treated as publish destination'],
+      ['Publie un rapport sur l\'adoption de X dans le formulaire', [],
+        'French report on X adoption in form was treated as publish destination'],
+      ['Publish a report on X adoption', ['twitter'],
+        'report on X adoption without non-social destination should publish to X'],
+      ['Publish on X and in the survey: Update', ['twitter'],
+        'coordinated publish on X and in survey should publish to X'],
     ]) {
       assert.deepEqual(
         [...agent._trustedSocialPublishTargetAdapters({ taskText })],
@@ -88067,6 +88084,119 @@ test('attachment verification matches specific attachment names without substrin
         ),
         false,
         AgentClass.name + `: post with attachment should reject "${negReq}"`
+      );
+    }
+
+    // Mixed positive and negative media types
+    const mixedCases = [
+      {
+        req: 'one video and no images',
+        valid: [{ type: 'video', src: 'https://video.twimg.com/clip.mp4' }],
+        invalidExtra: [
+          { type: 'video', src: 'https://video.twimg.com/clip.mp4' },
+          { type: 'image', src: 'https://pbs.twimg.com/media/pic.jpg' },
+        ],
+        invalidWrong: [{ type: 'image', src: 'https://pbs.twimg.com/media/pic.jpg' }],
+      },
+      {
+        req: '2 photos without video',
+        valid: [
+          { type: 'image', src: 'https://pbs.twimg.com/media/1.jpg' },
+          { type: 'image', src: 'https://pbs.twimg.com/media/2.jpg' },
+        ],
+        invalidExtra: [
+          { type: 'image', src: 'https://pbs.twimg.com/media/1.jpg' },
+          { type: 'image', src: 'https://pbs.twimg.com/media/2.jpg' },
+          { type: 'video', src: 'https://video.twimg.com/clip.mp4' },
+        ],
+        invalidWrong: [{ type: 'image', src: 'https://pbs.twimg.com/media/1.jpg' }],
+      },
+      {
+        req: '1 video, 0 images',
+        valid: [{ type: 'video', src: 'https://video.twimg.com/clip.mp4' }],
+        invalidExtra: [
+          { type: 'video', src: 'https://video.twimg.com/clip.mp4' },
+          { type: 'image', src: 'https://pbs.twimg.com/media/pic.jpg' },
+        ],
+        invalidWrong: [{ type: 'image', src: 'https://pbs.twimg.com/media/pic.jpg' }],
+      },
+      {
+        req: 'un video sin imágenes',
+        valid: [{ type: 'video', src: 'https://video.twimg.com/clip.mp4' }],
+        invalidExtra: [
+          { type: 'video', src: 'https://video.twimg.com/clip.mp4' },
+          { type: 'image', src: 'https://pbs.twimg.com/media/pic.jpg' },
+        ],
+        invalidWrong: [{ type: 'image', src: 'https://pbs.twimg.com/media/pic.jpg' }],
+      },
+      {
+        req: '1 vidéo sans photos',
+        valid: [{ type: 'video', src: 'https://video.twimg.com/clip.mp4' }],
+        invalidExtra: [
+          { type: 'video', src: 'https://video.twimg.com/clip.mp4' },
+          { type: 'image', src: 'https://pbs.twimg.com/media/pic.jpg' },
+        ],
+        invalidWrong: [{ type: 'image', src: 'https://pbs.twimg.com/media/pic.jpg' }],
+      },
+      {
+        req: '1 Video ohne Bilder',
+        valid: [{ type: 'video', src: 'https://video.twimg.com/clip.mp4' }],
+        invalidExtra: [
+          { type: 'video', src: 'https://video.twimg.com/clip.mp4' },
+          { type: 'image', src: 'https://pbs.twimg.com/media/pic.jpg' },
+        ],
+        invalidWrong: [{ type: 'image', src: 'https://pbs.twimg.com/media/pic.jpg' }],
+      },
+      {
+        req: '動画1つ、画像なし',
+        valid: [{ type: 'video', src: 'https://video.twimg.com/clip.mp4' }],
+        invalidExtra: [
+          { type: 'video', src: 'https://video.twimg.com/clip.mp4' },
+          { type: 'image', src: 'https://pbs.twimg.com/media/pic.jpg' },
+        ],
+        invalidWrong: [{ type: 'image', src: 'https://pbs.twimg.com/media/pic.jpg' }],
+      },
+      {
+        req: '동영상 1개, 사진 없음',
+        valid: [{ type: 'video', src: 'https://video.twimg.com/clip.mp4' }],
+        invalidExtra: [
+          { type: 'video', src: 'https://video.twimg.com/clip.mp4' },
+          { type: 'image', src: 'https://pbs.twimg.com/media/pic.jpg' },
+        ],
+        invalidWrong: [{ type: 'image', src: 'https://pbs.twimg.com/media/pic.jpg' }],
+      },
+      {
+        req: '1个视频，无图片',
+        valid: [{ type: 'video', src: 'https://video.twimg.com/clip.mp4' }],
+        invalidExtra: [
+          { type: 'video', src: 'https://video.twimg.com/clip.mp4' },
+          { type: 'image', src: 'https://pbs.twimg.com/media/pic.jpg' },
+        ],
+        invalidWrong: [{ type: 'image', src: 'https://pbs.twimg.com/media/pic.jpg' }],
+      },
+      {
+        req: 'no images, no videos',
+        valid: [],
+        invalidExtra: [{ type: 'image', src: 'https://pbs.twimg.com/media/pic.jpg' }],
+        invalidWrong: [{ type: 'video', src: 'https://video.twimg.com/clip.mp4' }],
+      },
+    ];
+
+    for (const { req, valid, invalidExtra, invalidWrong } of mixedCases) {
+      assert.equal(
+        agent._workflowSocialPublishedAttachmentObserved({ value: req }, { attachments: valid }),
+        true,
+        AgentClass.name + `: valid post should satisfy "${req}"`
+      );
+      assert.equal(
+        agent._workflowSocialPublishedAttachmentObserved({ value: req }, { attachments: invalidExtra }),
+        false,
+        AgentClass.name + `: post with extra forbidden media should reject "${req}"`
+      );
+      assert.equal(
+        agent._workflowSocialPublishedAttachmentObserved({ value: req }, { attachments: invalidWrong }),
+        false,
+        AgentClass.name + `: post with wrong media should reject "${req}"`
       );
     }
   }

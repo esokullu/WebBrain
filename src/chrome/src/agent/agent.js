@@ -277,6 +277,9 @@ const GENERIC_ATTACHMENT_WORDS = new Set([
   'enclosure', 'enclosures', 'document', 'documents', 'documento', 'documentos',
   'a', 'an', 'the', 'of', 'in', 'with', 'some', 'any',
   'and', 'or', 'plus', 'also', 'as', 'well',
+  'no', 'not', 'without', 'zero', 'none',
+  'sin', 'sans', 'sem', 'senza', 'ohne', 'kein', 'keine', 'keinen', 'aucun', 'aucune', 'ningun', 'ninguna', 'ningún', 'nenhum', 'nenhuma', 'nessun', 'nessuno', 'nessuna', 'nie', 'без', 'нет',
+  'yok',
   'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten',
   'single', 'multiple', 'both',
   'de', 'du', 'des', 'el', 'la', 'los', 'las', 'der', 'die', 'das', 'di', 'il', 'lo', 'gli', 'le',
@@ -300,7 +303,7 @@ const GENERIC_ATTACHMENT_WORDS = new Set([
   '와', '과', '및', '그리고', '하고', '도',
 ]);
 
-const CJK_GENERIC_ATTACHMENT_REGEX = /^[0-9一二两三四五六七八九十添付画像写真動画メディア已上传附件图片照片视频媒体枚つの本张條条个個장에서의사진이미지포토동영상비디오영상클립움짤첨부파일미디어하나둘셋넷다섯한두세네일이삼사오개건편와과및그리고하고도\s\-_,.:;!?/\\()&+/]+$/u;
+const CJK_GENERIC_ATTACHMENT_REGEX = /^[0-9一二两三四五六七八九十添付画像写真動画メディア已上传附件图片照片视频媒体枚つの本张條条个個장에서의사진이미지포토동영상비디오영상클립움짤첨부파일미디어하나둘셋넷다섯한두세네일이삼사오개건편와과및그리고하고도无没有不带零なし無しゼロ없음안함\s\-_,.:;!?/\\()&+、，。；：/]+$/u;
 
 // "On <url>, publish this" names a destination just as plainly as
 // "publish this on <url>", but only when the URL is presented as a place.
@@ -329,6 +332,58 @@ const SOURCE_MODIFIER_BEFORE_PLATFORM = new RegExp(
   + '|disponible|verf\u00fcgbar|encontrado|trouv\u00e9|trovato|gefunden|h\u00e9berg\u00e9|hospedado|pr\u00e9sent|presente|affich\u00e9|mostrado|gezeigt|recopilado|gesammelt|rassembl\u00e9|accessible|accesible|zug\u00e4nglich'
   + '|\u0434\u043e\u0441\u0442\u0443\u043f\u043d\u044b\u0439|\u043d\u0430\u0439\u0434\u0435\u043d\u043d\u044b\u0439|\u043e\u043f\u0443\u0431\u043b\u0438\u043a\u043e\u0432\u0430\u043d\u043d\u044b\u0439|\u0440\u0430\u0437\u043c\u0435\u0449\u0435\u043d\u043d\u044b\u0439)'
   + '(?:\\s+(?:now|currently|presently|online|already|recently|first|originally))?\\s*$',
+  'iu',
+);
+
+const TOPIC_NOUN_BEFORE_PLATFORM = new RegExp(
+  '\\b(?:report|reports|article|articles|paper|papers|study|studies|analysis|analyses|summary|summaries|overview|notes?|findings?|stats?|statistics|metrics?|data|info|information|updates?|news|briefs?|reviews?|drafts?|memos?|pieces?|columns?|posts?|stories|story|feedback|discussion|commentary|presentation|deck|slides?|content|research|surveys?|polls?'
+  + '|informes?|reportes?|art[ií]culos?|estudios?|an[aá]lisis|res[uú]men(?:es)?|noticias|datos|investiga[cç][ií][oó]n(?:es)?'
+  + '|rapports?|articles?|[eé]tudes?|analyses?|r[eé]sum[eé]s?|actualit[eé]s?|donn[eé]es?|recherches?|sondages?'
+  + '|berichte?|studien?|analysen?|nachrichten|daten|umfragen?)\\b'
+  + '|\\b(?:of|about|regarding|concerning|sur|de|von|su|sobre|\\u00fcber)\\s+[^.?!;:\\n]*$',
+  'iu',
+);
+
+const TOPIC_NOUN_AFTER_PLATFORM = new RegExp(
+  '^\\s*(?:adoption|usage|growth|metrics?|statistics|stats|analytics|trends?|features?|sentiment|engagement|activity|performance|traffic|users?|accounts?|behavior|behaviour|policies|policy|changes?|updates?|security|api|platform|ecosystem|community|content|posts?|data|adopci[oó]n|uso|tendencias|rendimiento|croissance|utilisation|tendances|performances)\\b',
+  'iu',
+);
+
+const IMAGE_NEGATION_REGEX = new RegExp(
+  `(?<![${SOCIAL_WORD_EDGE}])(?:no|not|without|without\\s+any|0|zero|none|sin|sans|sem|senza|ohne|kein|keine|keinen|aucun|aucune|ningun|ningún|ninguna|nenhum|nenhuma|nessun|nessuno|nessuna|nie|без|нет)\\s+(?:any\\s+)?(?:images?|photos?|pictures?|pics?|fotos?|bilder?|imagen(?:es)?|imágenes|pièces?\\s+jointes?|изображени[яй]|фото(?:графий)?|resim|fotoğraf)(?![${SOCIAL_WORD_EDGE}])`
+  + `|(?:images?|photos?|pictures?|pics?|fotos?|bilder?|imagen(?:es)?|imágenes)\\s*:\\s*(?:none|no|0|zero|false)`
+  + `|(?:无|没有|不带|零个|0个|0)\\s*(?:图片|照片|圖片)`
+  + `|(?:图片|照片|圖片)\\s*(?:无|没有|为0|为零|0个|零个|0)`
+  + `|(?:なし|無し|ゼロ|0)\\s*(?:画像|写真)`
+  + `|(?:画像|写真)\\s*(?:なし|無し|ゼロ|0)`
+  + `|(?:없는|없음|0개|0)\\s*(?:사진|이미지|포토)`
+  + `|(?:사진|이미지|포토)\\s*(?:없음|안함|0개|0)`
+  + `|(?:resim|fotoğraf)\\s*(?:yok|olmadan|olmasın)`,
+  'iu',
+);
+
+const VIDEO_NEGATION_REGEX = new RegExp(
+  `(?<![${SOCIAL_WORD_EDGE}])(?:no|not|without|without\\s+any|0|zero|none|sin|sans|sem|senza|ohne|kein|keine|keinen|aucun|aucune|ningun|ningún|ninguna|nenhum|nenhuma|nessun|nessuno|nessuna|nie|без|нет)\\s+(?:any\\s+)?(?:videos?|clips?|recordings?|vid[eé]os?|видео|video)(?![${SOCIAL_WORD_EDGE}])`
+  + `|(?:videos?|clips?|recordings?|vid[eé]os?)\\s*:\\s*(?:none|no|0|zero|false)`
+  + `|(?:无|没有|不带|零个|0个|0)\\s*(?:视频|影片)`
+  + `|(?:视频|影片)\\s*(?:无|没有|为0|为零|0个|零个|0)`
+  + `|(?:なし|無し|ゼロ|0)\\s*(?:動画)`
+  + `|(?:動画)\\s*(?:なし|無し|ゼロ|0)`
+  + `|(?:없는|없음|0개|0)\\s*(?:동영상|비디오|영상)`
+  + `|(?:동영상|비디오|영상)\\s*(?:없음|안함|0개|0)`
+  + `|(?:video)\\s*(?:yok|olmadan|olmasın)`,
+  'iu',
+);
+
+const GIF_NEGATION_REGEX = new RegExp(
+  `(?<![${SOCIAL_WORD_EDGE}])(?:no|not|without|without\\s+any|0|zero|none|sin|sans|sem|senza|ohne|kein|keine|keinen|aucun|aucune|ningun|ningún|ninguna|nenhum|nenhuma|nessun|nessuno|nessuna|nie|без|нет)\\s+(?:any\\s+)?(?:gifs?|animated[-_ ]gifs?)(?![${SOCIAL_WORD_EDGE}])`
+  + `|(?:gifs?)\\s*:\\s*(?:none|no|0|zero|false)`
+  + `|(?:无|没有|不带|零个|0个|0)\\s*(?:动图|動圖)`
+  + `|(?:动图|動圖)\\s*(?:无|没有|为0|为零|0个|零个|0)`
+  + `|(?:なし|無し|ゼロ|0)\\s*(?:gif|動圖|动图)`
+  + `|(?:gif|動圖|动图)\\s*(?:なし|無し|ゼロ|0)`
+  + `|(?:없는|없음|0개|0)\\s*(?:움짤|gif)`
+  + `|(?:움짤|gif)\\s*(?:없음|안함|0개|0)`,
   'iu',
 );
 
@@ -2546,10 +2601,10 @@ export class Agent extends LoopDetector {
     const nounSuffix = '(?:attachments?|files?|m[eéèê]dias?|m[ií]dia|medien|medios?|uploads?|images?|photos?|pictures?|pics?|videos?|clips?|recordings?|gifs?|fichiers?|pièces?|archivos?|adjuntos?|anexos?|allegat[oi]?|anhänge?|anhang|dateien?|вложений|вложения|фото(?:графий)?|изображений|видео|файлов)';
     if (new RegExp(`^${negPrefix}\\s+${nounSuffix}$`, 'i').test(s)) return true;
     if (new RegExp(`^(?:0|zero)\\s*${nounSuffix}?$`, 'i').test(s)) return true;
-    if (/(?:无|没有|不带|零个|0个)\s*(?:附件|图片|照片|视频|媒体|文件)|(?:附件|图片|照片|视频|媒体|文件)\s*(?:无|没有|为0|为零)/i.test(s)) return true;
-    if (/(?:添付|メディア|画像|写真|動画|ファイル)\s*(?:なし|無し|ゼロ|0)|(?:なし|無し)\s*(?:添付|メディア|画像|写真|動画|ファイル)/i.test(s)) return true;
-    if (/(?:첨부|미디어|사진|동영상|영상|파일)\s*(?:없음|안함|0개|0)|(?:없는|없음)\s*(?:첨부|미디어|사진|동영상|영상|파일)/i.test(s)) return true;
-    if (/(?:ek|medya|fotoğraf|resim|video)\s*(?:yok|olmadan|olmasın)/i.test(s)) return true;
+    if (/^(?:(?:无|没有|不带|零个|0个)\s*(?:附件|图片|照片|视频|媒体|文件)|(?:附件|图片|照片|视频|媒体|文件)\s*(?:无|没有|为0|为零))$/i.test(s)) return true;
+    if (/^(?:(?:添付|メディア|画像|写真|動画|ファイル)\s*(?:なし|無し|ゼロ|0)|(?:なし|無し)\s*(?:添付|メディア|画像|写真|動画|ファイル))$/i.test(s)) return true;
+    if (/^(?:(?:첨부|미디어|사진|동영상|영상|파일)\s*(?:없음|안함|0개|0)|(?:없는|없음)\s*(?:첨부|미디어|사진|동영상|영상|파일))$/i.test(s)) return true;
+    if (/^(?:ek|medya|fotoğraf|resim|video)\s*(?:yok|olmadan|olmasın)$/i.test(s)) return true;
     return false;
   }
 
@@ -2575,15 +2630,42 @@ export class Agent extends LoopDetector {
       };
     }
 
-    const wantsGif = /\b(?:gif|gifs)\b|\.gif(?:[?#]|$)|(?:animated[-_ ]gif|動圖|动图|움짤)/i.test(text);
-    const wantsVideo = wantsGif || /\b(?:video|videos|mp4|mov|webm|mkv|clip|clips|recording|recordings|vidéo|vidéos)\b|(?:動画|视频|影片|видео|동영상|비디오|영상)/i.test(text);
-    const wantsImage = /\b(?:image|images|photo|photos|picture|pictures|pic|pics|png|jpg|jpeg|webp|foto|fotos|bild|bilder|imagen(?:es)?|imágenes)\b|(?:画像|写真|图片|照片|圖片|изображение|фото|사진|이미지|포토)/i.test(text);
+    const isImageNegated = IMAGE_NEGATION_REGEX.test(text);
+    const isVideoNegated = VIDEO_NEGATION_REGEX.test(text);
+    const isGifNegated = GIF_NEGATION_REGEX.test(text);
+
+    if (isImageNegated && isVideoNegated) {
+      return {
+        isGeneric: true,
+        isNegative: true,
+        wantsNone: true,
+        expectedCount: 0,
+        expectedImageCount: 0,
+        expectedVideoCount: 0,
+        hasExplicitImageCount: true,
+        hasExplicitVideoCount: true,
+        hasExplicitCardinality: true,
+        wantsImage: false,
+        wantsVideo: false,
+        wantsGif: false,
+        normalized: text,
+      };
+    }
+
+    const hasRawGif = /\b(?:gif|gifs)\b|\.gif(?:[?#]|$)|(?:animated[-_ ]gif|動圖|动图|움짤)/i.test(text);
+    const hasRawVideo = hasRawGif || /\b(?:video|videos|mp4|mov|webm|mkv|clip|clips|recording|recordings|vidéo|vidéos)\b|(?:動画|视频|影片|видео|동영상|비디오|영상)/i.test(text);
+    const hasRawImage = /\b(?:image|images|photo|photos|picture|pictures|pic|pics|png|jpg|jpeg|webp|foto|fotos|bild|bilder|imagen(?:es)?|imágenes)\b|(?:画像|写真|图片|照片|圖片|изображение|фото|사진|이미지|포토)/i.test(text);
+
+    const wantsGif = hasRawGif && !isGifNegated;
+    const wantsVideo = (hasRawVideo && !isVideoNegated) || wantsGif;
+    const wantsImage = hasRawImage && !isImageNegated;
 
     const parseCountWord = (str) => {
       if (!str) return 0;
       const s = str.trim().toLowerCase();
       if (/^\d+$/.test(s)) return parseInt(s, 10);
       const wordToNum = {
+        zero: 0, '0': 0, cero: 0, 'zéro': 0, null: 0, 'ноль': 0, 'нуль': 0, '零': 0, 'なし': 0, '無し': 0, '없음': 0, '无': 0,
         a: 1, an: 1, one: 1, single: 1, un: 1, une: 1, uno: 1, una: 1, ein: 1, eine: 1, einen: 1, einer: 1, um: 1, uma: 1,
         '一': 1, один: 1, одна: 1, одно: 1,
         '하나': 1, '한': 1, '일': 1,
@@ -2606,6 +2688,7 @@ export class Agent extends LoopDetector {
       const s = str.trim().toLowerCase();
       if (/^\d+$/.test(s)) return true;
       const explicitWords = new Set([
+        'zero', 'cero', 'zéro', 'null', 'ноль', 'нуль',
         'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten',
         'single', 'both',
         'deux', 'trois', 'quatre', 'cinq',
@@ -2625,27 +2708,43 @@ export class Agent extends LoopDetector {
     if (CJK_GENERIC_ATTACHMENT_REGEX.test(text)) {
       isGeneric = true;
     } else {
-      const nonPunctuation = text.replace(/[\s\-_,.:;!?/\\()&+/]+/g, ' ').trim();
+      const nonPunctuation = text.replace(/[\s\-_,.:;!?/\\()&+、，。；：/]+/g, ' ').trim();
       const words = nonPunctuation ? nonPunctuation.split(/\s+/) : [];
       isGeneric = words.length > 0 && words.every(w => /^\d+$/.test(w) || GENERIC_ATTACHMENT_WORDS.has(w) || CJK_GENERIC_ATTACHMENT_REGEX.test(w));
     }
 
-    const countPrefix = '(?:\\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|single|both|multiple|un|une|deux|trois|quatre|cinq|uno|una|unos|unas|dos|tres|cuatro|cinco|due|tre|quattro|cinque|ein|eine|einen|einer|zwei|drei|vier|fünf|um|uma|dois|duas|três|один|одна|одно|два|две|три|четыре|пять|[一二两三四五六七八九十]|하나|둘|셋|넷|다섯|한(?=\\s*(?:장|개|건|편|개의|장의))|두(?=\\s*(?:장|개|건|편|개의|장의))|세(?=\\s*(?:장|개|건|편|개의|장의))|네(?=\\s*(?:장|개|건|편|개의|장의))|[일이삼사오](?=\\s*(?:장|개|건|편|개의|장의)))';
-    const countSeparator = '(?:^|[\\s,;+&/|]|(?:\\b(?:and|und|et|e|y)\\b\\s*)|[와과및])';
+    const countPrefix = '(?:\\d+|zero|cero|zéro|a|an|one|two|three|four|five|six|seven|eight|nine|ten|single|both|multiple|un|une|deux|trois|quatre|cinq|uno|una|unos|unas|dos|tres|cuatro|cinco|due|tre|quattro|cinque|ein|eine|einen|einer|zwei|drei|vier|fünf|um|uma|dois|duas|três|один|одна|одно|два|две|три|четыре|пять|[一二两三四五六七八九十]|하나|둘|셋|넷|다섯|한(?=\\s*(?:장|개|건|편|개의|장의))|두(?=\\s*(?:장|개|건|편|개의|장의))|세(?=\\s*(?:장|개|건|편|개의|장의))|네(?=\\s*(?:장|개|건|편|개의|장의))|[일이삼사오](?=\\s*(?:장|개|건|편|개의|장의)))';
+    const countSeparator = '(?:^|[\\s,;+&/|、，。；：]|(?:\\b(?:and|und|et|e|y)\\b\\s*)|[와과및])';
 
     const imageCountMatch = isGeneric
-      ? (text.match(new RegExp(`${countSeparator}(${countPrefix})\\s*(?:images?|photos?|pictures?|pics?|foto|fotos|bild|bilder|imagen(?:es)?|imágenes|画像|写真|图片|照片|圖片|изображение|фото|사진|이미지|포토)(?:\\s*(?:장|개|건))?`, 'i'))
-        || text.match(/(?:사진|이미지|포토)\s*([0-9하나둘셋넷다섯]+|[한두세네일이삼사오](?=\\s*(?:장|개|건|편|개의|장의)))\s*(?:장|개|건)?/i))
+      ? (text.match(new RegExp(`${countSeparator}(${countPrefix})(?:\\s*(?:枚|つ|本|张|條|条|个|個|장|개|건|편))?\\s*(?:images?|photos?|pictures?|pics?|foto|fotos|bild|bilder|imagen(?:es)?|imágenes|画像|写真|图片|照片|圖片|изображение|фото|사진|이미지|포토)(?:\\s*(?:장|개|건))?`, 'i'))
+        || text.match(/(?:사진|이미지|포토)\s*([0-9하나둘셋넷다섯]+|[한두세네일이삼사오](?=\\s*(?:장|개|건|편|개의|장의)))\s*(?:장|개|건)?/i)
+        || text.match(/(?:画像|写真|图片|照片|圖片)\s*([0-9一二两三四五六七八九十]+)\s*(?:枚|つ|张|條|条|个|個)?/i))
       : null;
-    const expectedImageCount = imageCountMatch ? parseCountWord(imageCountMatch[1]) : 0;
-    const hasExplicitImageCount = imageCountMatch ? isExplicitCountWord(imageCountMatch[1]) : false;
+    let expectedImageCount = 0;
+    let hasExplicitImageCount = false;
+    if (isImageNegated) {
+      expectedImageCount = 0;
+      hasExplicitImageCount = true;
+    } else if (imageCountMatch) {
+      expectedImageCount = parseCountWord(imageCountMatch[1]);
+      hasExplicitImageCount = isExplicitCountWord(imageCountMatch[1]);
+    }
 
     const videoCountMatch = isGeneric
-      ? (text.match(new RegExp(`${countSeparator}(${countPrefix})\\s*(?:videos?|clips?|recordings?|gifs?|animated[-_ ]gifs?|vidéo|vidéos|動画|视频|影片|видео|동영상|비디오|영상)(?:\\s*(?:개|편|건))?`, 'i'))
-        || text.match(/(?:동영상|비디오|영상)\s*([0-9하나둘셋넷다섯]+|[한두세네일이삼사오](?=\\s*(?:장|개|건|편|개의|장의)))\s*(?:개|편|건)?/i))
+      ? (text.match(new RegExp(`${countSeparator}(${countPrefix})(?:\\s*(?:枚|つ|本|张|條|条|个|個|장|개|건|편))?\\s*(?:videos?|clips?|recordings?|gifs?|animated[-_ ]gifs?|vidéo|vidéos|動画|视频|影片|видео|동영상|비디오|영상)(?:\\s*(?:개|편|건))?`, 'i'))
+        || text.match(/(?:동영상|비디오|영상)\s*([0-9하나둘셋넷다섯]+|[한두세네일이삼사오](?=\\s*(?:장|개|건|편|개의|장의)))\s*(?:개|편|건)?/i)
+        || text.match(/(?:動画|视频|影片)\s*([0-9一二两三四五六七八九十]+)\s*(?:つ|本|個|个|條|条|편|개)?/i))
       : null;
-    const expectedVideoCount = videoCountMatch ? parseCountWord(videoCountMatch[1]) : 0;
-    const hasExplicitVideoCount = videoCountMatch ? isExplicitCountWord(videoCountMatch[1]) : false;
+    let expectedVideoCount = 0;
+    let hasExplicitVideoCount = false;
+    if (isVideoNegated) {
+      expectedVideoCount = 0;
+      hasExplicitVideoCount = true;
+    } else if (videoCountMatch) {
+      expectedVideoCount = parseCountWord(videoCountMatch[1]);
+      hasExplicitVideoCount = isExplicitCountWord(videoCountMatch[1]);
+    }
 
     let hasExplicitGenericCount = false;
     let expectedCount = 1;
@@ -2656,6 +2755,10 @@ export class Agent extends LoopDetector {
         expectedCount = expectedImageCount + (wantsVideo ? 1 : 0);
       } else if (expectedVideoCount > 0) {
         expectedCount = expectedVideoCount + (wantsImage ? 1 : 0);
+      } else if (wantsVideo && !wantsImage) {
+        expectedCount = expectedVideoCount > 0 ? expectedVideoCount : 1;
+      } else if (wantsImage && !wantsVideo) {
+        expectedCount = expectedImageCount > 0 ? expectedImageCount : 1;
       } else {
         const genericNounCountMatch = text.match(new RegExp(`${countSeparator}(${countPrefix})\\s+(?:attachments?|files?|media|uploads?|pieces?|items?|assets?|enclosures?|documents?|fichiers?|archivos?|dateien?|allegati?|anexos?|вложения?|вложение|첨부(?:파일)?|파일|미디어)`, 'i'))
           || text.match(new RegExp(`${countSeparator}(${countPrefix})\\s*(?:枚|つ|本|张|條|条|个|個|장|개|건|편)`, 'i'))
@@ -15515,8 +15618,9 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
             const afterPlat = afterVerb.slice((matchAfter.index ?? 0) + matchAfter[0].length);
             const isSourceOnly = SOURCE_MODIFIER_BEFORE_PLATFORM.test(beforePlat)
               || NON_SOCIAL_DESTINATION_AFTER_PLATFORM.test(afterPlat)
-              || (/\b(?:of|about|regarding|concerning|sur|de|von|su|sobre)\s+[^.?!;:\n]*$/iu.test(beforePlat)
-                  && NON_SOCIAL_DESTINATION_IN_TEXT.test(afterPlat));
+              || ((TOPIC_NOUN_BEFORE_PLATFORM.test(beforePlat) || TOPIC_NOUN_AFTER_PLATFORM.test(afterPlat))
+                  && NON_SOCIAL_DESTINATION_IN_TEXT.test(afterPlat)
+                  && !/^\s*(?:and|und|et|e|y|ve|и|oder|or|as\s+well\s+as)\s+/i.test(afterPlat));
             if (!isSourceOnly) return true;
           }
 
@@ -15525,7 +15629,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
             const afterPlat = beforeVerb.slice((matchBefore.index ?? 0) + matchBefore[0].length);
             const isSourceOnly = SOURCE_MODIFIER_BEFORE_PLATFORM.test(beforePlat)
               || NON_SOCIAL_DESTINATION_AFTER_PLATFORM.test(afterPlat)
-              || NON_SOCIAL_DESTINATION_IN_TEXT.test(afterVerb);
+              || NON_SOCIAL_DESTINATION_IN_TEXT.test(afterVerb)
+              || ((TOPIC_NOUN_BEFORE_PLATFORM.test(beforePlat) || TOPIC_NOUN_AFTER_PLATFORM.test(afterPlat))
+                  && (NON_SOCIAL_DESTINATION_IN_TEXT.test(afterPlat) || NON_SOCIAL_DESTINATION_IN_TEXT.test(afterVerb))
+                  && !/^\s*(?:and|und|et|e|y|ve|и|oder|or|as\s+well\s+as)\s+/i.test(afterPlat));
             if (!isSourceOnly) return true;
           }
 
@@ -15541,7 +15648,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
               const beforePlat = pTargetText.slice(0, matchPrev.index);
               const afterPlat = pTargetText.slice((matchPrev.index ?? 0) + matchPrev[0].length);
               const isSourceOnly = SOURCE_MODIFIER_BEFORE_PLATFORM.test(beforePlat)
-                || NON_SOCIAL_DESTINATION_AFTER_PLATFORM.test(afterPlat);
+                || NON_SOCIAL_DESTINATION_AFTER_PLATFORM.test(afterPlat)
+                || ((TOPIC_NOUN_BEFORE_PLATFORM.test(beforePlat) || TOPIC_NOUN_AFTER_PLATFORM.test(afterPlat))
+                    && NON_SOCIAL_DESTINATION_IN_TEXT.test(afterPlat)
+                    && !/^\s*(?:and|und|et|e|y|ve|и|oder|or|as\s+well\s+as)\s+/i.test(afterPlat));
               if (!isSourceOnly) {
                 foundLeadingPlatform = true;
                 break;
@@ -15569,7 +15679,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
               const beforePlat = nextTargetText.slice(0, matchNext.index);
               const afterPlat = nextTargetText.slice((matchNext.index ?? 0) + matchNext[0].length);
               const isSourceOnly = SOURCE_MODIFIER_BEFORE_PLATFORM.test(beforePlat)
-                || NON_SOCIAL_DESTINATION_AFTER_PLATFORM.test(afterPlat);
+                || NON_SOCIAL_DESTINATION_AFTER_PLATFORM.test(afterPlat)
+                || ((TOPIC_NOUN_BEFORE_PLATFORM.test(beforePlat) || TOPIC_NOUN_AFTER_PLATFORM.test(afterPlat))
+                    && NON_SOCIAL_DESTINATION_IN_TEXT.test(afterPlat)
+                    && !/^\s*(?:and|und|et|e|y|ve|и|oder|or|as\s+well\s+as)\s+/i.test(afterPlat));
               if (!isSourceOnly) return true;
             }
           }
