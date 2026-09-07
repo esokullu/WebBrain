@@ -13,7 +13,6 @@ function compact(value, max = 200) {
     .trim()
     .slice(0, max);
 }
-
 export function normalizeMessageTarget(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const targetKind = String(value.target_kind || '').trim();
@@ -555,4 +554,3 @@ export function resolveClarifiedRecipients(observedCandidates, previousTarget, c
     return { identity, role: observedRole };
   });
 }
-
