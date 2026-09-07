@@ -3314,9 +3314,14 @@ export class Agent extends LoopDetector {
       let match = null;
       // eslint-disable-next-line no-cond-assign
       while ((match = branchItem.exec(html)) !== null) {
-        const name = match[1]
-          .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-          .replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim();
+        const entities = { amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'" };
+        // Decode exactly one HTML layer. Chained replacements would turn an
+        // actual branch named "main&lt;x" (rendered as main&amp;lt;x) into
+        // "main<x" and could attribute a commit to the wrong branch.
+        const name = match[1].replace(
+          /&(amp|lt|gt|quot|#39);/gi,
+          (entity, key) => entities[String(key).toLowerCase()] || entity,
+        ).trim();
         if (name) names.push(name);
       }
       if (names.length === 0) return null;

@@ -79635,10 +79635,10 @@ test('verification rejects commits unattributed to the requested branch', async 
         siteWorkflow: { adapterName: 'github', job: { id: 'edit-file-and-commit' } },
       });
       const sha = await agent._sha256Text(body);
-      const bindingFor = () => ({
+      const bindingFor = (branch = 'main') => ({
         githubFileCommit: {
           repository: 'example/repo',
-          branch: 'main',
+          branch,
           path: 'docs/plan.md',
           expectedLength: body.length,
           expectedSha256: sha,
@@ -79646,7 +79646,7 @@ test('verification rejects commits unattributed to the requested branch', async 
         },
         metadataRequirements: [
           { field: 'path', value: 'docs/plan.md' },
-          { field: 'branch', value: 'main' },
+          { field: 'branch', value: branch },
         ],
         preDispatchPublishedResourceIdentities: [],
       });
@@ -79661,6 +79661,14 @@ test('verification rejects commits unattributed to the requested branch', async 
         `${label}: branch-attributed commit was not verified`);
       assert.ok(!seen.includes(apiUrl),
         `${label}: same-host attribution needlessly consulted the token API`);
+      // Decode one HTML entity layer, not the newly produced entity text.
+      // The actual branch here is literally "main&lt;escape".
+      sameHost = { ok: true, status: 200, body: branchHtml('main&amp;lt;escape') };
+      assert.equal((await verify(bindingFor('main&lt;escape'))).verified, true,
+        `${label}: a singly decoded branch name was not attributed`);
+      const doubleDecodedBranch = await verify(bindingFor('main<escape'));
+      assert.equal(doubleDecodedBranch.reason, 'commit_wrong_branch',
+        `${label}: nested entity text was decoded twice into another branch name`);
       // Same-host list names only the PR branch: rejected.
       sameHost = { ok: true, status: 200, body: branchHtml('user-patch-1') };
       const wrongBranch = await verify(bindingFor());
