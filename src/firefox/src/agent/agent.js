@@ -19197,7 +19197,13 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     this._completionSubmitStates.delete(tabId);
     this._recentSubmitClicks.delete(tabId);
     this._formValidationBlocks.delete(tabId);
-    this._lastAxScopes.delete(tabId);
+    // A conversation clear preserves the run guard while the document is
+    // unchanged: the AX scope survives alongside retained mutation debt so
+    // the first exact retry keys identically and can recover immediately.
+    // Stale scopes self-heal through the usual live checks on next use.
+    if (!preserveRunGuard) {
+      this._lastAxScopes.delete(tabId);
+    }
     this._resetRichTextToolbarAudit(tabId);
     this.recentNavUrls.delete(tabId);
     this.completionInvariants.delete(tabId);

@@ -77808,6 +77808,55 @@ test('clearConversation preserves document-scoped mutation debt', async () => {
   }
 });
 
+test('clearConversation retains scope for first-try debt recovery', async () => {
+  const originalChrome = globalThis.chrome;
+  const originalBrowser = globalThis.browser;
+  try {
+    const tabs = {
+      async sendMessage(_tabId, message) {
+        if (message.action === 'ax_verify_field_value') {
+          assert.equal(message.params?.ref_id, 'ref_a');
+          assert.equal(message.params?.expected, 'hello');
+          return { success: true, verified: true, fieldMeta: { id: 'field-a' } };
+        }
+        assert.equal(message.action, 'field_value_digest');
+        return { success: false, documentToken: 'doc-scope', refScopeUrl: 'https://example.test/form' };
+      },
+    };
+    globalThis.chrome = { tabs };
+    globalThis.browser = { tabs };
+    for (const [label, AgentClass, tabId] of [
+      ['chrome', AgentCh, 9540],
+      ['firefox', AgentFx, 9541],
+    ]) {
+      const agent = new AgentClass({});
+      agent._lastAxScopes.set(tabId, { documentToken: 'doc-scope', pageUrl: 'https://example.test/form' });
+      await agent._finalizeTextMutationResult(
+        tabId, 'set_field', { ref_id: 'ref_a', text: 'hello' },
+        { success: false, dispatched: true, verified: false },
+      );
+      agent.clearConversation(tabId);
+      assert.deepEqual(agent._lastAxScopes.get(tabId),
+        { documentToken: 'doc-scope', pageUrl: 'https://example.test/form' },
+        `${label}: conversation clear dropped the document scope`);
+      // The first exact retry keys identically and recovers immediately —
+      // no second call needed.
+      const recovered = await agent._uncertainTextMutationBlock(
+        tabId, 'set_field', { ref_id: 'ref_a', text: 'hello' },
+      );
+      assert.equal(recovered?.recoveredUncertainMutation, true,
+        `${label}: retained debt did not recover on the first retry`);
+      assert.equal(agent._uncertainTextMutations.has(tabId), false,
+        `${label}: recovered debt was retained`);
+    }
+  } finally {
+    if (originalChrome === undefined) delete globalThis.chrome;
+    else globalThis.chrome = originalChrome;
+    if (originalBrowser === undefined) delete globalThis.browser;
+    else globalThis.browser = originalBrowser;
+  }
+});
+
 test('sync SHA-256 helper matches the async subtle digest', async () => {
   for (const [label, AgentClass] of [['chrome', AgentCh], ['firefox', AgentFx]]) {
     const agent = new AgentClass({});
