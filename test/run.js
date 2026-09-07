@@ -75878,6 +75878,81 @@ test('commit gate hashes the verbatim message text', async () => {
   }
 });
 
+test('multi-line commit messages bind summary plus description', async () => {
+  for (const [label, AgentClass, resolveJob, tabId] of [
+    ['chrome', AgentCh, resolveAdapterWorkflowJob, 9542],
+    ['firefox', AgentFx, resolveAdapterWorkflowJobFx, 9543],
+  ]) {
+    const agent = new AgentClass({});
+    const pageUrl = 'https://github.com/Example/Repo/edit/main/docs/plan.md';
+    agent._planExecutionGuards.set(tabId, {
+      enabled: true,
+      siteWorkflow: resolveJob(pageUrl, 'edit-file-and-commit'),
+      workflowMetadataRequirements: [{ field: 'commit_message', value: 'Title\n\nDetails' }],
+      workflowMetadataRequirementsResolved: true,
+    });
+    agent._taskTokens.set(tabId, 'task-multiline');
+    const editorBody = '# Doc\n';
+    const editorRecord = {
+      key: 'ax:doc:ref_editor',
+      locatorType: 'ax',
+      refId: 'ref_editor',
+      documentToken: 'doc',
+      pageUrl,
+      ambiguous: false,
+      expectedLength: editorBody.length,
+      expectedSha256: await agent._sha256Text(editorBody),
+      expectedFp: agent._workflowInventoryFingerprint(editorBody),
+      fieldMeta: { contentEditable: true, ariaLabelledByText: 'Editing file contents' },
+      readbackLength: editorBody.length,
+      readbackSha256: await agent._sha256Text(editorBody),
+      verifiedAt: Date.now(),
+      taskToken: 'task-multiline',
+    };
+    const messageRecordFor = async (key, text, fieldMeta) => ({
+      key,
+      locatorType: 'ax',
+      refId: 'ref_msg',
+      documentToken: 'doc',
+      pageUrl,
+      ambiguous: false,
+      expectedLength: text.length,
+      expectedSha256: await agent._sha256Text(text),
+      expectedFp: agent._workflowInventoryFingerprint(text),
+      fieldMeta,
+      readbackLength: text.length,
+      readbackSha256: await agent._sha256Text(text),
+      verifiedAt: Date.now(),
+      taskToken: 'task-multiline',
+    });
+    const summaryMeta = { tag: 'input', id: 'commit-message-input' };
+    const descriptionMeta = { tag: 'textarea', name: 'commit_message' };
+    // Summary plus description proofs authorize the composed message.
+    agent._verifiedTextReplacements.set(tabId, new Map([
+      ['ax:doc:ref_editor', editorRecord],
+      ['ax:doc:ref_summary', await messageRecordFor('ax:doc:ref_summary', 'Title', summaryMeta)],
+      ['ax:doc:ref_desc', await messageRecordFor('ax:doc:ref_desc', 'Details', descriptionMeta)],
+    ]));
+    assert.ok(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit,
+      `${label}: split summary/body proofs did not authorize`);
+    // Swapped roles must not: the composed bytes would differ.
+    agent._verifiedTextReplacements.set(tabId, new Map([
+      ['ax:doc:ref_editor', editorRecord],
+      ['ax:doc:ref_summary', await messageRecordFor('ax:doc:ref_summary', 'Details', summaryMeta)],
+      ['ax:doc:ref_desc', await messageRecordFor('ax:doc:ref_desc', 'Title', descriptionMeta)],
+    ]));
+    assert.equal(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit, undefined,
+      `${label}: swapped summary/body authorized a different message`);
+    // Summary alone is not the whole message.
+    agent._verifiedTextReplacements.set(tabId, new Map([
+      ['ax:doc:ref_editor', editorRecord],
+      ['ax:doc:ref_summary', await messageRecordFor('ax:doc:ref_summary', 'Title', summaryMeta)],
+    ]));
+    assert.equal(agent._workflowSubmitBindingForAttempt(tabId, pageUrl, {})?.githubFileCommit, undefined,
+      `${label}: summary alone authorized a multi-line message`);
+  }
+});
+
 test('terminal path match compares verbatim request text', async () => {
   for (const [label, AgentClass, tabId] of [
     ['chrome', AgentCh, 9516],

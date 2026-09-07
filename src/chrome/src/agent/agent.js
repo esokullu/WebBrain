@@ -1756,28 +1756,49 @@ export class Agent extends LoopDetector {
     const expectedCommitMessage = commitMessageRequirement
       ? String(commitMessageRequirement.rawValue ?? commitMessageRequirement.value ?? '')
       : '';
-    // Collision-resistant comparison: replacement records already carry a
-    // SHA-256 digest, so require it here too. A 32-bit FNV-1a fingerprint
-    // collides practically (e.g. 'PSgOcTcQ' vs '9SHghNQJ'), which would set
-    // commitMessageVerified for the wrong message while the raw-file check
-    // still reports full success. The sync helper matches _sha256Text; the
-    // gate itself stays synchronous.
-    const expectedCommitMessageSha256 = commitMessageRequirement
-      ? this._sha256TextSync(expectedCommitMessage)
+    // GitHub composes the commit as summary + "\n\n" + extended description
+    // across two dialog fields, so a multi-line request needs both parts
+    // proven exactly: the summary on a single-line (non-textarea) commit
+    // field and the body on the textarea description field. Tag roles keep
+    // swapped fields from authorizing. Single-line requests behave exactly
+    // as before (summary proof); multi-line requests without a blank
+    // separator cannot be composed exactly and stay shut, as does anything
+    // whose parts are missing. Comparisons are collision-resistant SHA-256
+    // (a 32-bit FNV-1a fingerprint collides practically); the sync helper
+    // matches _sha256Text and the gate stays synchronous.
+    const messageSplit = expectedCommitMessage.indexOf('\n');
+    const messageRest = messageSplit < 0 ? '' : expectedCommitMessage.slice(messageSplit + 1);
+    const expectedSummary = messageSplit < 0 ? expectedCommitMessage : expectedCommitMessage.slice(0, messageSplit);
+    const expectedBody = messageRest.startsWith('\n') ? messageRest.slice(1).replace(/\n+$/, '') : '';
+    const composableMessage = messageSplit < 0 || messageRest === '' || messageRest.startsWith('\n');
+    const expectedSummarySha256 = commitMessageRequirement
+      ? this._sha256TextSync(expectedSummary)
       : '';
+    const expectedBodySha256 = composableMessage && expectedBody
+      ? this._sha256TextSync(expectedBody)
+      : '';
+    const commitFieldRecords = replacementRecordValues.filter(record => (
+      record?.ambiguous !== true
+      && activeTaskTokenValid
+      && record?.taskToken === activeTaskToken
+      && !!record?.readbackSha256
+      && this._normalizeUrl(record.pageUrl || '') === this._normalizeUrl(pageUrl)
+      && /^(?:commit-message-input|commit_message)$/i.test(String(
+        record?.fieldMeta?.id || record?.fieldMeta?.name || '',
+      ))
+    ));
+    const summaryVerified = !!expectedSummarySha256 && commitFieldRecords.some(record => (
+      String(record?.fieldMeta?.tag || '').toLowerCase() !== 'textarea'
+      && record.expectedLength === expectedSummary.length
+      && record.expectedSha256 === expectedSummarySha256
+    ));
+    const bodyVerified = !expectedBody || (!!expectedBodySha256 && commitFieldRecords.some(record => (
+      String(record?.fieldMeta?.tag || '').toLowerCase() === 'textarea'
+      && record.expectedLength === expectedBody.length
+      && record.expectedSha256 === expectedBodySha256
+    )));
     const commitMessageVerified = !commitMessageRequirement
-      || (!!expectedCommitMessageSha256 && replacementRecordValues.some(record => (
-        record?.ambiguous !== true
-        && activeTaskTokenValid
-        && record?.taskToken === activeTaskToken
-        && !!record?.readbackSha256
-        && this._normalizeUrl(record.pageUrl || '') === this._normalizeUrl(pageUrl)
-        && /^(?:commit-message-input|commit_message)$/i.test(String(
-          record?.fieldMeta?.id || record?.fieldMeta?.name || '',
-        ))
-        && record.expectedLength === expectedCommitMessage.length
-        && record.expectedSha256 === expectedCommitMessageSha256
-      )));
+      || (composableMessage && summaryVerified && bodyVerified);
     const githubFileCommit = !metadataIncomplete
       && githubEditScope
       && verifiedReplacement
