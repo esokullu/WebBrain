@@ -60,6 +60,8 @@ import {
 import { executeWikipediaSkillTool } from './wikipedia-offline.js';
 import {
   isPdfUrl,
+  isPdfHandlerTabUrl,
+  pdfUrlFromTabUrl,
   extractPdfText,
   providerSupportsPdfPassthrough,
   buildClaudeDocumentBlock,
@@ -9202,15 +9204,16 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
    */
   async _isPdfTab(tabId, pageUrl) {
     if (!pageUrl) return false;
-    if (isPdfUrl(pageUrl)) return true;
+    const pdfUrl = pdfUrlFromTabUrl(pageUrl);
+    if (isPdfUrl(pdfUrl) || isPdfHandlerTabUrl(pageUrl)) return true;
 
     const cached = this._isPdfTabCache.get(tabId);
     if (cached && cached.url === pageUrl) return cached.isPdf;
 
     let isPdf = false;
-    if (/^https?:/i.test(pageUrl)) {
+    if (/^https?:/i.test(pdfUrl)) {
       try {
-        const res = await fetch(pageUrl, {
+        const res = await fetch(pdfUrl, {
           method: 'HEAD',
           credentials: 'include',
         });
@@ -25567,7 +25570,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         if (!pdfUrl) {
           try {
             const tab = await browser.tabs.get(tabId);
-            pdfUrl = tab?.url || '';
+            // On our own viewer page the tab URL is the handler wrapping the
+            // real URL in ?url=; fetching the handler HTML would hand pdfjs a
+            // document it cannot parse.
+            pdfUrl = pdfUrlFromTabUrl(tab?.url || '');
           } catch {}
         }
         if (!pdfUrl) {
@@ -26407,11 +26413,16 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       }
       // _isPdfTab does sync URL-pattern match + credentialed HEAD
       // fallback so PDFs served from extension-less paths (e.g.
-      // `/download?id=42` with `Content-Type: application/pdf`) are
-      // also caught. Cached per (tabId, pageUrl).
+      // `/download?id=42` with `Content-Type: application/pdf`) are also
+      // caught. A WebBrain PDF handler URL is unwrapped before both checks.
+      // Cached per (tabId, pageUrl).
       if (await this._isPdfTab(tabId, pageUrl)) {
         if (name === 'read_page') {
-          const pdfResult = await this.executeTool(tabId, 'read_pdf', { url: pageUrl });
+          const pdfResult = await this.executeTool(
+            tabId,
+            'read_pdf',
+            { url: pdfUrlFromTabUrl(pageUrl) },
+          );
           return {
             ...pdfResult,
             redirectedFrom: 'read_page',

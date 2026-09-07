@@ -25,7 +25,7 @@ function pdfHandlerPage(runtime) {
 // When the native MIME handler owns a PDF tab, the tab URL is our own viewer
 // page wrapping the real URL in ?url=. read_pdf falls back to the tab URL when
 // called without an explicit one, so unwrap it before the scheme check.
-function unwrapPdfHandlerUrl(url, runtime = globalThis.chrome?.runtime) {
+export function unwrapPdfHandlerUrl(url, runtime = globalThis.chrome?.runtime) {
   if (url.protocol !== 'chrome-extension:' && url.protocol !== 'moz-extension:') return url;
   if (typeof runtime?.getURL !== 'function') return url;
   let handler;
@@ -42,6 +42,33 @@ function unwrapPdfHandlerUrl(url, runtime = globalThis.chrome?.runtime) {
   } catch {
     return url;
   }
+}
+
+export function pdfUrlFromTabUrl(value, runtime = globalThis.chrome?.runtime) {
+  let url;
+  try {
+    url = new URL(String(value || ''));
+  } catch {
+    return String(value || '');
+  }
+  return unwrapPdfHandlerUrl(url, runtime).href;
+}
+
+// Our viewer page is only ever opened for a response we already identified as
+// a PDF, so a handler tab is a PDF tab by construction. Callers use this to
+// skip the Content-Type probe, which would otherwise decide the question for
+// wrapped URLs like `/download?id=42` — and servers routinely answer HEAD with
+// 405, or drop the Content-Type, or burn a one-shot signed download link.
+export function isPdfHandlerTabUrl(value, runtime = globalThis.chrome?.runtime) {
+  let url;
+  try {
+    url = new URL(String(value || ''));
+  } catch {
+    return false;
+  }
+  // unwrapPdfHandlerUrl returns the same object when there was nothing to
+  // unwrap, so identity is the "this was our handler page" signal.
+  return unwrapPdfHandlerUrl(url, runtime) !== url;
 }
 
 export function normalizePdfUrl(value, runtime = globalThis.chrome?.runtime) {

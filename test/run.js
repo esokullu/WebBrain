@@ -1359,6 +1359,104 @@ function test(name, fn) { tests.push({ name, fn }); }
 
 console.log('\nselection quote');
 
+test('read_page redirects PDF handler tabs to the unwrapped source URL without probing', async () => {
+  const previousChrome = globalThis.chrome;
+  const previousBrowser = globalThis.browser;
+  const previousFetch = globalThis.fetch;
+  const makeStorageArea = () => ({
+    get: async values => {
+      if (typeof values === 'string') return {};
+      if (Array.isArray(values)) return Object.fromEntries(values.map(key => [key, undefined]));
+      return values || {};
+    },
+    set: async () => {},
+    remove: async () => {},
+  });
+  try {
+    for (const [label, AgentClass, apiName, scheme] of [
+      ['chrome', AgentCh, 'chrome', 'chrome-extension'],
+      ['firefox', AgentFx, 'browser', 'moz-extension'],
+    ]) {
+      // The second URL reveals nothing about its type, so it is the case that
+      // would fall back to a Content-Type probe on an ordinary tab. On our own
+      // handler page it must not: we only open that page for a PDF, and the
+      // probe is a HEAD request servers are free to reject.
+      for (const sourceUrl of [
+        'https://papers.example.test/handler-source.pdf',
+        'https://papers.example.test/download?id=42',
+      ]) {
+        const extensionId = `${label}-pdf-routing`;
+        const handlerUrl = `${scheme}://${extensionId}/src/ui/pdf-handler.html?url=${encodeURIComponent(sourceUrl)}&tabId=73`;
+        const storageArea = makeStorageArea();
+        const api = {
+          runtime: {
+            id: extensionId,
+            getURL: path => `${scheme}://${extensionId}/${path}`,
+            getManifest: () => ({
+              mime_types_handler: {
+                'application/pdf': { handler_url: 'src/ui/pdf-handler.html' },
+              },
+            }),
+          },
+          storage: {
+            local: storageArea,
+            session: storageArea,
+            onChanged: { addListener: () => {} },
+          },
+          tabs: {
+            get: async () => ({ id: 73, url: handlerUrl }),
+          },
+        };
+        const headRequests = [];
+        // Answers "not a PDF" so a probe, if one were made, would suppress the
+        // redirect — the redirect must come from recognizing the handler page.
+        globalThis.fetch = async (url, options) => {
+          headRequests.push({ url: String(url), method: options?.method || 'GET' });
+          return {
+            headers: {
+              get: name => name.toLowerCase() === 'content-type' ? 'text/html' : '',
+            },
+          };
+        };
+        delete globalThis.chrome;
+        delete globalThis.browser;
+        globalThis[apiName] = api;
+        const agent = new AgentClass({});
+        agent._richTextToolbarToolBlock = async () => null;
+        const delegated = [];
+        const executeTool = agent.executeTool.bind(agent);
+        agent.executeTool = async (tabId, name, args, ...rest) => {
+          if (name === 'read_pdf') {
+            delegated.push({ tabId, name, args });
+            return { success: true, pages: ['handler source'] };
+          }
+          return executeTool(tabId, name, args, ...rest);
+        };
+
+        const result = await executeTool(73, 'read_page', {});
+        assert.equal(result.redirectedFrom, 'read_page', `${label}: read_page did not redirect`);
+        assert.deepEqual(delegated, [{
+          tabId: 73,
+          name: 'read_pdf',
+          args: { url: sourceUrl },
+        }], `${label}: redirect did not preserve the handler's source URL`);
+        assert.deepEqual(
+          headRequests,
+          [],
+          `${label}: a handler tab should be recognized without a Content-Type probe`,
+        );
+      }
+    }
+  } finally {
+    if (previousChrome === undefined) delete globalThis.chrome;
+    else globalThis.chrome = previousChrome;
+    if (previousBrowser === undefined) delete globalThis.browser;
+    else globalThis.browser = previousBrowser;
+    if (previousFetch === undefined) delete globalThis.fetch;
+    else globalThis.fetch = previousFetch;
+  }
+});
+
 test('buildSelectionQuote preserves multiline answer text as an editable quote', () => {
   const selected = 'First line\n\n<script>alert("x")</script>';
   const expected = '> First line\n> \n> <script>alert("x")</script>\n\n';
