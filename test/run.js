@@ -86432,6 +86432,19 @@ test('X and Bluesky same-route publication accepts only one new permalink with t
           ],
         },
       ), true, AgentClass.name + ': repeated shortened URL labels were not consumed positionally');
+      assert.equal(agent._workflowSocialPublishedBodyObserved(
+        {
+          field: 'body',
+          value: `First: ${firstLongUrl}\nSecond: ${secondLongUrl}`,
+        },
+        {
+          text: `First: ${repeatedDisplayUrl}\nSecond: ${repeatedDisplayUrl}`,
+          links: [
+            { href: 'https://t.co/second', text: repeatedDisplayUrl, expandedUrl: secondLongUrl },
+            { href: 'https://t.co/first', text: repeatedDisplayUrl, expandedUrl: firstLongUrl },
+          ],
+        },
+      ), false, AgentClass.name + ': swapped link destinations were incorrectly accepted');
       const guard = agent._startPlanExecutionGuard(tabId, 'act', {
         requestKind: 'execute',
         requiresStateChange: true,
@@ -87406,6 +87419,52 @@ test('extracting post body skips URL scheme colons', () => {
       agent._extractWorkflowTaskBody('Post the following on https://bluesky.app/: Announcing v2!'),
       'Announcing v2!',
       AgentClass.name + ': Bluesky URL scheme colon halted body extraction',
+    );
+  }
+});
+
+test('extracting post body supports multilingual commands with colons and quotes', () => {
+  for (const AgentClass of [AgentCh, AgentFx]) {
+    const agent = new AgentClass({});
+    assert.equal(
+      agent._extractWorkflowTaskBody('Publica en X: Este es un texto largo para publicar'),
+      'Este es un texto largo para publicar',
+      AgentClass.name + ': Spanish colon extraction failed',
+    );
+    assert.equal(
+      agent._extractWorkflowTaskBody('Publícalo en Bluesky: «Bonjour tout le monde»'),
+      'Bonjour tout le monde',
+      AgentClass.name + ': French colon and guillemets extraction failed',
+    );
+    assert.equal(
+      agent._extractWorkflowTaskBody('Veröffentliche auf X: Dies ist ein langer Text'),
+      'Dies ist ein langer Text',
+      AgentClass.name + ': German colon extraction failed',
+    );
+    assert.equal(
+      agent._extractWorkflowTaskBody('Опубликуй в X: Длинный текст поста'),
+      'Длинный текст поста',
+      AgentClass.name + ': Russian colon extraction failed',
+    );
+    assert.equal(
+      agent._extractWorkflowTaskBody('Xに投稿：これはテスト投稿です'),
+      'これはテスト投稿です',
+      AgentClass.name + ': Japanese full-width colon extraction failed',
+    );
+    assert.equal(
+      agent._extractWorkflowTaskBody('在X发布：这是长文本内容'),
+      '这是长文本内容',
+      AgentClass.name + ': Chinese full-width colon extraction failed',
+    );
+    assert.equal(
+      agent._extractWorkflowTaskBody('X에 게시: 이것은 게시물 내용입니다'),
+      '이것은 게시물 내용입니다',
+      AgentClass.name + ': Korean colon extraction failed',
+    );
+    assert.equal(
+      agent._extractWorkflowTaskBody('Publica en X "texto largo aquí"'),
+      'texto largo aquí',
+      AgentClass.name + ': Spanish quoted extraction failed',
     );
   }
 });

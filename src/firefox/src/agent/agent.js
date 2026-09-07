@@ -2019,16 +2019,23 @@ export class Agent extends LoopDetector {
         return renderedRaw ? rawUrl : trimmed;
       });
     if (requestedUrls.length < 1) return false;
-    let comparableExpected = expectedBody;
-    let comparableObserved = observedBody;
     const consumedLinks = new Set();
     const priorLinkByRequestedUrl = new Map();
-    const replaceFirst = (text, value, replacement) => {
-      const offset = text.indexOf(value);
-      return offset < 0
-        ? ''
-        : text.slice(0, offset) + replacement + text.slice(offset + value.length);
+    const linkUsageCount = new Map();
+    const expectedOccurrencesByUrl = new Map();
+    const expectedReplacements = [];
+    const observedReplacements = [];
+
+    const findOccurrences = (text, searchStr) => {
+      const res = [];
+      let idx = 0;
+      while ((idx = text.indexOf(searchStr, idx)) !== -1) {
+        res.push({ start: idx, end: idx + searchStr.length });
+        idx += searchStr.length;
+      }
+      return res;
     };
+
     for (const [index, requested] of requestedUrls.entries()) {
       let linkIndex = links.findIndex((candidate, candidateIndex) => (
         !consumedLinks.has(candidateIndex)
@@ -2041,14 +2048,53 @@ export class Agent extends LoopDetector {
       if (!priorLinkByRequestedUrl.has(requested)) priorLinkByRequestedUrl.set(requested, linkIndex);
       const displayed = ['text', 'title', 'ariaLabel', 'expandedUrl', 'href']
         .map(field => this._workflowMetadataValue(link[field]))
-        .filter(value => value && comparableObserved.includes(value))
+        .filter(value => value && observedBody.includes(value))
         .find(value => this._workflowSocialDisplayedUrlMatchesRequested(value, requested));
       if (!displayed) return false;
+
+      const timesUsed = linkUsageCount.get(linkIndex) || 0;
+      linkUsageCount.set(linkIndex, timesUsed + 1);
+
+      let priorDisplayOccurrences = 0;
+      for (let i = 0; i < linkIndex; i++) {
+        const hasMatchingDisplay = ['text', 'title', 'ariaLabel', 'expandedUrl', 'href']
+          .map(field => this._workflowMetadataValue(links[i]?.[field]))
+          .some(val => val === displayed);
+        if (hasMatchingDisplay) {
+          const usage = linkUsageCount.get(i) || 0;
+          priorDisplayOccurrences += Math.max(1, usage);
+        }
+      }
+      const occurrenceIndex = priorDisplayOccurrences + timesUsed;
+
+      const observedOccurrences = findOccurrences(observedBody, displayed);
+      if (occurrenceIndex >= observedOccurrences.length) return false;
+      const observedRange = observedOccurrences[occurrenceIndex];
+
+      const expTimesUsed = expectedOccurrencesByUrl.get(requested) || 0;
+      expectedOccurrencesByUrl.set(requested, expTimesUsed + 1);
+      const expOccurrences = findOccurrences(expectedBody, requested);
+      if (expTimesUsed >= expOccurrences.length) return false;
+      const expectedRange = expOccurrences[expTimesUsed];
+
       const marker = `__WEBBRAIN_PUBLISHED_URL_${index}__`;
-      comparableExpected = replaceFirst(comparableExpected, requested, marker);
-      comparableObserved = replaceFirst(comparableObserved, displayed, marker);
-      if (!comparableExpected || !comparableObserved) return false;
+      expectedReplacements.push({ ...expectedRange, marker });
+      observedReplacements.push({ ...observedRange, marker });
     }
+
+    const applyReplacements = (text, replacements) => {
+      const sorted = [...replacements].sort((a, b) => b.start - a.start);
+      let res = text;
+      for (const r of sorted) {
+        res = res.slice(0, r.start) + r.marker + res.slice(r.end);
+      }
+      return res;
+    };
+
+    const comparableExpected = applyReplacements(expectedBody, expectedReplacements);
+    const comparableObserved = applyReplacements(observedBody, observedReplacements);
+    if (!comparableExpected || !comparableObserved) return false;
+
     if (hasDedicatedAuthoredText) {
       return comparableExpected === comparableObserved;
     }
@@ -19763,21 +19809,25 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       .map(t => String(t || '').trim())
       .filter(Boolean);
     let bestBody = '';
+    const publishVerbPattern = `(?:${SOCIAL_PUBLISH_VERBS.source}|message|update)`;
+    const quotedPattern = new RegExp(`${publishVerbPattern}[\\s\\S]*?(?:“([\\s\\S]+?)”|「([\\s\\S]+?)」|『([\\s\\S]+?)』|«([\\s\\S]+?)»|"([\\s\\S]+?)")`, 'iu');
+    const singleQuotePattern = new RegExp(`${publishVerbPattern}[\\s\\S]*?(?:(?<!\\p{L})'([\\s\\S]+?)'(?!\\p{L}))`, 'iu');
+    const colonPattern = new RegExp(`${publishVerbPattern}[\\s\\S]*?(?<!https?|ftp|sftp)[:：](?!//)\\s*([\\s\\S]+)$`, 'iu');
     for (const text of candidates) {
       let body = '';
       // 1. Quoted body: Post "..." on X, Tweet "...", Publish "...", etc.
-      const quotedMatch = text.match(/(?:publish(?:ed|ing|es)?|post(?:ed|ing|s)?|tweet(?:ed|ing|s)?|skeet(?:ed|ing|s)?|share|sharing|update)[\s\S]*?(?:“([\s\S]+?)”|「([\s\S]+?)」|『([\s\S]+?)』|«([\s\S]+?)»|"([\s\S]+?)")/i);
+      const quotedMatch = text.match(quotedPattern);
       const matchedContent = quotedMatch ? (quotedMatch[1] || quotedMatch[2] || quotedMatch[3] || quotedMatch[4] || quotedMatch[5]) : null;
       if (matchedContent && matchedContent.trim()) {
         body = matchedContent.trim();
       } else {
         // Single-quoted body (not contractions)
-        const singleQuoteMatch = text.match(/(?:publish(?:ed|ing|es)?|post(?:ed|ing|s)?|tweet(?:ed|ing|s)?|skeet(?:ed|ing|s)?|share|sharing|update)[\s\S]*?(?:(?<!\p{L})'([\s\S]+?)'(?!\p{L}))/iu);
+        const singleQuoteMatch = text.match(singleQuotePattern);
         if (singleQuoteMatch && singleQuoteMatch[1]?.trim()) {
           body = singleQuoteMatch[1].trim();
         } else {
           // 2. Colon-introduced body: "Publish this exact post on X:\s*<body text>", "Tweet:\s*<body text>", "Post the following on X:\s*<body text>"
-          const colonMatch = text.match(/(?:publish(?:ing|es)?|post(?:ing|s)?|tweet(?:ing|s)?|message|update)[\s\S]*?(?<!https?|ftp|sftp):(?!\/\/)\s*([\s\S]+)$/i);
+          const colonMatch = text.match(colonPattern);
           if (colonMatch && colonMatch[1]?.trim()) {
             let candidateBody = colonMatch[1].trim();
             const innerQuote = candidateBody.match(/^(?:“([\s\S]+)”|「([\s\S]+)」|『([\s\S]+)』|«([\s\S]+)»|"([\s\S]+)"|'([\s\S]+)')$/);
