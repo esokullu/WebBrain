@@ -86390,6 +86390,12 @@ test('social publication workflow follows the live X or Bluesky destination and 
         'long quoted body before on https://x.com/home was cut off by character window'],
       ['Post "This is a very long announcement body that contains far more than fifty or sixty characters and explains everything clearly" to https://bsky.app/', ['bluesky'],
         'long quoted body before to https://bsky.app/ was cut off by character window'],
+      ['Publique no X: olá', ['twitter'],
+        'Portuguese no X destination preposition was not recognized'],
+      ['Publique na Bluesky: olá', ['bluesky'],
+        'Portuguese na Bluesky destination preposition was not recognized'],
+      ['Não publique no X: olá', [],
+        'negated Portuguese no X command was wrongly treated as a publish destination'],
     ]) {
       assert.deepEqual(
         [...agent._trustedSocialPublishTargetAdapters({ taskText })],

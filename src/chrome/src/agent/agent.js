@@ -305,7 +305,7 @@ const CJK_GENERIC_ATTACHMENT_REGEX = /^[0-9一二两三四五六七八九十添�
 // "On <url>, publish this" names a destination just as plainly as
 // "publish this on <url>", but only when the URL is presented as a place.
 const SOCIAL_PUBLISH_DESTINATION_LEAD = new RegExp(
-  '(?:^|[\\s,;:(\\[\'"])(?:on|onto|to|via|en|\u00e0|au|auf|su|em|na|para|\u0432|\u043d\u0430)\\s+$'
+  '(?:^|[\\s,;:(\\[\'"])(?:on|onto|to|via|en|\u00e0|au|auf|su|em|na|no|nos|nas|para|\u0432|\u043d\u0430)\\s+$'
   + '|[\u3067\u306b\u4e0a\u5728\u5230\u81f3]\\s*$',
   'iu',
 );
@@ -15354,7 +15354,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     const clauses = this._socialPublicationClauses(trustedContext);
     const publishesTo = (platform) => {
       const platformPattern = new RegExp(
-        `(?<![${SOCIAL_WORD_EDGE}])(?:on|onto|to|via|in|at|en|sur|sobre|\u00e0|au|auf|su|em|na|para|\u0432|\u043d\u0430)(?![${SOCIAL_WORD_EDGE}])\\s+(?:the\\s+)?${platform}(?![${SOCIAL_WORD_EDGE}])`
+        `(?<![${SOCIAL_WORD_EDGE}])(?:on|onto|to|via|in|at|en|sur|sobre|\u00e0|au|auf|su|em|na|no|nos|nas|para|\u0432|\u043d\u0430)(?![${SOCIAL_WORD_EDGE}])\\s+(?:the\\s+)?${platform}(?![${SOCIAL_WORD_EDGE}])`
         + `|[\\u5230\\u81f3\\u5728]\\s*${platform}(?![a-z0-9_])`
         + `|(?:\u5728\\s*)?${platform}\\s*[\\u306b\\u3078\\u3067\\u4e0a\\uc5d0\\ub85c](?![a-z0-9_])`
         + `|${platform}\\s*\\uc73c\\ub85c(?![a-z0-9_])`,
