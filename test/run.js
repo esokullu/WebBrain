@@ -43802,6 +43802,30 @@ test('tab-chat persistence strips large and mixed-case image data URLs without c
   assert.equal(chromeResult, firefoxResult, 'chrome/firefox image compaction diverged');
 });
 
+test('tab-chat persistence keeps markup between a bare image MIME mention and a later payload', () => {
+  const input = [
+    '<div>paste as data:image/png here</div>',
+    '<b>kept</b>',
+    `<img src="data:image/gif;base64,${'A'.repeat(64)}">`,
+  ].join('');
+  const expected = [
+    '<div>paste as data:image/png here</div>',
+    '<b>kept</b>',
+    `<img src="${TabChatPersistenceCh.TRANSPARENT_PIXEL_PNG_DATA_URL}">`,
+  ].join('');
+
+  for (const [label, persistence] of [
+    ['chrome', TabChatPersistenceCh],
+    ['firefox', TabChatPersistenceFx],
+  ]) {
+    assert.equal(
+      persistence.stripImagePayloadsForPersist(input),
+      expected,
+      `${label}: markup between a bare MIME mention and a later image payload was swallowed`,
+    );
+  }
+});
+
 test('tab-chat persistence never evicts other chats when shared quota remains exhausted', async () => {
   for (const [label, persistence] of [
     ['chrome', TabChatPersistenceCh],

@@ -40,6 +40,17 @@ function isBase64Code(code) {
     || code === 61;
 }
 
+function isMediaParameterCode(code) {
+  return isMimeTypeCode(code)
+    || code === 33
+    || code === 37
+    || code === 39
+    || code === 42
+    || code === 61
+    || code === 95
+    || code === 126;
+}
+
 function findImageDataUrl(source, start) {
   const firstCode = IMAGE_DATA_URL_PREFIX.charCodeAt(0);
   for (let index = start; index <= source.length - IMAGE_DATA_URL_PREFIX.length; index++) {
@@ -56,9 +67,13 @@ function imageDataPayloadEnd(source, marker) {
   if (cursor === mimeStart) return -1;
 
   // Walk the short metadata section without applying a regexp to the image
-  // bytes. A comma before `;base64,` means this is not a base64 data URL.
-  while (cursor < source.length) {
-    if (source.charCodeAt(cursor) === 44) return -1;
+  // bytes. Only `;name=value` media-type parameters may sit between the MIME
+  // type and `;base64,`, so the walk stops at the first character that cannot
+  // belong to one (a quote, a tag boundary, whitespace, or the comma that
+  // starts a non-base64 payload). Without that bound the scan would run past
+  // the attribute it started in and swallow every character up to the next
+  // image in the document.
+  while (cursor < source.length && source.charCodeAt(cursor) === 59) {
     if (matchesAsciiIgnoreCase(source, cursor, BASE64_DATA_URL_MARKER)) {
       cursor += BASE64_DATA_URL_MARKER.length;
       const payloadStart = cursor;
@@ -66,6 +81,7 @@ function imageDataPayloadEnd(source, marker) {
       return cursor > payloadStart ? cursor : -1;
     }
     cursor++;
+    while (cursor < source.length && isMediaParameterCode(source.charCodeAt(cursor))) cursor++;
   }
   return -1;
 }
