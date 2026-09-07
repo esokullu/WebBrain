@@ -1,0 +1,99 @@
+{
+  "schemaVersion": "webbrain.text-benchmark.reconciled-summary.v1",
+  "createdAt": "2026-09-07T19:45:29.6585678+03:00",
+  "model": {
+    "requested": "google/gemma-4-e4b",
+    "actualFromV1Models": "google/gemma-4-e4b",
+    "endpoint": "http://127.0.0.1:1234",
+    "runtime": "LM Studio OpenAI-compatible server",
+    "params": "7.5B",
+    "quantization": "Q4_K_M",
+    "modelBytes": 6326918619,
+    "loadedContextLength": 131072,
+    "loadedParallel": 2,
+    "flashAttention": true,
+    "speculativeDraft": {
+      "enabled": true,
+      "model": "google/gemma-4-e2b",
+      "maxTokens": 16,
+      "minTokens": 0,
+      "minContinueProbability": 0.75
+    }
+  },
+  "contract": {
+    "browser": "chrome",
+    "tier": "compact",
+    "concurrency": 2,
+    "timeoutMs": 300000,
+    "structuredTools": true,
+    "rawOutputsOverwritten": false,
+    "transportRetries": 0,
+    "committed": false,
+    "pushed": false
+  },
+  "commands": {
+    "firstTurn": "node run-llamacpp.mjs --base http://127.0.0.1:1234 --model google/gemma-4-e4b --tag 2026-09-07-google-gemma-4-e4b-compact-full-c2-v1 --tier compact --browser chrome --concurrency 2 --timeout 300000",
+    "scenarios": "node run-scenarios.mjs --base http://127.0.0.1:1234 --model google/gemma-4-e4b --tag 2026-09-07-google-gemma-4-e4b-compact-full-c2-v1 --tier compact --browser chrome --concurrency 2 --timeout 300000"
+  },
+  "firstTurn": {
+    "completed": 100,
+    "errors": 0,
+    "withToolCall": 91,
+    "noToolCall": 9,
+    "exact": 9,
+    "nameOnly": 18,
+    "other": 64,
+    "exactOrName": 27,
+    "exactPercent": 9.0,
+    "exactOrNamePercent": 27.0,
+    "wallTimeMs": 216866,
+    "meanWallTimeMsPerRow": 2168.66,
+    "scoring": "Exact compares idealFirstToolCall name and recursively key-sorted arguments. nameOnly counts parsed calls with the expected tool name but different arguments. other counts remaining tool calls. noToolCall counts every row without a parsed tool call, including terminal prose."
+  },
+  "scenarios": {
+    "completed": 100,
+    "eligibleNonSkipped": 89,
+    "skipped": 11,
+    "errors": 0,
+    "ideal": 13,
+    "idealName": 29,
+    "other": 43,
+    "noTool": 1,
+    "anti": 3,
+    "empty": 0,
+    "idealOrName": 42,
+    "idealPercentOfEligible": 14.606741573033707,
+    "idealOrNamePercentOfEligible": 47.19101123595506,
+    "wallTimeMs": 248645
+  },
+  "durations": {
+    "totalWallTimeMs": 465511,
+    "totalWallTimeMinutes": 7.7585166666666665,
+    "totalWallTimeHours": 0.12930861111111112
+  },
+  "artifacts": [
+    {
+      "role": "first-turn",
+      "path": "G:\\esoku\\Documents\\webbrain\\test\\llm\\results\\2026-09-07-google-gemma-4-e4b-compact-full-c2-v1_chrome_google_gemma-4-e4b_compact",
+      "files": 101,
+      "bytes": 5470060,
+      "treeSha256": "3967de8330a06938634c1fc6d8102f865a842e9c4677864af49a275d97d0b215",
+      "summarySha256": "8b98a6c446396be68e239e86d310113f2cab7c534fcfd81b0fefc92f826c2b9f"
+    },
+    {
+      "role": "scenarios",
+      "path": "G:\\esoku\\Documents\\webbrain\\test\\llm\\results-scenarios\\2026-09-07-google-gemma-4-e4b-compact-full-c2-v1_chrome_google_gemma-4-e4b_compact",
+      "files": 101,
+      "bytes": 1111100,
+      "treeSha256": "16e1f939852a8ceef3c8843533b0b2596981e0f8e11c180cd69e956baeb81136",
+      "summarySha256": "cc72135d2fe7af8fca6224db84c4f17e7ecd0060f194004453ad828e5f610336"
+    }
+  ],
+  "artifactTreeDigestAlgorithm": "sha256 over UTF-8 concatenation of sorted lines: relative_path TAB byte_size TAB file_sha256 LF",
+  "harness": {
+    "runLlamacppSha256": "b1bd3de7d6dad90a55dee52f3df7bdae175a95af9c6812716440f4a2f8911495",
+    "runScenariosSha256": "e3a54dbcdfd8370015175f0a3bfe2b1119c92f366d3496bd6e0dee0184031c88",
+    "scoreSha256": "35297349d3cbdec9ebe290aa8e8941a07b0cde51dd2077f0281266b7180f5cc6",
+    "inferenceFreeRegradeReport": "G:\\esoku\\Documents\\webbrain\\test\\llm\\analysis\\compact-parser-regrade-v2-4fbba5fcb8a7013c\\summary-aadf6381ff3edf30688eafbebb917c497beaee2677948c745a7d98bde0d2465e.json"
+  }
+}

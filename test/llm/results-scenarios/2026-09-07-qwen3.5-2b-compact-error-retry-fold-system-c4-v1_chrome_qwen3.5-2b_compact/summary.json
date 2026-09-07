@@ -1,0 +1,30 @@
+{
+  "runTag": "2026-09-07-qwen3.5-2b-compact-error-retry-fold-system-c4-v1",
+  "model": "qwen3.5-2b",
+  "base": "http://127.0.0.1:1234",
+  "browser": "chrome",
+  "tier": "compact",
+  "modeOverride": null,
+  "unprotected": false,
+  "chatTemplateCompat": "fold-system",
+  "structuredToolsSent": true,
+  "freeze": null,
+  "scenarios": 1,
+  "skipped": 0,
+  "totalLatencyMs": 5029,
+  "byVerdict": {
+    "other": 1
+  },
+  "byCategory": {
+    "mode-boundary": {
+      "ideal": 0,
+      "ideal_name": 0,
+      "anti": 0,
+      "other": 1,
+      "no_tool": 0,
+      "empty": 0,
+      "error": 0,
+      "skipped": 0
+    }
+  }
+}

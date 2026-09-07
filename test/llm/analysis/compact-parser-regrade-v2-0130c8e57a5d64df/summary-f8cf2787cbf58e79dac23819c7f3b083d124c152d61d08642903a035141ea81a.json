@@ -1,0 +1,71 @@
+{
+  "schema": "webbrain-compact-parser-regrade-v2",
+  "createdAt": "2026-09-07T16:25:19.702Z",
+  "inferenceRequests": 0,
+  "inputSignatureSha256": "0130c8e57a5d64df9606e6dc70d46dce06f1209aa95f1e7c2a31e8f72fe9e994",
+  "implementation": {
+    "regrader": {
+      "path": "G:\\esoku\\Documents\\webbrain\\test\\llm\\regrade-compact-parser-v2.mjs",
+      "sha256": "0a882a5b6a6bbe36a1581f8c64d98467b79496d8644db303d420567981a9e30d"
+    },
+    "contentParser": {
+      "path": "G:\\esoku\\Documents\\webbrain\\test\\llm\\lib\\content-tool-call-parser.mjs",
+      "sha256": "479dba3660d7ee168001a854f7b8f871797ac152b31b1367d574b0f27661fdba"
+    },
+    "grader": {
+      "path": "G:\\esoku\\Documents\\webbrain\\test\\llm\\lib\\score.mjs",
+      "sha256": "35297349d3cbdec9ebe290aa8e8941a07b0cde51dd2077f0281266b7180f5cc6"
+    }
+  },
+  "models": [
+    {
+      "label": "qwen3.5-4b",
+      "firstTurn": {
+        "rows": 100,
+        "toolCalls": 89,
+        "toolCallRate": 0.89,
+        "counts": {
+          "exact": 8,
+          "name_only": 29,
+          "other": 61,
+          "no_tool": 2,
+          "anti": 0,
+          "empty": 0,
+          "error": 0,
+          "skipped": 0
+        }
+      },
+      "scenarios": {
+        "rows": 100,
+        "toolCalls": 81,
+        "toolCallRate": 0.81,
+        "counts": {
+          "exact": 16,
+          "name_only": 20,
+          "other": 48,
+          "no_tool": 0,
+          "anti": 2,
+          "empty": 2,
+          "error": 1,
+          "skipped": 11
+        }
+      },
+      "combined": {
+        "rows": 200,
+        "toolCalls": 170,
+        "toolCallRate": 0.85,
+        "counts": {
+          "exact": 24,
+          "name_only": 49,
+          "other": 109,
+          "no_tool": 2,
+          "anti": 2,
+          "empty": 2,
+          "error": 1,
+          "skipped": 11
+        }
+      }
+    }
+  ],
+  "reportSha256": "f8cf2787cbf58e79dac23819c7f3b083d124c152d61d08642903a035141ea81a"
+}

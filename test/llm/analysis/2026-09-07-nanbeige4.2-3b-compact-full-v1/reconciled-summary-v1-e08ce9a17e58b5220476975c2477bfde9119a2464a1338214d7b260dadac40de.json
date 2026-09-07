@@ -1,0 +1,138 @@
+{
+  "schemaVersion": "webbrain.text-benchmark.reconciled-summary.v1",
+  "createdAt": "2026-09-07T19:01:23.3876964+03:00",
+  "model": {
+    "requested": "nanbeige4.2-3b",
+    "actualFromV1Models": "nanbeige4.2-3b",
+    "endpoint": "http://127.0.0.1:1234",
+    "runtime": "LM Studio OpenAI-compatible server"
+  },
+  "contract": {
+    "browser": "chrome",
+    "tier": "compact",
+    "concurrency": 1,
+    "timeoutMs": 300000,
+    "structuredTools": true,
+    "rawOutputsOverwritten": false,
+    "inferenceRerunAfterRetries": false,
+    "committed": false,
+    "pushed": false
+  },
+  "commands": {
+    "firstTurn": "node run-llamacpp.mjs --base http://127.0.0.1:1234 --model nanbeige4.2-3b --tag 2026-09-07-nanbeige4.2-3b-compact-full-v1 --tier compact --concurrency 1 --timeout 300000",
+    "scenarios": "node run-scenarios.mjs --base http://127.0.0.1:1234 --model nanbeige4.2-3b --tag 2026-09-07-nanbeige4.2-3b-compact-full-v1 --tier compact --concurrency 1 --timeout 300000",
+    "firstTurnRetry": "node run-llamacpp.mjs --base http://127.0.0.1:1234 --model nanbeige4.2-3b --tag 2026-09-07-nanbeige4.2-3b-compact-error-retry-v1 --only 11,27,31,37,40,46,91,98 --tier compact --concurrency 1 --timeout 300000",
+    "scenarioRetry": "node run-scenarios.mjs --base http://127.0.0.1:1234 --model nanbeige4.2-3b --tag 2026-09-07-nanbeige4.2-3b-compact-error-retry-fold-system-v1 --only 65 --tier compact --chat-template-compat fold-system --concurrency 1 --timeout 300000"
+  },
+  "firstTurn": {
+    "original": {
+      "completed": 100,
+      "errors": 8,
+      "withToolCall": 81,
+      "noToolCall": 11,
+      "totalLatencyMs": 3017883
+    },
+    "retry": {
+      "ids": ["011", "027", "031", "037", "040", "046", "091", "098"],
+      "completed": 8,
+      "errors": 0,
+      "withToolCall": 8,
+      "totalLatencyMs": 270835
+    },
+    "effective": {
+      "completed": 100,
+      "errors": 0,
+      "exact": 5,
+      "nameOnly": 9,
+      "other": 75,
+      "noTool": 11,
+      "exactOrName": 14,
+      "exactPercent": 5.0,
+      "exactOrNamePercent": 14.0,
+      "meanLatencyMs": 31999.34,
+      "totalLatencyMs": 3199934,
+      "scoring": "Exact compares idealFirstToolCall name and recursively key-sorted arguments; nameOnly matches only the tool name. Retry rows replace only the eight transport-error rows for effective metrics."
+    }
+  },
+  "scenarios": {
+    "original": {
+      "completed": 100,
+      "skipped": 11,
+      "errors": 1,
+      "ideal": 13,
+      "idealName": 24,
+      "other": 50,
+      "anti": 1,
+      "totalLatencyMs": 4498660
+    },
+    "retry": {
+      "ids": ["065"],
+      "chatTemplateCompat": "fold-system",
+      "completed": 1,
+      "errors": 0,
+      "verdict": "other",
+      "totalLatencyMs": 130362
+    },
+    "effective": {
+      "completed": 100,
+      "eligibleNonSkipped": 89,
+      "skipped": 11,
+      "errors": 0,
+      "ideal": 13,
+      "idealName": 24,
+      "other": 51,
+      "anti": 1,
+      "idealOrName": 37,
+      "idealPercentOfEligible": 14.606741573033707,
+      "idealOrNamePercentOfEligible": 41.57303370786517,
+      "totalLatencyMs": 4628988,
+      "reconciliation": "Scenario 065's original strict-template error is preserved in the main raw output and replaced only for effective metrics by the versioned fold-system retry, whose semantic verdict is other."
+    }
+  },
+  "durations": {
+    "allExecutedRequestsMs": 7917740,
+    "allExecutedRequestsHours": 2.199372222222222,
+    "effectiveRowsMs": 7828922,
+    "effectiveRowsHours": 2.1747005555555556
+  },
+  "artifacts": [
+    {
+      "role": "first-turn-original",
+      "path": "G:\\esoku\\Documents\\webbrain\\test\\llm\\results\\2026-09-07-nanbeige4.2-3b-compact-full-v1_chrome_nanbeige4.2-3b_compact",
+      "files": 101,
+      "bytes": 5477773,
+      "treeSha256": "6814f39d2ad8b93feb23c34f03196ac0030d4007553eed48deffafb3d76c11aa",
+      "summarySha256": "2afbb577bdfa1061a096affa949e0c37590dc83a728e0fd7826226bef8117516"
+    },
+    {
+      "role": "first-turn-retry",
+      "path": "G:\\esoku\\Documents\\webbrain\\test\\llm\\results\\2026-09-07-nanbeige4.2-3b-compact-error-retry-v1_chrome_nanbeige4.2-3b_compact",
+      "files": 9,
+      "bytes": 436667,
+      "treeSha256": "a8e2e39c255fb3dd7cbe00898d9d5ad94bdee5205fcc906a6dde4ed45273d780",
+      "summarySha256": "7f48b79686b01e231fe7b0b07e512097d876c42c95b7781b2040d8e1cac0f0e6"
+    },
+    {
+      "role": "scenarios-original",
+      "path": "G:\\esoku\\Documents\\webbrain\\test\\llm\\results-scenarios\\2026-09-07-nanbeige4.2-3b-compact-full-v1_chrome_nanbeige4.2-3b_compact",
+      "files": 101,
+      "bytes": 1134561,
+      "treeSha256": "3c21e84f81993f0170a7efab056c40caca1b123e44a1b935ba7ace71c690aa74",
+      "summarySha256": "c060d7536de6bbf2cdc9eb03245246ce3aa2dfc4847f99b47956b88a04d6ce3f"
+    },
+    {
+      "role": "scenario-retry",
+      "path": "G:\\esoku\\Documents\\webbrain\\test\\llm\\results-scenarios\\2026-09-07-nanbeige4.2-3b-compact-error-retry-fold-system-v1_chrome_nanbeige4.2-3b_compact",
+      "files": 2,
+      "bytes": 11848,
+      "treeSha256": "29d8eac5cbc863741f5c1b82e4797f2bdad582d1fb24769ad59abecc40aee94f",
+      "summarySha256": "0884305d8f3c6e1e67f6e70e9c71836ff7c2fab703949683cae94c737eb6a495"
+    }
+  ],
+  "artifactTreeDigestAlgorithm": "sha256 over UTF-8 concatenation of sorted lines: relative_path TAB byte_size TAB file_sha256 LF",
+  "harness": {
+    "runLlamacppSha256": "b1bd3de7d6dad90a55dee52f3df7bdae175a95af9c6812716440f4a2f8911495",
+    "runScenariosSha256": "e3a54dbcdfd8370015175f0a3bfe2b1119c92f366d3496bd6e0dee0184031c88",
+    "scoreSha256": "35297349d3cbdec9ebe290aa8e8941a07b0cde51dd2077f0281266b7180f5cc6"
+  }
+}
