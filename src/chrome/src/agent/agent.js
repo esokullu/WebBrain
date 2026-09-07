@@ -21272,6 +21272,12 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     if (!['set_field', 'type_ax', 'type_text'].includes(name) || !result || typeof result !== 'object') {
       return result;
     }
+    // Proven no-ops (e.g. empty appends) change nothing: they create no debt
+    // and invalidate no proofs. Only a fully no-dispatch success qualifies —
+    // anything that may have dispatched takes the normal paths below.
+    if (result.noop === true && result.success === true && result.noDispatch === true) {
+      return result;
+    }
     let target = this._textMutationTarget(tabId, name, args);
     const replacesValue = this._textMutationReplacesValue(name, args);
     const text = typeof args.text === 'string' ? args.text : '';
@@ -32521,6 +32527,19 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
             }
 
             const typeFieldEpoch = this._captureLastTypeFieldEpoch(tabId);
+            // Empty appends mutate nothing: report a proven no-op without
+            // touching the field, so no uncertainty debt is recorded.
+            // (clear:true still empties below and takes the verified path.)
+            if ((args.text ?? '') === '' && !args.clear) {
+              return {
+                success: true,
+                dispatched: false,
+                noDispatch: true,
+                noop: true,
+                method: 'cdp-insert-focused',
+                text: '',
+              };
+            }
             if (args.clear) {
               const selectAllModifiers = await cdpClient.selectAllModifier(tabId);
               throwIfEarlyCdpAborted();
@@ -32805,6 +32824,19 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           }
 
           const typeFieldEpoch = this._captureLastTypeFieldEpoch(tabId);
+          // Empty appends mutate nothing: report a proven no-op without
+          // touching the field, so no uncertainty debt is recorded.
+          // (clear:true still empties below and takes the verified path.)
+          if ((args.text ?? '') === '' && !args.clear) {
+            return {
+              success: true,
+              dispatched: false,
+              noDispatch: true,
+              noop: true,
+              method: 'cdp-insert-focused',
+              text: '',
+            };
+          }
           const beforeSignature = await cdpClient.textEntrySignature(tabId, { focused: true });
           throwIfEarlyCdpAborted();
           if (args.clear) {

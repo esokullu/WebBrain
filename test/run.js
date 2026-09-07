@@ -77523,6 +77523,80 @@ test('focused field identity matching is strict', () => {
   }
 });
 
+test('empty selector appends report a proven no-op without dispatch', async () => {
+  for (const rel of [
+    'src/chrome/src/content/content.js',
+    'src/firefox/src/content/content.js',
+  ]) {
+    const source = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    assert.match(source, /!typedText && !params\.clear/,
+      `${rel}: empty appends still dispatch instead of short-circuiting`);
+    assert.match(source, /noop: true/,
+      `${rel}: empty appends do not report a proven no-op`);
+  }
+  const cdpSource = fs.readFileSync(path.join(ROOT, 'src/chrome/src/cdp/cdp-client.js'), 'utf8');
+  assert.match(cdpSource, /String\(text \?\? ''\) === '' && clear !== true/,
+    'chrome: CDP typeText still dispatches empty appends');
+  const originalSendCommand = cdpClientCh.sendCommand;
+  const originalAttach = cdpClientCh.attach;
+  const originalEvaluate = cdpClientCh.evaluate;
+  try {
+    let calls = 0;
+    cdpClientCh.sendCommand = async () => { calls += 1; return {}; };
+    cdpClientCh.attach = async () => { calls += 1; return { attached: true }; };
+    cdpClientCh.evaluate = async () => { calls += 1; return { result: { value: null } }; };
+    const noop = await cdpClientCh.typeText(9991, '#field', '', false);
+    assert.equal(noop?.success, true, 'empty append was not successful');
+    assert.equal(noop?.noDispatch, true, 'empty append was dispatched');
+    assert.equal(noop?.noop, true, 'empty append was not marked as a no-op');
+    assert.equal(noop?.dispatched ?? false, false, 'empty append claimed a dispatch');
+    assert.equal(calls, 0, 'empty append touched the protocol');
+    // clear:true with empty text still empties the field: not a no-op.
+    const cleared = await cdpClientCh.typeText(9991, '#field', '', true);
+    assert.equal(cleared?.noop ?? false, false, 'clear-only call was misreported as a no-op');
+  } finally {
+    cdpClientCh.sendCommand = originalSendCommand;
+    cdpClientCh.attach = originalAttach;
+    cdpClientCh.evaluate = originalEvaluate;
+  }
+});
+
+test('proven no-ops create no debt and keep proofs', async () => {
+  for (const [label, AgentClass, tabId] of [
+    ['chrome', AgentCh, 9528],
+    ['firefox', AgentFx, 9529],
+  ]) {
+    const agent = new AgentClass({});
+    agent._lastAxScopes.set(tabId, { documentToken: 'doc-noop', pageUrl: 'https://example.test/form' });
+    const proof = {
+      key: 'selector:doc-noop:#ed',
+      locatorType: 'selector',
+      selector: '#ed',
+      documentToken: 'doc-noop',
+      pageUrl: 'https://example.test/form',
+      ambiguous: false,
+      expectedLength: 4,
+      expectedSha256: await agent._sha256Text('body'),
+      fieldMeta: { contentEditable: true },
+      readbackLength: 4,
+      readbackSha256: await agent._sha256Text('body'),
+      verifiedAt: Date.now(),
+      taskToken: 'task-noop',
+    };
+    agent._verifiedTextReplacements.set(tabId, new Map([[proof.key, { ...proof }]]));
+    const input = { success: true, dispatched: false, noDispatch: true, noop: true };
+    const output = await agent._finalizeTextMutationResult(
+      tabId, 'type_text', { selector: '#ed', text: '' }, input,
+    );
+    assert.deepEqual(output, input, `${label}: proven no-op was rewritten`);
+    assert.equal(output.mutationMayHaveOccurred, undefined, `${label}: no-op recorded mutation doubt`);
+    assert.equal(output.repeatBlocked, undefined, `${label}: no-op blocked repeats`);
+    assert.equal(agent._uncertainTextMutations.has(tabId), false, `${label}: no-op recorded debt`);
+    assert.ok(agent._verifiedTextReplacements.get(tabId)?.has(proof.key),
+      `${label}: no-op invalidated an unrelated proof`);
+  }
+});
+
 test('first live token bootstraps tokenless debt by URL', async () => {
   const originalChrome = globalThis.chrome;
   const originalBrowser = globalThis.browser;
