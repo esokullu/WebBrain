@@ -25622,6 +25622,40 @@ test('publication resource records keep the owning social card when it embeds an
     assert.deepEqual(mediaRecord.attachments, [photoNode, videoComponentNode],
       `${label}: media attachments failed to deduplicate nested videoNode or failed to include photo`);
 
+    // A Bluesky external link card names no card container: its thumbnail sits
+    // in an anchor that leaves the site, and must not count as an upload.
+    const cardAnchor = {
+      getAttribute: name => (name === 'href' ? 'https://example.com/article' : null),
+      href: 'https://example.com/article',
+    };
+    const externalThumbNode = {
+      tagName: 'img',
+      getAttribute: name => (name === 'src' ? 'https://cdn.bsky.app/img/feed_thumbnail/thumb.jpg' : null),
+      closest: selector => (String(selector).includes('a[href]') ? cardAnchor : null),
+      contains: () => false,
+    };
+    const uploadedBlueskyNode = {
+      tagName: 'img',
+      getAttribute: name => (name === 'data-testid' ? 'postImage-0' : null),
+      closest: selector => (String(selector).includes('postImage') ? { testId: 'postImage-0' } : null),
+      contains: () => false,
+    };
+    const blueskyCard = {
+      innerText: 'bluesky post with a link',
+      querySelectorAll: selector => {
+        const s = String(selector);
+        if (s.includes('img') || s.includes('video') || s.includes('tweetPhoto')) {
+          return [externalThumbNode, uploadedBlueskyNode];
+        }
+        return [plainPermalink];
+      },
+      contains: node => [plainPermalink, externalThumbNode, uploadedBlueskyNode].includes(node),
+    };
+    const blueskyPermalink = { ...plainPermalink, closest: () => blueskyCard };
+    const blueskyRecord = invariant.publicationResourceRecordRoot(blueskyPermalink, identity, identityOf);
+    assert.deepEqual(blueskyRecord.attachments, [uploadedBlueskyNode],
+      `${label}: an external link-card thumbnail was counted as an uploaded attachment`);
+
     // Authored post body containing a foreign permalink keeps the postText in authored nodes.
     const foreignPermalink = { getAttribute: () => '/other/status/888', href: '/other/status/888' };
     const foreignBodyNode = {
@@ -92416,6 +92450,126 @@ test('social upload filenames bind to type-compatible published DOM attachments'
     }, { trustedContinuation: true });
     assert.deepEqual(resumed.workflowSocialUploadEvidence, [upload],
       AgentClass.name + ': trusted Continue discarded source filename provenance');
+  }
+});
+
+test('placeholder x values are not social destinations', () => {
+  for (const AgentClass of [AgentCh, AgentFx]) {
+    const agent = new AgentClass({});
+    // "in x days" uses x as a duration variable, not the X platform: only
+    // Bluesky is a destination here, so completion must not wait for an X post.
+    assert.deepEqual(
+      [...agent._trustedSocialPublishTargetAdapters({ taskText: 'Publish this in x days on Bluesky' })].sort(),
+      ['bluesky'],
+      AgentClass.name + ': placeholder x days bound an unintended X destination',
+    );
+    assert.deepEqual(
+      [...agent._trustedSocialPublishTargetAdapters({ taskText: 'Publish this in x variable on Bluesky' })].sort(),
+      ['bluesky'],
+      AgentClass.name + ': placeholder x variable bound an unintended X destination',
+    );
+    assert.deepEqual(
+      [...agent._trustedSocialPublishTargetAdapters({ taskText: 'Post on X' })].sort(),
+      ['twitter'],
+      AgentClass.name + ': a real X destination was lost to placeholder filtering',
+    );
+    assert.deepEqual(
+      [...agent._trustedSocialPublishTargetAdapters({ taskText: 'Post on X and Bluesky' })].sort(),
+      ['bluesky', 'twitter'],
+      AgentClass.name + ': coordinated X and Bluesky destinations were broken by placeholder filtering',
+    );
+  }
+});
+
+test('replaced composer media drops stale upload provenance', () => {
+  for (const [index, AgentClass] of [AgentCh, AgentFx].entries()) {
+    const agent = new AgentClass({});
+    agent.useSiteAdapters = true;
+    const tabId = 9260 + index;
+    agent.conversations.set(tabId, [
+      { role: 'system', content: 'system' },
+      { role: 'user', content: 'Post an update on X.' },
+    ]);
+    const siteWorkflow = agent._resolvePlannerSiteWorkflow('https://x.com/compose/post', {
+      request_kind: 'execute',
+      site_job: 'publish-post',
+    });
+    const guard = agent._startPlanExecutionGuard(tabId, 'act', {
+      requestKind: 'execute',
+      requiresStateChange: true,
+      requiresSubmission: true,
+      siteWorkflow,
+      siteWorkflowUrl: 'https://x.com/compose/post',
+    });
+    guard.workflowSocialUploadEvidence = [
+      { name: 'old.png', attachmentState: 'input_attached', actionSequence: 1 },
+      { name: 'replacement.png', attachmentState: 'input_attached', actionSequence: 3 },
+    ];
+    // The composer now shows only the replacement: the removed filename is
+    // pruned so the dispatch snapshot keeps only active uploads.
+    assert.equal(
+      agent._pruneStaleSocialPublishUploadEvidence(tabId, 'composer shows replacement.png with a Remove button'),
+      1,
+      AgentClass.name + ': a removed composer file was retained in upload provenance',
+    );
+    assert.deepEqual(
+      guard.workflowSocialUploadEvidence.map(item => item.name),
+      ['replacement.png'],
+      AgentClass.name + ': pruning kept the removed file instead of the replacement',
+    );
+    // When the removal never surfaced as observation text, the join still
+    // prefers the most recent upload so the replacement can verify instead of
+    // refusing both names and pushing the run toward a duplicate post.
+    const staleBinding = { uploadedAttachmentNames: ['old.png', 'replacement.png'] };
+    const cdnRecord = { attachments: [{ type: 'image', src: 'https://pbs.twimg.com/media/XYZ123?format=png' }] };
+    const joined = agent._workflowSocialRecordWithUploadedAttachmentNames(cdnRecord, staleBinding);
+    assert.equal(joined.attachments?.[0]?.name, 'replacement.png',
+      AgentClass.name + ': stale provenance did not fall back to the replacement upload');
+    assert.equal(
+      agent._workflowSocialPublishedAttachmentObserved({ value: 'replacement.png' }, joined),
+      true,
+      AgentClass.name + ': the replacement file could not verify after a removal',
+    );
+  }
+});
+
+test('upper-bound attachment qualifiers verify as maximum counts', () => {
+  for (const AgentClass of [AgentCh, AgentFx]) {
+    const agent = new AgentClass({});
+    const mixed = agent._parseWorkflowAttachmentRequirement('one video and at most two images');
+    assert.equal(mixed.isGeneric, true, AgentClass.name + ': "one video and at most two images" should be generic');
+    assert.deepEqual(mixed.specificTargets, [], AgentClass.name + ': an upper bound should not name a file');
+    assert.equal(mixed.expectedVideoCount, 1, AgentClass.name + ': the exact video count was lost');
+    assert.equal(mixed.expectedImageCount, 2, AgentClass.name + ': the image maximum was lost');
+    assert.equal(mixed.isImageMaximum, true, AgentClass.name + ': the image maximum was not retained');
+    assert.equal(mixed.isVideoMaximum, false, AgentClass.name + ': the maximum leaked onto the exact video count');
+    const capped = agent._parseWorkflowAttachmentRequirement('up to two images');
+    assert.equal(capped.isGeneric, true, AgentClass.name + ': "up to two images" should be generic');
+    assert.equal(capped.expectedImageCount, 2, AgentClass.name + ': the capped image count was lost');
+    assert.equal(capped.isImageMaximum, true, AgentClass.name + ': the capped maximum was not retained');
+    const image = index => ({ type: 'image', src: `https://pbs.twimg.com/media/image${index}.png` });
+    const video = index => ({ type: 'video', src: `https://video.twimg.com/media/video${index}.mp4` });
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'up to two images' }, { attachments: [image(1)] }), true,
+      AgentClass.name + ': one image should satisfy "up to two images"');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'up to two images' }, { attachments: [image(1), image(2)] }), true,
+      AgentClass.name + ': two images should satisfy "up to two images"');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'up to two images' }, { attachments: [image(1), image(2), image(3)] }), false,
+      AgentClass.name + ': three images should not satisfy "up to two images"');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one video and at most two images' }, { attachments: [video(1), image(1)] }), true,
+      AgentClass.name + ': one video plus one image should satisfy the capped mixed requirement');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one video and at most two images' }, { attachments: [video(1), image(1), image(2)] }), true,
+      AgentClass.name + ': one video plus two images should satisfy the capped mixed requirement');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one video and at most two images' }, { attachments: [video(1), image(1), image(2), image(3)] }), false,
+      AgentClass.name + ': the image maximum incorrectly loosened to three images');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one video and at most two images' }, { attachments: [video(1), image(1), video(2)] }), false,
+      AgentClass.name + ': the image maximum incorrectly loosened the exact video count');
   }
 });
 

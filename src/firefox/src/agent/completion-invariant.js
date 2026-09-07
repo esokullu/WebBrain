@@ -393,13 +393,31 @@ export function publicationResourceRecordRoot(link, identity, publicationResourc
         } catch {}
         return false;
       };
+      // The page host when there is one, and the hosts these adapters serve
+      // otherwise, so the test holds outside a browser too.
+      const isSameSiteHost = (host) => {
+        const pageHost = String(globalThis.location?.hostname || '').toLowerCase();
+        if (pageHost) {
+          return host === pageHost || host.endsWith('.' + pageHost) || pageHost.endsWith('.' + host);
+        }
+        return /(?:^|\.)(?:x\.com|twitter\.com|bsky\.app)$/i.test(host);
+      };
       const isLinkPreview = (node) => {
         try {
-          const cardContainer = node.closest?.('[data-testid*="card.layout"]');
-          if (!cardContainer) return false;
-          // Images inside an uploaded-media wrapper are genuine, not previews.
-          if (node.closest?.('[data-testid="tweetPhoto"],[data-testid^="postImage"]')) return false;
-          return true;
+          // An uploaded-media wrapper is genuine whatever container holds it.
+          if (node.closest?.('[data-testid="tweetPhoto"],[data-testid^="postImage"],[data-testid="postGalleryImage"]')) return false;
+          if (node.closest?.('[data-testid*="card.layout"]')) return true;
+          // Bluesky draws an external link card as a thumbnail inside an anchor
+          // that leaves the site, and names no card container of its own. Both
+          // apps link their own media on-site, so the host separates the two.
+          const anchor = node.closest?.('a[href]');
+          if (anchor) {
+            const href = String(anchor.getAttribute?.('href') || anchor.href || '');
+            const host = /^https?:\/\//i.test(href)
+              ? href.replace(/^https?:\/\//i, '').split(/[/?#]/)[0].toLowerCase()
+              : '';
+            if (host && !isSameSiteHost(host)) return true;
+          }
         } catch {}
         return false;
       };

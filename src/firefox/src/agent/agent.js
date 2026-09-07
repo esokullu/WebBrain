@@ -203,6 +203,19 @@ const SOCIAL_CLAUSE_BREAK = new RegExp(
   'iu',
 );
 
+// A bare "x" after a destination preposition names the X platform only when it
+// names one: "Publish this in x days on Bluesky" uses x as a duration
+// variable, not a destination. The platform pattern is case-insensitive, so
+// the test is on the following noun (duration, variable, field, or similar),
+// not on the letter's case.
+const PLACEHOLDER_X_AFTER_PLATFORM = /^\s*(?:days?|hours?|hrs?|minutes?|mins?|seconds?|secs?|weeks?|months?|years?|variables?|values?|fields?|inputs?|columns?|rows?|cells?|axis|coordinates?|params?(?:eters?)?|placeholders?|amounts?|counts?|numbers?|digits?|items?|steps?)\b|^\s*[:=+\-*/]|^\s*\d/iu;
+const isPlaceholderBareXMatch = (matchedText, afterText) => {
+  const matched = String(matchedText || '');
+  if (/twitter/i.test(matched) || /x\.com/i.test(matched)) return false;
+  if (!/(?<![\p{L}\p{N}_])x\s*$/iu.test(matched)) return false;
+  return PLACEHOLDER_X_AFTER_PLATFORM.test(String(afterText || ''));
+};
+
 const GENERIC_ATTACHMENT_WORDS = new Set([
   'true', 'yes', 'attached', 'attachment', 'attachments', 'media',
   'image', 'images', 'photo', 'photos', 'picture', 'pictures', 'pic', 'pics',
@@ -214,7 +227,7 @@ const GENERIC_ATTACHMENT_WORDS = new Set([
   'a', 'an', 'the', 'of', 'in', 'with', 'some', 'any',
   'and', 'or', 'plus', 'also', 'as', 'well',
   'no', 'not', 'without', 'zero', 'none',
-  'only', 'just', 'solely',
+  'only', 'just', 'solely', 'exactly', 'exact', 'precisely',
   'sin', 'sans', 'sem', 'senza', 'ohne', 'kein', 'keine', 'keinen', 'aucun', 'aucune', 'ningun', 'ninguna', 'ningún', 'nenhum', 'nenhuma', 'nessun', 'nessuno', 'nessuna', 'nie', 'без', 'нет',
   'solo', 'sólo', 'solamente', 'únicamente', 'solos', 'solas',
   'seul', 'seule', 'seuls', 'seules', 'seulement', 'uniquement',
@@ -277,6 +290,19 @@ const MIN_ATTACHMENT_COUNT_REGEX = new RegExp(
   'iu',
 );
 const MIN_ATTACHMENT_COUNT_STRIP_REGEX = new RegExp(MIN_ATTACHMENT_COUNT_REGEX.source, 'giu');
+
+// "at most two images" bounds the count from above instead of naming a file,
+// so the qualifier is lifted out before the generic-media test and its
+// upper-bound meaning is carried on the parsed requirement.
+const MAX_ATTACHMENT_COUNT_REGEX = new RegExp(
+  '\\b(?:at\\s+most|up\\s+to|maximum(?:\\s+of)?|max(?:imum)?|no\\s+more\\s+than|not\\s+more\\s+than|or\\s+fewer|or\\s+less'
+  + '|h(?:o|\\u00f6)chstens|maximal|au\\s+plus|tout\\s+au\\s+plus|como?\\s+m[\\u00e1a]ximo|a\\s+lo\\s+sumo|hasta|al\\s+massimo|fino\\s+a|no\\s+m[\\u00e1a]ximo|at[\\u00e9e]|en\\s+fazla|en\\s+[\\u00e7c]ok|azami|maksimum)\\b'
+  + '|(?:\\u043c\\u0430\\u043a\\u0441\\u0438\\u043c\\u0443\\u043c|\\u043a\\u0430\\u043a\\s+\\u043c\\u0430\\u043a\\u0441\\u0438\\u043c\\u0443\\u043c|\\u043d\\u0435\\s+\\u0431\\u043e\\u043b\\u0435\\u0435|\\u043d\\u0435\\s+\\u0431\\u043e\\u043b\\u044c\\u0448\\u0435)'
+  + '|(?:\\u4ee5\\u4e0b|\\u6700\\u591a|\\u81f3\\u591a|\\u4e0d\\u8d85\\u8fc7|\\u4e0d\\u8d85\\u904e|\\u6700\\u5927|\\u4e0a\\u9650|\\u307e\\u3067)'
+  + '|(?:\\ucd5c\\ub300|\\ucd5c\\ub300\\ud55c|\\uc774\\ud558)',
+  'iu',
+);
+const MAX_ATTACHMENT_COUNT_STRIP_REGEX = new RegExp(MAX_ATTACHMENT_COUNT_REGEX.source, 'giu');
 
 const CJK_GENERIC_ATTACHMENT_REGEX = /^[0-9一二两三四五六七八九十添付画像写真動画メディア已上传附件图片照片视频媒体枚つの本张條条个個장에서의사진이미지포토동영상비디오영상클립움짤첨부파일미디어하나둘셋넷다섯한두세네일이삼사오개건편와과및그리고하고도无没有不带零なし無しゼロ없음안함只仅唯一だけのみ만오직단지\s\-_,.:;!?/\\()&+、，。；：/]+$/u;
 
@@ -1384,6 +1410,15 @@ export class Agent extends LoopDetector {
     );
     if (socialUploadEvidence && result && typeof result === 'object') {
       result.socialUploadEvidence = socialUploadEvidence;
+    }
+    // A removal in the social composer shows as the old filename disappearing
+    // from later observations. Prune it there so the pre-dispatch binding
+    // snapshots only active uploads instead of every file ever attached.
+    if (result && typeof result === 'object') {
+      const socialObservationText = [result.pageContent, result.text, result.content, result.pageText]
+        .filter(value => typeof value === 'string' && value.trim())
+        .join('\n');
+      if (socialObservationText) this._pruneStaleSocialPublishUploadEvidence(tabId, socialObservationText);
     }
     const workflowControlEvidence = this._rememberWorkflowControlActionEvidence(
       tabId,
@@ -2782,12 +2817,13 @@ export class Agent extends LoopDetector {
       return explicitWords.has(s);
     };
 
-    // A minimum-count qualifier says how many attachments are wanted, not
-    // which file, so both the generic-media test and the count scan read the
-    // requirement with the qualifier removed.
+    // A minimum- or maximum-count qualifier says how many attachments are
+    // wanted, not which file, so both the generic-media test and the count
+    // scan read the requirement with the qualifier removed.
     const hasMinCountQualifier = MIN_ATTACHMENT_COUNT_REGEX.test(text);
-    const countText = hasMinCountQualifier
-      ? text.replace(MIN_ATTACHMENT_COUNT_STRIP_REGEX, ' ').replace(/\s+/g, ' ').trim()
+    const hasMaxCountQualifier = MAX_ATTACHMENT_COUNT_REGEX.test(text);
+    const countText = (hasMinCountQualifier || hasMaxCountQualifier)
+      ? text.replace(MIN_ATTACHMENT_COUNT_STRIP_REGEX, ' ').replace(MAX_ATTACHMENT_COUNT_STRIP_REGEX, ' ').replace(/\s+/g, ' ').trim()
       : text;
 
     let isGeneric = false;
@@ -2820,6 +2856,28 @@ export class Agent extends LoopDetector {
     const isImageMinimum = isGeneric && (minScopedImage || minScopedGeneric);
     const isVideoMinimum = isGeneric && (minScopedVideo || minScopedGeneric);
     const isGifMinimum = isGeneric && (minScopedGif || minScopedGeneric);
+    // Scope each upper-bound qualifier to the phrase it appears in, so a
+    // maximum on one media type does not tighten an exact count on the other.
+    let maxScopedImage = false;
+    let maxScopedVideo = false;
+    let maxScopedGif = false;
+    let maxScopedGeneric = false;
+    if (hasMaxCountQualifier) {
+      for (const segment of text.split(MIN_COUNT_SCOPE_SPLIT)) {
+        if (!segment || !MAX_ATTACHMENT_COUNT_REGEX.test(segment)) continue;
+        const segmentImage = RAW_IMAGE_NOUN_REGEX.test(segment);
+        const segmentGif = RAW_GIF_NOUN_REGEX.test(segment);
+        const segmentVideo = RAW_VIDEO_NOUN_REGEX.test(segment);
+        if (segmentImage) maxScopedImage = true;
+        if (segmentVideo) maxScopedVideo = true;
+        if (segmentGif) maxScopedGif = true;
+        if (!segmentImage && !segmentVideo && !segmentGif) maxScopedGeneric = true;
+      }
+    }
+    const isMaximumCount = isGeneric && hasMaxCountQualifier;
+    const isImageMaximum = isGeneric && (maxScopedImage || maxScopedGeneric);
+    const isVideoMaximum = isGeneric && (maxScopedVideo || maxScopedGeneric);
+    const isGifMaximum = isGeneric && (maxScopedGif || maxScopedGeneric);
 
     const countPrefix = '(?:\\d+|zero|cero|zéro|a|an|one|two|three|four|five|six|seven|eight|nine|ten|single|both|multiple|un|une|deux|trois|quatre|cinq|uno|una|unos|unas|dos|tres|cuatro|cinco|due|tre|quattro|cinque|ein|eine|einen|einer|zwei|drei|vier|fünf|um|uma|dois|duas|três|один|одна|одно|два|две|три|четыре|пять|[一二两三四五六七八九十]|하나|둘|셋|넷|다섯|한(?=\\s*(?:장|개|건|편|개의|장의))|두(?=\\s*(?:장|개|건|편|개의|장의))|세(?=\\s*(?:장|개|건|편|개의|장의))|네(?=\\s*(?:장|개|건|편|개의|장의))|[일이삼사오](?=\\s*(?:장|개|건|편|개의|장의)))';
     const countSeparator = '(?:^|[\\s,;+&/|、，。；：]|(?:\\b(?:and|und|et|e|y)\\b\\s*)|[와과및])';
@@ -2946,6 +3004,10 @@ export class Agent extends LoopDetector {
       isImageMinimum,
       isVideoMinimum,
       isGifMinimum,
+      isMaximumCount,
+      isImageMaximum,
+      isVideoMaximum,
+      isGifMaximum,
       wantsImage,
       wantsVideo,
       wantsOrdinaryVideo,
@@ -2965,7 +3027,18 @@ export class Agent extends LoopDetector {
     // A filename may describe an observed published attachment, but it may
     // never create one. Require one upload name per DOM-observed media node and
     // a type-compatible bijection before adding the names to the record.
-    if (!attachments.length || names.length !== attachments.length) return record;
+    if (!attachments.length) return record;
+    let effectiveNames = names;
+    if (names.length !== attachments.length) {
+      // An upload, removal, and replacement can leave both filenames in the
+      // binding for one DOM-observed attachment when the removal never
+      // surfaced as observation text. Fall back to the most recent uploads so
+      // the replacement can still verify instead of refusing to join either
+      // name and pushing the run toward a duplicate post. Fewer names than
+      // nodes still fails closed: provenance may never invent media.
+      if (names.length <= attachments.length) return record;
+      effectiveNames = names.slice(-attachments.length);
+    }
     const nameKind = (name) => (
       /\.gif(?:[?#]|$)/i.test(name) ? 'video'
         : /\.(?:mp4|mov|webm|mkv)(?:[?#]|$)/i.test(name) ? 'video'
@@ -2987,9 +3060,9 @@ export class Agent extends LoopDetector {
     const matchNames = (attachmentIndex, usedNames) => {
       if (attachmentIndex >= attachments.length) return true;
       const observedKind = attachmentKind(attachments[attachmentIndex]);
-      for (let nameIndex = 0; nameIndex < names.length; nameIndex++) {
+      for (let nameIndex = 0; nameIndex < effectiveNames.length; nameIndex++) {
         if (usedNames.has(nameIndex)) continue;
-        const uploadedKind = nameKind(names[nameIndex]);
+        const uploadedKind = nameKind(effectiveNames[nameIndex]);
         if (uploadedKind && uploadedKind !== observedKind) continue;
         assignment[attachmentIndex] = nameIndex;
         usedNames.add(nameIndex);
@@ -3004,8 +3077,8 @@ export class Agent extends LoopDetector {
       ...record,
       attachments: attachments.map((attachment, index) => (
         typeof attachment === 'string'
-          ? { src: attachment, name: names[assignment[index]] }
-          : { ...attachment, name: names[assignment[index]] }
+          ? { src: attachment, name: effectiveNames[assignment[index]] }
+          : { ...attachment, name: effectiveNames[assignment[index]] }
       )),
     };
   }
@@ -3057,21 +3130,23 @@ export class Agent extends LoopDetector {
     const gifCount = rawAttachments.filter(isGifAttachment).length;
     const ordinaryVideoCount = rawAttachments.filter(att => isVideoAttachment(att) && !isGifAttachment(att)).length;
     if (parsed.wantsGif) {
-      const requiredGifCount = parsed.expectedGifCount > 0 ? parsed.expectedGifCount : 1;
+      const requiredGifCount = parsed.isGifMaximum ? 1 : (parsed.expectedGifCount > 0 ? parsed.expectedGifCount : 1);
       if (gifCount < requiredGifCount) return false;
-      if (parsed.hasExplicitGifCount && !parsed.isGifMinimum && gifCount !== parsed.expectedGifCount) return false;
+      if (parsed.hasExplicitGifCount && !parsed.isGifMinimum && !parsed.isGifMaximum && gifCount !== parsed.expectedGifCount) return false;
+      if (parsed.hasExplicitGifCount && parsed.isGifMaximum && gifCount > parsed.expectedGifCount) return false;
     }
     if (parsed.wantsGif && parsed.wantsOrdinaryVideo) {
-      const requiredOrdinaryVideoCount = parsed.expectedVideoCount > 0 ? parsed.expectedVideoCount : 1;
+      const requiredOrdinaryVideoCount = parsed.isVideoMaximum ? 1 : (parsed.expectedVideoCount > 0 ? parsed.expectedVideoCount : 1);
       if (ordinaryVideoCount < requiredOrdinaryVideoCount) return false;
-      if (parsed.hasExplicitVideoCount && !parsed.isVideoMinimum
+      if (parsed.hasExplicitVideoCount && !parsed.isVideoMinimum && !parsed.isVideoMaximum
           && ordinaryVideoCount !== parsed.expectedVideoCount) return false;
+      if (parsed.hasExplicitVideoCount && parsed.isVideoMaximum && ordinaryVideoCount > parsed.expectedVideoCount) return false;
     }
     if (parsed.isGifNegated && gifCount > 0) return false;
     const exactTypedTotal = parsed.isGeneric && !parsed.isAlternative
-      && (!parsed.wantsImage || (parsed.hasExplicitImageCount && !parsed.isImageMinimum))
-      && (!parsed.wantsOrdinaryVideo || (parsed.hasExplicitVideoCount && !parsed.isVideoMinimum))
-      && (!parsed.wantsGif || (parsed.hasExplicitGifCount && !parsed.isGifMinimum));
+      && (!parsed.wantsImage || (parsed.hasExplicitImageCount && !parsed.isImageMinimum && !parsed.isImageMaximum))
+      && (!parsed.wantsOrdinaryVideo || (parsed.hasExplicitVideoCount && !parsed.isVideoMinimum && !parsed.isVideoMaximum))
+      && (!parsed.wantsGif || (parsed.hasExplicitGifCount && !parsed.isGifMinimum && !parsed.isGifMaximum));
     if (exactTypedTotal && (parsed.wantsImage || parsed.wantsOrdinaryVideo || parsed.wantsGif)) {
       const expectedTypedTotal = (parsed.wantsImage ? parsed.expectedImageCount : 0)
         + (parsed.wantsOrdinaryVideo ? parsed.expectedVideoCount : 0)
@@ -3082,26 +3157,33 @@ export class Agent extends LoopDetector {
     let matchingAttachments = rawAttachments;
     if (parsed.wantsImage && parsed.wantsVideo) {
       if (parsed.isAlternative) {
-        const minImages = parsed.expectedImageCount > 0 ? parsed.expectedImageCount : 1;
+        const minImages = parsed.isImageMaximum ? 1 : (parsed.expectedImageCount > 0 ? parsed.expectedImageCount : 1);
         const expectedAlternativeVideoCount = parsed.wantsGif && !parsed.wantsOrdinaryVideo
           ? parsed.expectedGifCount
           : parsed.expectedVideoCount;
         const alternativeVideoCount = parsed.wantsGif && !parsed.wantsOrdinaryVideo
           ? gifCount
           : videoCount;
-        const minVideos = expectedAlternativeVideoCount > 0 ? expectedAlternativeVideoCount : 1;
-        const exactImageAlt = parsed.hasExplicitImageCount && !parsed.isImageMinimum;
+        const isAlternativeVideoMaximum = parsed.wantsGif && !parsed.wantsOrdinaryVideo
+          ? parsed.isGifMaximum
+          : parsed.isVideoMaximum;
+        const minVideos = isAlternativeVideoMaximum ? 1 : (expectedAlternativeVideoCount > 0 ? expectedAlternativeVideoCount : 1);
+        const exactImageAlt = parsed.hasExplicitImageCount && !parsed.isImageMinimum && !parsed.isImageMaximum;
         const exactVideoAlt = parsed.wantsGif && !parsed.wantsOrdinaryVideo
-          ? parsed.hasExplicitGifCount && !parsed.isGifMinimum
-          : parsed.hasExplicitVideoCount && !parsed.isVideoMinimum;
+          ? parsed.hasExplicitGifCount && !parsed.isGifMinimum && !parsed.isGifMaximum
+          : parsed.hasExplicitVideoCount && !parsed.isVideoMinimum && !parsed.isVideoMaximum;
         const matchesImageAlt = imageCount >= minImages
           && (!exactImageAlt || imageCount === parsed.expectedImageCount)
+          && (!parsed.isImageMaximum || imageCount <= parsed.expectedImageCount)
           && videoCount === 0
-          && (!exactImageAlt || rawAttachments.length === parsed.expectedImageCount);
+          && (!exactImageAlt || rawAttachments.length === parsed.expectedImageCount)
+          && (!parsed.isImageMaximum || rawAttachments.length <= parsed.expectedImageCount);
         const matchesVideoAlt = alternativeVideoCount >= minVideos
           && (!exactVideoAlt || alternativeVideoCount === expectedAlternativeVideoCount)
+          && (!isAlternativeVideoMaximum || alternativeVideoCount <= expectedAlternativeVideoCount)
           && imageCount === 0
-          && (!exactVideoAlt || rawAttachments.length === expectedAlternativeVideoCount);
+          && (!exactVideoAlt || rawAttachments.length === expectedAlternativeVideoCount)
+          && (!isAlternativeVideoMaximum || rawAttachments.length <= expectedAlternativeVideoCount);
         if (!matchesImageAlt && !matchesVideoAlt) {
           return false;
         }
@@ -3109,21 +3191,38 @@ export class Agent extends LoopDetector {
           ? rawAttachments.filter(isImageAttachment)
           : rawAttachments.filter(isVideoAttachment);
       } else {
-        const minImages = parsed.expectedImageCount > 0 ? parsed.expectedImageCount : 1;
-        const minVideos = parsed.expectedVideoCount > 0 ? parsed.expectedVideoCount : 1;
+        const minImages = parsed.isImageMaximum ? 1 : (parsed.expectedImageCount > 0 ? parsed.expectedImageCount : 1);
+        const minVideos = parsed.isVideoMaximum ? 1 : (parsed.expectedVideoCount > 0 ? parsed.expectedVideoCount : 1);
         if (imageCount < minImages || videoCount < minVideos) {
           return false;
         }
-        if (parsed.hasExplicitImageCount && !parsed.isImageMinimum && imageCount !== parsed.expectedImageCount) {
+        if (parsed.hasExplicitImageCount && !parsed.isImageMinimum && !parsed.isImageMaximum && imageCount !== parsed.expectedImageCount) {
           return false;
         }
-        if (parsed.hasExplicitVideoCount && !parsed.isVideoMinimum && videoCount !== parsed.expectedVideoCount) {
+        if (parsed.hasExplicitImageCount && parsed.isImageMaximum && imageCount > parsed.expectedImageCount) {
+          return false;
+        }
+        if (parsed.hasExplicitVideoCount && !parsed.isVideoMinimum && !parsed.isVideoMaximum && videoCount !== parsed.expectedVideoCount) {
+          return false;
+        }
+        if (parsed.hasExplicitVideoCount && parsed.isVideoMaximum && videoCount > parsed.expectedVideoCount) {
           return false;
         }
         if (parsed.hasExplicitImageCount && parsed.hasExplicitVideoCount
-            && !parsed.isImageMinimum && !parsed.isVideoMinimum) {
+            && !parsed.isImageMinimum && !parsed.isVideoMinimum && !parsed.isImageMaximum && !parsed.isVideoMaximum) {
           if (rawAttachments.length !== (parsed.expectedImageCount + parsed.expectedVideoCount + parsed.expectedGifCount)) {
             return false;
+          }
+        } else if (parsed.isImageMaximum || parsed.isVideoMaximum || parsed.isGifMaximum) {
+          const maxTotal = (parsed.wantsImage ? parsed.expectedImageCount : 0)
+            + (parsed.wantsOrdinaryVideo ? parsed.expectedVideoCount : 0)
+            + (parsed.wantsGif ? parsed.expectedGifCount : 0);
+          if (maxTotal > 0 && rawAttachments.length > maxTotal) {
+            return false;
+          } else if (parsed.hasExplicitCardinality) {
+            if (rawAttachments.length > (imageCount + videoCount)) {
+              return false;
+            }
           }
         } else if (parsed.hasExplicitCardinality) {
           if (rawAttachments.length > (imageCount + videoCount)) {
@@ -3133,10 +3232,17 @@ export class Agent extends LoopDetector {
       }
     } else if (parsed.wantsImage && !parsed.wantsVideo) {
       if (videoCount > 0) return false;
-      const hasExactImageCount = !parsed.isImageMinimum
+      const hasExactImageCount = !parsed.isImageMinimum && !parsed.isImageMaximum
         && ((parsed.hasExplicitImageCount && !parsed.isImageNegated) || parsed.hasExplicitGenericCount);
       if (hasExactImageCount) {
         if (imageCount !== parsed.expectedCount || rawAttachments.length !== parsed.expectedCount) {
+          return false;
+        }
+      } else if (parsed.isImageMaximum || parsed.isMaximumCount) {
+        if (imageCount > parsed.expectedCount || rawAttachments.length > parsed.expectedCount) {
+          return false;
+        }
+        if (imageCount < 1) {
           return false;
         }
       } else {
@@ -3147,11 +3253,18 @@ export class Agent extends LoopDetector {
       matchingAttachments = rawAttachments.filter(isImageAttachment);
     } else if (parsed.wantsVideo && !parsed.wantsImage) {
       if (imageCount > 0) return false;
-      const hasExactVideoCount = (parsed.hasExplicitVideoCount && !parsed.isVideoNegated && !parsed.isVideoMinimum)
-        || (parsed.hasExplicitGifCount && !parsed.isGifNegated && !parsed.isGifMinimum)
-        || parsed.hasExplicitGenericCount;
+      const hasExactVideoCount = (parsed.hasExplicitVideoCount && !parsed.isVideoNegated && !parsed.isVideoMinimum && !parsed.isVideoMaximum)
+        || (parsed.hasExplicitGifCount && !parsed.isGifNegated && !parsed.isGifMinimum && !parsed.isGifMaximum)
+        || (parsed.hasExplicitGenericCount && !parsed.isMaximumCount);
       if (hasExactVideoCount) {
         if (videoCount !== parsed.expectedCount || rawAttachments.length !== parsed.expectedCount) {
+          return false;
+        }
+      } else if (parsed.isVideoMaximum || parsed.isGifMaximum || parsed.isMaximumCount) {
+        if (videoCount > parsed.expectedCount || rawAttachments.length > parsed.expectedCount) {
+          return false;
+        }
+        if (videoCount < 1) {
           return false;
         }
       } else {
@@ -3161,8 +3274,15 @@ export class Agent extends LoopDetector {
       }
       matchingAttachments = rawAttachments.filter(isVideoAttachment);
     } else {
-      if (parsed.hasExplicitCardinality && !parsed.isMinimumCount) {
+      if (parsed.hasExplicitCardinality && !parsed.isMinimumCount && !parsed.isMaximumCount) {
         if (rawAttachments.length !== parsed.expectedCount) {
+          return false;
+        }
+      } else if (parsed.isMaximumCount) {
+        if (rawAttachments.length > parsed.expectedCount) {
+          return false;
+        }
+        if (rawAttachments.length < 1) {
           return false;
         }
       } else {
@@ -14010,6 +14130,40 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     return evidence;
   }
 
+  // An upload, removal, and replacement in the social composer leaves every
+  // uploaded filename in evidence while only the replacement is still active.
+  // The pre-dispatch binding would then carry two names for one observed
+  // attachment and refuse to join either, so a correctly published replacement
+  // can never verify. Prune filenames the latest observation no longer shows
+  // so the dispatch snapshot keeps only active uploads.
+  _pruneStaleSocialPublishUploadEvidence(tabId, observationText) {
+    const guard = this._planExecutionGuards.get(tabId);
+    const siteWorkflow = guard?.siteWorkflow;
+    if (!guard?.enabled
+        || siteWorkflow?.job?.id !== 'publish-post'
+        || !['twitter', 'bluesky'].includes(siteWorkflow.adapterName)) return 0;
+    const prior = Array.isArray(guard.workflowSocialUploadEvidence)
+      ? guard.workflowSocialUploadEvidence
+      : [];
+    if (prior.length < 2) return 0;
+    let normalized = String(observationText || '');
+    if (!normalized.trim()) return 0;
+    try { normalized = normalized.normalize('NFKC'); } catch {}
+    normalized = normalized.toLocaleLowerCase();
+    const present = new Set();
+    for (const item of prior) {
+      const name = String(item?.name || '').trim().toLocaleLowerCase();
+      if (name && normalized.includes(name)) present.add(name);
+    }
+    // Without any tracked filename in view there is no removal signal: the
+    // composer may render thumbnails without names, so keep everything.
+    if (present.size === 0) return 0;
+    const pruned = prior.filter(item => present.has(String(item?.name || '').trim().toLocaleLowerCase()));
+    if (pruned.length === prior.length || pruned.length === 0) return 0;
+    guard.workflowSocialUploadEvidence = pruned;
+    return prior.length - pruned.length;
+  }
+
   _rememberWorkflowInventoryObservation(tabId, name, args, result) {
     const guard = this._planExecutionGuards.get(tabId);
     const siteWorkflow = guard?.siteWorkflow;
@@ -14594,6 +14748,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           for (const matchAfter of afterVerb.matchAll(platformPattern)) {
             const beforePlat = afterVerb.slice(0, matchAfter.index);
             const afterPlat = afterVerb.slice((matchAfter.index ?? 0) + matchAfter[0].length);
+            if (isPlaceholderBareXMatch(matchAfter[0], afterPlat)) continue;
             const isSourceOnly = SOURCE_MODIFIER_BEFORE_PLATFORM.test(beforePlat)
               || NON_SOCIAL_DESTINATION_AFTER_PLATFORM.test(afterPlat)
               || (NON_SOCIAL_DESTINATION_GOVERNING_AFTER_VERB.test(beforePlat)
@@ -14613,6 +14768,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           for (const matchBefore of beforeVerb.matchAll(platformPattern)) {
             const beforePlat = beforeVerb.slice(0, matchBefore.index);
             const afterPlat = beforeVerb.slice((matchBefore.index ?? 0) + matchBefore[0].length);
+            if (isPlaceholderBareXMatch(matchBefore[0], afterPlat)) continue;
             const hasCompeteInAfterVerb = NON_SOCIAL_DESTINATION_IN_TEXT.test(afterVerb)
               && !CONTENT_LINK_PHRASE.test(afterVerb);
             const isSourceOnly = SOURCE_MODIFIER_BEFORE_PLATFORM.test(beforePlat)
@@ -14642,6 +14798,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
               if (SOCIAL_READ_VERBS.test(pTargetText)) break;
               const beforePlat = pTargetText.slice(0, matchPrev.index);
               const afterPlat = pTargetText.slice((matchPrev.index ?? 0) + matchPrev[0].length);
+              if (isPlaceholderBareXMatch(matchPrev[0], afterPlat)) continue;
               const isSourceOnly = SOURCE_MODIFIER_BEFORE_PLATFORM.test(beforePlat)
                 || NON_SOCIAL_DESTINATION_AFTER_PLATFORM.test(afterPlat)
                 || (NON_SOCIAL_DESTINATION_GOVERNING_AFTER_VERB.test(beforePlat)
@@ -14678,6 +14835,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
             for (const matchNext of nextTargetText.matchAll(coordPlatformPattern)) {
               const beforePlat = nextTargetText.slice(0, matchNext.index);
               const afterPlat = nextTargetText.slice((matchNext.index ?? 0) + matchNext[0].length);
+              if (isPlaceholderBareXMatch(matchNext[0], afterPlat)) continue;
               const isSourceOnly = SOURCE_MODIFIER_BEFORE_PLATFORM.test(beforePlat)
                 || NON_SOCIAL_DESTINATION_AFTER_PLATFORM.test(afterPlat)
                 || (NON_SOCIAL_DESTINATION_GOVERNING_AFTER_VERB.test(beforePlat)
@@ -28574,12 +28732,25 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
                     } catch {}
                     return false;
                   };
+                  const isSameSiteHost = (host) => {
+                    const pageHost = String(globalThis.location?.hostname || '').toLowerCase();
+                    if (pageHost) {
+                      return host === pageHost || host.endsWith('.' + pageHost) || pageHost.endsWith('.' + host);
+                    }
+                    return /(?:^|\\.)(?:x\\.com|twitter\\.com|bsky\\.app)$/i.test(host);
+                  };
                   const isLinkPreview = (node) => {
                     try {
-                      const cardContainer = node.closest?.('[data-testid*="card.layout"]');
-                      if (!cardContainer) return false;
-                      if (node.closest?.('[data-testid="tweetPhoto"],[data-testid^="postImage"]')) return false;
-                      return true;
+                      if (node.closest?.('[data-testid="tweetPhoto"],[data-testid^="postImage"],[data-testid="postGalleryImage"]')) return false;
+                      if (node.closest?.('[data-testid*="card.layout"]')) return true;
+                      const anchor = node.closest?.('a[href]');
+                      if (anchor) {
+                        const href = String(anchor.getAttribute?.('href') || anchor.href || '');
+                        const host = /^https?:\\/\\//i.test(href)
+                          ? href.replace(/^https?:\\/\\//i, '').split(/[/?#]/)[0].toLowerCase()
+                          : '';
+                        if (host && !isSameSiteHost(host)) return true;
+                      }
                     } catch {}
                     return false;
                   };
