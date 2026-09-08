@@ -3329,11 +3329,37 @@ export class Agent extends LoopDetector {
       : [];
     const commaMediaDisjunction = new RegExp(`[,;]\\s*${COUNT_DISJUNCTION_PATTERN}\\s+`, 'iu');
     const leadingMediaDisjunction = new RegExp(`^${COUNT_DISJUNCTION_PATTERN}\\s*`, 'iu');
-    const commaMediaBranches = isGeneric && commaMediaDisjunction.test(text)
+    let commaMediaBranches = isGeneric && commaMediaDisjunction.test(text)
       ? text.replace(/^either\s+/iu, '').split(/\s*[,;]\s*/u)
         .map(branch => branch.replace(leadingMediaDisjunction, '').trim())
         .filter(Boolean)
       : [];
+    if (commaMediaBranches.length > 1) {
+      const scopedEither = commaMediaBranches[0].match(
+        new RegExp(`(?<![${SOCIAL_WORD_EDGE}])either(?![${SOCIAL_WORD_EDGE}])`, 'iu'),
+      );
+      let sharedPrefix = '';
+      if (scopedEither) {
+        sharedPrefix = commaMediaBranches[0].slice(0, scopedEither.index || 0)
+          .replace(/(?:\s*[,;]\s*)?(?:and|plus|also|as\s+well\s+as)\s*$/iu, '')
+          .trim();
+        commaMediaBranches[0] = commaMediaBranches[0]
+          .slice((scopedEither.index || 0) + scopedEither[0].length)
+          .trim();
+      }
+      let sharedSuffix = '';
+      const lastBranch = commaMediaBranches[commaMediaBranches.length - 1];
+      const sharedSuffixMatch = lastBranch.match(/^(?:and|plus|also|as\s+well\s+as)\s+([\s\S]+)$/iu);
+      if (sharedSuffixMatch) {
+        sharedSuffix = sharedSuffixMatch[1].trim();
+        commaMediaBranches.pop();
+      }
+      if (sharedPrefix || sharedSuffix) {
+        commaMediaBranches = commaMediaBranches.map(choice => (
+          [sharedPrefix, choice, sharedSuffix].filter(Boolean).join(' and ')
+        ));
+      }
+    }
     const enumeratedMediaBranches = oneOfMediaBranches.length > 1
       ? oneOfMediaBranches
       : commaMediaBranches;
@@ -15510,13 +15536,18 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       && current.job.template === 'publish'
       && current.job.requiresSubmission === true
       && ['twitter', 'bluesky'].includes(current.adapterName);
-    if (currentIsSocialPublish) targets.add(current.adapterName);
     const trustedContext = [guard?.taskText, guard?.approvedPlanAnchor]
       .map(value => String(value || '').trim())
       .filter(Boolean)
       .join(' ');
     const hasPublishIntent = this._socialPublicationCommandIn(trustedContext);
     const clauses = this._socialPublicationClauses(trustedContext);
+    const currentPlatformPattern = current?.adapterName === 'twitter'
+      ? /(?<![\p{L}\p{N}_])(?:x|x\.com|twitter(?:\.com)?)(?![\p{L}\p{N}_])/iu
+      : /(?<![\p{L}\p{N}_])(?:bluesky|bsky(?:\.app)?)(?![\p{L}\p{N}_])/iu;
+    const currentIsExplicitlyExcluded = currentIsSocialPublish && clauses.some(clause => (
+      clause.isNegated && currentPlatformPattern.test(clause.maskedText || clause.text || '')
+    ));
     const hasContrastivePublishIntent = clauses.some((clause, index) => (
       index > 0
       && /^(?:but)$/iu.test(clause.delim || '')
@@ -15604,7 +15635,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     const publishesTo = (platform) => {
       const destPreps = '(?:on|onto|to|via|in|at|en|sur|sobre|\u00e0|au|auf|su|em|na|no|nos|nas|para|\u0432|\u043d\u0430)';
       const coordConj = '(?:and|und|et|e|y|ve|и|oder|or|ou|o|as\\s+well\\s+as|&|\\/)';
-      const listModifiers = '(?:both|either|all|ambos|ambas|entrambi|entrambe|beide|beiden|les\\s+deux|tous\\s+les\\s+deux|\u043e\u0431\u0430|\u043e\u0431\u0435|\u4e24\u8005|\u4e24\u4e2a|\u4e24|\u4e21\u65b9|\u4e21\u8005|\u4e21|\ub458\\s*\ub2e4|\ub458|\uc591\uc790|\uc591)';
+      const listModifiers = '(?:both|either|all|one\\s+of(?:\\s+the)?|ambos|ambas|entrambi|entrambe|beide|beiden|les\\s+deux|tous\\s+les\\s+deux|\u043e\u0431\u0430|\u043e\u0431\u0435|\u4e24\u8005|\u4e24\u4e2a|\u4e24|\u4e21\u65b9|\u4e21\u8005|\u4e21|\ub458\\s*\ub2e4|\ub458|\uc591\uc790|\uc591)';
       const coordItem = `(?:the\\s+)?(?:${listModifiers}\\s+)?[a-z0-9_.-]+(?:\\s+page|\\s+account|\\s+profile)?`;
       const coordPrefix = `(?:${coordItem}(?:\\s*,\\s*${coordItem})*\\s*(?:,\\s*${coordConj}|,|;|\\s+${coordConj})\\s+(?:the\\s+)?)`;
       const platformPattern = new RegExp(
@@ -15795,6 +15826,11 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         // "tweet this" names its own destination.
         || tweetsThis) {
       targets.add('twitter');
+    }
+    // The live tab is a fallback only when the task did not authorize another
+    // destination. Never let it override an explicit negative platform clause.
+    if (currentIsSocialPublish && targets.size < 1 && !currentIsExplicitlyExcluded) {
+      targets.add(current.adapterName);
     }
     return targets;
   }

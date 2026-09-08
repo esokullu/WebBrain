@@ -91053,6 +91053,23 @@ test('social publication workflow follows the live X or Bluesky destination and 
       );
     }
 
+    const liveTwitterWorkflow = agent._resolvePlannerSiteWorkflow('https://x.com/compose/post', {
+      request_kind: 'execute',
+      site_job: 'publish-post',
+    });
+    assert.deepEqual([...agent._trustedSocialPublishTargetAdapters({
+      taskText: 'Post on Bluesky, not X',
+      siteWorkflow: liveTwitterWorkflow,
+    })], ['bluesky'], AgentClass.name + ': an explicitly excluded live X workflow was seeded as authorized');
+    const liveBlueskyWorkflow = agent._resolvePlannerSiteWorkflow('https://bsky.app/', {
+      request_kind: 'execute',
+      site_job: 'publish-post',
+    });
+    assert.deepEqual([...agent._trustedSocialPublishTargetAdapters({
+      taskText: 'Post on X, not Bluesky',
+      siteWorkflow: liveBlueskyWorkflow,
+    })], ['twitter'], AgentClass.name + ': an explicitly excluded live Bluesky workflow was seeded as authorized');
+
     const genericTabId = tabId + 300;
     agent.conversations.set(genericTabId, [
       { role: 'system', content: 'system' },
@@ -93128,6 +93145,30 @@ test('upper-bound attachment qualifiers verify as maximum counts', () => {
       'one video and one image',
       'one gif and one image',
     ], AgentClass.name + ': shared media suffix was not distributed into every scoped alternative');
+    const enumeratedSharedChoice = agent._parseWorkflowAttachmentRequirement(
+      'one image and either one video, one GIF, or two videos',
+    );
+    assert.deepEqual(enumeratedSharedChoice.mediaAlternativeBranches.map(branch => branch.normalized), [
+      'one image and one video',
+      'one image and one gif',
+      'one image and two videos',
+    ], AgentClass.name + ': shared conjunct was lost from comma-enumerated media alternatives');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one image and either one video, one GIF, or two videos' },
+      { attachments: [image(1), gif(1)] },
+    ), true, AgentClass.name + ': valid image-plus-GIF enumerated choice was rejected');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one image and either one video, one GIF, or two videos' },
+      { attachments: [gif(1)] },
+    ), false, AgentClass.name + ': GIF-only evidence omitted the enumerated shared image conjunct');
+    const enumeratedSharedSuffix = agent._parseWorkflowAttachmentRequirement(
+      'either one video, one GIF, or two videos, and one image',
+    );
+    assert.deepEqual(enumeratedSharedSuffix.mediaAlternativeBranches.map(branch => branch.normalized), [
+      'one video and one image',
+      'one gif and one image',
+      'two videos and one image',
+    ], AgentClass.name + ': shared suffix was lost from comma-enumerated media alternatives');
     const neitherVideoNorGif = agent._parseWorkflowAttachmentRequirement(
       'one image but neither a video nor a GIF',
     );
