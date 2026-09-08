@@ -261,7 +261,7 @@ const SOCIAL_POST_DESTINATION_NEGATION = new RegExp(
   'iu',
 );
 const SOCIAL_CONTRASTIVE_EXCLUSION = /(?<![\p{L}\p{N}_])(?:rather\s+than|instead\s+of)(?:\s+(?:post(?:ing)?|publish(?:ing)?|shar(?:e|ing)|tweet(?:ing)?|send(?:ing)?))?(?:\s+(?:on|onto|to|via|in|at))?\s*$/iu;
-const SOCIAL_DESTINATION_EXCLUSION = /^\s*(?:exclude|excluding|avoid|avoiding|skip|skipping|omit|omitting|no)\s+(?:(?:post(?:ing)?|publish(?:ing)?|shar(?:e|ing)|tweet(?:ing)?|send(?:ing)?)\s+)?(?:(?:on|onto|to|via|in|at)\s+)?(?:the\s+)?(?:x|twitter|bluesky|bsky(?:\.app)?)(?![\p{L}\p{N}_.-])\s*$/iu;
+const SOCIAL_DESTINATION_EXCLUSION = /^\s*(?:exclude|excluding|avoid|avoiding|skip|skipping|omit|omitting|except|no)\s+(?:(?:post(?:ing)?|publish(?:ing)?|shar(?:e|ing)|tweet(?:ing)?|send(?:ing)?)\s+)?(?:(?:on|onto|to|via|in|at)\s+)?(?:the\s+)?(?:x|twitter|bluesky|bsky(?:\.app)?)(?![\p{L}\p{N}_.-])\s*$/iu;
 const socialPostNegationGovernsPublish = value => (
   SOCIAL_POST_NEGATION.test(String(value || '').trim())
   || SOCIAL_POST_DESTINATION_NEGATION.test(String(value || ''))
@@ -3423,10 +3423,7 @@ export class Agent extends LoopDetector {
       `(?:\\bbetween\\s+(${rangeCountToken})\\s+and|\\bfrom\\s+(${rangeCountToken})\\s+to|\\b(${rangeCountToken})\\s+to)\\s*$`,
       'iu',
     );
-    const collectFormatCountRequirements = (formatPattern, nounPattern) => [...text.matchAll(new RegExp(
-      `(?<![${SOCIAL_WORD_EDGE}])(${countPrefix})(?![${SOCIAL_WORD_EDGE}])\\s+(${formatPattern})(?![${SOCIAL_WORD_EDGE}])\\s+(?:${nounPattern})`,
-      'giu',
-    ))].map((match) => {
+    const parseMediaCountMatch = (match, format) => {
       const count = parseCountWord(match[1]);
       const start = match.index || 0;
       const lead = text.slice(0, start);
@@ -3434,15 +3431,26 @@ export class Agent extends LoopDetector {
       const isMinimum = !range && formatCountMinimumLead.test(lead);
       const isMaximum = !range && formatCountMaximumLead.test(lead);
       return {
-        format: normalizeAttachmentFormat(match[2]),
+        format,
         exactCount: !range && !isMinimum && !isMaximum ? count : 0,
         minimumCount: range ? parseCountWord(range[1] || range[2] || range[3]) : (isMinimum ? count : 0),
         maximumCount: range || isMaximum ? count : 0,
         start,
         end: start + match[0].length,
       };
-    }).filter(requirement => requirement.exactCount > 0
+    };
+    const collectFormatCountRequirements = (formatPattern, nounPattern) => [...text.matchAll(new RegExp(
+      `(?<![${SOCIAL_WORD_EDGE}])(${countPrefix})(?![${SOCIAL_WORD_EDGE}])\\s+(${formatPattern})(?![${SOCIAL_WORD_EDGE}])\\s+(?:${nounPattern})`,
+      'giu',
+    ))].map(match => parseMediaCountMatch(match, normalizeAttachmentFormat(match[2])))
+      .filter(requirement => requirement.exactCount > 0
       || requirement.minimumCount > 0 || requirement.maximumCount > 0);
+    const collectUnrestrictedCountRequirements = nounPattern => [...text.matchAll(new RegExp(
+      `(?<![${SOCIAL_WORD_EDGE}])(${countPrefix})(?![${SOCIAL_WORD_EDGE}])\\s+(?:${nounPattern})(?![${SOCIAL_WORD_EDGE}])`,
+      'giu',
+    ))].map(match => parseMediaCountMatch(match, ''))
+      .filter(requirement => requirement.exactCount > 0
+        || requirement.minimumCount > 0 || requirement.maximumCount > 0);
     const formatRequirementsAreConjunctive = requirements => requirements.length <= 1
       || requirements.slice(1).every((requirement, index) => (
         !DISJUNCTION_REGEX.test(text.slice(requirements[index].end, requirement.start))
@@ -3479,19 +3487,37 @@ export class Agent extends LoopDetector {
       VIDEO_ATTACHMENT_FORMAT,
       'videos?|clips?|recordings?',
     );
-    const imageFormatConstraints = aggregateFormatConstraints(parsedImageFormatConstraints);
-    const videoFormatConstraints = aggregateFormatConstraints(parsedVideoFormatConstraints);
+    const parsedImageUnrestrictedConstraints = collectUnrestrictedCountRequirements(
+      'images?|photos?|pictures?|pics?',
+    );
+    const parsedVideoUnrestrictedConstraints = collectUnrestrictedCountRequirements(
+      'videos?|clips?|recordings?',
+    );
+    const imageMediaConstraints = aggregateFormatConstraints([
+      ...parsedImageFormatConstraints,
+      ...parsedImageUnrestrictedConstraints,
+    ].sort((left, right) => left.start - right.start));
+    const videoMediaConstraints = aggregateFormatConstraints([
+      ...parsedVideoFormatConstraints,
+      ...parsedVideoUnrestrictedConstraints,
+    ].sort((left, right) => left.start - right.start));
+    const imageFormatConstraints = imageMediaConstraints.filter(constraint => constraint.format);
+    const videoFormatConstraints = videoMediaConstraints.filter(constraint => constraint.format);
+    const imageUnrestrictedConstraint = imageMediaConstraints.find(constraint => !constraint.format) || null;
+    const videoUnrestrictedConstraint = videoMediaConstraints.find(constraint => !constraint.format) || null;
     const exactFormatCounts = constraints => constraints
       .filter(constraint => constraint.exactCount > 0)
       .map(constraint => ({ format: constraint.format, count: constraint.exactCount }));
     const imageFormatCounts = exactFormatCounts(imageFormatConstraints);
     const videoFormatCounts = exactFormatCounts(videoFormatConstraints);
-    if (imageFormatCounts.length > 0) {
-      expectedImageCount = imageFormatCounts.reduce((total, requirement) => total + requirement.count, 0);
+    const exactImageMediaCount = imageMediaConstraints.reduce((total, constraint) => total + constraint.exactCount, 0);
+    const exactVideoMediaCount = videoMediaConstraints.reduce((total, constraint) => total + constraint.exactCount, 0);
+    if (exactImageMediaCount > 0) {
+      expectedImageCount = exactImageMediaCount;
       hasExplicitImageCount = true;
     }
-    if (videoFormatCounts.length > 0) {
-      expectedVideoCount = videoFormatCounts.reduce((total, requirement) => total + requirement.count, 0);
+    if (exactVideoMediaCount > 0) {
+      expectedVideoCount = exactVideoMediaCount;
       hasExplicitVideoCount = true;
     }
     const formatConstraintBounds = (constraints) => {
@@ -3510,8 +3536,8 @@ export class Agent extends LoopDetector {
       }
       return { minimumCount, maximumCount: hasUnboundedFormat ? 0 : maximumCount };
     };
-    if (imageFormatConstraints.length > 0) {
-      const bounds = formatConstraintBounds(imageFormatConstraints);
+    if (imageMediaConstraints.length > 0) {
+      const bounds = formatConstraintBounds(imageMediaConstraints);
       minScopedImage = bounds.minimumCount > 0;
       minimumImageCount = bounds.minimumCount;
       maxScopedImage = bounds.maximumCount > 0;
@@ -3519,8 +3545,8 @@ export class Agent extends LoopDetector {
       isImageMinimum = isGeneric && (minScopedImage || minScopedGeneric);
       isImageMaximum = isGeneric && (maxScopedImage || maxScopedGeneric);
     }
-    if (videoFormatConstraints.length > 0) {
-      const bounds = formatConstraintBounds(videoFormatConstraints);
+    if (videoMediaConstraints.length > 0) {
+      const bounds = formatConstraintBounds(videoMediaConstraints);
       minScopedVideo = bounds.minimumCount > 0;
       minimumVideoCount = bounds.minimumCount;
       maxScopedVideo = bounds.maximumCount > 0;
@@ -3814,6 +3840,8 @@ export class Agent extends LoopDetector {
       videoFormatCounts,
       imageFormatConstraints,
       videoFormatConstraints,
+      imageUnrestrictedConstraint,
+      videoUnrestrictedConstraint,
       specificTargets,
       specificTargetAlternatives: namedTargetAlternatives || [],
       normalized: text,
@@ -4050,17 +4078,43 @@ export class Agent extends LoopDetector {
     const videoCount = rawAttachments.filter(isVideoAttachment).length;
     const gifCount = rawAttachments.filter(isGifAttachment).length;
     const ordinaryVideoCount = ordinaryVideoAttachments.length;
-    if (!attachmentsMatchFormats(parsed.requestedImageFormats, imageAttachments)) return false;
-    if (!attachmentsMatchFormats(parsed.requestedVideoFormats, ordinaryVideoAttachments)) return false;
-    const attachmentsMatchFormatConstraints = (constraints, candidates) => (constraints || []).every((constraint) => {
-      const observedCount = candidates.filter(att => attachmentFormat(att) === constraint.format).length;
-      if (constraint.exactCount > 0 && observedCount !== constraint.exactCount) return false;
-      if (constraint.minimumCount > 0 && observedCount < constraint.minimumCount) return false;
-      if (constraint.maximumCount > 0 && observedCount > constraint.maximumCount) return false;
-      return true;
-    });
-    if (!attachmentsMatchFormatConstraints(parsed.imageFormatConstraints, imageAttachments)) return false;
-    if (!attachmentsMatchFormatConstraints(parsed.videoFormatConstraints, ordinaryVideoAttachments)) return false;
+    if (!parsed.imageUnrestrictedConstraint
+        && !attachmentsMatchFormats(parsed.requestedImageFormats, imageAttachments)) return false;
+    if (!parsed.videoUnrestrictedConstraint
+        && !attachmentsMatchFormats(parsed.requestedVideoFormats, ordinaryVideoAttachments)) return false;
+    const attachmentsMatchMediaConstraints = (constraints, unrestricted, candidates) => {
+      const lowerBound = constraint => Math.max(constraint.exactCount, constraint.minimumCount);
+      const upperBound = constraint => constraint.exactCount > 0
+        ? (constraint.maximumCount > 0
+          ? Math.min(constraint.exactCount, constraint.maximumCount)
+          : constraint.exactCount)
+        : (constraint.maximumCount > 0 ? constraint.maximumCount : Infinity);
+      let minimumAssigned = 0;
+      let maximumAssigned = 0;
+      for (const constraint of constraints || []) {
+        const observedCount = candidates.filter(att => attachmentFormat(att) === constraint.format).length;
+        const minimum = lowerBound(constraint);
+        const maximum = upperBound(constraint);
+        if (maximum < minimum || observedCount < minimum) return false;
+        if (!unrestricted && observedCount > maximum) return false;
+        minimumAssigned += minimum;
+        maximumAssigned += Math.min(observedCount, maximum);
+      }
+      if (!unrestricted) return true;
+      const unrestrictedMinimum = lowerBound(unrestricted);
+      const unrestrictedMaximum = upperBound(unrestricted);
+      if (unrestrictedMaximum < unrestrictedMinimum) return false;
+      const minimumRemainder = Math.max(0, candidates.length - maximumAssigned);
+      const maximumRemainder = candidates.length - minimumAssigned;
+      return Math.max(minimumRemainder, unrestrictedMinimum)
+        <= Math.min(maximumRemainder, unrestrictedMaximum);
+    };
+    if (!attachmentsMatchMediaConstraints(
+      parsed.imageFormatConstraints, parsed.imageUnrestrictedConstraint, imageAttachments,
+    )) return false;
+    if (!attachmentsMatchMediaConstraints(
+      parsed.videoFormatConstraints, parsed.videoUnrestrictedConstraint, ordinaryVideoAttachments,
+    )) return false;
     const imageMinimumBound = parsed.minimumImageCount || parsed.expectedImageCount || 1;
     const videoMinimumBound = parsed.minimumVideoCount || parsed.expectedVideoCount || 1;
     const gifMinimumBound = parsed.minimumGifCount || parsed.expectedGifCount || 1;

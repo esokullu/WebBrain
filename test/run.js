@@ -90833,6 +90833,10 @@ test('social publication workflow follows the live X or Bluesky destination and 
         'an omit clause adopted its forbidden X destination'],
       ['Post on X, omitting Bluesky', ['twitter'],
         'an omitting clause adopted its forbidden Bluesky destination'],
+      ['Post on Bluesky, except X', ['bluesky'],
+        'an except clause adopted its forbidden X destination'],
+      ['Post on X, except Bluesky', ['twitter'],
+        'an except clause adopted its forbidden Bluesky destination'],
       ['Post on Bluesky rather than posting on X', ['bluesky'],
         'rather-than clause adopted its expressly excluded X destination'],
       ['Post on Bluesky rather than on X', ['bluesky'],
@@ -93072,6 +93076,22 @@ test('upper-bound attachment qualifiers verify as maximum counts', () => {
     ]) {
       assert.equal(agent._workflowSocialPublishedAttachmentObserved(
         { value: 'one PNG image and at most one JPEG image' }, { attachments },
+      ), expected, AgentClass.name + ': ' + message);
+    }
+    const formattedAndUnrestricted = agent._parseWorkflowAttachmentRequirement('one PNG image and one image');
+    assert.equal(formattedAndUnrestricted.expectedImageCount, 2,
+      AgentClass.name + ': an unrestricted media conjunct was omitted from the exact total');
+    assert.deepEqual(formattedAndUnrestricted.imageUnrestrictedConstraint,
+      { format: '', exactCount: 1, minimumCount: 0, maximumCount: 0 },
+      AgentClass.name + ': an unrestricted media slot was not retained');
+    for (const [attachments, expected, message] of [
+      [[image(1)], false, 'one PNG satisfied two conjunctive image slots'],
+      [[image(1), { type: 'image', src: 'https://cdn.example/a.jpg' }], true, 'PNG plus unrestricted JPEG was rejected'],
+      [[image(1), image(2)], true, 'a second PNG could not fill the unrestricted image slot'],
+      [[{ type: 'image', src: 'https://cdn.example/a.jpg' }, { type: 'image', src: 'https://cdn.example/b.jpg' }], false, 'two JPEGs satisfied the required PNG slot'],
+    ]) {
+      assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+        { value: 'one PNG image and one image' }, { attachments },
       ), expected, AgentClass.name + ': ' + message);
     }
     const imageButNoVideo = agent._parseWorkflowAttachmentRequirement('one image but no video');
