@@ -222,6 +222,10 @@ const SOCIAL_COORDINATING_DELIMITER = new RegExp(
 // destination, but it must not carry polarity: "do not post on X, then post on
 // Bluesky" starts a new command while "post on X, then on Bluesky" names two.
 const SOCIAL_SEQUENTIAL_DELIMITER = /^(?:then|luego|puis|ensuite|dann|poi|sonra|затем|然后|然後|接着|そして|それから)$/iu;
+// A proper name can masquerade as a leading publication verb: "Post Malone
+// is on Bluesky." is prose about a person, not a command. Post + Name +
+// copula/reporting verb stays body prose instead of opening a new command.
+const SOCIAL_PROPER_NAME_PROSE_LEAD = /^post\s+[A-Z][a-z]+(?:'[a-z]+)?\s+(?:is|are|was|were|be|been|being|has|have|had|say|says|said|announce|announces|announced)\b/i;
 const SOCIAL_CLAUSE_BREAK = new RegExp(
   `[.!?;:,\\n]|(?<![${SOCIAL_WORD_EDGE}])(?:and|then|but|or|nor|after|before|y|e|ed|luego|puis|et|ensuite|und|dann|poi|sonra|ve|затем|и)(?![${SOCIAL_WORD_EDGE}])|然后|然後|接着|そして|それから|または|、|。`,
   'iu',
@@ -2811,17 +2815,19 @@ export class Agent extends LoopDetector {
     // Elliptical conjunction ("one PNG and one JPEG image") omits the first
     // media noun. Restore it so each counted format parses as its own
     // conjunctive clause; "or" choices keep sharing one noun and are handled
-    // by the format-qualifier grammar instead.
+    // by the format-qualifier grammar instead. The other unambiguously
+    // conjunctive separators ("plus", "also", "as well as") restore alike.
     {
       const ellipticalCount = '(?:\\d+|zero|one|two|three|four|five|six|seven|eight|nine|ten|a|an|single|both)';
+      const ellipticalConjunction = '(and|plus|also|as\\s+well\\s+as)';
       text = text
         .replace(
-          new RegExp(`(?<![${SOCIAL_WORD_EDGE}])(${ellipticalCount})\\s+(${IMAGE_ATTACHMENT_FORMAT})\\s+and\\s+(${ellipticalCount})\\s+(${IMAGE_ATTACHMENT_FORMAT})\\s+(images?|photos?|pictures?|pics?)(?![${SOCIAL_WORD_EDGE}])`, 'giu'),
-          '$1 $2 $5 and $3 $4 $5',
+          new RegExp(`(?<![${SOCIAL_WORD_EDGE}])(${ellipticalCount})\\s+(${IMAGE_ATTACHMENT_FORMAT})\\s+${ellipticalConjunction}\\s+(${ellipticalCount})\\s+(${IMAGE_ATTACHMENT_FORMAT})\\s+(images?|photos?|pictures?|pics?)(?![${SOCIAL_WORD_EDGE}])`, 'giu'),
+          '$1 $2 $6 $3 $4 $5 $6',
         )
         .replace(
-          new RegExp(`(?<![${SOCIAL_WORD_EDGE}])(${ellipticalCount})\\s+(${VIDEO_ATTACHMENT_FORMAT})\\s+and\\s+(${ellipticalCount})\\s+(${VIDEO_ATTACHMENT_FORMAT})\\s+(videos?|clips?|recordings?)(?![${SOCIAL_WORD_EDGE}])`, 'giu'),
-          '$1 $2 $5 and $3 $4 $5',
+          new RegExp(`(?<![${SOCIAL_WORD_EDGE}])(${ellipticalCount})\\s+(${VIDEO_ATTACHMENT_FORMAT})\\s+${ellipticalConjunction}\\s+(${ellipticalCount})\\s+(${VIDEO_ATTACHMENT_FORMAT})\\s+(videos?|clips?|recordings?)(?![${SOCIAL_WORD_EDGE}])`, 'giu'),
+          '$1 $2 $6 $3 $4 $5 $6',
         );
     }
 
@@ -15861,7 +15867,9 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         }
         if (inColonBodyScope) {
           const clauseDelim = clause.delim || '';
-          const leadsWithPublish = startsWithPublishVerb.test(String(clause.maskedText || clause.text || '').trimStart());
+          const leadText = String(clause.maskedText || clause.text || '').trimStart();
+          const leadsWithPublish = startsWithPublishVerb.test(leadText)
+            && !SOCIAL_PROPER_NAME_PROSE_LEAD.test(leadText);
           if (!SOCIAL_COORDINATING_DELIMITER.test(clauseDelim)
             && !SOCIAL_SEQUENTIAL_DELIMITER.test(clauseDelim)
             && clauseDelim.trim() !== ','
@@ -24405,6 +24413,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       const startsNewPublication = (clauseMasked) => {
         const text = String(clauseMasked || '');
         if (!SOCIAL_PUBLISH_VERBS.test(text)) return false;
+        if (SOCIAL_PROPER_NAME_PROSE_LEAD.test(text.trimStart())) return false;
         for (const platformMatch of text.matchAll(new RegExp(anyPlatformPattern.source, 'giu'))) {
           const before = text.slice(0, platformMatch.index || 0);
           const prep = before.match(new RegExp(`(?:${destinationPrepPattern})\\s+(?:the\\s+)?$`, 'iu'));
@@ -24428,12 +24437,14 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       );
       const metadataAttachmentVerb = /(?<![\p{L}\p{N}_])(?:attach(?:ed|ing|ment)?s?|upload(?:ed|ing|s)?|detach(?:ed|ing)?)(?![\p{L}\p{N}_])/iu;
       const metadataNarrativeSubject = /(?<![\p{L}\p{N}_])(?:i|we|you|he|she|they|it)(?![\p{L}\p{N}_])[\s,]*$/iu;
+      const metadataPoliteRequest = /(?<![\p{L}\p{N}_])(?:could|can|would|will|shall|should|may|might|please)(?:\s+you)?(?![\p{L}\p{N}_])[\s,]*$/iu;
       const startsMetadataInstruction = (clauseMasked) => {
         const text = String(clauseMasked || '');
         if (!metadataInstructionPattern.test(text)) return false;
         const verb = text.match(metadataAttachmentVerb);
         if (!verb) return true;
-        return !metadataNarrativeSubject.test(text.slice(0, verb.index));
+        const before = text.slice(0, verb.index);
+        return !metadataNarrativeSubject.test(before) || metadataPoliteRequest.test(before);
       };
       for (const rawCandidate of rawCandidates) {
         const clauses = this._socialPublicationClauses(rawCandidate);

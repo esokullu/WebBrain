@@ -91027,6 +91027,8 @@ test('social publication workflow follows the live X or Bluesky destination and 
         'per-destination bodies should still discover both platforms'],
       ['Post on X: I posted on Bluesky yesterday.', ['twitter'],
         'colon-scoped body prose adopted Bluesky as a destination'],
+      ['Post on X: Hello. Post Malone is on Bluesky.', ['twitter'],
+        'proper-name prose left colon scope and adopted Bluesky'],
       ['Do not publish anything; open https://x.com/compose/post to inspect it, then submit findings in the form', [],
         'a prohibited composer URL was adopted as a publish destination'],
       ['Post on X: hello. Post on Bluesky: world', ['twitter', 'bluesky'],
@@ -91199,6 +91201,10 @@ test('social destination rebinding refreshes platform-specific payload and uploa
       AgentClass.name + ': prose mentioning an upload without media ended the post body');
     assert.equal(agent._extractWorkflowTaskBody('Post on X: Hello. I upload photos every weekend.', '', 'twitter'), 'Hello. I upload photos every weekend.',
       AgentClass.name + ': narrative prose naming media ended the post body');
+    assert.equal(agent._extractWorkflowTaskBody('Post on X: Hello. Could you attach image.png?', '', 'twitter'), 'Hello',
+      AgentClass.name + ': a polite attachment request contaminated the post body');
+    assert.equal(agent._extractWorkflowTaskBody('Post on X: Hello. Post Malone is on Bluesky.', '', 'twitter'), 'Hello. Post Malone is on Bluesky.',
+      AgentClass.name + ': proper-name prose truncated the post body');
     assert.equal(agent._extractWorkflowTaskBody('Post on X: Hello world. Then let me know when it is done', '', 'twitter'), 'Hello world',
       AgentClass.name + ': sequential follow-up instruction contaminated the post body');
     assert.equal(agent._workflowExtractedBodySupersedesClassified('Alpha beta', 'Alpha beta gamma delta'), true,
@@ -93276,6 +93282,13 @@ test('upper-bound attachment qualifiers verify as maximum counts', () => {
     assert.equal(agent._workflowSocialPublishedAttachmentObserved(
       { value: 'one PNG and one JPEG image' }, { attachments: [image(1)] },
     ), false, AgentClass.name + ': one PNG satisfied a two-format elliptical conjunction');
+    const ellipticalPlusFormats = agent._parseWorkflowAttachmentRequirement('one PNG plus one JPEG image');
+    assert.equal(ellipticalPlusFormats.isGeneric, true,
+      AgentClass.name + ': an elliptical plus-format conjunction was parsed as filenames');
+    assert.deepEqual(ellipticalPlusFormats.imageFormatCounts, [
+      { format: 'png', count: 1 },
+      { format: 'jpeg', count: 1 },
+    ], AgentClass.name + ': elliptical plus-format counts were not distributed');
     for (const [attachments, expected, message] of [
       [[{ type: 'image', src: 'https://cdn.example/a.jpg' }], true, 'the required JPEG was rejected by a separate PNG prohibition'],
       [[{ type: 'image', src: 'https://cdn.example/a.webp' }], false, 'an unrequested WebP satisfied a required JPEG'],
