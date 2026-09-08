@@ -18012,12 +18012,34 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         'giu',
       );
       const verbPattern = new RegExp(SOCIAL_PUBLISH_VERBS.source, 'giu');
+      // Colon-scoped payload is body prose: "Post on X: Hello. I posted on
+      // Bluesky yesterday." must not adopt Bluesky from a later sentence.
+      // Track the scope across subsequent prose until a clause begins a
+      // genuine new publication command (a leading publish verb or a
+      // coordinated boundary).
+      let inColonBodyScope = false;
+      const startsWithPublishVerb = new RegExp(`^(?:${SOCIAL_PUBLISH_VERBS.source})`, 'iu');
       return clauses.some((clause, clauseIdx) => {
         if (!clause.text || clause.isNegated) return false;
         // Colon-scoped payload is body prose, not a new destination command:
         // "Post on X: I posted on Bluesky yesterday." must not adopt Bluesky
         // without a genuine coordinated command boundary.
-        if ((clause.delim || '').trim() === ':') return false;
+        if ((clause.delim || '').trim() === ':') {
+          inColonBodyScope = true;
+          return false;
+        }
+        if (inColonBodyScope) {
+          const clauseDelim = clause.delim || '';
+          const leadsWithPublish = startsWithPublishVerb.test(String(clause.maskedText || clause.text || '').trimStart());
+          if (!SOCIAL_COORDINATING_DELIMITER.test(clauseDelim)
+            && !SOCIAL_SEQUENTIAL_DELIMITER.test(clauseDelim)
+            && clauseDelim.trim() !== ','
+            && clauseDelim.trim() !== '、'
+            && !leadsWithPublish) {
+            return false;
+          }
+          inColonBodyScope = false;
+        }
         const targetText = clause.maskedText || clause.text;
         // "Post this not on X but on Bluesky" carries the publish action into
         // the positive contrastive destination even though that clause is
@@ -18216,7 +18238,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     // Only list-shaped glue may sit between the two platform mentions. An
     // unrelated branch such as "X or report the blocker; also post on
     // Bluesky" contains `or`, but it does not coordinate the destinations.
-    const directAlternativeBridge = /^\s*(?:(?:page|account|profile)\s*)?(?:,\s*)?(?:if\s+(?:unavailable|not\s+available|available|needed|necessary|possible|possibly|unable|unsuccessful|failing|failed|fails?|failure)\b[^,;]*,?\s*)?(?:(?:or|otherwise|failing\s+that|oder|ou|o|oppure|veya|ya\s+da|\u0438\u043b\u0438|\u043b\u0438\u0431\u043e)(?![\p{L}\p{N}_])|(?:\u6216\u8005|\u6216|\u307e\u305f\u306f|\u305d\u308c\u3068\u3082|\uB610\uB294|\uD639\uC740))\s*(?:,\s*)?(?:(?:alternatively|otherwise|else)(?:\s*,\s*|\s+))?(?:,\s*if\s+(?:(?:that|it|this)\s+)?(?:unavailable|not\s+available|available|needed|necessary|possible|unable|unsuccessful|failing|failed|fails?|failure)\b[^,;]*,?\s*)?(?:(?:post|publish|share|tweet|send|reply|respond)\s+(?:(?:this|that|it|the\s+following)\s+)?)?(?:(?:also\s+)?(?:on|onto|to|via|in|at|en|sur|sobre|\u00e0|au|auf|su|em|na|no|nos|nas|para|\u0432|\u043d\u0430)\s+)?(?:the\s+)?$/iu;
+    const directAlternativeBridge = /^\s*(?:(?:page|account|profile)\s*)?(?:[,;]\s*)?(?:(?:if\s+(?:(?:that|it|this)\s+)?(?:unavailable|not\s+available|available|needed|necessary|possible|possibly|unable|unsuccessful|failing|failed|fails?|failure)\b[^,;]*,?\s*)(?:(?:or|otherwise|failing\s+that|oder|ou|o|oppure|veya|ya\s+da|\u0438\u043b\u0438|\u043b\u0438\u0431\u043e)(?![\p{L}\p{N}_])|(?:\u6216\u8005|\u6216|\u307e\u305f\u306f|\u305d\u308c\u3068\u3082|\uB610\uB294|\uD639\uC740))?|(?:(?:or|otherwise|failing\s+that|oder|ou|o|oppure|veya|ya\s+da|\u0438\u043b\u0438|\u043b\u0438\u0431\u043e)(?![\p{L}\p{N}_])|(?:\u6216\u8005|\u6216|\u307e\u305f\u306f|\u305d\u308c\u3068\u3082|\uB610\uB294|\uD639\uC740)))\s*(?:,\s*)?(?:(?:alternatively|otherwise|else)(?:\s*,\s*|\s+))?(?:,\s*if\s+(?:(?:that|it|this)\s+)?(?:unavailable|not\s+available|available|needed|necessary|possible|unable|unsuccessful|failing|failed|fails?|failure)\b[^,;]*,?\s*)?(?:(?:post|publish|share|tweet|send|reply|respond)\s+(?:(?:this|that|it|the\s+following)\s+)?)?(?:(?:also\s+)?(?:on|onto|to|via|in|at|en|sur|sobre|\u00e0|au|auf|su|em|na|no|nos|nas|para|\u0432|\u043d\u0430)\s+)?(?:the\s+)?$/iu;
     const explicitAlternativeBridge = /^\s*(?:(?:page|account|profile)\s*)?(?:,\s*)?(?:(?:alternatively|otherwise|failing\s+that)(?:\s*,\s*)?(?:[\s,]+(?:on|onto|to|via|in|at))?|as\s+an\s+alternative\s+to)\s*(?:the\s+)?$/iu;
     const oneOfAlternativeLead = /(?<![\p{L}\p{N}_])one\s+of\s+(?:the\s+)?$/iu;
     const oneOfAlternativeBridge = /^\s*(?:,\s*)?(?:and|or)\s+(?:the\s+)?$/iu;
@@ -26730,11 +26752,13 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         return false;
       };
       // A following attachment/metadata instruction ("attach image.png")
-      // is a separate requirement, not body prose. Quoted filenames stay
-      // invisible because this runs on masked text.
+      // is a separate requirement, not body prose. The action verb must
+      // govern a media target in the same clause: ordinary prose such as
+      // "We uploaded our new release today." names no media. Quoted
+      // filenames stay invisible because this runs on masked text.
+      const mediaInstructionTarget = '(?:\\.(?:png|jpe?g|webp|avif|heic|bmp|svg|gif|mp4|mov|webm|mkv)(?=[?#]|[\\s.,;:!?]|$)|images?|photos?|pictures?|pics?|videos?|clips?|recordings?|gifs?|attachments?|files?|media|uploads?)';
       const metadataInstructionPattern = new RegExp(
-        `(?<![\\p{L}\\p{N}_])(?:attach(?:ed|ing|ment)?s?|upload(?:ed|ing|s)?|detach(?:ed|ing)?)(?![\\p{L}\\p{N}_])`
-        + `|\\.(?:png|jpe?g|webp|avif|heic|bmp|svg|gif|mp4|mov|webm|mkv)(?=[?#]|[\\s.,;:!?]|$)`
+        `(?<![\\p{L}\\p{N}_])(?:attach(?:ed|ing|ment)?s?|upload(?:ed|ing|s)?|detach(?:ed|ing)?)(?![\\p{L}\\p{N}_])[\\s\\S]*?${mediaInstructionTarget}`
         + `|(?<![\\p{L}\\p{N}_])alt(?:ernative)?\\s+text(?![\\p{L}\\p{N}_])`,
         'iu',
       );
