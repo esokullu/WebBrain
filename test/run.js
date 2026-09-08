@@ -91193,6 +91193,18 @@ test('alternative social destinations require one verified publication, not ever
     assert.equal(agent._socialPublishTargetsAreAlternatives(conjunctive), false);
     assert.deepEqual(agent._missingSocialPublishTargets(conjunctive), ['bluesky'],
       AgentClass.name + ': conjunctive destinations were weakened to alternatives');
+    const unrelatedOr = {
+      ...guard,
+      taskText: 'Post on X or report the blocker; also post on Bluesky.',
+    };
+    assert.equal(agent._socialPublishTargetsAreAlternatives(unrelatedOr), false,
+      AgentClass.name + ': unrelated or branch weakened two required destinations');
+    assert.deepEqual(agent._missingSocialPublishTargets(unrelatedOr), ['bluesky'],
+      AgentClass.name + ': unrelated or branch hid the missing Bluesky publication');
+    assert.equal(agent._socialPublishTargetsAreAlternatives({
+      ...guard,
+      taskText: 'Post on X or publish on Bluesky.',
+    }), true, AgentClass.name + ': directly repeated publish verb broke a destination alternative');
   }
 });
 
@@ -93299,6 +93311,33 @@ test('attachment verification matches specific attachment names without substrin
       ),
       false,
       AgentClass.name + ': incomplete conjunctive alternative group was accepted',
+    );
+    const sharedConjunctAlternatives = agent._parseWorkflowAttachmentRequirement(
+      'logo.png and either chart.png or graph.png',
+    );
+    assert.deepEqual(sharedConjunctAlternatives.specificTargetAlternatives,
+      [['logo.png', 'chart.png'], ['logo.png', 'graph.png']],
+      AgentClass.name + ': shared conjunct was not retained in every explicit either/or branch');
+    assert.equal(
+      agent._workflowSocialPublishedAttachmentObserved(
+        { value: 'logo.png and either chart.png or graph.png' },
+        {
+          attachments: [
+            { type: 'image', src: 'https://pbs.twimg.com/media/logo.png' },
+            { type: 'image', src: 'https://pbs.twimg.com/media/chart.png' },
+          ],
+        },
+      ),
+      true,
+      AgentClass.name + ': valid shared-conjunct alternative was rejected',
+    );
+    assert.equal(
+      agent._workflowSocialPublishedAttachmentObserved(
+        { value: 'logo.png and either chart.png or graph.png' },
+        { attachments: [{ type: 'image', src: 'https://pbs.twimg.com/media/graph.png' }] },
+      ),
+      false,
+      AgentClass.name + ': alternative file alone satisfied a missing shared conjunct',
     );
     for (const [allowedName, type] of [['chart.png', 'image'], ['clip.mp4', 'video']]) {
       assert.equal(

@@ -3299,13 +3299,26 @@ export class Agent extends LoopDetector {
       // Word joiners need surrounding whitespace so a filename such as
       // report-or-draft.png remains one target. CJK joiners need no spaces.
       const disjunctionSplit = /(?:\s+(?:or|oder|ou|o|oppure|или|либо|veya|ya\s+da)\s+|\s*(?:或者|或|または|それとも|또는|혹은)\s*)/iu;
-      const specificTargetAlternatives = DISJUNCTION_REGEX.test(text)
+      let specificTargetAlternatives = DISJUNCTION_REGEX.test(text)
         ? this._parseSpecificAttachmentTargets(rawVal, disjunctionSplit)
-          .map(group => this._parseSpecificAttachmentTargets(
-            group.replace(/^(?:either|one\s+of)\s+/iu, ''),
-          ))
+          .map(group => this._parseSpecificAttachmentTargets(group))
           .filter(group => group.length > 0)
         : [];
+      // In "logo.png and either chart.png or graph.png", `either` scopes the
+      // choice while everything before it remains a requirement in both
+      // branches. Distribute that shared prefix instead of parsing ordinary
+      // AND-before-OR precedence and accidentally accepting graph.png alone.
+      if (specificTargetAlternatives.length > 1) {
+        const eitherIndex = specificTargetAlternatives[0]
+          .findIndex(target => /^(?:either|one\s+of)\s+/iu.test(target));
+        if (eitherIndex >= 0) {
+          const sharedPrefix = specificTargetAlternatives[0].slice(0, eitherIndex);
+          const firstChoice = specificTargetAlternatives[0].slice(eitherIndex);
+          firstChoice[0] = firstChoice[0].replace(/^(?:either|one\s+of)\s+/iu, '');
+          specificTargetAlternatives = [firstChoice, ...specificTargetAlternatives.slice(1)]
+            .map(group => [...sharedPrefix, ...group]);
+        }
+      }
       if (specificTargetAlternatives.length > 1) {
         expectedCount = Math.min(...specificTargetAlternatives.map(group => group.length));
         hasExplicitGenericCount = true;
@@ -17205,7 +17218,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       ? knownTargets
       : this._trustedSocialPublishTargetAdapters(guard);
     if (targets.size < 2 || !targets.has('twitter') || !targets.has('bluesky')) return false;
-    const alternativeJoiner = /(?<![\p{L}\p{N}_])(?:or|either|oder|ou|o|oppure|veya|ya\s+da|(?:\u0438\u043b\u0438)|(?:\u043b\u0438\u0431\u043e))(?![\p{L}\p{N}_])|(?:\u6216\u8005|\u6216|\u307e\u305f\u306f|\u305d\u308c\u3068\u3082|\uB610\uB294|\uD639\uC740)/iu;
+    // Only list-shaped glue may sit between the two platform mentions. An
+    // unrelated branch such as "X or report the blocker; also post on
+    // Bluesky" contains `or`, but it does not coordinate the destinations.
+    const directAlternativeBridge = /^\s*(?:(?:page|account|profile)\s*)?(?:,\s*)?(?:(?:or|oder|ou|o|oppure|veya|ya\s+da|\u0438\u043b\u0438|\u043b\u0438\u0431\u043e)(?![\p{L}\p{N}_])|(?:\u6216\u8005|\u6216|\u307e\u305f\u306f|\u305d\u308c\u3068\u3082|\uB610\uB294|\uD639\uC740))\s*(?:(?:post|publish|share|tweet|send|reply|respond)\s+)?(?:(?:also\s+)?(?:on|onto|to|via|in|at|en|sur|sobre|\u00e0|au|auf|su|em|na|no|nos|nas|para|\u0432|\u043d\u0430)\s+)?(?:the\s+)?$/iu;
     const platformPattern = /(?:https?:\/\/(?:www\.)?(?:x\.com|twitter\.com|bsky\.app)(?:[/?#]|$)|(?<![\p{L}\p{N}_])(?:x|twitter|bluesky|bsky\.app)(?![\p{L}\p{N}_]))/giu;
     const texts = [guard?.taskText, guard?.approvedPlanAnchor]
       .map(value => String(value || '').trim())
@@ -17221,7 +17237,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         const left = platforms[index - 1];
         const right = platforms[index];
         if (left.name === right.name) continue;
-        if (alternativeJoiner.test(masked.slice(left.end, right.index))) return true;
+        if (directAlternativeBridge.test(masked.slice(left.end, right.index))) return true;
       }
       return false;
     });
