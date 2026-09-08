@@ -3615,6 +3615,14 @@ export class Agent extends LoopDetector {
       return true;
     }
 
+    const hasRangeCardinality = parsed.isMinimumCount || parsed.isMaximumCount
+      || parsed.isImageMinimum || parsed.isImageMaximum
+      || parsed.isVideoMinimum || parsed.isVideoMaximum
+      || parsed.isGifMinimum || parsed.isGifMaximum;
+    if (!hasRangeCardinality && rawAttachments.length !== targetsToCheck.length) {
+      return false;
+    }
+
     if (matchingAttachments.length < targetsToCheck.length) {
       return false;
     }
@@ -3656,7 +3664,7 @@ export class Agent extends LoopDetector {
     const attachments = Array.isArray(record?.attachments)
       ? record.attachments
       : (Array.isArray(record?.media) ? record.media : []);
-    return attachments.some(attachment => (
+    return attachments.length > 0 && attachments.every(attachment => (
       attachment && typeof attachment === 'object'
       && this._workflowMetadataValue(attachment.alt) === want
     ));

@@ -91457,6 +91457,24 @@ test('X and Bluesky same-route publication accepts only one new permalink with t
         fixture.feedUrl,
         submit,
       ), false, AgentClass.name + ': mismatched attachment alt text was accepted');
+      assert.equal(agent._workflowSocialPublishedAltTextObserved(
+        { value: 'Diagram' },
+        {
+          attachments: [
+            { type: 'image', src: 'https://example.test/a.png', alt: 'Diagram' },
+            { type: 'image', src: 'https://example.test/b.png', alt: 'Diagram' },
+          ],
+        },
+      ), true, AgentClass.name + ': shared alt text on every attachment was rejected');
+      assert.equal(agent._workflowSocialPublishedAltTextObserved(
+        { value: 'Diagram' },
+        {
+          attachments: [
+            { type: 'image', src: 'https://example.test/a.png', alt: 'Diagram' },
+            { type: 'image', src: 'https://example.test/b.png', alt: 'Other' },
+          ],
+        },
+      ), false, AgentClass.name + ': one matching alt text hid a mismatched attachment');
 
       assert.equal(agent._workflowPublishedResourcePayloadMatch(
         {
@@ -93034,6 +93052,18 @@ test('attachment verification matches specific attachment names without substrin
       { attachments: [{ type: 'image', src: 'https://pbs.twimg.com/media/chart.png' }] }
     );
     assert.equal(exactChartUrl, true, AgentClass.name + ': chart.png in URL should satisfy chart.png');
+
+    const exactChartWithExtra = agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'chart.png' },
+      {
+        attachments: [
+          { type: 'image', src: 'https://pbs.twimg.com/media/chart.png' },
+          { type: 'image', src: 'https://pbs.twimg.com/media/stale.png' },
+        ],
+      }
+    );
+    assert.equal(exactChartWithExtra, false,
+      AgentClass.name + ': one named attachment should reject extra media');
 
     const exactChartAlt = agent._workflowSocialPublishedAttachmentObserved(
       { value: 'chart.png' },
