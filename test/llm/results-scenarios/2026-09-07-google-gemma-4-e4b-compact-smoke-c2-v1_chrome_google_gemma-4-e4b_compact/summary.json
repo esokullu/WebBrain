@@ -1,0 +1,40 @@
+{
+  "runTag": "2026-09-07-google-gemma-4-e4b-compact-smoke-c2-v1",
+  "model": "google/gemma-4-e4b",
+  "base": "http://127.0.0.1:1234",
+  "browser": "chrome",
+  "tier": "compact",
+  "modeOverride": null,
+  "unprotected": false,
+  "chatTemplateCompat": "off",
+  "structuredToolsSent": true,
+  "freeze": null,
+  "scenarios": 2,
+  "skipped": 0,
+  "totalLatencyMs": 2802,
+  "byVerdict": {
+    "other": 2
+  },
+  "byCategory": {
+    "mode-boundary": {
+      "ideal": 0,
+      "ideal_name": 0,
+      "anti": 0,
+      "other": 1,
+      "no_tool": 0,
+      "empty": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    "loop-bad-url": {
+      "ideal": 0,
+      "ideal_name": 0,
+      "anti": 0,
+      "other": 1,
+      "no_tool": 0,
+      "empty": 0,
+      "error": 0,
+      "skipped": 0
+    }
+  }
+}

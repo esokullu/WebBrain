@@ -1,0 +1,30 @@
+{
+  "runTag": "2026-09-07-nanbeige4.2-3b-smoke",
+  "model": "nanbeige4.2-3b",
+  "base": "http://127.0.0.1:1234",
+  "browser": "chrome",
+  "tier": "full",
+  "modeOverride": null,
+  "unprotected": false,
+  "chatTemplateCompat": "off",
+  "structuredToolsSent": true,
+  "freeze": null,
+  "scenarios": 1,
+  "skipped": 0,
+  "totalLatencyMs": 180011,
+  "byVerdict": {
+    "error": 1
+  },
+  "byCategory": {
+    "loop-bad-url": {
+      "ideal": 0,
+      "ideal_name": 0,
+      "anti": 0,
+      "other": 0,
+      "no_tool": 0,
+      "empty": 0,
+      "error": 1,
+      "skipped": 0
+    }
+  }
+}

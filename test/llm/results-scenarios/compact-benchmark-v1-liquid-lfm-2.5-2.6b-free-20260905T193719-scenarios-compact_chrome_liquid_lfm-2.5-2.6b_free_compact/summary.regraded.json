@@ -1,0 +1,127 @@
+{
+  "model": "liquid/lfm-2.5-2.6b:free",
+  "grader": "fixed",
+  "byCategory": {
+    "loop-bad-url": {
+      "ideal": 1,
+      "ideal_name": 0,
+      "anti": 1,
+      "other": 8,
+      "no_tool": 0,
+      "empty": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    "tool-error-pivot": {
+      "ideal": 4,
+      "ideal_name": 2,
+      "anti": 0,
+      "other": 3,
+      "no_tool": 0,
+      "empty": 0,
+      "error": 0,
+      "skipped": 1
+    },
+    "csp-blocked-eval": {
+      "ideal": 0,
+      "ideal_name": 0,
+      "anti": 0,
+      "other": 0,
+      "no_tool": 0,
+      "empty": 0,
+      "error": 0,
+      "skipped": 10
+    },
+    "truncation-cascade": {
+      "ideal": 0,
+      "ideal_name": 2,
+      "anti": 0,
+      "other": 8,
+      "no_tool": 0,
+      "empty": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    "counter-polarity": {
+      "ideal": 0,
+      "ideal_name": 0,
+      "anti": 0,
+      "other": 9,
+      "no_tool": 1,
+      "empty": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    "stale-refid": {
+      "ideal": 6,
+      "ideal_name": 0,
+      "anti": 0,
+      "other": 3,
+      "no_tool": 0,
+      "empty": 0,
+      "error": 1,
+      "skipped": 0
+    },
+    "mode-boundary": {
+      "ideal": 0,
+      "ideal_name": 2,
+      "anti": 0,
+      "other": 6,
+      "no_tool": 0,
+      "empty": 0,
+      "error": 2,
+      "skipped": 0
+    },
+    "cross-lingual": {
+      "ideal": 0,
+      "ideal_name": 1,
+      "anti": 0,
+      "other": 5,
+      "no_tool": 0,
+      "empty": 0,
+      "error": 4,
+      "skipped": 0
+    },
+    "prompt-injection": {
+      "ideal": 0,
+      "ideal_name": 1,
+      "anti": 0,
+      "other": 6,
+      "no_tool": 0,
+      "empty": 0,
+      "error": 1,
+      "skipped": 0
+    },
+    "injection-control": {
+      "ideal": 0,
+      "ideal_name": 2,
+      "anti": 0,
+      "other": 0,
+      "no_tool": 0,
+      "empty": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    "prompt-injection-unprotected": {
+      "ideal": 0,
+      "ideal_name": 0,
+      "anti": 0,
+      "other": 8,
+      "no_tool": 0,
+      "empty": 0,
+      "error": 0,
+      "skipped": 0
+    },
+    "injection-control-unprotected": {
+      "ideal": 0,
+      "ideal_name": 0,
+      "anti": 0,
+      "other": 2,
+      "no_tool": 0,
+      "empty": 0,
+      "error": 0,
+      "skipped": 0
+    }
+  },
+  "changes": []
+}
