@@ -2782,8 +2782,24 @@ export class Agent extends LoopDetector {
 
   _parseWorkflowAttachmentRequirement(value) {
     const rawVal = (typeof value === 'object' && value !== null && 'value' in value) ? value.value : value;
-    const text = String(rawVal || '').trim().toLowerCase();
+    let text = String(rawVal || '').trim().toLowerCase();
     if (!text) return { isGeneric: true, expectedCount: 1, expectedImageCount: 0, expectedVideoCount: 0, expectedGifCount: 0, wantsImage: false, wantsVideo: false, wantsOrdinaryVideo: false, wantsGif: false, specificTargets: [], normalized: '' };
+    // Elliptical conjunction ("one PNG and one JPEG image") omits the first
+    // media noun. Restore it so each counted format parses as its own
+    // conjunctive clause; "or" choices keep sharing one noun and are handled
+    // by the format-qualifier grammar instead.
+    {
+      const ellipticalCount = '(?:\\d+|zero|one|two|three|four|five|six|seven|eight|nine|ten|a|an|single|both)';
+      text = text
+        .replace(
+          new RegExp(`(?<![${SOCIAL_WORD_EDGE}])(${ellipticalCount})\\s+(${IMAGE_ATTACHMENT_FORMAT})\\s+and\\s+(${ellipticalCount})\\s+(${IMAGE_ATTACHMENT_FORMAT})\\s+(images?|photos?|pictures?|pics?)(?![${SOCIAL_WORD_EDGE}])`, 'giu'),
+          '$1 $2 $5 and $3 $4 $5',
+        )
+        .replace(
+          new RegExp(`(?<![${SOCIAL_WORD_EDGE}])(${ellipticalCount})\\s+(${VIDEO_ATTACHMENT_FORMAT})\\s+and\\s+(${ellipticalCount})\\s+(${VIDEO_ATTACHMENT_FORMAT})\\s+(videos?|clips?|recordings?)(?![${SOCIAL_WORD_EDGE}])`, 'giu'),
+          '$1 $2 $5 and $3 $4 $5',
+        );
+    }
 
     if (this._isNegativeAttachmentRequirement(text)) {
       return {
@@ -15955,8 +15971,8 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     // Only list-shaped glue may sit between the two platform mentions. An
     // unrelated branch such as "X or report the blocker; also post on
     // Bluesky" contains `or`, but it does not coordinate the destinations.
-    const directAlternativeBridge = /^\s*(?:(?:page|account|profile)\s*)?(?:,\s*)?(?:(?:or|otherwise|failing\s+that|oder|ou|o|oppure|veya|ya\s+da|\u0438\u043b\u0438|\u043b\u0438\u0431\u043e)(?![\p{L}\p{N}_])|(?:\u6216\u8005|\u6216|\u307e\u305f\u306f|\u305d\u308c\u3068\u3082|\uB610\uB294|\uD639\uC740))\s*(?:(?:alternatively|otherwise|else)\s+)?(?:,\s*if\s+(?:unavailable|not\s+available|available|needed|necessary|possible|unable|unsuccessful|failing|failed|fails?|failure)\b[^,;]*,?\s*)?(?:(?:post|publish|share|tweet|send|reply|respond)\s+(?:(?:this|that|it|the\s+following)\s+)?)?(?:(?:also\s+)?(?:on|onto|to|via|in|at|en|sur|sobre|\u00e0|au|auf|su|em|na|no|nos|nas|para|\u0432|\u043d\u0430)\s+)?(?:the\s+)?$/iu;
-    const explicitAlternativeBridge = /^\s*(?:(?:page|account|profile)\s*)?(?:,\s*)?(?:(?:alternatively|otherwise|failing\s+that)(?:\s+(?:on|onto|to|via|in|at))?|as\s+an\s+alternative\s+to)\s+(?:the\s+)?$/iu;
+    const directAlternativeBridge = /^\s*(?:(?:page|account|profile)\s*)?(?:,\s*)?(?:(?:or|otherwise|failing\s+that|oder|ou|o|oppure|veya|ya\s+da|\u0438\u043b\u0438|\u043b\u0438\u0431\u043e)(?![\p{L}\p{N}_])|(?:\u6216\u8005|\u6216|\u307e\u305f\u306f|\u305d\u308c\u3068\u3082|\uB610\uB294|\uD639\uC740))\s*(?:,\s*)?(?:(?:alternatively|otherwise|else)\s+)?(?:,\s*if\s+(?:unavailable|not\s+available|available|needed|necessary|possible|unable|unsuccessful|failing|failed|fails?|failure)\b[^,;]*,?\s*)?(?:(?:post|publish|share|tweet|send|reply|respond)\s+(?:(?:this|that|it|the\s+following)\s+)?)?(?:(?:also\s+)?(?:on|onto|to|via|in|at|en|sur|sobre|\u00e0|au|auf|su|em|na|no|nos|nas|para|\u0432|\u043d\u0430)\s+)?(?:the\s+)?$/iu;
+    const explicitAlternativeBridge = /^\s*(?:(?:page|account|profile)\s*)?(?:,\s*)?(?:(?:alternatively|otherwise|failing\s+that)(?:[\s,]+(?:on|onto|to|via|in|at))?|as\s+an\s+alternative\s+to)\s+(?:the\s+)?$/iu;
     const oneOfAlternativeLead = /(?<![\p{L}\p{N}_])one\s+of\s+(?:the\s+)?$/iu;
     const oneOfAlternativeBridge = /^\s*(?:,\s*)?(?:and|or)\s+(?:the\s+)?$/iu;
     const platformPattern = /(?:https?:\/\/(?:www\.)?(?:x\.com|twitter\.com|bsky\.app)(?:[/?#][^\s<>"'`\u3002\u3001\uff0c\uff1b\uff1a\uff01\uff1f\u2026\u2025]*|(?=[\s<>"'`\u3002\u3001\uff0c\uff1b\uff1a\uff01\uff1f\u2026\u2025,;!?]|$))|(?<![\p{L}\p{N}_])(?:x|twitter|bluesky|bsky\.app)(?![\p{L}\p{N}_]))/giu;
@@ -24261,6 +24277,21 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         ? /(?:https?:\/\/(?:www\.)?(?:x\.com|twitter\.com)(?:[/?#]|$)|(?<![\p{L}\p{N}_])(?:x|twitter)(?![\p{L}\p{N}_]))/iu
         : /(?:https?:\/\/(?:www\.)?bsky\.app(?:[/?#]|$)|(?<![\p{L}\p{N}_])(?:bluesky|bsky\.app)(?![\p{L}\p{N}_]))/iu;
       const anyPlatformPattern = /(?:https?:\/\/(?:www\.)?(?:x\.com|twitter\.com|bsky\.app)(?:[/?#]|$)|(?<![\p{L}\p{N}_])(?:x|twitter|bluesky|bsky\.app)(?![\p{L}\p{N}_]))/iu;
+      // A body continuation ends only at a new publication command: a publish
+      // verb governing a platform through a destination preposition. Bare
+      // verbs ("We publish weekly.") and incidental mentions ("research
+      // about Bluesky") are body prose, not a new destination.
+      const destinationPrepPattern = '(?:on|onto|to|via|in|at|en|sur|sobre|à|au|auf|su|em|na|no|nos|nas|para|в|на)';
+      const startsNewPublication = (clauseMasked) => {
+        const text = String(clauseMasked || '');
+        if (!SOCIAL_PUBLISH_VERBS.test(text)) return false;
+        for (const platformMatch of text.matchAll(new RegExp(anyPlatformPattern.source, 'giu'))) {
+          const before = text.slice(0, platformMatch.index || 0);
+          const prep = before.match(new RegExp(`(?:${destinationPrepPattern})\\s+(?:the\\s+)?$`, 'iu'));
+          if (prep && SOCIAL_PUBLISH_VERBS.test(before.slice(0, prep.index))) return true;
+        }
+        return false;
+      };
       for (const rawCandidate of rawCandidates) {
         const clauses = this._socialPublicationClauses(rawCandidate);
         let carriedPublishVerb = 'post';
@@ -24300,12 +24331,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
                 const bodyClause = clauses[bodyIndex];
                 const bodyDelim = bodyClause.delim || '';
                 if (bodyDelim === '') {
-                  const bodyMasked = bodyClause.maskedText || bodyClause.text || '';
-                  // Only a new publication command ends the body: a publish
-                  // verb governing a platform. Bare verbs ("We publish
-                  // weekly.") are body prose, not a new destination.
-                  if (SOCIAL_PUBLISH_VERBS.test(bodyMasked)
-                      && anyPlatformPattern.test(bodyMasked)) break;
+                  if (startsNewPublication(bodyClause.maskedText || bodyClause.text || '')) break;
                   scoped += `\n${bodyClause.text}`;
                   continue;
                 }
@@ -24315,7 +24341,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
                 if (SOCIAL_COORDINATING_DELIMITER.test(bodyDelim)
                     && anyPlatformPattern.test(bodyMasked)
                     && (SOCIAL_PUBLISH_VERBS.test(bodyMasked) || hasQuotedPayload(bodyClause.text))) break;
-                if (SOCIAL_PUBLISH_VERBS.test(bodyMasked) && anyPlatformPattern.test(bodyMasked)) break;
+                if (startsNewPublication(bodyMasked)) break;
                 if (/^[.!?;:,、，。；：]$/.test(bodyDelim)) scoped += `${bodyDelim}${bodyClause.text}`;
                 else scoped += ` ${bodyDelim}${bodyClause.text}`;
               }

@@ -91176,6 +91176,8 @@ test('social destination rebinding refreshes platform-specific payload and uploa
       AgentClass.name + ': comma-delimited body text after the colon was lost');
     assert.equal(agent._extractWorkflowTaskBody('Post on X: Hello. We publish weekly.', '', 'twitter'), 'Hello. We publish weekly.',
       AgentClass.name + ': body sentence with a bare publish verb was cut off');
+    assert.equal(agent._extractWorkflowTaskBody('Post on X: Hello. We publish weekly research about Bluesky.', '', 'twitter'), 'Hello. We publish weekly research about Bluesky.',
+      AgentClass.name + ': incidental platform mention ended the post body');
     assert.equal(guard.workflowMetadataRequirementsResolved, true);
     assert.deepEqual(guard.workflowSocialUploadEvidence, [],
       AgentClass.name + ': X upload provenance leaked into the Bluesky binding');
@@ -91363,6 +91365,10 @@ test('alternative social destinations require one verified publication, not ever
       ...guard,
       taskText: 'Post on X, failing that Bluesky.',
     }), true, AgentClass.name + ': failing-that fallback turned alternative destinations into two mandatory posts');
+    assert.equal(agent._socialPublishTargetsAreAlternatives({
+      ...guard,
+      taskText: 'Post on X, failing that, on Bluesky.',
+    }), true, AgentClass.name + ': punctuated failing-that fallback required a second public post');
     assert.deepEqual(agent._missingSocialPublishTargets({ ...guard, taskText: 'Post on Bluesky' }), ['bluesky'],
       AgentClass.name + ': a run bound to X reported no missing destination for a Bluesky-only request');
     assert.deepEqual(agent._missingSocialPublishTargets({ ...guard, taskText: 'Post on X' }), [],
@@ -93188,6 +93194,20 @@ test('upper-bound attachment qualifiers verify as maximum counts', () => {
     assert.equal(agent._workflowSocialPublishedAttachmentObserved(
       { value: 'one PNG or one JPEG image' }, { attachments: [image(1), { type: 'image', src: 'https://cdn.example/a.jpg' }] }), false,
       AgentClass.name + ': two images satisfied a single-image format choice');
+    const ellipticalAndFormats = agent._parseWorkflowAttachmentRequirement('one PNG and one JPEG image');
+    assert.equal(ellipticalAndFormats.isGeneric, true,
+      AgentClass.name + ': an elliptical and-format conjunction was parsed as filenames');
+    assert.deepEqual(ellipticalAndFormats.imageFormatCounts, [
+      { format: 'png', count: 1 },
+      { format: 'jpeg', count: 1 },
+    ], AgentClass.name + ': elliptical and-format counts were not distributed');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one PNG and one JPEG image' },
+      { attachments: [image(1), { type: 'image', src: 'https://cdn.example/a.jpg' }] },
+    ), true, AgentClass.name + ': one PNG plus one JPEG did not satisfy the elliptical conjunction');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one PNG and one JPEG image' }, { attachments: [image(1)] },
+    ), false, AgentClass.name + ': one PNG satisfied a two-format elliptical conjunction');
     for (const [attachments, expected, message] of [
       [[{ type: 'image', src: 'https://cdn.example/a.jpg' }], true, 'the required JPEG was rejected by a separate PNG prohibition'],
       [[{ type: 'image', src: 'https://cdn.example/a.webp' }], false, 'an unrequested WebP satisfied a required JPEG'],
