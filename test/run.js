@@ -91023,6 +91023,8 @@ test('social publication workflow follows the live X or Bluesky destination and 
         'coordinated destinations on X and Bluesky should both be targeted'],
       ['Post on X plus Bluesky', ['twitter', 'bluesky'],
         'coordinated destinations on X plus Bluesky should both be targeted'],
+      ['Post on X: hello; and on Bluesky: goodbye', ['twitter', 'bluesky'],
+        'per-destination bodies should still discover both platforms'],
       ['Post on X along with Bluesky', ['twitter', 'bluesky'],
         'coordinated destinations on X along with Bluesky should both be targeted'],
       ['Post on X, then on Bluesky', ['twitter', 'bluesky'],
@@ -91183,6 +91185,10 @@ test('social destination rebinding refreshes platform-specific payload and uploa
       AgentClass.name + ': body sentence with a bare publish verb was cut off');
     assert.equal(agent._extractWorkflowTaskBody('Post on X: Hello. We publish weekly research about Bluesky.', '', 'twitter'), 'Hello. We publish weekly research about Bluesky.',
       AgentClass.name + ': incidental platform mention ended the post body');
+    assert.equal(agent._extractWorkflowTaskBody('Post on X: hello; and on Bluesky: goodbye', '', 'twitter'), 'hello',
+      AgentClass.name + ': a following destination body contaminated the X body');
+    assert.equal(agent._extractWorkflowTaskBody('Post on X: hello; and on Bluesky: goodbye', '', 'bluesky'), 'goodbye',
+      AgentClass.name + ': a coordinated per-destination body was not recovered');
     assert.equal(guard.workflowMetadataRequirementsResolved, true);
     assert.deepEqual(guard.workflowSocialUploadEvidence, [],
       AgentClass.name + ': X upload provenance leaked into the Bluesky binding');
@@ -91374,6 +91380,10 @@ test('alternative social destinations require one verified publication, not ever
       ...guard,
       taskText: 'Post on X, failing that, on Bluesky.',
     }), true, AgentClass.name + ': punctuated failing-that fallback required a second public post');
+    assert.equal(agent._socialPublishTargetsAreAlternatives({
+      ...guard,
+      taskText: 'Post on X, or alternatively, Bluesky.',
+    }), true, AgentClass.name + ': punctuated alternatively bridge required a second public post');
     assert.deepEqual(agent._missingSocialPublishTargets({ ...guard, taskText: 'Post on Bluesky' }), ['bluesky'],
       AgentClass.name + ': a run bound to X reported no missing destination for a Bluesky-only request');
     assert.deepEqual(agent._missingSocialPublishTargets({ ...guard, taskText: 'Post on X' }), [],

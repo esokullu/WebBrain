@@ -15920,12 +15920,22 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           for (let nextIdx = clauseIdx + 1; nextIdx < clauses.length; nextIdx++) {
             const nextClause = clauses[nextIdx];
             if (nextClause.isNegated) break;
+            const nextTargetText = nextClause.maskedText || nextClause.text;
+            // Step over a destination's scoped body ("Post on X: hello; and on
+            // Bluesky"): colon/semicolon fragments without their own publish
+            // verb, read verb, or platform carry the governing publish intent
+            // forward to the next coordinated destination.
+            const nextDelim = (nextClause.delim || '').trim();
+            const isScopedBodyFragment = (nextDelim === ':' || nextDelim === ';')
+              && !SOCIAL_PUBLISH_VERBS.test(nextTargetText)
+              && !SOCIAL_READ_VERBS.test(nextTargetText)
+              && ![...nextTargetText.matchAll(coordPlatformPattern)].length;
             const isCoord = SOCIAL_COORDINATING_DELIMITER.test(nextClause.delim || '')
               || SOCIAL_SEQUENTIAL_DELIMITER.test(nextClause.delim || '')
               || (nextClause.delim || '').trim() === ','
-              || (nextClause.delim || '').trim() === '、';
+              || (nextClause.delim || '').trim() === '、'
+              || isScopedBodyFragment;
             if (!isCoord) break;
-            const nextTargetText = nextClause.maskedText || nextClause.text;
             if (SOCIAL_READ_VERBS.test(nextTargetText)) break;
             if (SOCIAL_PUBLISH_VERBS.test(nextTargetText)) break;
             for (const matchNext of nextTargetText.matchAll(coordPlatformPattern)) {
@@ -15982,8 +15992,8 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     // Only list-shaped glue may sit between the two platform mentions. An
     // unrelated branch such as "X or report the blocker; also post on
     // Bluesky" contains `or`, but it does not coordinate the destinations.
-    const directAlternativeBridge = /^\s*(?:(?:page|account|profile)\s*)?(?:,\s*)?(?:(?:or|otherwise|failing\s+that|oder|ou|o|oppure|veya|ya\s+da|\u0438\u043b\u0438|\u043b\u0438\u0431\u043e)(?![\p{L}\p{N}_])|(?:\u6216\u8005|\u6216|\u307e\u305f\u306f|\u305d\u308c\u3068\u3082|\uB610\uB294|\uD639\uC740))\s*(?:,\s*)?(?:(?:alternatively|otherwise|else)\s+)?(?:,\s*if\s+(?:unavailable|not\s+available|available|needed|necessary|possible|unable|unsuccessful|failing|failed|fails?|failure)\b[^,;]*,?\s*)?(?:(?:post|publish|share|tweet|send|reply|respond)\s+(?:(?:this|that|it|the\s+following)\s+)?)?(?:(?:also\s+)?(?:on|onto|to|via|in|at|en|sur|sobre|\u00e0|au|auf|su|em|na|no|nos|nas|para|\u0432|\u043d\u0430)\s+)?(?:the\s+)?$/iu;
-    const explicitAlternativeBridge = /^\s*(?:(?:page|account|profile)\s*)?(?:,\s*)?(?:(?:alternatively|otherwise|failing\s+that)(?:[\s,]+(?:on|onto|to|via|in|at))?|as\s+an\s+alternative\s+to)\s+(?:the\s+)?$/iu;
+    const directAlternativeBridge = /^\s*(?:(?:page|account|profile)\s*)?(?:,\s*)?(?:(?:or|otherwise|failing\s+that|oder|ou|o|oppure|veya|ya\s+da|\u0438\u043b\u0438|\u043b\u0438\u0431\u043e)(?![\p{L}\p{N}_])|(?:\u6216\u8005|\u6216|\u307e\u305f\u306f|\u305d\u308c\u3068\u3082|\uB610\uB294|\uD639\uC740))\s*(?:,\s*)?(?:(?:alternatively|otherwise|else)(?:\s*,\s*|\s+))?(?:,\s*if\s+(?:unavailable|not\s+available|available|needed|necessary|possible|unable|unsuccessful|failing|failed|fails?|failure)\b[^,;]*,?\s*)?(?:(?:post|publish|share|tweet|send|reply|respond)\s+(?:(?:this|that|it|the\s+following)\s+)?)?(?:(?:also\s+)?(?:on|onto|to|via|in|at|en|sur|sobre|\u00e0|au|auf|su|em|na|no|nos|nas|para|\u0432|\u043d\u0430)\s+)?(?:the\s+)?$/iu;
+    const explicitAlternativeBridge = /^\s*(?:(?:page|account|profile)\s*)?(?:,\s*)?(?:(?:alternatively|otherwise|failing\s+that)(?:\s*,\s*)?(?:[\s,]+(?:on|onto|to|via|in|at))?|as\s+an\s+alternative\s+to)\s*(?:the\s+)?$/iu;
     const oneOfAlternativeLead = /(?<![\p{L}\p{N}_])one\s+of\s+(?:the\s+)?$/iu;
     const oneOfAlternativeBridge = /^\s*(?:,\s*)?(?:and|or)\s+(?:the\s+)?$/iu;
     const platformPattern = /(?:https?:\/\/(?:www\.)?(?:x\.com|twitter\.com|bsky\.app)(?:[/?#][^\s<>"'`\u3002\u3001\uff0c\uff1b\uff1a\uff01\uff1f\u2026\u2025]*|(?=[\s<>"'`\u3002\u3001\uff0c\uff1b\uff1a\uff01\uff1f\u2026\u2025,;!?]|$))|(?<![\p{L}\p{N}_])(?:x|twitter|bluesky|bsky\.app)(?![\p{L}\p{N}_]))/giu;
@@ -24341,17 +24351,27 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
               for (let bodyIndex = nextIndex + 1; bodyIndex < clauses.length; bodyIndex++) {
                 const bodyClause = clauses[bodyIndex];
                 const bodyDelim = bodyClause.delim || '';
+                // Adjacent delimiters ("hello; and on Bluesky") leave an empty
+                // interior fragment whose glue belongs to neither body; skip
+                // it. A terminal fragment's punctuation ("weekly.") closes
+                // the body itself, so it is preserved.
+                if (!bodyClause.text.trim()) {
+                  if (bodyIndex === clauses.length - 1 && /^[.!?;:,、，。；：]$/.test(bodyDelim)) scoped += bodyDelim;
+                  continue;
+                }
                 if (bodyDelim === '') {
                   if (startsNewPublication(bodyClause.maskedText || bodyClause.text || '')) break;
                   scoped += `\n${bodyClause.text}`;
                   continue;
                 }
                 const bodyMasked = bodyClause.maskedText || bodyClause.text || '';
-                // A following destination with its own payload is a distinct
-                // publication clause, not part of the current platform's body.
+                // Past the colon the body belongs to this destination alone:
+                // a following coordinated destination ("and on Bluesky:
+                // goodbye") starts its own publication with its own body, so
+                // it is never appended. Shared destinations are gathered
+                // before the colon instead.
                 if (SOCIAL_COORDINATING_DELIMITER.test(bodyDelim)
-                    && anyPlatformPattern.test(bodyMasked)
-                    && (SOCIAL_PUBLISH_VERBS.test(bodyMasked) || hasQuotedPayload(bodyClause.text))) break;
+                    && anyPlatformPattern.test(bodyMasked)) break;
                 if (startsNewPublication(bodyMasked)) break;
                 if (/^[.!?;:,、，。；：]$/.test(bodyDelim)) scoped += `${bodyDelim}${bodyClause.text}`;
                 else scoped += ` ${bodyDelim}${bodyClause.text}`;
