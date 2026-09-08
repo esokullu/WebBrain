@@ -90793,6 +90793,10 @@ test('social publication workflow follows the live X or Bluesky destination and 
         'post-verb destination negation selected X instead of contrastive Bluesky'],
       ['Post on X without posting on Bluesky', ['twitter'],
         'a nested negated publish clause added its forbidden Bluesky destination'],
+      ['Post this on Bluesky with no X links', ['bluesky'],
+        'a forbidden X link qualifier added X as a publish destination'],
+      ['Post this on Bluesky with X links', ['bluesky'],
+        'an X link content qualifier added X as a publish destination'],
       ['Don’t post on X or Bluesky', [],
         'a smart-apostrophe negative command adopted social destinations'],
       ['Can’t post on X', [],
@@ -91221,6 +91225,14 @@ test('alternative social destinations require one verified publication, not ever
       ...guard,
       taskText: 'Post on X or publish on Bluesky.',
     }), true, AgentClass.name + ': directly repeated publish verb broke a destination alternative');
+    assert.equal(agent._socialPublishTargetsAreAlternatives({
+      ...guard,
+      taskText: 'Post this on X or post this on Bluesky.',
+    }), true, AgentClass.name + ': repeated publish object broke a destination alternative');
+    assert.equal(agent._socialPublishTargetsAreAlternatives({
+      ...guard,
+      taskText: 'Post on X or post this update on Bluesky.',
+    }), false, AgentClass.name + ': a distinct repeated payload was weakened to a destination alternative');
   }
 });
 
@@ -92941,6 +92953,32 @@ test('upper-bound attachment qualifiers verify as maximum counts', () => {
     assert.equal(agent._workflowSocialPublishedAttachmentObserved(
       { value: 'between one and two images or one video' }, { attachments: [] }), false,
       AgentClass.name + ': empty media satisfied a positive bounded alternative');
+    const twoBoundedTypes = { value: 'between one and two images and between one and two videos' };
+    const parsedTwoBoundedTypes = agent._parseWorkflowAttachmentRequirement(twoBoundedTypes);
+    assert.deepEqual(parsedTwoBoundedTypes.boundedCountRanges, [
+      { minimumCount: 1, maximumCount: 2, kind: 'image' },
+      { minimumCount: 1, maximumCount: 2, kind: 'video' },
+    ], AgentClass.name + ': multiple typed bounded ranges were not preserved');
+    for (const attachments of [
+      [image(1), video(1)],
+      [image(1), image(2), video(1)],
+      [image(1), video(1), video(2)],
+      [image(1), image(2), video(1), video(2)],
+    ]) {
+      assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+        twoBoundedTypes, { attachments }), true,
+      AgentClass.name + ': a valid combination of two bounded media types was rejected');
+    }
+    for (const attachments of [
+      [video(1)],
+      [image(1)],
+      [image(1), image(2), image(3), video(1)],
+      [image(1), video(1), video(2), video(3)],
+    ]) {
+      assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+        twoBoundedTypes, { attachments }), false,
+      AgentClass.name + ': an out-of-range bounded media type was accepted');
+    }
     assert.equal(agent._workflowSocialPublishedAttachmentObserved(
       { value: 'up to two GIFs' }, { attachments: [] }), true,
       AgentClass.name + ': zero GIFs should satisfy a standalone GIF maximum');

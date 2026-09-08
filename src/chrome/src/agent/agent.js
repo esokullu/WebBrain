@@ -456,6 +456,13 @@ const TOPIC_NOUN_AFTER_PLATFORM = new RegExp(
   'iu',
 );
 
+const CONTENT_QUALIFIER_BEFORE_PLATFORM = /(?:(?:with|containing|including|include|using|use)\s+(?:(?:no|any|only)\s+)?|(?:no|without|excluding|exclude|omit(?:ting)?|avoid(?:ing)?)\s+(?:any\s+)?)$/iu;
+const CONTENT_QUALIFIER_AFTER_PLATFORM = /^\s+(?:links?|urls?|hashtags?|tags?|mentions?|references?|redirects?|handles?|accounts?|profiles?|content|posts?)\b/iu;
+const platformMentionIsContentQualifier = (before, after) => (
+  CONTENT_QUALIFIER_BEFORE_PLATFORM.test(String(before || ''))
+  && CONTENT_QUALIFIER_AFTER_PLATFORM.test(String(after || ''))
+);
+
 const IMAGE_NEGATION_REGEX = new RegExp(
   `(?<![${SOCIAL_WORD_EDGE}])(?:no|not|without|without\\s+any|0|zero|none|sin|sans|sem|senza|ohne|kein|keine|keinen|aucun|aucune|ningun|ningún|ninguna|nenhum|nenhuma|nessun|nessuno|nessuna|nie|без|нет)\\s+(?:any\\s+)?(?:images?|photos?|pictures?|pics?|fotos?|bilder?|imagen(?:es)?|imágenes|imagem|imagens|pièces?\\s+jointes?|изображени[яй]|фото(?:графий)?|resim|fotoğraf)(?![${SOCIAL_WORD_EDGE}])`
   + `|(?:images?|photos?|pictures?|pics?|fotos?|bilder?|imagen(?:es)?|imágenes|imagem|imagens)\\s*:\\s*(?:none|no|0|zero|false)`
@@ -3143,21 +3150,28 @@ export class Agent extends LoopDetector {
     // match so the bounds can be applied to the requested media subtype rather
     // than accidentally constraining every attachment in a mixed requirement.
     const rangeCountToken = '(?:\\d+|zero|one|two|three|four|five|six|seven|eight|nine|ten|a|an)';
-    const boundedCountRangeMatch = text.match(new RegExp(
+    const boundedCountRangeRegex = new RegExp(
       `\\b(?:between\\s+(${rangeCountToken})\\s+and\\s+(${rangeCountToken})|from\\s+(${rangeCountToken})\\s+to\\s+(${rangeCountToken}))`
       + '\\s+(images?|photos?|pictures?|pics?|videos?|clips?|recordings?|gifs?|attachments?|files?|media|uploads?|items?|assets?)\\b',
-      'iu',
-    ));
-    const rangeMinimumCount = parseCountWord(boundedCountRangeMatch?.[1] || boundedCountRangeMatch?.[3]);
-    const rangeMaximumCount = parseCountWord(boundedCountRangeMatch?.[2] || boundedCountRangeMatch?.[4]);
-    const hasBoundedCountRange = Boolean(
-      boundedCountRangeMatch && rangeMaximumCount >= rangeMinimumCount,
+      'giu',
     );
-    const boundedRangeNoun = hasBoundedCountRange ? boundedCountRangeMatch[5] : '';
-    const boundedRangeKind = RAW_GIF_NOUN_REGEX.test(boundedRangeNoun) ? 'gif'
-      : RAW_IMAGE_NOUN_REGEX.test(boundedRangeNoun) ? 'image'
-        : RAW_VIDEO_NOUN_REGEX.test(boundedRangeNoun) ? 'video'
-          : 'generic';
+    const boundedCountRanges = [...text.matchAll(boundedCountRangeRegex)]
+      .map(match => {
+        const minimumCount = parseCountWord(match[1] || match[3]);
+        const maximumCount = parseCountWord(match[2] || match[4]);
+        const noun = match[5] || '';
+        const kind = RAW_GIF_NOUN_REGEX.test(noun) ? 'gif'
+          : RAW_IMAGE_NOUN_REGEX.test(noun) ? 'image'
+            : RAW_VIDEO_NOUN_REGEX.test(noun) ? 'video'
+              : 'generic';
+        return { minimumCount, maximumCount, kind };
+      })
+      .filter(range => range.maximumCount >= range.minimumCount);
+    const firstBoundedCountRange = boundedCountRanges[0] || null;
+    const rangeMinimumCount = firstBoundedCountRange?.minimumCount || 0;
+    const rangeMaximumCount = firstBoundedCountRange?.maximumCount || 0;
+    const hasBoundedCountRange = boundedCountRanges.length > 0;
+    const boundedRangeKind = firstBoundedCountRange?.kind || 'generic';
 
     // A minimum- or maximum-count qualifier says how many attachments are
     // wanted, not which file, so both the generic-media test and the count
@@ -3203,10 +3217,10 @@ export class Agent extends LoopDetector {
       else if (RAW_VIDEO_NOUN_REGEX.test(noun)) minScopedVideo = true;
       else minScopedGeneric = true;
     }
-    if (hasBoundedCountRange) {
-      if (boundedRangeKind === 'image') minScopedImage = true;
-      else if (boundedRangeKind === 'video') minScopedVideo = true;
-      else if (boundedRangeKind === 'gif') minScopedGif = true;
+    for (const range of boundedCountRanges) {
+      if (range.kind === 'image') minScopedImage = true;
+      else if (range.kind === 'video') minScopedVideo = true;
+      else if (range.kind === 'gif') minScopedGif = true;
       else minScopedGeneric = true;
     }
     const isMinimumCount = isGeneric && hasMinCountQualifier;
@@ -3231,10 +3245,10 @@ export class Agent extends LoopDetector {
         if (!segmentImage && !segmentVideo && !segmentGif) maxScopedGeneric = true;
       }
     }
-    if (hasBoundedCountRange) {
-      if (boundedRangeKind === 'image') maxScopedImage = true;
-      else if (boundedRangeKind === 'video') maxScopedVideo = true;
-      else if (boundedRangeKind === 'gif') maxScopedGif = true;
+    for (const range of boundedCountRanges) {
+      if (range.kind === 'image') maxScopedImage = true;
+      else if (range.kind === 'video') maxScopedVideo = true;
+      else if (range.kind === 'gif') maxScopedGif = true;
       else maxScopedGeneric = true;
     }
     const isMaximumCount = isGeneric && hasMaxCountQualifier;
@@ -3530,6 +3544,7 @@ export class Agent extends LoopDetector {
       isVideoMaximum,
       isGifMaximum,
       hasBoundedCountRange,
+      boundedCountRanges,
       minimumCount: hasBoundedCountRange ? rangeMinimumCount : 0,
       maximumCount: hasBoundedCountRange ? rangeMaximumCount : 0,
       boundedRangeKind,
@@ -3719,11 +3734,20 @@ export class Agent extends LoopDetector {
     const videoAlternativeCounts = parsed.videoAlternativeCounts || [];
     const gifAlternativeCounts = parsed.gifAlternativeCounts || [];
     if (parsed.hasBoundedCountRange && !parsed.isAlternative) {
-      const boundedCount = parsed.boundedRangeKind === 'image' ? imageCount
-        : parsed.boundedRangeKind === 'video' ? ordinaryVideoCount
-          : parsed.boundedRangeKind === 'gif' ? gifCount
-            : rawAttachments.length;
-      if (boundedCount < parsed.minimumCount || boundedCount > parsed.maximumCount) return false;
+      const boundedCountRanges = parsed.boundedCountRanges?.length
+        ? parsed.boundedCountRanges
+        : [{
+          kind: parsed.boundedRangeKind,
+          minimumCount: parsed.minimumCount,
+          maximumCount: parsed.maximumCount,
+        }];
+      for (const range of boundedCountRanges) {
+        const boundedCount = range.kind === 'image' ? imageCount
+          : range.kind === 'video' ? ordinaryVideoCount
+            : range.kind === 'gif' ? gifCount
+              : rawAttachments.length;
+        if (boundedCount < range.minimumCount || boundedCount > range.maximumCount) return false;
+      }
     }
     const gifIsAlternativeToAnotherType = parsed.isAlternative
       && (parsed.wantsImage || parsed.wantsOrdinaryVideo);
@@ -17349,7 +17373,8 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
             const afterPlat = targetText.slice(contrastiveMatch.index + contrastiveMatch[0].length);
             if (!isPlaceholderBareXMatch(contrastiveMatch[0], afterPlat)
                 && !SOURCE_MODIFIER_BEFORE_PLATFORM.test(beforePlat)
-                && !NON_SOCIAL_DESTINATION_AFTER_PLATFORM.test(afterPlat)) return true;
+                && !NON_SOCIAL_DESTINATION_AFTER_PLATFORM.test(afterPlat)
+                && !platformMentionIsContentQualifier(beforePlat, afterPlat)) return true;
           }
         }
         for (const verb of targetText.matchAll(verbPattern)) {
@@ -17379,6 +17404,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
             if (isPlaceholderBareXMatch(matchAfter[0], afterPlat)) continue;
             const isSourceOnly = SOURCE_MODIFIER_BEFORE_PLATFORM.test(beforePlat)
               || NON_SOCIAL_DESTINATION_AFTER_PLATFORM.test(afterPlat)
+              || platformMentionIsContentQualifier(beforePlat, afterPlat)
               || (NON_SOCIAL_DESTINATION_GOVERNING_AFTER_VERB.test(beforePlat)
                   && !CONTENT_LINK_PHRASE.test(beforePlat)
                   && !/(?:and|und|et|e|y|ve|и|oder|or|as\s+well\s+as)\s+$/i.test(beforePlat))
@@ -17401,6 +17427,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
               && !CONTENT_LINK_PHRASE.test(afterVerb);
             const isSourceOnly = SOURCE_MODIFIER_BEFORE_PLATFORM.test(beforePlat)
               || NON_SOCIAL_DESTINATION_AFTER_PLATFORM.test(afterPlat)
+              || platformMentionIsContentQualifier(beforePlat, afterPlat)
               || hasCompeteInAfterVerb
               || (NON_SOCIAL_DESTINATION_GOVERNING_AFTER_VERB.test(beforePlat)
                   && !CONTENT_LINK_PHRASE.test(beforePlat)
@@ -17429,6 +17456,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
               if (isPlaceholderBareXMatch(matchPrev[0], afterPlat)) continue;
               const isSourceOnly = SOURCE_MODIFIER_BEFORE_PLATFORM.test(beforePlat)
                 || NON_SOCIAL_DESTINATION_AFTER_PLATFORM.test(afterPlat)
+                || platformMentionIsContentQualifier(beforePlat, afterPlat)
                 || (NON_SOCIAL_DESTINATION_GOVERNING_AFTER_VERB.test(beforePlat)
                     && !CONTENT_LINK_PHRASE.test(beforePlat)
                     && !/(?:and|und|et|e|y|ve|и|oder|or|as\s+well\s+as)\s+$/i.test(beforePlat))
@@ -17466,6 +17494,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
               if (isPlaceholderBareXMatch(matchNext[0], afterPlat)) continue;
               const isSourceOnly = SOURCE_MODIFIER_BEFORE_PLATFORM.test(beforePlat)
                 || NON_SOCIAL_DESTINATION_AFTER_PLATFORM.test(afterPlat)
+                || platformMentionIsContentQualifier(beforePlat, afterPlat)
                 || (NON_SOCIAL_DESTINATION_GOVERNING_AFTER_VERB.test(beforePlat)
                     && !CONTENT_LINK_PHRASE.test(beforePlat)
                     && !/(?:and|und|et|e|y|ve|и|oder|or|as\s+well\s+as)\s+$/i.test(beforePlat))
@@ -17507,7 +17536,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     // Only list-shaped glue may sit between the two platform mentions. An
     // unrelated branch such as "X or report the blocker; also post on
     // Bluesky" contains `or`, but it does not coordinate the destinations.
-    const directAlternativeBridge = /^\s*(?:(?:page|account|profile)\s*)?(?:,\s*)?(?:(?:or|oder|ou|o|oppure|veya|ya\s+da|\u0438\u043b\u0438|\u043b\u0438\u0431\u043e)(?![\p{L}\p{N}_])|(?:\u6216\u8005|\u6216|\u307e\u305f\u306f|\u305d\u308c\u3068\u3082|\uB610\uB294|\uD639\uC740))\s*(?:(?:post|publish|share|tweet|send|reply|respond)\s+)?(?:(?:also\s+)?(?:on|onto|to|via|in|at|en|sur|sobre|\u00e0|au|auf|su|em|na|no|nos|nas|para|\u0432|\u043d\u0430)\s+)?(?:the\s+)?$/iu;
+    const directAlternativeBridge = /^\s*(?:(?:page|account|profile)\s*)?(?:,\s*)?(?:(?:or|oder|ou|o|oppure|veya|ya\s+da|\u0438\u043b\u0438|\u043b\u0438\u0431\u043e)(?![\p{L}\p{N}_])|(?:\u6216\u8005|\u6216|\u307e\u305f\u306f|\u305d\u308c\u3068\u3082|\uB610\uB294|\uD639\uC740))\s*(?:(?:post|publish|share|tweet|send|reply|respond)\s+(?:(?:this|that|it|the\s+following)\s+)?)?(?:(?:also\s+)?(?:on|onto|to|via|in|at|en|sur|sobre|\u00e0|au|auf|su|em|na|no|nos|nas|para|\u0432|\u043d\u0430)\s+)?(?:the\s+)?$/iu;
     const platformPattern = /(?:https?:\/\/(?:www\.)?(?:x\.com|twitter\.com|bsky\.app)(?:[/?#]|$)|(?<![\p{L}\p{N}_])(?:x|twitter|bluesky|bsky\.app)(?![\p{L}\p{N}_]))/giu;
     const texts = [guard?.taskText, guard?.approvedPlanAnchor]
       .map(value => String(value || '').trim())
