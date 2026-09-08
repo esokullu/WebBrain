@@ -90817,6 +90817,10 @@ test('social publication workflow follows the live X or Bluesky destination and 
         'an explicitly excluded X destination was adopted'],
       ['Post on Bluesky, exclude X', ['bluesky'],
         'an exclude clause adopted its forbidden X destination'],
+      ['Post only on Bluesky, no X', ['bluesky'],
+        'a bare no-X clause adopted its forbidden destination'],
+      ['Post only on X, no Bluesky', ['twitter'],
+        'a bare no-Bluesky clause adopted its forbidden destination'],
       ['Post on Bluesky rather than posting on X', ['bluesky'],
         'rather-than clause adopted its expressly excluded X destination'],
       ['Post on Bluesky rather than on X', ['bluesky'],
@@ -92886,11 +92890,35 @@ test('social upload provenance reconciles only from complete composer snapshots'
     });
     assert.deepEqual(joined.attachments.map(item => item.name), ['a.png', 'c.png'],
       AgentClass.name + ': reconciled active provenance did not join published media');
+    assert.equal(joined.uploadNameBindingAmbiguous, true,
+      AgentClass.name + ': same-type upload/DOM ordering was treated as a stable filename binding');
     assert.equal(
       agent._workflowSocialPublishedAttachmentObserved({ value: 'a.png and c.png' }, joined),
       true,
       AgentClass.name + ': active replacement media could not verify after reconciliation',
     );
+    const ambiguousAltRecord = agent._workflowSocialRecordWithUploadedAttachmentNames({
+      attachments: [
+        { type: 'image', src: 'https://cdn.example/opaque-1', alt: 'Alt for a' },
+        { type: 'image', src: 'https://cdn.example/opaque-2', alt: 'Alt for c' },
+      ],
+    }, { uploadedAttachmentNames: ['a.png', 'c.png'] });
+    assert.equal(agent._workflowSocialPublishedAltTextObserved(
+      { attachment: 'a.png', value: 'Alt for a' }, ambiguousAltRecord,
+    ), false, AgentClass.name + ': upload order falsely bound targeted alt text to an opaque media card');
+    const stableAltRecord = agent._workflowSocialRecordWithUploadedAttachmentNames({
+      attachments: [
+        { type: 'image', src: 'https://cdn.example/c.png', alt: 'Alt for c' },
+        { type: 'image', src: 'https://cdn.example/a.png', alt: 'Alt for a' },
+      ],
+    }, { uploadedAttachmentNames: ['a.png', 'c.png'] });
+    assert.equal(stableAltRecord.uploadNameBindingAmbiguous, undefined,
+      AgentClass.name + ': filename evidence did not disambiguate reordered media cards');
+    assert.deepEqual(stableAltRecord.attachments.map(item => item.name), ['c.png', 'a.png'],
+      AgentClass.name + ': stable per-card filename evidence was ignored');
+    assert.equal(agent._workflowSocialPublishedAltTextObserved(
+      { attachment: 'a.png', value: 'Alt for a' }, stableAltRecord,
+    ), true, AgentClass.name + ': stable reordered filename/alt provenance did not verify');
   }
 });
 
@@ -92911,6 +92939,33 @@ test('upper-bound attachment qualifiers verify as maximum counts', () => {
     const image = index => ({ type: 'image', src: `https://pbs.twimg.com/media/image${index}.png` });
     const video = index => ({ type: 'video', src: `https://video.twimg.com/media/video${index}.mp4` });
     const gif = index => ({ type: 'animated_gif', src: `https://video.twimg.com/tweet_video/gif${index}.mp4` });
+    const pngImage = agent._parseWorkflowAttachmentRequirement('one PNG image');
+    assert.equal(pngImage.isGeneric, true,
+      AgentClass.name + ': a PNG media qualifier was parsed as a filename');
+    assert.deepEqual(pngImage.specificTargets, [],
+      AgentClass.name + ': a PNG media qualifier created a specific target');
+    assert.deepEqual(pngImage.requestedImageFormats, ['png']);
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one PNG image' }, { attachments: [image(1)] }), true,
+      AgentClass.name + ': a PNG image did not satisfy its format-qualified contract');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one PNG image' }, { attachments: [{ type: 'image', src: 'https://cdn.example/media', name: 'source.png' }] }), true,
+      AgentClass.name + ': original upload provenance did not prove PNG format');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one PNG image' }, { attachments: [{ type: 'image', src: 'https://pbs.twimg.com/media/image1.jpg' }] }), false,
+      AgentClass.name + ': a JPEG image satisfied a PNG-only contract');
+    const mp4Video = agent._parseWorkflowAttachmentRequirement('one MP4 video');
+    assert.equal(mp4Video.isGeneric, true,
+      AgentClass.name + ': an MP4 media qualifier was parsed as a filename');
+    assert.deepEqual(mp4Video.specificTargets, [],
+      AgentClass.name + ': an MP4 media qualifier created a specific target');
+    assert.deepEqual(mp4Video.requestedVideoFormats, ['mp4']);
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one MP4 video' }, { attachments: [video(1)] }), true,
+      AgentClass.name + ': an MP4 video did not satisfy its format-qualified contract');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one MP4 video' }, { attachments: [{ type: 'video', src: 'https://video.twimg.com/media/video1.webm' }] }), false,
+      AgentClass.name + ': a WebM video satisfied an MP4-only contract');
     assert.equal(agent._workflowSocialPublishedAttachmentObserved(
       { value: 'up to two images' }, { attachments: [] }), true,
       AgentClass.name + ': zero images should satisfy "up to two images"');
@@ -93001,6 +93056,31 @@ test('upper-bound attachment qualifiers verify as maximum counts', () => {
     assert.equal(agent._workflowSocialPublishedAttachmentObserved(
       { value: 'one image and no videos or GIFs' }, { attachments: [image(1), gif(1)] }), false,
       AgentClass.name + ': embedded coordinated media negation allowed a GIF');
+    const imageWithoutArticleVideo = agent._parseWorkflowAttachmentRequirement('one image without a video');
+    assert.equal(imageWithoutArticleVideo.wantsVideo, false,
+      AgentClass.name + ': an article hid the negated video requirement');
+    assert.equal(imageWithoutArticleVideo.isVideoNegated, true,
+      AgentClass.name + ': without-a-video did not retain its negative subtype constraint');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one image without a video' }, { attachments: [image(1)] }), true,
+      AgentClass.name + ': an image-only post failed without-a-video verification');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one image without a video' }, { attachments: [image(1), video(1)] }), false,
+      AgentClass.name + ': a forbidden video satisfied without-a-video verification');
+    const emptyOrVideo = agent._parseWorkflowAttachmentRequirement('either no images or one video');
+    assert.equal(emptyOrVideo.mediaAlternativeBranches.length, 2,
+      AgentClass.name + ': empty-or-video requirement did not preserve both branches');
+    assert.equal(emptyOrVideo.mediaAlternativeBranches[0].wantsNone, true,
+      AgentClass.name + ': leading either prevented parsing the negative media branch');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'either no images or one video' }, { attachments: [] }), true,
+      AgentClass.name + ': empty media did not satisfy the negative alternative');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'either no images or one video' }, { attachments: [video(1)] }), true,
+      AgentClass.name + ': one video did not satisfy the positive alternative');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'either no images or one video' }, { attachments: [image(1), image(2)] }), false,
+      AgentClass.name + ': multiple images incorrectly satisfied an empty-or-video contract');
 
     const boundedImages = agent._parseWorkflowAttachmentRequirement('between one and two images');
     assert.equal(boundedImages.isGeneric, true,

@@ -195,7 +195,7 @@ const SOCIAL_POST_DESTINATION_NEGATION = new RegExp(
   'iu',
 );
 const SOCIAL_CONTRASTIVE_EXCLUSION = /(?<![\p{L}\p{N}_])(?:rather\s+than|instead\s+of)(?:\s+(?:post(?:ing)?|publish(?:ing)?|shar(?:e|ing)|tweet(?:ing)?|send(?:ing)?))?(?:\s+(?:on|onto|to|via|in|at))?\s*$/iu;
-const SOCIAL_DESTINATION_EXCLUSION = /^\s*(?:exclude|excluding)\s+(?:(?:post(?:ing)?|publish(?:ing)?|shar(?:e|ing)|tweet(?:ing)?|send(?:ing)?)\s+)?(?:(?:on|onto|to|via|in|at)\s+)?(?:the\s+)?(?:x|twitter|bluesky|bsky(?:\.app)?)(?![\p{L}\p{N}_.-])\s*$/iu;
+const SOCIAL_DESTINATION_EXCLUSION = /^\s*(?:exclude|excluding|no)\s+(?:(?:post(?:ing)?|publish(?:ing)?|shar(?:e|ing)|tweet(?:ing)?|send(?:ing)?)\s+)?(?:(?:on|onto|to|via|in|at)\s+)?(?:the\s+)?(?:x|twitter|bluesky|bsky(?:\.app)?)(?![\p{L}\p{N}_.-])\s*$/iu;
 const socialPostNegationGovernsPublish = value => (
   SOCIAL_POST_NEGATION.test(String(value || '').trim())
   || SOCIAL_POST_DESTINATION_NEGATION.test(String(value || ''))
@@ -290,6 +290,9 @@ const GENERIC_ATTACHMENT_WORDS = new Set([
 const RAW_GIF_NOUN_REGEX = /\b(?:gif|gifs)\b|\.gif(?:[?#]|$)|(?:animated[-_ ]gif|動圖|动图|움짤)/i;
 const RAW_VIDEO_NOUN_REGEX = /\b(?:video|videos|mp4|mov|webm|mkv|clip|clips|recording|recordings|vidéo|vidéos)\b|(?:動画|视频|影片|видео|동영상|비디오|영상)/i;
 const RAW_IMAGE_NOUN_REGEX = /\b(?:image|images|photo|photos|picture|pictures|pic|pics|png|jpg|jpeg|webp|foto|fotos|bild|bilder|imagen(?:es)?|imágenes|imagem|imagens)\b|(?:画像|写真|图片|照片|圖片|изображение|фото|사진|이미지|포토)/i;
+const IMAGE_ATTACHMENT_FORMAT = '(?:png|jpe?g|webp|avif|heic|bmp|svg)';
+const VIDEO_ATTACHMENT_FORMAT = '(?:mp4|mov|webm|mkv)';
+
 // A minimum qualifier binds the count phrase it sits in, not the whole
 // requirement: "at least two images and one video" still wants exactly one
 // video. These are the boundaries between those phrases.
@@ -440,6 +443,13 @@ const GIF_NEGATION_REGEX = new RegExp(
   + `|(?:없는|없음|0개|0)\\s*(?:움짤|gif)`
   + `|(?:움짤|gif)\\s*(?:없음|안함|0개|0)`,
   'iu',
+);
+
+const normalizeAttachmentNegationArticles = value => String(value || '').replace(
+  new RegExp(`(?<![${SOCIAL_WORD_EDGE}])(no|not|without)(\\s+)(a|an|the)(\\s+)`, 'giu'),
+  (_match, negator, beforeArticle, article, afterArticle) => (
+    negator + beforeArticle + ' '.repeat(article.length) + afterArticle
+  ),
 );
 
 const VISION_SUB_CALL_TIMEOUT_MS = 90_000;
@@ -2754,11 +2764,12 @@ export class Agent extends LoopDetector {
   _isNegativeAttachmentRequirement(text) {
     const s = String(text || '').trim().toLowerCase();
     if (!s) return false;
+    const negationText = normalizeAttachmentNegationArticles(s);
     if (/^(?:none|no|false|0|zero|なし|無し|無|없음)$/i.test(s)) return true;
     const negPrefix = '(?:no|without|without\\s+any|sin|sans|sem|senza|ohne|без|kein|keine|aucun|aucune|ningun|ningún|ninguna|nenhum|nenhuma|nessun|nessuno|nessuna|nie)';
     const nounSuffix = '(?:attachments?|files?|m[eéèê]dias?|m[ií]dia|medien|medios?|uploads?|images?|photos?|pictures?|pics?|videos?|clips?|recordings?|gifs?|fichiers?|pièces?|archivos?|adjuntos?|anexos?|allegat[oi]?|anhänge?|anhang|dateien?|вложений|вложения|фото(?:графий)?|изображений|видео|файлов)';
     const nounListSeparator = '(?:\\s*[,;]\\s*(?:(?:and|or|nor)\\s+)?|\\s+(?:and|or|nor)\\s+)';
-    if (new RegExp(`^${negPrefix}\\s+(?:any\\s+)?${nounSuffix}(?:${nounListSeparator}(?:any\\s+)?${nounSuffix})*$`, 'i').test(s)) return true;
+    if (new RegExp(`^${negPrefix}\\s+(?:any\\s+)?${nounSuffix}(?:${nounListSeparator}(?:any\\s+)?${nounSuffix})*$`, 'i').test(negationText)) return true;
     if (new RegExp(`^(?:0|zero)\\s*${nounSuffix}?$`, 'i').test(s)) return true;
     if (/^(?:(?:无|没有|不带|零个|0个)\s*(?:附件|图片|照片|视频|媒体|文件)|(?:附件|图片|照片|视频|媒体|文件)\s*(?:无|没有|为0|为零))$/i.test(s)) return true;
     if (/^(?:(?:添付|メディア|画像|写真|動画|ファイル)\s*(?:なし|無し|ゼロ|0)|(?:なし|無し)\s*(?:添付|メディア|画像|写真|動画|ファイル))$/i.test(s)) return true;
@@ -2791,7 +2802,8 @@ export class Agent extends LoopDetector {
     }
 
     const coordinatedMediaNoun = '(?:images?|photos?|pictures?|pics?|videos?|clips?|recordings?|gifs?|animated[-_ ]gifs?)';
-    const coordinatedMediaListNegation = text.match(new RegExp(
+    const negationText = normalizeAttachmentNegationArticles(text);
+    const coordinatedMediaListNegation = negationText.match(new RegExp(
       `(?<![${SOCIAL_WORD_EDGE}])(?:no|not|without(?:\\s+any)?)\\s+(?:any\\s+)?(${coordinatedMediaNoun}(?:(?:\\s*[,;]\\s*(?:(?:and|or|nor)\\s+)?|\\s+(?:and|or|nor)\\s+)(?:any\\s+)?${coordinatedMediaNoun})+)`,
       'iu',
     ));
@@ -2799,11 +2811,11 @@ export class Agent extends LoopDetector {
     const coordinatedMediaNegationSpan = coordinatedMediaListNegation
       ? [coordinatedMediaListNegation.index || 0, (coordinatedMediaListNegation.index || 0) + coordinatedMediaListNegation[0].length]
       : null;
-    const isImageNegated = IMAGE_NEGATION_REGEX.test(text)
+    const isImageNegated = IMAGE_NEGATION_REGEX.test(negationText)
       || Boolean(coordinatedNegatedMedia && RAW_IMAGE_NOUN_REGEX.test(coordinatedNegatedMedia));
-    const isVideoNegated = VIDEO_NEGATION_REGEX.test(text)
+    const isVideoNegated = VIDEO_NEGATION_REGEX.test(negationText)
       || Boolean(coordinatedNegatedMedia && RAW_VIDEO_NOUN_REGEX.test(coordinatedNegatedMedia));
-    const isGifNegated = GIF_NEGATION_REGEX.test(text)
+    const isGifNegated = GIF_NEGATION_REGEX.test(negationText)
       || Boolean(coordinatedNegatedMedia && RAW_GIF_NOUN_REGEX.test(coordinatedNegatedMedia));
 
     if (isImageNegated && isVideoNegated) {
@@ -2832,6 +2844,17 @@ export class Agent extends LoopDetector {
     const wantsOrdinaryVideo = hasRawOrdinaryVideo && !isVideoNegated;
     const wantsVideo = wantsOrdinaryVideo || wantsGif;
     const wantsImage = hasRawImage && !isImageNegated;
+    const normalizeAttachmentFormat = format => (/^jpe?g$/iu.test(format) ? 'jpeg' : String(format || '').toLowerCase());
+    const requestedImageFormats = [...text.matchAll(new RegExp(
+      `(?<![${SOCIAL_WORD_EDGE}])(${IMAGE_ATTACHMENT_FORMAT})(?![${SOCIAL_WORD_EDGE}])\\s+(?:images?|photos?|pictures?|pics?)`,
+      'giu',
+    ))].map(match => normalizeAttachmentFormat(match[1]))
+      .filter((format, index, formats) => formats.indexOf(format) === index);
+    const requestedVideoFormats = [...text.matchAll(new RegExp(
+      `(?<![${SOCIAL_WORD_EDGE}])(${VIDEO_ATTACHMENT_FORMAT})(?![${SOCIAL_WORD_EDGE}])\\s+(?:videos?|clips?|recordings?)`,
+      'giu',
+    ))].map(match => normalizeAttachmentFormat(match[1]))
+      .filter((format, index, formats) => formats.indexOf(format) === index);
 
     const parseCountWord = (str) => {
       if (!str) return 0;
@@ -2886,7 +2909,7 @@ export class Agent extends LoopDetector {
     const rangeCountToken = '(?:\\d+|zero|one|two|three|four|five|six|seven|eight|nine|ten|a|an)';
     const boundedCountRangeRegex = new RegExp(
       `\\b(?:between\\s+(${rangeCountToken})\\s+and\\s+(${rangeCountToken})|from\\s+(${rangeCountToken})\\s+to\\s+(${rangeCountToken})|(${rangeCountToken})\\s+to\\s+(${rangeCountToken}))`
-      + '\\s+(images?|photos?|pictures?|pics?|videos?|clips?|recordings?|gifs?|attachments?|files?|media|uploads?|items?|assets?)\\b',
+      + `\\s+((?:${IMAGE_ATTACHMENT_FORMAT}\\s+)?(?:images?|photos?|pictures?|pics?)|(?:${VIDEO_ATTACHMENT_FORMAT}\\s+)?(?:videos?|clips?|recordings?)|gifs?|attachments?|files?|media|uploads?|items?|assets?)\\b`,
       'giu',
     );
     const boundedCountRanges = [...text.matchAll(boundedCountRangeRegex)]
@@ -2912,9 +2935,12 @@ export class Agent extends LoopDetector {
     // scan read the requirement with the qualifier removed.
     const hasMinCountQualifier = MIN_ATTACHMENT_COUNT_REGEX.test(text) || hasBoundedCountRange;
     const hasMaxCountQualifier = MAX_ATTACHMENT_COUNT_REGEX.test(text) || hasBoundedCountRange;
-    const countText = (hasMinCountQualifier || hasMaxCountQualifier)
+    const rawCountText = (hasMinCountQualifier || hasMaxCountQualifier)
       ? text.replace(MIN_ATTACHMENT_COUNT_STRIP_REGEX, ' ').replace(MAX_ATTACHMENT_COUNT_STRIP_REGEX, ' ').replace(/\s+/g, ' ').trim()
       : text;
+    const countText = rawCountText
+      .replace(new RegExp(`(?<![${SOCIAL_WORD_EDGE}])${IMAGE_ATTACHMENT_FORMAT}(?![${SOCIAL_WORD_EDGE}])(?=\\s+(?:images?|photos?|pictures?|pics?))`, 'giu'), '')
+      .replace(new RegExp(`(?<![${SOCIAL_WORD_EDGE}])${VIDEO_ATTACHMENT_FORMAT}(?![${SOCIAL_WORD_EDGE}])(?=\\s+(?:videos?|clips?|recordings?))`, 'giu'), '');
 
     let isGeneric = false;
     if (CJK_GENERIC_ATTACHMENT_REGEX.test(countText)) {
@@ -3266,6 +3292,7 @@ export class Agent extends LoopDetector {
     const mediaAlternativeBranches = mediaAlternativeBranchTexts.length > 1
       ? mediaAlternativeBranchTexts
         .filter(Boolean)
+        .map(branch => branch.replace(/^either\s+/iu, '').trim())
         .map(branch => this._parseWorkflowAttachmentRequirement(branch))
         .filter(branch => branch.isGeneric)
       : [];
@@ -3306,6 +3333,8 @@ export class Agent extends LoopDetector {
       wantsVideo,
       wantsOrdinaryVideo,
       wantsGif,
+      requestedImageFormats,
+      requestedVideoFormats,
       specificTargets,
       specificTargetAlternatives: namedTargetAlternatives || [],
       normalized: text,
@@ -3347,10 +3376,25 @@ export class Agent extends LoopDetector {
       return 'image';
     };
     const assignment = new Array(attachments.length).fill(-1);
+    let firstAssignment = null;
+    let assignmentCount = 0;
     const matchNames = (attachmentIndex, usedNames) => {
-      if (attachmentIndex >= attachments.length) return true;
+      if (attachmentIndex >= attachments.length) {
+        assignmentCount++;
+        if (!firstAssignment) firstAssignment = assignment.slice();
+        return assignmentCount > 1;
+      }
       const observedKind = attachmentKind(attachments[attachmentIndex]);
-      for (let nameIndex = 0; nameIndex < effectiveNames.length; nameIndex++) {
+      const observedNames = this._extractAttachmentCandidateNames(attachments[attachmentIndex]);
+      const evidencedNameIndices = effectiveNames.map((name, nameIndex) => (
+        this._targetAttachmentNames(name).some(targetName => observedNames.includes(targetName))
+          ? nameIndex
+          : -1
+      )).filter(nameIndex => nameIndex >= 0);
+      const candidateNameIndices = evidencedNameIndices.length > 0
+        ? evidencedNameIndices
+        : effectiveNames.map((_name, nameIndex) => nameIndex);
+      for (const nameIndex of candidateNameIndices) {
         if (usedNames.has(nameIndex)) continue;
         const uploadedKind = nameKind(effectiveNames[nameIndex]);
         if (uploadedKind && uploadedKind !== observedKind) continue;
@@ -3362,13 +3406,19 @@ export class Agent extends LoopDetector {
       }
       return false;
     };
-    if (!matchNames(0, new Set())) return record;
+    matchNames(0, new Set());
+    if (!firstAssignment) return record;
+    // Multiple type-compatible bijections prove only the aggregate filename
+    // set. Keep that evidence for attachment checks, but mark the node mapping
+    // so filename-scoped metadata such as alt text fails closed below.
+    const uploadNameBindingAmbiguous = assignmentCount > 1;
     return {
       ...record,
+      ...(uploadNameBindingAmbiguous ? { uploadNameBindingAmbiguous: true } : {}),
       attachments: attachments.map((attachment, index) => (
         typeof attachment === 'string'
-          ? { src: attachment, name: effectiveNames[assignment[index]] }
-          : { ...attachment, name: effectiveNames[assignment[index]] }
+          ? { src: attachment, name: effectiveNames[firstAssignment[index]] }
+          : { ...attachment, name: effectiveNames[firstAssignment[index]] }
       )),
     };
   }
@@ -3446,6 +3496,38 @@ export class Agent extends LoopDetector {
         || /\.gif(?:[?#]|$)/i.test(name);
     };
 
+    const canonicalAttachmentFormat = value => {
+      const raw = String(value || '').toLowerCase();
+      const match = raw.match(/\.(png|jpe?g|webp|avif|heic|bmp|svg|mp4|mov|webm|mkv)(?=[?#]|$)/i)
+        || raw.match(/[?&](?:format|fm)=(png|jpe?g|webp|avif|heic|bmp|svg|mp4|mov|webm|mkv)(?:[&#]|$)/i)
+        || raw.match(/^(?:image|video)\/(?:x-)?(png|jpe?g|webp|avif|heic|bmp|svg|mp4|mov|webm|mkv)(?:\+xml)?(?:;|$)/i);
+      if (match) return /^jpe?g$/i.test(match[1]) ? 'jpeg' : match[1].toLowerCase();
+      if (/^video\/quicktime(?:;|$)/i.test(raw)) return 'mov';
+      if (/^video\/(?:x-)?matroska(?:;|$)/i.test(raw)) return 'mkv';
+      return '';
+    };
+    const attachmentFormat = att => {
+      if (isGifAttachment(att)) return 'gif';
+      if (att && typeof att === 'object') {
+        for (const value of [att.name, att.fileName, att.filename]) {
+          const format = canonicalAttachmentFormat(value);
+          if (format) return format;
+        }
+        for (const value of [att.mimeType, att.mime, att.contentType]) {
+          const format = canonicalAttachmentFormat(value);
+          if (format) return format;
+        }
+      }
+      return canonicalAttachmentFormat(typeof att === 'string' ? att : (att?.src || att?.url));
+    };
+    const attachmentsMatchFormats = (requiredFormats, candidates) => {
+      if (!requiredFormats?.length) return true;
+      const observedFormats = candidates.map(attachmentFormat);
+      return observedFormats.length > 0
+        && observedFormats.every(format => format && requiredFormats.includes(format))
+        && requiredFormats.every(format => observedFormats.includes(format));
+    };
+
     const canMatchSpecificTargets = (targets, candidates) => {
       const matchFrom = (targetIdx, usedIndices) => {
         if (targetIdx >= targets.length) return true;
@@ -3484,6 +3566,9 @@ export class Agent extends LoopDetector {
     const videoCount = rawAttachments.filter(isVideoAttachment).length;
     const gifCount = rawAttachments.filter(isGifAttachment).length;
     const ordinaryVideoCount = rawAttachments.filter(att => isVideoAttachment(att) && !isGifAttachment(att)).length;
+    if (!attachmentsMatchFormats(parsed.requestedImageFormats, rawAttachments.filter(isImageAttachment))) return false;
+    if (!attachmentsMatchFormats(parsed.requestedVideoFormats,
+      rawAttachments.filter(att => isVideoAttachment(att) && !isGifAttachment(att)))) return false;
     const imageAlternativeCounts = parsed.imageAlternativeCounts || [];
     const videoAlternativeCounts = parsed.videoAlternativeCounts || [];
     const gifAlternativeCounts = parsed.gifAlternativeCounts || [];
@@ -3777,6 +3862,7 @@ export class Agent extends LoopDetector {
     const target = this._workflowMetadataValue(
       requirement?.attachment ?? requirement?.target ?? requirement?.filename,
     );
+    if (target && record?.uploadNameBindingAmbiguous === true) return false;
     const relevantAttachments = target
       ? attachments.filter((attachment) => {
           if (!attachment || typeof attachment !== 'object') return false;
