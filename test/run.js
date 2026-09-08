@@ -90825,6 +90825,10 @@ test('social publication workflow follows the live X or Bluesky destination and 
         'an avoiding clause adopted its forbidden X destination'],
       ['Post on X, avoid Bluesky', ['twitter'],
         'an avoid clause adopted its forbidden Bluesky destination'],
+      ['Post on Bluesky, skip X', ['bluesky'],
+        'a skip clause adopted its forbidden X destination'],
+      ['Post on X, skipping Bluesky', ['twitter'],
+        'a skipping clause adopted its forbidden Bluesky destination'],
       ['Post on Bluesky rather than posting on X', ['bluesky'],
         'rather-than clause adopted its expressly excluded X destination'],
       ['Post on Bluesky rather than on X', ['bluesky'],
@@ -92459,6 +92463,16 @@ test('extracting post body skips URL scheme colons', () => {
       'Announcing v2!',
       AgentClass.name + ': Bluesky URL scheme colon halted body extraction',
     );
+    assert.equal(
+      agent._extractWorkflowTaskBody('Post on X: https://example.com/path'),
+      'https://example.com/path',
+      AgentClass.name + ': punctuation inside an unquoted URL truncated the post body',
+    );
+    assert.equal(
+      agent._extractWorkflowTaskBody('Post on X: Visit https://example.com/path today'),
+      'Visit https://example.com/path today',
+      AgentClass.name + ': an embedded unquoted URL truncated the surrounding post body',
+    );
   }
 });
 
@@ -92996,6 +93010,12 @@ test('upper-bound attachment qualifiers verify as maximum counts', () => {
     assert.equal(agent._workflowSocialPublishedAttachmentObserved(
       { value: 'one PNG or JPEG image' }, { attachments: [{ type: 'image', src: 'https://cdn.example/a.webp' }] }), false,
       AgentClass.name + ': WebP satisfied a PNG-or-JPEG format choice');
+    const unrestrictedOrPngImage = agent._parseWorkflowAttachmentRequirement('one image or one PNG image');
+    assert.equal(unrestrictedOrPngImage.mediaAlternativeBranches.length, 2,
+      AgentClass.name + ': a format token consumed the noun slot of a whole-media alternative');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one image or one PNG image' }, { attachments: [{ type: 'image', src: 'https://cdn.example/a.jpg' }] }), true,
+      AgentClass.name + ': the unrestricted image branch incorrectly required PNG');
     const pngAndJpegImages = agent._parseWorkflowAttachmentRequirement('one PNG image and one JPEG image');
     assert.equal(pngAndJpegImages.expectedImageCount, 2,
       AgentClass.name + ': conjunctive image-format counts were not summed');

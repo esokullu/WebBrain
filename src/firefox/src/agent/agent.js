@@ -195,7 +195,7 @@ const SOCIAL_POST_DESTINATION_NEGATION = new RegExp(
   'iu',
 );
 const SOCIAL_CONTRASTIVE_EXCLUSION = /(?<![\p{L}\p{N}_])(?:rather\s+than|instead\s+of)(?:\s+(?:post(?:ing)?|publish(?:ing)?|shar(?:e|ing)|tweet(?:ing)?|send(?:ing)?))?(?:\s+(?:on|onto|to|via|in|at))?\s*$/iu;
-const SOCIAL_DESTINATION_EXCLUSION = /^\s*(?:exclude|excluding|avoid|avoiding|no)\s+(?:(?:post(?:ing)?|publish(?:ing)?|shar(?:e|ing)|tweet(?:ing)?|send(?:ing)?)\s+)?(?:(?:on|onto|to|via|in|at)\s+)?(?:the\s+)?(?:x|twitter|bluesky|bsky(?:\.app)?)(?![\p{L}\p{N}_.-])\s*$/iu;
+const SOCIAL_DESTINATION_EXCLUSION = /^\s*(?:exclude|excluding|avoid|avoiding|skip|skipping|no)\s+(?:(?:post(?:ing)?|publish(?:ing)?|shar(?:e|ing)|tweet(?:ing)?|send(?:ing)?)\s+)?(?:(?:on|onto|to|via|in|at)\s+)?(?:the\s+)?(?:x|twitter|bluesky|bsky(?:\.app)?)(?![\p{L}\p{N}_.-])\s*$/iu;
 const socialPostNegationGovernsPublish = value => (
   SOCIAL_POST_NEGATION.test(String(value || '').trim())
   || SOCIAL_POST_DESTINATION_NEGATION.test(String(value || ''))
@@ -3189,6 +3189,7 @@ export class Agent extends LoopDetector {
       'giu',
     );
     const attachmentKindForAlternativeNoun = noun => {
+      if (new RegExp(`^(?:${IMAGE_ATTACHMENT_FORMAT}|${VIDEO_ATTACHMENT_FORMAT})$`, 'iu').test(noun)) return '';
       if (RAW_GIF_NOUN_REGEX.test(noun)) return 'gif';
       if (RAW_IMAGE_NOUN_REGEX.test(noun)) return 'image';
       if (RAW_VIDEO_NOUN_REGEX.test(noun)) return 'video';
@@ -15227,11 +15228,22 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
   _socialPublicationClauses(text) {
     const raw = String(text || '');
     const masked = this._maskQuotedPayload(raw);
-    const parts = masked.split(SOCIAL_CLAUSE_DELIMITER);
+    // URL punctuation is content, not clause structure. Hide only the
+    // delimiter characters from the splitter and slice the original masked
+    // text below, so platform discovery still receives intact URLs.
+    const delimiterMasked = masked.replace(
+      /https?:\/\/[^\s<>"'`\u3002\u3001\uff0c\uff1b\uff1a\uff01\uff1f\u2026\u2025]+/gi,
+      (rawUrl) => {
+        const url = this._workflowTrimUrlPunctuation(rawUrl);
+        return url.replace(/[.!?;:,]/g, '\u0001') + rawUrl.slice(url.length);
+      },
+    );
+    const parts = delimiterMasked.split(SOCIAL_CLAUSE_DELIMITER);
     const clauses = [];
     let offset = 0;
     for (let i = 0; i < parts.length; i += 2) {
-      const maskedClause = parts[i] || '';
+      const clauseLength = (parts[i] || '').length;
+      const maskedClause = masked.slice(offset, offset + clauseLength);
       const delim = i > 0 ? (parts[i - 1] || '').trim() : '';
       const rawClause = raw.slice(offset, offset + maskedClause.length);
       clauses.push({ text: rawClause, maskedText: maskedClause, delim });
