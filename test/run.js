@@ -90960,6 +90960,12 @@ test('social publication workflow follows the live X or Bluesky destination and 
       // Multi-platform coordination across conjunctions
       ['Post on X and Bluesky', ['twitter', 'bluesky'],
         'coordinated destinations on X and Bluesky should both be targeted'],
+      ['Post on X, then on Bluesky', ['twitter', 'bluesky'],
+        'sequential destinations on X then Bluesky should both be targeted'],
+      ['Post on https://x.com/home, then on https://bsky.app/', ['twitter', 'bluesky'],
+        'sequential social URLs should both remain governed by the publish command'],
+      ['Do not post on X, then post on Bluesky', ['bluesky'],
+        'sequential destination handling carried a prior negative command into Bluesky'],
       ['Post to X or Bluesky: Launch announcement', ['twitter', 'bluesky'],
         'coordinated destination with "or" should target both platforms'],
       ['Publish on X, Threads, and Bluesky', ['twitter', 'bluesky'],
@@ -94113,7 +94119,7 @@ test('attachment verification matches specific attachment names without substrin
         { attachments },
       ), false, AgentClass.name + ': invalid conjunctive media satisfied a scoped count alternative');
     }
-    for (const { requirement, valid, invalid } of [
+    for (const { requirement, branchCount = 2, valid, invalid } of [
       {
         requirement: 'either one image or two videos',
         valid: [[alternativeImage(1)], [alternativeVideo(1), alternativeVideo(2)]],
@@ -94140,13 +94146,23 @@ test('attachment verification matches specific attachment names without substrin
           [alternativeImage(1), alternativeVideo(1)],
         ],
       },
+      {
+        requirement: 'one of an image, a video, and a GIF',
+        branchCount: 3,
+        valid: [[alternativeImage(1)], [alternativeVideo(1)], [alternativeGif(1)]],
+        invalid: [
+          [alternativeImage(1), alternativeVideo(1)],
+          [alternativeGif(1), alternativeVideo(1)],
+          [alternativeImage(1), alternativeImage(2)],
+        ],
+      },
     ]) {
       const parsedTypedAlternative = agent._parseWorkflowAttachmentRequirement({ value: requirement });
       assert.equal(parsedTypedAlternative.isGeneric, true,
         AgentClass.name + `: typed alternative was parsed as filenames for "${requirement}"`);
       assert.equal(parsedTypedAlternative.isAlternative, true,
         AgentClass.name + `: typed alternative grammar was lost for "${requirement}"`);
-      assert.equal(parsedTypedAlternative.mediaAlternativeBranches.length, 2,
+      assert.equal(parsedTypedAlternative.mediaAlternativeBranches.length, branchCount,
         AgentClass.name + `: complete typed alternative branches were not retained for "${requirement}"`);
       for (const attachments of valid) {
         assert.equal(agent._workflowSocialPublishedAttachmentObserved(

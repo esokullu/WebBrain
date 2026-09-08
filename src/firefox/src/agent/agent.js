@@ -215,6 +215,10 @@ const SOCIAL_COORDINATING_DELIMITER = new RegExp(
   `^(?:or|nor|and|neither|y|e|ed|et|und|ve|и|o|u|ou|oder|weder|noch|od|ni|nem|né|veya|ya\\s+da|или|ни|或|或者|和|与|與|及|以及|また|または|もしくは|や|と|および|及び|ならびに|並びに|또는|이나|거나|그리고|와|과)$`,
   'iu',
 );
+// Sequencing carries an affirmative publication action to a later elliptical
+// destination, but it must not carry polarity: "do not post on X, then post on
+// Bluesky" starts a new command while "post on X, then on Bluesky" names two.
+const SOCIAL_SEQUENTIAL_DELIMITER = /^(?:then|luego|puis|ensuite|dann|poi|sonra|затем|然后|然後|接着|そして|それから)$/iu;
 const SOCIAL_CLAUSE_BREAK = new RegExp(
   `[.!?;:,\\n]|(?<![${SOCIAL_WORD_EDGE}])(?:and|then|but|or|nor|after|before|y|e|ed|luego|puis|et|ensuite|und|dann|poi|sonra|ve|затем|и)(?![${SOCIAL_WORD_EDGE}])|然后|然後|接着|そして|それから|または|、|。`,
   'iu',
@@ -3065,8 +3069,15 @@ export class Agent extends LoopDetector {
       ? [...unscopedDisjunctionText.matchAll(new RegExp(DISJUNCTION_REGEX.source, 'giu'))]
       : [];
     const hasUnscopedDisjunction = unscopedDisjunctionMatches.length > 0;
-    const mediaAlternativeBranchTexts = [];
-    if (hasUnscopedDisjunction) {
+    const oneOfMediaMatch = isGeneric ? text.match(/^one\s+of\s+(.+)$/iu) : null;
+    const oneOfMediaBranches = oneOfMediaMatch
+      ? oneOfMediaMatch[1].split(/\s*[,;]\s*(?:(?:and|or)\s+)?|\s+(?:and|or)\s+/iu)
+        .map(branch => branch.trim())
+        .filter(Boolean)
+      : [];
+    const hasEnumeratedMediaChoice = oneOfMediaBranches.length > 1;
+    const mediaAlternativeBranchTexts = hasEnumeratedMediaChoice ? oneOfMediaBranches : [];
+    if (!hasEnumeratedMediaChoice && hasUnscopedDisjunction) {
       let branchStart = 0;
       for (const match of unscopedDisjunctionMatches) {
         mediaAlternativeBranchTexts.push(text.slice(branchStart, match.index || 0).trim());
@@ -3076,7 +3087,7 @@ export class Agent extends LoopDetector {
     }
     const hasScopedCountAlternative = scopedAlternativeSpans.length > 0;
     const requestedTypeCount = Number(wantsImage) + Number(wantsOrdinaryVideo) + Number(wantsGif);
-    const isAlternative = hasUnscopedDisjunction
+    const isAlternative = hasEnumeratedMediaChoice || hasUnscopedDisjunction
       || (requestedTypeCount <= 1 && hasScopedCountAlternative);
     const scopedSingleTypeCounts = wantsImage ? scopedAlternativeCounts.image
       : wantsGif ? scopedAlternativeCounts.gif
@@ -15082,7 +15093,14 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       // in any language.
       const before = trustedContext.slice(0, match.index);
       const after = trustedContext.slice(match.index + match[0].length);
-      const beforeClauses = this._socialPublicationClauses(before);
+      // Earlier destination URLs are part of the same command, not sentence
+      // punctuation. Mask them before clause splitting so their scheme and
+      // hostname do not sever a later sequential destination from its verb.
+      const beforeClauseText = before.replace(
+        /https?:\/\/[^\s<>"'`\u3002\u3001\uff0c\uff1b\uff1a\uff01\uff1f\u2026\u2025]+/gi,
+        priorUrl => ' '.repeat(priorUrl.length),
+      );
+      const beforeClauses = this._socialPublicationClauses(beforeClauseText);
       let lastBeforeClause = beforeClauses[beforeClauses.length - 1];
       if (lastBeforeClause && !lastBeforeClause.text.trim()) {
         if (lastBeforeClause.delim === ':' && beforeClauses.length > 1) {
@@ -15106,6 +15124,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         for (let bIdx = beforeClauses.length - 2; bIdx >= 0; bIdx--) {
           const nextB = beforeClauses[bIdx + 1];
           const isCoord = SOCIAL_COORDINATING_DELIMITER.test(nextB.delim || '')
+            || SOCIAL_SEQUENTIAL_DELIMITER.test(nextB.delim || '')
             || (nextB.delim || '').trim() === ','
             || (nextB.delim || '').trim() === '、';
           if (!isCoord) break;
@@ -15281,6 +15300,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
             const nextClause = clauses[nextIdx];
             if (nextClause.isNegated) break;
             const isCoord = SOCIAL_COORDINATING_DELIMITER.test(nextClause.delim || '')
+              || SOCIAL_SEQUENTIAL_DELIMITER.test(nextClause.delim || '')
               || (nextClause.delim || '').trim() === ','
               || (nextClause.delim || '').trim() === '、';
             if (!isCoord) break;
