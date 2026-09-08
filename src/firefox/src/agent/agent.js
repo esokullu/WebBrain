@@ -15774,7 +15774,15 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           }
         }
       }
-      const governed = (isComposer && !firstAfterClause?.isNegated)
+      // A composer opened under an explicit publish prohibition ("Do not
+      // publish anything; open <composer> to inspect it") is for reading,
+      // not posting: the prohibition anywhere in the trusted context vetoes
+      // the verb-free composer shortcut (an affirmative publish command still
+      // governs through the other arms below).
+      const hasPublishProhibition = clauses.some(clause => (
+        clause.isNegated && SOCIAL_PUBLISH_VERBS.test(clause.maskedText || clause.text || '')
+      ));
+      const governed = (isComposer && !firstAfterClause?.isNegated && !hasPublishProhibition)
         || publishGoverned
         || (SOCIAL_PUBLISH_DESTINATION_LEAD.test(lastBeforeClause?.text || '')
           && this._socialPublicationCommandIn(firstAfterClause?.text || ''));
@@ -24421,7 +24429,11 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
                     && ((SOCIAL_COORDINATING_DELIMITER.test(following.delim || '')
                       && anyPlatformPattern.test(following.maskedText || following.text || ''))
                       || startsNewPublication(following.maskedText || following.text || ''));
-                  if (!followingStartsDestination) {
+                  // A sequential step ("Then let me know...") is a new
+                  // instruction either way, so its glue is dropped too.
+                  const followingStartsSequence = following
+                    && SOCIAL_SEQUENTIAL_DELIMITER.test(following.delim || '');
+                  if (!followingStartsDestination && !followingStartsSequence) {
                     if (/^[.!?;:,、，。；：]$/.test(bodyDelim)) scoped += bodyDelim;
                     else if (bodyDelim) scoped += ` ${bodyDelim}`;
                   }
@@ -24442,6 +24454,9 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
                 if (SOCIAL_COORDINATING_DELIMITER.test(bodyDelim)
                     && anyPlatformPattern.test(bodyMasked)) break;
                 if (startsNewPublication(bodyMasked)) break;
+                // A sequential step ("Then let me know when it is done")
+                // starts a new instruction, not body prose.
+                if (SOCIAL_SEQUENTIAL_DELIMITER.test(bodyDelim)) break;
                 if (/^[.!?;:,、，。；：]$/.test(bodyDelim)) scoped += `${bodyDelim}${bodyClause.text}`;
                 else scoped += ` ${bodyDelim}${bodyClause.text}`;
               }
@@ -24708,8 +24723,21 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           if (extractedBody) {
             const bodyReq = details.items.find(r => r.field === 'body');
             if (bodyReq) {
+              // An operational follow-up ("Then let me know when it is done")
+              // is not post prose: replace an explicit placeholder, an exact
+              // match, or a truncation the extraction identifiably continues
+              // (the classified value ends mid-token and the extraction
+              // carries that same token on). A value ending at a word
+              // boundary is complete as stated and never grows.
+              const normalizedExtracted = this._workflowMetadataValue(extractedBody);
+              const normalizedClassified = this._workflowMetadataValue(bodyReq.value);
+              const continuationIndex = normalizedExtracted.indexOf(normalizedClassified);
+              const continuesMidWord = normalizedClassified.length > 0 && continuationIndex >= 0
+                && /[\p{L}\p{N}_]$/u.test(normalizedClassified)
+                && /^[\p{L}\p{N}_]/u.test(normalizedExtracted.slice(continuationIndex + normalizedClassified.length));
               if (bodyReq.value === '[from task]'
-                  || extractedBody.includes(bodyReq.value)) {
+                  || normalizedExtracted === normalizedClassified
+                  || continuesMidWord) {
                 bodyReq.value = this._workflowMetadataValue(extractedBody, 25000);
               }
             } else if (siteWorkflow?.job?.id === 'publish-post' || siteWorkflow?.job?.id === 'publish-content') {

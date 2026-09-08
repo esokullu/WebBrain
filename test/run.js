@@ -91027,6 +91027,8 @@ test('social publication workflow follows the live X or Bluesky destination and 
         'per-destination bodies should still discover both platforms'],
       ['Post on X: I posted on Bluesky yesterday.', ['twitter'],
         'colon-scoped body prose adopted Bluesky as a destination'],
+      ['Do not publish anything; open https://x.com/compose/post to inspect it, then submit findings in the form', [],
+        'a prohibited composer URL was adopted as a publish destination'],
       ['Post on X: hello. Post on Bluesky: world', ['twitter', 'bluesky'],
         'a second colon command still discovers its destination'],
       ['Post on X along with Bluesky', ['twitter', 'bluesky'],
@@ -91195,6 +91197,8 @@ test('social destination rebinding refreshes platform-specific payload and uploa
       AgentClass.name + ': trailing attachment instruction contaminated the post body');
     assert.equal(agent._extractWorkflowTaskBody('Post on X: Hello. We uploaded our new release today.', '', 'twitter'), 'Hello. We uploaded our new release today.',
       AgentClass.name + ': prose mentioning an upload without media ended the post body');
+    assert.equal(agent._extractWorkflowTaskBody('Post on X: Hello world. Then let me know when it is done', '', 'twitter'), 'Hello world',
+      AgentClass.name + ': sequential follow-up instruction contaminated the post body');
     assert.equal(agent._extractWorkflowTaskBody('Post on X: hello; and on Bluesky: goodbye', '', 'twitter'), 'hello',
       AgentClass.name + ': a following destination body contaminated the X body');
     assert.equal(agent._extractWorkflowTaskBody('Post on X: hello; and on Bluesky: goodbye', '', 'bluesky'), 'goodbye',
