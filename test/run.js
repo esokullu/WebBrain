@@ -92901,6 +92901,18 @@ test('upper-bound attachment qualifiers verify as maximum counts', () => {
     assert.equal(agent._workflowSocialPublishedAttachmentObserved(
       { value: 'up to two GIFs' }, { attachments: [] }), true,
       AgentClass.name + ': zero GIFs should satisfy a standalone GIF maximum');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'at most two GIFs or one image' }, { attachments: [video(1)] }), false,
+      AgentClass.name + ': ordinary video satisfied neither GIF-maximum nor image alternative');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'at most two GIFs or one image' }, { attachments: [video(1), video(2)] }), false,
+      AgentClass.name + ': ordinary videos were counted under the GIF-maximum alternative');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'at most two GIFs or one image' }, { attachments: [gif(1)] }), true,
+      AgentClass.name + ': valid GIF-maximum alternative was rejected');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'at most two GIFs or one image' }, { attachments: [image(1)] }), true,
+      AgentClass.name + ': valid image alternative was rejected');
   }
 });
 
@@ -93204,7 +93216,14 @@ test('attachment verification matches specific attachment names without substrin
       { value: 'chart.png' },
       { attachments: [{ type: 'image', src: 'https://pbs.twimg.com/media/random-id.jpg', alt: 'Uploaded chart.png' }] }
     );
-    assert.equal(exactChartAlt, true, AgentClass.name + ': alt with chart.png should satisfy chart.png');
+    assert.equal(exactChartAlt, false, AgentClass.name + ': alt text was treated as attachment filename evidence');
+
+    const wrongNameExactAlt = agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'chart.png' },
+      { attachments: [{ type: 'image', name: 'wrong.png', src: 'https://pbs.twimg.com/media/random-id.jpg', alt: 'chart.png' }] },
+    );
+    assert.equal(wrongNameExactAlt, false,
+      AgentClass.name + ': exact requested filename in alt text overrode wrong upload provenance');
 
     const cleanedPrefixAccepted = agent._workflowSocialPublishedAttachmentObserved(
       { value: 'an image of chart.png' },
@@ -93308,6 +93327,24 @@ test('attachment verification matches specific attachment names without substrin
       [['chart.png'], ['graph.png']],
       AgentClass.name + ': either modifier became part of a filename alternative',
     );
+    for (const commaChoice of [
+      'chart.png, graph.png, or logo.png',
+      'one of chart.png, graph.png, or logo.png',
+    ]) {
+      assert.deepEqual(
+        agent._parseWorkflowAttachmentRequirement(commaChoice).specificTargetAlternatives,
+        [['chart.png'], ['graph.png'], ['logo.png']],
+        AgentClass.name + `: Oxford-comma attachment choices were not preserved for "${commaChoice}"`,
+      );
+      assert.equal(
+        agent._workflowSocialPublishedAttachmentObserved(
+          { value: commaChoice },
+          { attachments: [{ type: 'image', src: 'https://pbs.twimg.com/media/graph.png' }] },
+        ),
+        true,
+        AgentClass.name + `: one permitted Oxford-comma attachment was rejected for "${commaChoice}"`,
+      );
+    }
     assert.deepEqual(
       agent._parseWorkflowAttachmentRequirement('report-or-draft.png').specificTargetAlternatives,
       [],

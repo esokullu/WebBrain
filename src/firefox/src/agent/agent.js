@@ -2639,7 +2639,7 @@ export class Agent extends LoopDetector {
       if (target) return target.toLowerCase();
     }
     const suffixMatch = text.match(/^(.+?)\s*(?:の|의)?\s*(?:images?|photos?|pictures?|videos?|gifs?|animated\s+gifs?|attachments?|files?|bilder?|fotos?|vidéos?|archivos?|dateien?|allegat[oi]?|anexos?|вложения?|사진|이미지|동영상|画像|写真|视频|影片)$/i);
-    if (suffixMatch) {
+    if (suffixMatch && !/\.$/.test(suffixMatch[1].trim())) {
       let target = suffixMatch[1].trim();
       target = target.replace(/^['"“”«»`]+|['"“”«»`]+$/g, '').trim();
       if (target) return target.toLowerCase();
@@ -2669,10 +2669,6 @@ export class Agent extends LoopDetector {
       if (att.name) rawCandidates.push(String(att.name));
       if (att.src) rawCandidates.push(String(att.src));
       if (att.url) rawCandidates.push(String(att.url));
-      if (att.alt) rawCandidates.push(String(att.alt));
-      if (att.title) rawCandidates.push(String(att.title));
-      if (att.ariaLabel) rawCandidates.push(String(att.ariaLabel));
-      if (att.text) rawCandidates.push(String(att.text));
     }
 
     const candidateNames = new Set();
@@ -2700,7 +2696,13 @@ export class Agent extends LoopDetector {
           let last = segments[segments.length - 1];
           try { last = decodeURIComponent(last); } catch {}
           last = last.trim().toLowerCase();
-          if (last) candidateNames.add(last);
+          if (last) {
+            candidateNames.add(last);
+            // X transcodes an uploaded .gif to a source path ending in
+            // .gif.mp4. The source is provenance-bearing, so retain the
+            // original logical filename without consulting descriptive alt.
+            if (/\.gif\.mp4$/i.test(last)) candidateNames.add(last.slice(0, -4));
+          }
         }
       } catch {
         const withoutQuery = trimmed.split(/[?#]/)[0];
@@ -3049,12 +3051,30 @@ export class Agent extends LoopDetector {
       const specificTargets = this._parseSpecificAttachmentTargets(rawVal);
       // Word joiners need surrounding whitespace so a filename such as
       // report-or-draft.png remains one target. CJK joiners need no spaces.
-      const disjunctionSplit = /(?:\s+(?:or|oder|ou|o|oppure|или|либо|veya|ya\s+da)\s+|\s*(?:或者|或|または|それとも|또는|혹은)\s*)/iu;
+      const disjunctionSplit = /(?:\s*[,;]\s*(?:or|oder|ou|o|oppure|или|либо|veya|ya\s+da)\s+|\s+(?:or|oder|ou|o|oppure|или|либо|veya|ya\s+da)\s+|\s*(?:或者|或|または|それとも|또는|혹은)\s*)/iu;
       let specificTargetAlternatives = DISJUNCTION_REGEX.test(text)
         ? this._parseSpecificAttachmentTargets(rawVal, disjunctionSplit)
           .map(group => this._parseSpecificAttachmentTargets(group))
           .filter(group => group.length > 0)
         : [];
+      // A terminal ", or" marks an enumerated choice list rather than a
+      // conjunctive comma list. Preserve every listed filename as its own
+      // branch, including the common "one of a, b, or c" spelling.
+      const maskedSpecificTargets = this._maskQuotedPayload(String(rawVal || ''));
+      const commaDisjunction = /[,;]\s*(?:or|oder|ou|o|oppure|или|либо|veya|ya\s+da)\s+/iu;
+      if (commaDisjunction.test(maskedSpecificTargets)) {
+        const enumeratedTargets = specificTargets.map(target => (
+          target.replace(/^(?:either|one\s+of)\s+/iu, '')
+        )).filter(Boolean);
+        const firstHasChoiceMarker = /^(?:either|one\s+of)\s+/iu.test(specificTargets[0] || '');
+        const [commaChoicePrefix = '', commaChoiceTail = ''] = maskedSpecificTargets.split(commaDisjunction);
+        const hasConjunctivePrefix = /\s+(?:and|und|et|e|y|ve|и|as\s+well\s+as|&)\s+/iu.test(commaChoicePrefix);
+        const hasTrailingConjunct = /(?:[,;]\s*|\s+)(?:and|und|et|e|y|ve|и|as\s+well\s+as|&)\s+/iu.test(commaChoiceTail);
+        if (enumeratedTargets.length > 1 && !hasTrailingConjunct
+            && (firstHasChoiceMarker || !hasConjunctivePrefix)) {
+          specificTargetAlternatives = enumeratedTargets.map(target => [target]);
+        }
+      }
       // In "logo.png and either chart.png or graph.png, and caption.png",
       // `either` scopes the choice while the surrounding conjuncts remain
       // requirements in both branches. Distribute both sides instead of
@@ -3371,6 +3391,7 @@ export class Agent extends LoopDetector {
         const matchesVideoAlt = alternativeVideoCount >= minVideos
           && (!exactVideoAlt || alternativeVideoCount === expectedAlternativeVideoCount)
           && (!isAlternativeVideoMaximum || alternativeVideoCount <= expectedAlternativeVideoCount)
+          && (!(parsed.wantsGif && !parsed.wantsOrdinaryVideo) || rawAttachments.length === gifCount)
           && imageCount === 0
           && (!exactVideoAlt || rawAttachments.length === expectedAlternativeVideoCount)
           && (!isAlternativeVideoMaximum || rawAttachments.length <= expectedAlternativeVideoCount);
