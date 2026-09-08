@@ -249,7 +249,7 @@ const GENERIC_ATTACHMENT_WORDS = new Set([
   'item', 'items', 'piece', 'pieces', 'upload', 'uploads', 'asset', 'assets',
   'enclosure', 'enclosures', 'document', 'documents', 'documento', 'documentos',
   'a', 'an', 'the', 'of', 'in', 'with', 'some', 'any',
-  'and', 'but', 'or', 'either', 'neither', 'nor', 'plus', 'also', 'as', 'well', 'between', 'from', 'to',
+  'and', 'but', 'or', 'either', 'neither', 'nor', 'plus', 'also', 'as', 'well', 'together', 'between', 'from', 'to',
   'no', 'not', 'without', 'zero', 'none',
   'only', 'just', 'solely', 'exactly', 'exact', 'precisely',
   'sin', 'sans', 'sem', 'senza', 'ohne', 'kein', 'keine', 'keinen', 'aucun', 'aucune', 'ningun', 'ninguna', 'ningún', 'nenhum', 'nenhuma', 'nessun', 'nessuno', 'nessuna', 'nie', 'без', 'нет',
@@ -15744,7 +15744,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     // matching would leave it unbound.
     const publishesTo = (platform) => {
       const destPreps = '(?:on|onto|to|via|in|at|en|sur|sobre|\u00e0|au|auf|su|em|na|no|nos|nas|para|\u0432|\u043d\u0430)';
-      const coordConj = '(?:and|und|et|e|y|ve|и|oder|or|ou|o|as\\s+well\\s+as|alongside|together\\s+with|&|\\/)';
+      const coordConj = '(?:and|und|et|e|y|ve|и|oder|or|ou|o|plus|as\\s+well\\s+as|alongside|together\\s+with|&|\\/)';
       const listModifiers = '(?:both|either|all|one\\s+of(?:\\s+the)?|ambos|ambas|entrambi|entrambe|beide|beiden|les\\s+deux|tous\\s+les\\s+deux|\u043e\u0431\u0430|\u043e\u0431\u0435|\u4e24\u8005|\u4e24\u4e2a|\u4e24|\u4e21\u65b9|\u4e21\u8005|\u4e21|\ub458\\s*\ub2e4|\ub458|\uc591\uc790|\uc591)';
       const coordItem = `(?:the\\s+)?(?:${listModifiers}\\s+)?[a-z0-9_.-]+(?:\\s+page|\\s+account|\\s+profile)?`;
       const coordPrefix = `(?:${coordItem}(?:\\s*,\\s*${coordItem})*\\s*(?:,\\s*${coordConj}|,|;|\\s+${coordConj})\\s+(?:the\\s+)?)`;
@@ -24289,6 +24289,19 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
             const next = clauses[nextIndex];
             if ((next.delim || '').trim() === ':') {
               scoped += `:${next.text}`;
+              // Bodies may continue on following lines ("Post on X:\nhello
+              // \nworld"): newline clauses carry no terminator of their own,
+              // so they extend the same body unless a new publication clause
+              // for another destination begins.
+              for (let bodyIndex = nextIndex + 1; bodyIndex < clauses.length; bodyIndex++) {
+                const bodyClause = clauses[bodyIndex];
+                if ((bodyClause.delim || '') !== '') break;
+                const bodyMasked = bodyClause.maskedText || bodyClause.text || '';
+                if (SOCIAL_PUBLISH_VERBS.test(bodyMasked)
+                    && anyPlatformPattern.test(bodyMasked)
+                    && !platformPattern.test(bodyMasked)) break;
+                scoped += `\n${bodyClause.text}`;
+              }
               break;
             }
             if (SOCIAL_COORDINATING_DELIMITER.test(next.delim || '')

@@ -91016,6 +91016,8 @@ test('social publication workflow follows the live X or Bluesky destination and 
       // Multi-platform coordination across conjunctions
       ['Post on X and Bluesky', ['twitter', 'bluesky'],
         'coordinated destinations on X and Bluesky should both be targeted'],
+      ['Post on X plus Bluesky', ['twitter', 'bluesky'],
+        'coordinated destinations on X plus Bluesky should both be targeted'],
       ['Post on X, then on Bluesky', ['twitter', 'bluesky'],
         'sequential destinations on X then Bluesky should both be targeted'],
       ['Post on https://x.com/home, then on https://bsky.app/', ['twitter', 'bluesky'],
@@ -91164,6 +91166,10 @@ test('social destination rebinding refreshes platform-specific payload and uploa
       AgentClass.name + ': destination-first publish clause lost the shared X body');
     assert.equal(agent._extractWorkflowTaskBody('On X and Bluesky, publish: Launch now', '', 'bluesky'), 'Launch now',
       AgentClass.name + ': destination-first publish clause lost the shared Bluesky body');
+    assert.equal(agent._extractWorkflowTaskBody('Post on X:\nhello\nworld', '', 'twitter'), 'hello\nworld',
+      AgentClass.name + ': multiline body after the colon was lost');
+    assert.equal(agent._extractWorkflowTaskBody('Post on X: hello\nworld', '', 'twitter'), 'hello\nworld',
+      AgentClass.name + ': body continuation line after inline colon text was lost');
     assert.equal(guard.workflowMetadataRequirementsResolved, true);
     assert.deepEqual(guard.workflowSocialUploadEvidence, [],
       AgentClass.name + ': X upload provenance leaked into the Bluesky binding');
@@ -91354,6 +91360,7 @@ test('alternative social destinations require one verified publication, not ever
     for (const taskText of [
       'Post this on X alongside Bluesky.',
       'Post this on X together with Bluesky.',
+      'Post on X plus Bluesky.',
     ]) {
       const conjunctiveList = { ...guard, taskText };
       assert.deepEqual(
@@ -93188,6 +93195,11 @@ test('upper-bound attachment qualifiers verify as maximum counts', () => {
         { value: 'one image and no more than one video' }, { attachments },
       ), expected, AgentClass.name + ': ' + message);
     }
+    assert.equal(agent._parseWorkflowAttachmentRequirement('one image together with one video').isGeneric, true,
+      AgentClass.name + ': together-with conjunction was parsed as a filename');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one image together with one video' }, { attachments: [image(1), video(1)] }), true,
+      AgentClass.name + ': one image together with one video was rejected');
     const unrestrictedOrPngImage = agent._parseWorkflowAttachmentRequirement('one image or one PNG image');
     assert.equal(unrestrictedOrPngImage.mediaAlternativeBranches.length, 2,
       AgentClass.name + ': a format token consumed the noun slot of a whole-media alternative');
