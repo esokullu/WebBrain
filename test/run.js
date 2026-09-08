@@ -91420,6 +91420,14 @@ test('alternative social destinations require one verified publication, not ever
       ...guard,
       taskText: 'Post on X; if that does not work, post on Bluesky.',
     }), true, AgentClass.name + ': does-not-work fallback required a second public post');
+    assert.equal(agent._socialPublishTargetsAreAlternatives({
+      ...guard,
+      taskText: 'Post on X unless it is unavailable, then post on Bluesky.',
+    }), true, AgentClass.name + ': unless-then fallback required a second public post');
+    assert.equal(agent._socialPublishTargetsAreAlternatives({
+      ...guard,
+      taskText: 'Post hello on X and Bluesky. Compare X or Bluesky afterward.',
+    }), false, AgentClass.name + ': an unrelated later comparison suppressed a requested publication');
     assert.deepEqual(agent._missingSocialPublishTargets({ ...guard, taskText: 'Post on Bluesky' }), ['bluesky'],
       AgentClass.name + ': a run bound to X reported no missing destination for a Bluesky-only request');
     assert.deepEqual(agent._missingSocialPublishTargets({ ...guard, taskText: 'Post on X' }), [],
