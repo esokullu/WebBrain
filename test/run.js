@@ -90795,6 +90795,12 @@ test('social publication workflow follows the live X or Bluesky destination and 
         'post-verb neither/nor destination scope adopted a forbidden platform'],
       ['Post neither on X nor on Bluesky', [],
         'pre-preposition neither/nor destination scope adopted a forbidden platform'],
+      ['Post on Bluesky rather than posting on X', ['bluesky'],
+        'rather-than clause adopted its expressly excluded X destination'],
+      ['Post on Bluesky rather than on X', ['bluesky'],
+        'elliptical rather-than phrase adopted its excluded X destination'],
+      ['Post on https://bsky.app/ rather than posting on https://x.com/home', ['bluesky'],
+        'rather-than URL clause adopted its expressly excluded X destination'],
       ['Post on X without posting on Bluesky', ['twitter'],
         'a nested negated publish clause added its forbidden Bluesky destination'],
       ['Post this on Bluesky with no X links', ['bluesky'],
@@ -91243,6 +91249,10 @@ test('alternative social destinations require one verified publication, not ever
       ...guard,
       taskText: 'Post this on X or alternatively on Bluesky.',
     }), true, AgentClass.name + ': alternatively adverb broke a destination choice');
+    assert.equal(agent._socialPublishTargetsAreAlternatives({
+      ...guard,
+      taskText: 'Post on https://x.com/home or https://bsky.app/.',
+    }), true, AgentClass.name + ': destination URL paths broke an explicit platform choice');
     assert.equal(agent._socialPublishTargetsAreAlternatives({
       ...guard,
       taskText: 'Post on X or post this update on Bluesky.',
@@ -92938,6 +92948,25 @@ test('upper-bound attachment qualifiers verify as maximum counts', () => {
     assert.equal(agent._workflowSocialPublishedAttachmentObserved(
       { value: 'one image and no GIFs' }, { attachments: [image(1), gif(1)] }), false,
       AgentClass.name + ': a GIF satisfied a no-GIF requirement');
+    for (const coordinatedNegative of ['no images or videos', 'without images or videos']) {
+      const parsedCoordinatedNegative = agent._parseWorkflowAttachmentRequirement(coordinatedNegative);
+      assert.equal(parsedCoordinatedNegative.wantsNone, true,
+        AgentClass.name + `: coordinated media negation was split for "${coordinatedNegative}"`);
+      assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+        { value: coordinatedNegative }, { attachments: [] }), true,
+        AgentClass.name + `: empty media did not satisfy "${coordinatedNegative}"`);
+      for (const forbidden of [image(1), video(1), gif(1)]) {
+        assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+          { value: coordinatedNegative }, { attachments: [forbidden] }), false,
+          AgentClass.name + `: forbidden media satisfied "${coordinatedNegative}"`);
+      }
+    }
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one image and no videos or GIFs' }, { attachments: [image(1)] }), true,
+      AgentClass.name + ': embedded coordinated media negation rejected the required image');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one image and no videos or GIFs' }, { attachments: [image(1), gif(1)] }), false,
+      AgentClass.name + ': embedded coordinated media negation allowed a GIF');
 
     const boundedImages = agent._parseWorkflowAttachmentRequirement('between one and two images');
     assert.equal(boundedImages.isGeneric, true,

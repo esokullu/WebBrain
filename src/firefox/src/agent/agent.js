@@ -194,6 +194,7 @@ const SOCIAL_POST_DESTINATION_NEGATION = new RegExp(
   `(?<![${SOCIAL_WORD_EDGE}])(?:not\\s+(?:on|onto|to|via|in|at)|(?:on|onto|to|via|in|at)\\s+neither|neither\\s+(?:on|onto|to|via|in|at))(?![${SOCIAL_WORD_EDGE}])`,
   'iu',
 );
+const SOCIAL_CONTRASTIVE_EXCLUSION = /(?<![\p{L}\p{N}_])(?:rather\s+than|instead\s+of)(?:\s+(?:post(?:ing)?|publish(?:ing)?|shar(?:e|ing)|tweet(?:ing)?|send(?:ing)?))?(?:\s+(?:on|onto|to|via|in|at))?\s*$/iu;
 const socialPostNegationGovernsPublish = value => (
   SOCIAL_POST_NEGATION.test(String(value || '').trim())
   || SOCIAL_POST_DESTINATION_NEGATION.test(String(value || ''))
@@ -204,7 +205,8 @@ const socialPostNegationGovernsPublish = value => (
 // so "don't forget not to post" remains a negative command.
 const SOCIAL_AFFIRMATIVE_NEGATION_IDIOM = /(?<![\p{L}\p{N}_])(?:do\s+not|don['\u2019]?t|never)\s+(?:forget|fail|hesitate|neglect)\s+to\s*$/iu;
 const socialNegationGovernsPublish = value => (
-  SOCIAL_NEGATION.test(String(value || ''))
+  (SOCIAL_NEGATION.test(String(value || ''))
+    || SOCIAL_CONTRASTIVE_EXCLUSION.test(String(value || '')))
   && !SOCIAL_AFFIRMATIVE_NEGATION_IDIOM.test(String(value || ''))
 );
 const SOCIAL_CLAUSE_DELIMITER = new RegExp(
@@ -2754,7 +2756,8 @@ export class Agent extends LoopDetector {
     if (/^(?:none|no|false|0|zero|なし|無し|無|없음)$/i.test(s)) return true;
     const negPrefix = '(?:no|without|without\\s+any|sin|sans|sem|senza|ohne|без|kein|keine|aucun|aucune|ningun|ningún|ninguna|nenhum|nenhuma|nessun|nessuno|nessuna|nie)';
     const nounSuffix = '(?:attachments?|files?|m[eéèê]dias?|m[ií]dia|medien|medios?|uploads?|images?|photos?|pictures?|pics?|videos?|clips?|recordings?|gifs?|fichiers?|pièces?|archivos?|adjuntos?|anexos?|allegat[oi]?|anhänge?|anhang|dateien?|вложений|вложения|фото(?:графий)?|изображений|видео|файлов)';
-    if (new RegExp(`^${negPrefix}\\s+${nounSuffix}$`, 'i').test(s)) return true;
+    const nounListSeparator = '(?:\\s*[,;]\\s*(?:(?:and|or|nor)\\s+)?|\\s+(?:and|or|nor)\\s+)';
+    if (new RegExp(`^${negPrefix}\\s+(?:any\\s+)?${nounSuffix}(?:${nounListSeparator}(?:any\\s+)?${nounSuffix})*$`, 'i').test(s)) return true;
     if (new RegExp(`^(?:0|zero)\\s*${nounSuffix}?$`, 'i').test(s)) return true;
     if (/^(?:(?:无|没有|不带|零个|0个)\s*(?:附件|图片|照片|视频|媒体|文件)|(?:附件|图片|照片|视频|媒体|文件)\s*(?:无|没有|为0|为零))$/i.test(s)) return true;
     if (/^(?:(?:添付|メディア|画像|写真|動画|ファイル)\s*(?:なし|無し|ゼロ|0)|(?:なし|無し)\s*(?:添付|メディア|画像|写真|動画|ファイル))$/i.test(s)) return true;
@@ -2786,9 +2789,21 @@ export class Agent extends LoopDetector {
       };
     }
 
-    const isImageNegated = IMAGE_NEGATION_REGEX.test(text);
-    const isVideoNegated = VIDEO_NEGATION_REGEX.test(text);
-    const isGifNegated = GIF_NEGATION_REGEX.test(text);
+    const coordinatedMediaNoun = '(?:images?|photos?|pictures?|pics?|videos?|clips?|recordings?|gifs?|animated[-_ ]gifs?)';
+    const coordinatedMediaListNegation = text.match(new RegExp(
+      `(?<![${SOCIAL_WORD_EDGE}])(?:no|not|without(?:\\s+any)?)\\s+(?:any\\s+)?(${coordinatedMediaNoun}(?:(?:\\s*[,;]\\s*(?:(?:and|or|nor)\\s+)?|\\s+(?:and|or|nor)\\s+)(?:any\\s+)?${coordinatedMediaNoun})+)`,
+      'iu',
+    ));
+    const coordinatedNegatedMedia = coordinatedMediaListNegation?.[1] || '';
+    const coordinatedMediaNegationSpan = coordinatedMediaListNegation
+      ? [coordinatedMediaListNegation.index || 0, (coordinatedMediaListNegation.index || 0) + coordinatedMediaListNegation[0].length]
+      : null;
+    const isImageNegated = IMAGE_NEGATION_REGEX.test(text)
+      || Boolean(coordinatedNegatedMedia && RAW_IMAGE_NOUN_REGEX.test(coordinatedNegatedMedia));
+    const isVideoNegated = VIDEO_NEGATION_REGEX.test(text)
+      || Boolean(coordinatedNegatedMedia && RAW_VIDEO_NOUN_REGEX.test(coordinatedNegatedMedia));
+    const isGifNegated = GIF_NEGATION_REGEX.test(text)
+      || Boolean(coordinatedNegatedMedia && RAW_GIF_NOUN_REGEX.test(coordinatedNegatedMedia));
 
     if (isImageNegated && isVideoNegated) {
       return {
@@ -3059,7 +3074,10 @@ export class Agent extends LoopDetector {
     // whole media branches. In "one or two images and one video", the video
     // remains conjunctive and only the image cardinality is alternative.
     let unscopedDisjunctionText = qualifierMaskedDisjunctionText;
-    for (const [start, end] of scopedAlternativeSpans.slice().sort((a, b) => b[0] - a[0])) {
+    const nonBranchDisjunctionSpans = coordinatedMediaNegationSpan
+      ? [...scopedAlternativeSpans, coordinatedMediaNegationSpan]
+      : scopedAlternativeSpans;
+    for (const [start, end] of nonBranchDisjunctionSpans.slice().sort((a, b) => b[0] - a[0])) {
       unscopedDisjunctionText = unscopedDisjunctionText.slice(0, start)
         + ' '.repeat(end - start)
         + unscopedDisjunctionText.slice(end);
@@ -15120,13 +15138,18 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           lastBeforeClause = null;
         }
       }
+      if (SOCIAL_CONTRASTIVE_EXCLUSION.test(lastBeforeClause?.maskedText || lastBeforeClause?.text || '')) continue;
       if (lastBeforeClause?.isNegated) continue;
       const afterClauses = this._socialPublicationClauses(after);
       const firstAfterClause = afterClauses.find(c => c.text.trim().length > 0);
       // The route matcher accepts a bare /compose, so the composer test has to
       // end at a path boundary rather than demand a following slash.
       const isComposer = /\/(?:compose|intent|i\/flow)(?:[/?#]|$)/i.test(url);
+      const firstAfterPublish = firstAfterClause?.maskedText?.match(SOCIAL_PUBLISH_VERBS);
+      const firstAfterIsContrastive = Boolean(firstAfterPublish
+        && SOCIAL_CONTRASTIVE_EXCLUSION.test(firstAfterClause.maskedText.slice(0, firstAfterPublish.index)));
       const firstAfterNegatesPublish = firstAfterClause?.isNegated
+        && !firstAfterIsContrastive
         && (isComposer
           || SOCIAL_PUBLISH_VERBS.test(firstAfterClause.maskedText || firstAfterClause.text));
       if (firstAfterNegatesPublish) continue;
@@ -15234,6 +15257,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
             const isSourceOnly = SOURCE_MODIFIER_BEFORE_PLATFORM.test(beforePlat)
               || NON_SOCIAL_DESTINATION_AFTER_PLATFORM.test(afterPlat)
               || platformMentionIsContentQualifier(beforePlat, afterPlat)
+              || SOCIAL_CONTRASTIVE_EXCLUSION.test(beforePlat)
               || (NON_SOCIAL_DESTINATION_GOVERNING_AFTER_VERB.test(beforePlat)
                   && !CONTENT_LINK_PHRASE.test(beforePlat)
                   && !/(?:and|und|et|e|y|ve|и|oder|or|as\s+well\s+as)\s+$/i.test(beforePlat))
@@ -15257,6 +15281,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
             const isSourceOnly = SOURCE_MODIFIER_BEFORE_PLATFORM.test(beforePlat)
               || NON_SOCIAL_DESTINATION_AFTER_PLATFORM.test(afterPlat)
               || platformMentionIsContentQualifier(beforePlat, afterPlat)
+              || SOCIAL_CONTRASTIVE_EXCLUSION.test(beforePlat)
               || hasCompeteInAfterVerb
               || (NON_SOCIAL_DESTINATION_GOVERNING_AFTER_VERB.test(beforePlat)
                   && !CONTENT_LINK_PHRASE.test(beforePlat)
@@ -15286,6 +15311,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
               const isSourceOnly = SOURCE_MODIFIER_BEFORE_PLATFORM.test(beforePlat)
                 || NON_SOCIAL_DESTINATION_AFTER_PLATFORM.test(afterPlat)
                 || platformMentionIsContentQualifier(beforePlat, afterPlat)
+                || SOCIAL_CONTRASTIVE_EXCLUSION.test(beforePlat)
                 || (NON_SOCIAL_DESTINATION_GOVERNING_AFTER_VERB.test(beforePlat)
                     && !CONTENT_LINK_PHRASE.test(beforePlat)
                     && !/(?:and|und|et|e|y|ve|и|oder|or|as\s+well\s+as)\s+$/i.test(beforePlat))
@@ -15325,6 +15351,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
               const isSourceOnly = SOURCE_MODIFIER_BEFORE_PLATFORM.test(beforePlat)
                 || NON_SOCIAL_DESTINATION_AFTER_PLATFORM.test(afterPlat)
                 || platformMentionIsContentQualifier(beforePlat, afterPlat)
+                || SOCIAL_CONTRASTIVE_EXCLUSION.test(beforePlat)
                 || (NON_SOCIAL_DESTINATION_GOVERNING_AFTER_VERB.test(beforePlat)
                     && !CONTENT_LINK_PHRASE.test(beforePlat)
                     && !/(?:and|und|et|e|y|ve|и|oder|or|as\s+well\s+as)\s+$/i.test(beforePlat))
@@ -15367,17 +15394,22 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     // unrelated branch such as "X or report the blocker; also post on
     // Bluesky" contains `or`, but it does not coordinate the destinations.
     const directAlternativeBridge = /^\s*(?:(?:page|account|profile)\s*)?(?:,\s*)?(?:(?:or|oder|ou|o|oppure|veya|ya\s+da|\u0438\u043b\u0438|\u043b\u0438\u0431\u043e)(?![\p{L}\p{N}_])|(?:\u6216\u8005|\u6216|\u307e\u305f\u306f|\u305d\u308c\u3068\u3082|\uB610\uB294|\uD639\uC740))\s*(?:alternatively\s+)?(?:(?:post|publish|share|tweet|send|reply|respond)\s+(?:(?:this|that|it|the\s+following)\s+)?)?(?:(?:also\s+)?(?:on|onto|to|via|in|at|en|sur|sobre|\u00e0|au|auf|su|em|na|no|nos|nas|para|\u0432|\u043d\u0430)\s+)?(?:the\s+)?$/iu;
-    const platformPattern = /(?:https?:\/\/(?:www\.)?(?:x\.com|twitter\.com|bsky\.app)(?:[/?#]|$)|(?<![\p{L}\p{N}_])(?:x|twitter|bluesky|bsky\.app)(?![\p{L}\p{N}_]))/giu;
+    const platformPattern = /(?:https?:\/\/(?:www\.)?(?:x\.com|twitter\.com|bsky\.app)(?:[/?#][^\s<>"'`\u3002\u3001\uff0c\uff1b\uff1a\uff01\uff1f\u2026\u2025]*|(?=[\s<>"'`\u3002\u3001\uff0c\uff1b\uff1a\uff01\uff1f\u2026\u2025,;!?]|$))|(?<![\p{L}\p{N}_])(?:x|twitter|bluesky|bsky\.app)(?![\p{L}\p{N}_]))/giu;
     const texts = [guard?.taskText, guard?.approvedPlanAnchor]
       .map(value => String(value || '').trim())
       .filter(Boolean);
     return texts.some((text) => {
       const masked = this._maskQuotedPayload(text);
-      const platforms = [...masked.matchAll(platformPattern)].map(match => ({
-        index: match.index ?? 0,
-        end: (match.index ?? 0) + match[0].length,
-        name: /(?:bluesky|bsky)/i.test(match[0]) ? 'bluesky' : 'twitter',
-      }));
+      const platforms = [...masked.matchAll(platformPattern)].map(match => {
+        const matchedText = /^https?:/i.test(match[0])
+          ? this._workflowTrimUrlPunctuation(match[0])
+          : match[0];
+        return {
+          index: match.index ?? 0,
+          end: (match.index ?? 0) + matchedText.length,
+          name: /(?:bluesky|bsky)/i.test(matchedText) ? 'bluesky' : 'twitter',
+        };
+      });
       for (let index = 1; index < platforms.length; index++) {
         const left = platforms[index - 1];
         const right = platforms[index];
