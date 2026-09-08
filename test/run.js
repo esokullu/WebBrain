@@ -90749,6 +90749,14 @@ test('social publication workflow follows the live X or Bluesky destination and 
         'negated publication command was wrongly treated as a publish destination'],
       ['Never publish to Bluesky', [],
         'negated Bluesky publication command was wrongly treated as a publish destination'],
+      ["Don't forget to post this on X", ['twitter'],
+        'affirmative do-not-forget idiom was treated as publish negation'],
+      ['Do not forget to publish this on Bluesky', ['bluesky'],
+        'affirmative do-not-forget idiom was treated as Bluesky publish negation'],
+      ['Never hesitate to post this on X', ['twitter'],
+        'affirmative never-hesitate idiom was treated as publish negation'],
+      ["Don't forget not to post this on X", [],
+        'nested not-to-post command was incorrectly made affirmative'],
       ["Don't tweet this", [],
         'negated tweet-this command was wrongly treated as a publish destination'],
       ['Do not post on https://x.com/home; fill the survey instead', [],
@@ -91416,6 +91424,39 @@ test('X and Bluesky same-route publication accepts only one new permalink with t
         fixture.feedUrl,
         submit,
       ), true, AgentClass.name + ': post with matching image attachment was rejected');
+
+      assert.equal(agent._workflowPublishedResourcePayloadMatch(
+        {
+          ...submit.workflowBinding,
+          metadataRequirements: [
+            ...submit.workflowBinding.metadataRequirements,
+            { field: 'alt_text', value: 'screenshot' },
+          ],
+          publishedResourceIdentity: fixture.expectedIdentity,
+          preDispatchPublicationAccountIdentity: fixture.accountIdentity,
+          preDispatchPublicationAccountIdentityComplete: true,
+        },
+        guard,
+        pageStateWithImage,
+        fixture.feedUrl,
+        submit,
+      ), true, AgentClass.name + ': matching attachment alt text was rejected');
+      assert.equal(agent._workflowPublishedResourcePayloadMatch(
+        {
+          ...submit.workflowBinding,
+          metadataRequirements: [
+            ...submit.workflowBinding.metadataRequirements,
+            { field: 'alt_text', value: 'Sales growth' },
+          ],
+          publishedResourceIdentity: fixture.expectedIdentity,
+          preDispatchPublicationAccountIdentity: fixture.accountIdentity,
+          preDispatchPublicationAccountIdentityComplete: true,
+        },
+        guard,
+        pageStateWithImage,
+        fixture.feedUrl,
+        submit,
+      ), false, AgentClass.name + ': mismatched attachment alt text was accepted');
 
       assert.equal(agent._workflowPublishedResourcePayloadMatch(
         {
@@ -92287,6 +92328,69 @@ test('extracting post body supports multilingual commands with colons and quotes
   }
 });
 
+test('publish-post alt text is a distinct verified metadata requirement', async () => {
+  for (const [index, AgentClass] of [AgentCh, AgentFx].entries()) {
+    const agent = new AgentClass({});
+    assert.equal(agent._workflowMetadataFieldKey('alt text'), 'alt_text',
+      AgentClass.name + ': alt text did not normalize to its canonical field');
+    assert.match(
+      agent._progressIntentClassifierMessages('Post chart.png on X with alt text "Sales growth"', {
+        workflow: { job: 'publish-post' },
+      })[0].content,
+      /alt_text when the user explicitly requests attachment alternative text/,
+      AgentClass.name + ': classifier prompt omitted publish-post alt text',
+    );
+    assert.equal(
+      agent._extractWorkflowTaskBody('Post chart.png on X with alt text "Sales growth"'),
+      '',
+      AgentClass.name + ': quoted alt text was misclassified as the post body',
+    );
+    assert.equal(
+      agent._extractWorkflowTaskBody('Post chart.png on X with alternative text “Sales growth”'),
+      '',
+      AgentClass.name + ': smart-quoted alternative text was misclassified as the post body',
+    );
+    assert.equal(
+      agent._extractWorkflowTaskBody('Post "Launch update" on X with alt text "Sales growth"'),
+      'Launch update',
+      AgentClass.name + ': masking alt text hid the actual quoted post body',
+    );
+
+    const tabId = 9880 + index;
+    const siteWorkflow = agent._resolvePlannerSiteWorkflow('https://x.com/home', {
+      request_kind: 'execute',
+      site_job: 'publish-post',
+    });
+    const guard = agent._startPlanExecutionGuard(tabId, 'act', {
+      requestKind: 'execute',
+      requiresStateChange: true,
+      requiresSubmission: true,
+      siteWorkflow,
+    });
+    const provider = {
+      chat: async () => ({
+        content: JSON.stringify({
+          workflowFields: [
+            { field: 'attachment', value: 'chart.png' },
+            { field: 'alt_text', value: 'Sales growth' },
+          ],
+        }),
+      }),
+    };
+    await agent._classifyProgressIntentWithProvider(tabId, {
+      provider,
+      taskText: 'Post chart.png on X with alt text "Sales growth"',
+      pageScope: 'https://x.com/home',
+    });
+    assert.deepEqual(guard.workflowMetadataRequirements, [
+      { field: 'attachment', value: 'chart.png' },
+      { field: 'alt_text', value: 'Sales growth' },
+    ], AgentClass.name + ': classifier did not retain attachment and alt text separately');
+    assert.equal(guard.workflowMetadataRequirementsIncomplete, false,
+      AgentClass.name + ': valid alt-text metadata was marked incomplete');
+  }
+});
+
 test('classifier fallback leaves metadata requirements incomplete and unresolved', async () => {
   for (const [index, AgentClass] of [AgentCh, AgentFx].entries()) {
     const agent = new AgentClass({});
@@ -92592,6 +92696,9 @@ test('upper-bound attachment qualifiers verify as maximum counts', () => {
     const video = index => ({ type: 'video', src: `https://video.twimg.com/media/video${index}.mp4` });
     const gif = index => ({ type: 'animated_gif', src: `https://video.twimg.com/tweet_video/gif${index}.mp4` });
     assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'up to two images' }, { attachments: [] }), true,
+      AgentClass.name + ': zero images should satisfy "up to two images"');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
       { value: 'up to two images' }, { attachments: [image(1)] }), true,
       AgentClass.name + ': one image should satisfy "up to two images"');
     assert.equal(agent._workflowSocialPublishedAttachmentObserved(
@@ -92603,6 +92710,9 @@ test('upper-bound attachment qualifiers verify as maximum counts', () => {
     assert.equal(agent._workflowSocialPublishedAttachmentObserved(
       { value: 'one video and at most two images' }, { attachments: [video(1), image(1)] }), true,
       AgentClass.name + ': one video plus one image should satisfy the capped mixed requirement');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one video and at most two images' }, { attachments: [video(1)] }), true,
+      AgentClass.name + ': exact video plus zero optional images should satisfy the capped mixed requirement');
     assert.equal(agent._workflowSocialPublishedAttachmentObserved(
       { value: 'one video and at most two images' }, { attachments: [video(1), image(1), image(2)] }), true,
       AgentClass.name + ': one video plus two images should satisfy the capped mixed requirement');
@@ -92621,6 +92731,9 @@ test('upper-bound attachment qualifiers verify as maximum counts', () => {
       { value: 'one video and at most two GIFs' }, { attachments: [video(1), gif(1)] }), true,
       AgentClass.name + ': one video plus one GIF should satisfy the GIF maximum');
     assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one video and at most two GIFs' }, { attachments: [video(1)] }), true,
+      AgentClass.name + ': exact video plus zero optional GIFs should satisfy the GIF maximum');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
       { value: 'one video and at most two GIFs' }, { attachments: [video(1), gif(1), gif(2)] }), true,
       AgentClass.name + ': one video plus two GIFs should satisfy the GIF maximum');
     assert.equal(agent._workflowSocialPublishedAttachmentObserved(
@@ -92629,6 +92742,12 @@ test('upper-bound attachment qualifiers verify as maximum counts', () => {
     assert.equal(agent._workflowSocialPublishedAttachmentObserved(
       { value: 'one video and at most two GIFs' }, { attachments: [video(1), video(2), gif(1)] }), false,
       AgentClass.name + ': the GIF maximum loosened the exact ordinary-video count');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'up to two videos' }, { attachments: [] }), true,
+      AgentClass.name + ': zero videos should satisfy a standalone video maximum');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'up to two GIFs' }, { attachments: [] }), true,
+      AgentClass.name + ': zero GIFs should satisfy a standalone GIF maximum');
   }
 });
 

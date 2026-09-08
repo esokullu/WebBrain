@@ -190,6 +190,15 @@ const SOCIAL_POST_NEGATION = new RegExp(
   `^(?:\\s*(?:nothing|nowhere|none)|しないで|してはいけない|してはならない|はいけない|はならない|はだめ|はいけません|はなりません|すんな|するな|禁止|ないで|\\s*(?:하지\\s*마|하지\\s*마세요|하지\\s*않|금지))`,
   'iu',
 );
+// Negation before a publish verb normally forbids the publication, but in
+// idioms such as "don't forget to post" it governs the reminder verb instead.
+// Keep this narrowly anchored to the text immediately before the publish verb
+// so "don't forget not to post" remains a negative command.
+const SOCIAL_AFFIRMATIVE_NEGATION_IDIOM = /(?<![\p{L}\p{N}_])(?:do\s+not|don['\u2019]?t|never)\s+(?:forget|fail|hesitate|neglect)\s+to\s*$/iu;
+const socialNegationGovernsPublish = value => (
+  SOCIAL_NEGATION.test(String(value || ''))
+  && !SOCIAL_AFFIRMATIVE_NEGATION_IDIOM.test(String(value || ''))
+);
 const SOCIAL_CLAUSE_DELIMITER = new RegExp(
   `([.!?;:\\n]|(?<![${SOCIAL_WORD_EDGE}])(?:and|then|but|or|nor|after|before|y|e|ed|luego|puis|et|ensuite|und|dann|poi|sonra|ve|затем|и)(?![${SOCIAL_WORD_EDGE}])|然后|然後|接着|そして|それから|または|、|。|,)`,
   'iu',
@@ -2147,6 +2156,7 @@ export class Agent extends LoopDetector {
         .replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
     };
     const fields = [
+      ['alt_text', ['alt text', 'alternative text', 'image alt text', 'attachment alt text', 'media alt text']],
       ['paid_promotion', ['paid promotion', 'promotion payée', 'contenido promocional pagado', 'promoção paga', 'bezahlte werbung', 'promozione a pagamento', 'ücretli tanıtım', '有料プロモーション', '유료 프로모션', '付费宣传', '付費宣傳']],
       ['recording_date', ['recording date', 'date recorded', "date d’enregistrement", 'fecha de grabación', 'data de gravação', 'aufnahmedatum', 'data di registrazione', 'kayıt tarihi', '録画日', '撮影日', '촬영 날짜', '录制日期', '錄製日期']],
       ['recording_location', ['recording location', 'video location', "lieu d’enregistrement", 'ubicación de grabación', 'local de gravação', 'aufnahmeort', 'luogo di registrazione', 'kayıt konumu', '撮影場所', '촬영 위치', '录制地点', '錄製地點']],
@@ -3095,7 +3105,24 @@ export class Agent extends LoopDetector {
     if (parsed.wantsNone || parsed.expectedCount === 0 || parsed.isNegative) {
       return rawAttachments.length === 0;
     }
-    if (!rawAttachments.length) return false;
+    // An upper bound does not imply that one attachment is required. Empty
+    // media is valid only when every conjunctive positive constraint permits
+    // zero; for alternatives, one maximum-qualified branch is sufficient.
+    const allowsNoAttachments = parsed.isGeneric && (
+      parsed.isAlternative
+        ? (parsed.isMaximumCount
+          || (parsed.wantsImage && parsed.isImageMaximum)
+          || (parsed.wantsOrdinaryVideo && parsed.isVideoMaximum)
+          || (parsed.wantsGif && parsed.isGifMaximum))
+        : (parsed.isMaximumCount
+          || parsed.isImageMaximum
+          || parsed.isVideoMaximum
+          || parsed.isGifMaximum)
+          && (!parsed.wantsImage || parsed.isImageMaximum || parsed.isImageNegated)
+          && (!parsed.wantsOrdinaryVideo || parsed.isVideoMaximum || parsed.isVideoNegated)
+          && (!parsed.wantsGif || parsed.isGifMaximum || parsed.isGifNegated)
+    );
+    if (!rawAttachments.length) return allowsNoAttachments;
     const attachmentType = att => (typeof att === 'string' ? att : att?.type || att?.kind || '');
 
     const isVideoAttachment = (att) => {
@@ -3131,13 +3158,13 @@ export class Agent extends LoopDetector {
     const gifCount = rawAttachments.filter(isGifAttachment).length;
     const ordinaryVideoCount = rawAttachments.filter(att => isVideoAttachment(att) && !isGifAttachment(att)).length;
     if (parsed.wantsGif) {
-      const requiredGifCount = parsed.isGifMaximum ? 1 : (parsed.expectedGifCount > 0 ? parsed.expectedGifCount : 1);
+      const requiredGifCount = parsed.isGifMaximum ? 0 : (parsed.expectedGifCount > 0 ? parsed.expectedGifCount : 1);
       if (gifCount < requiredGifCount) return false;
       if (parsed.hasExplicitGifCount && !parsed.isGifMinimum && !parsed.isGifMaximum && gifCount !== parsed.expectedGifCount) return false;
       if (parsed.hasExplicitGifCount && parsed.isGifMaximum && gifCount > parsed.expectedGifCount) return false;
     }
     if (parsed.wantsGif && parsed.wantsOrdinaryVideo) {
-      const requiredOrdinaryVideoCount = parsed.isVideoMaximum ? 1 : (parsed.expectedVideoCount > 0 ? parsed.expectedVideoCount : 1);
+      const requiredOrdinaryVideoCount = parsed.isVideoMaximum ? 0 : (parsed.expectedVideoCount > 0 ? parsed.expectedVideoCount : 1);
       if (ordinaryVideoCount < requiredOrdinaryVideoCount) return false;
       if (parsed.hasExplicitVideoCount && !parsed.isVideoMinimum && !parsed.isVideoMaximum
           && ordinaryVideoCount !== parsed.expectedVideoCount) return false;
@@ -3158,7 +3185,7 @@ export class Agent extends LoopDetector {
     let matchingAttachments = rawAttachments;
     if (parsed.wantsImage && parsed.wantsVideo) {
       if (parsed.isAlternative) {
-        const minImages = parsed.isImageMaximum ? 1 : (parsed.expectedImageCount > 0 ? parsed.expectedImageCount : 1);
+        const minImages = parsed.isImageMaximum ? 0 : (parsed.expectedImageCount > 0 ? parsed.expectedImageCount : 1);
         const expectedAlternativeVideoCount = parsed.wantsGif && !parsed.wantsOrdinaryVideo
           ? parsed.expectedGifCount
           : parsed.expectedVideoCount;
@@ -3168,7 +3195,7 @@ export class Agent extends LoopDetector {
         const isAlternativeVideoMaximum = parsed.wantsGif && !parsed.wantsOrdinaryVideo
           ? parsed.isGifMaximum
           : parsed.isVideoMaximum;
-        const minVideos = isAlternativeVideoMaximum ? 1 : (expectedAlternativeVideoCount > 0 ? expectedAlternativeVideoCount : 1);
+        const minVideos = isAlternativeVideoMaximum ? 0 : (expectedAlternativeVideoCount > 0 ? expectedAlternativeVideoCount : 1);
         const exactImageAlt = parsed.hasExplicitImageCount && !parsed.isImageMinimum && !parsed.isImageMaximum;
         const exactVideoAlt = parsed.wantsGif && !parsed.wantsOrdinaryVideo
           ? parsed.hasExplicitGifCount && !parsed.isGifMinimum && !parsed.isGifMaximum
@@ -3192,8 +3219,10 @@ export class Agent extends LoopDetector {
           ? rawAttachments.filter(isImageAttachment)
           : rawAttachments.filter(isVideoAttachment);
       } else {
-        const minImages = parsed.isImageMaximum ? 1 : (parsed.expectedImageCount > 0 ? parsed.expectedImageCount : 1);
-        const minVideos = parsed.isVideoMaximum ? 1 : (parsed.expectedVideoCount > 0 ? parsed.expectedVideoCount : 1);
+        const minImages = parsed.isImageMaximum ? 0 : (parsed.expectedImageCount > 0 ? parsed.expectedImageCount : 1);
+        const minVideos = parsed.wantsGif && !parsed.wantsOrdinaryVideo
+          ? (parsed.isGifMaximum ? 0 : (parsed.expectedGifCount > 0 ? parsed.expectedGifCount : 1))
+          : (parsed.isVideoMaximum ? 0 : (parsed.expectedVideoCount > 0 ? parsed.expectedVideoCount : 1));
         if (imageCount < minImages || videoCount < minVideos) {
           return false;
         }
@@ -3243,9 +3272,6 @@ export class Agent extends LoopDetector {
         if (imageCount > parsed.expectedCount || rawAttachments.length > parsed.expectedCount) {
           return false;
         }
-        if (imageCount < 1) {
-          return false;
-        }
       } else {
         if (imageCount < parsed.expectedCount) {
           return false;
@@ -3270,9 +3296,6 @@ export class Agent extends LoopDetector {
           if (videoCount > parsed.expectedCount || rawAttachments.length > parsed.expectedCount) {
             return false;
           }
-          if (videoCount < 1) {
-            return false;
-          }
         } else if (videoCount < parsed.expectedCount) {
           return false;
         }
@@ -3285,9 +3308,6 @@ export class Agent extends LoopDetector {
         }
       } else if (parsed.isMaximumCount) {
         if (rawAttachments.length > parsed.expectedCount) {
-          return false;
-        }
-        if (rawAttachments.length < 1) {
           return false;
         }
       } else {
@@ -3343,6 +3363,18 @@ export class Agent extends LoopDetector {
     };
 
     return canMatchAll(0, new Set());
+  }
+
+  _workflowSocialPublishedAltTextObserved(requirement, record) {
+    const want = this._workflowMetadataValue(requirement?.value);
+    if (!want) return false;
+    const attachments = Array.isArray(record?.attachments)
+      ? record.attachments
+      : (Array.isArray(record?.media) ? record.media : []);
+    return attachments.some(attachment => (
+      attachment && typeof attachment === 'object'
+      && this._workflowMetadataValue(attachment.alt) === want
+    ));
   }
 
   _workflowGithubReleaseIdentityParts(identity) {
@@ -3824,6 +3856,8 @@ export class Agent extends LoopDetector {
           ? this._workflowSocialPublishedBodyObserved(requirement, publishedRecord)
           : requirement?.field === 'attachment'
           ? this._workflowSocialPublishedAttachmentObserved(requirement, publishedRecord)
+          : requirement?.field === 'alt_text'
+          ? this._workflowSocialPublishedAltTextObserved(requirement, publishedRecord)
           : this._workflowPublishedPayloadValueObserved(requirement, {
               pageText: publishedRecord.text,
               pageUrl: publishedRecord.url,
@@ -14549,7 +14583,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       if (publish) {
         const beforeVerb = c.maskedText.slice(0, publish.index);
         const afterVerb = c.maskedText.slice(publish.index + publish[0].length);
-        hasExplicitNeg = SOCIAL_NEGATION.test(beforeVerb) || SOCIAL_POST_NEGATION.test(afterVerb.trim());
+        hasExplicitNeg = socialNegationGovernsPublish(beforeVerb) || SOCIAL_POST_NEGATION.test(afterVerb.trim());
       } else {
         hasExplicitNeg = SOCIAL_NEGATION.test(c.maskedText);
       }
@@ -14602,7 +14636,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       if (!publish) return false;
       const before = targetText.slice(0, publish.index);
       if (SOCIAL_READ_VERBS.test(before)) return false;
-      if (SOCIAL_NEGATION.test(before)) return false;
+      if (socialNegationGovernsPublish(before)) return false;
       const after = targetText.slice(publish.index + publish[0].length);
       if (SOCIAL_POST_NEGATION.test(after.trim())) return false;
       if (SOCIAL_NOUN_LIKE_PUBLISH.test(publish[0]) && SOCIAL_READ_VERBS.test(after)) return false;
@@ -14736,7 +14770,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           const verbIndex = verb.index ?? 0;
           const beforeVerbClause = targetText.slice(0, verbIndex);
           if (SOCIAL_READ_VERBS.test(beforeVerbClause)) continue;
-          if (SOCIAL_NEGATION.test(beforeVerbClause)) continue;
+          if (socialNegationGovernsPublish(beforeVerbClause)) continue;
           const verbWord = verb[0] || '';
           const afterVerbText = targetText.slice(verbIndex + verbWord.length);
           if (SOCIAL_POST_NEGATION.test(afterVerbText.trim())) continue;
@@ -14861,7 +14895,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       const match = targetText.match(/\btweet\s+(?:this|that|it|the\s+following)\b/i);
       if (!match) return false;
       const before = targetText.slice(0, match.index);
-      if (SOCIAL_READ_VERBS.test(before) || SOCIAL_NEGATION.test(before)) return false;
+      if (SOCIAL_READ_VERBS.test(before) || socialNegationGovernsPublish(before)) return false;
       const after = targetText.slice(match.index + match[0].length);
       if (SOCIAL_POST_NEGATION.test(after.trim())) return false;
       return true;
@@ -23127,7 +23161,11 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     const quotedPattern = new RegExp(`${publishVerbPattern}[\\s\\S]*?(?:“([\\s\\S]+?)”|「([\\s\\S]+?)」|『([\\s\\S]+?)』|«([\\s\\S]+?)»|"([\\s\\S]+?)")`, 'iu');
     const singleQuotePattern = new RegExp(`${publishVerbPattern}[\\s\\S]*?(?:(?<!\\p{L})'([\\s\\S]+?)'(?!\\p{L}))`, 'iu');
     const colonPattern = new RegExp(`${publishVerbPattern}[\\s\\S]*?(?<!https?|ftp|sftp)(?:(?<!\\d)[:：]|[:：](?!\\d{2}))(?!\\/\\/)\\s*([\\s\\S]+)$`, 'iu');
-    for (const text of candidates) {
+    const altTextMetadataPattern = /(?<![\p{L}\p{N}_])(?:attachment\s+)?(?:alt(?:ernative)?\s+text|image\s+alt\s+text|media\s+alt\s+text)\s*(?::|=)?\s*(?:"(?:\\.|[^"])*"|'(?:\\.|[^'])*'|“[\s\S]*?”|«[\s\S]*?»|「[\s\S]*?」|『[\s\S]*?』)/giu;
+    for (const candidateText of candidates) {
+      // A quoted alt-text value describes an attachment; it is not the post
+      // body merely because it follows the publish verb.
+      const text = candidateText.replace(altTextMetadataPattern, match => ' '.repeat(match.length));
       let body = '';
       // Scan for the colon delimiter that introduces the post body.
       // We look for colons occurring after a publish verb, skipping:
@@ -23279,7 +23317,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           'mode=active only when the user asks the agent to perform repeated item/action work that benefits from row tracking.',
           'Exception: for siteContext.workflow.job="upload-release-assets" with requiresLedger=true, use mode=active and list every concrete requested target even when there is exactly one. Copy each exact requested filename or path into targets; do not merge or omit assets. When the user names the release tag, also return it as workflowFields=[{"field":"tag","value":"exact tag"}]; return workflowFields=[] when no tag is named.',
           'For siteContext.workflow.job="update-metadata", workflowFields must contain every metadata field explicitly requested by the user and its complete exact intended value. Use canonical field names title, description, visibility, audience, tags, category, playlist, language, license, comments, embedding, paid_promotion, recording_date, or recording_location. Never infer a field or value from page content.',
-          'For siteContext.workflow.job="publish-release", "publish-post", "publish-content", or "edit-file-and-commit", workflowFields must contain every publication field explicitly requested by the user and its complete exact intended value (for long post bodies or notes exceeding response budget, provide a short excerpt; complete bodies are preserved from task context). Use canonical field names tag, title, notes, body, visibility, attachment, path, branch, or commit_message; for publish-post only, also use account when the user explicitly names the publishing account. For edit-file-and-commit, include path, branch, and commit_message only when the user explicitly supplied them; the runtime separately binds the exact verified editor content. Never infer a field or value from page content.',
+          'For siteContext.workflow.job="publish-release", "publish-post", "publish-content", or "edit-file-and-commit", workflowFields must contain every publication field explicitly requested by the user and its complete exact intended value (for long post bodies or notes exceeding response budget, provide a short excerpt; complete bodies are preserved from task context). Use canonical field names tag, title, notes, body, visibility, attachment, path, branch, or commit_message; for publish-post only, also use account when the user explicitly names the publishing account and alt_text when the user explicitly requests attachment alternative text. For edit-file-and-commit, include path, branch, and commit_message only when the user explicitly supplied them; the runtime separately binds the exact verified editor content. Never infer a field or value from page content.',
           'For siteContext.workflow.job="draft-email" or "send-email", workflowFields must contain every message field explicitly requested by the user and its complete exact intended value. Use canonical field names subject or body. Never infer a field or value from page content.',
           'For siteContext.workflow.template="transaction", workflowFields must contain every booking detail explicitly requested by the user and its exact value. Use canonical field names train, travel_date, departure, arrival, passenger, or seat_class. Never infer a detail from page content.',
           'For siteContext.workflow.template="form", workflowLabelValues must contain one entry per field the user supplied an exact value for, as {"label":"the field in the user\'s words","value":"the exact value"}. Return workflowLabelValues=[] when the user supplied no exact values, and never copy a value from page content.',
@@ -28781,7 +28819,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
                     return {
                       type: isVideo ? 'video' : 'image',
                       src: String(src || '').slice(0, 500),
-                      alt: String(alt || '').slice(0, 500),
+                      alt: String(alt || '').slice(0, 10000),
                     };
                   });
                   const prior = workflowResourceRecordMap.get(identity);
