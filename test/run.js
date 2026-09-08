@@ -93107,6 +93107,26 @@ test('upper-bound attachment qualifiers verify as maximum counts', () => {
     assert.equal(agent._workflowSocialPublishedAttachmentObserved(
       { value: 'one video in MP4 format and no WebM videos' }, { attachments: [{ type: 'video', src: 'https://cdn.example/a.webm' }] }), false,
       AgentClass.name + ': an explicitly prohibited WebM satisfied the video contract');
+    const gifWithoutPng = agent._parseWorkflowAttachmentRequirement('one GIF and no PNG images');
+    assert.equal(gifWithoutPng.wantsImage, false,
+      AgentClass.name + ': a negated PNG clause created positive image intent');
+    assert.equal(gifWithoutPng.wantsGif, true,
+      AgentClass.name + ': the affirmative GIF lost positive media intent');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one GIF and no PNG images' }, { attachments: [gif(1)] }), true,
+      AgentClass.name + ': a GIF-only publication was rejected by a negated PNG clause');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one GIF and no PNG images' }, { attachments: [gif(1), image(1)] }), false,
+      AgentClass.name + ': an image survived beside the required GIF despite the PNG prohibition');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one GIF and no PNG images' }, { attachments: [image(1)] }), false,
+      AgentClass.name + ': an image without the required GIF satisfied the GIF contract');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'no PNG or JPEG images' }, { attachments: [] }), true,
+      AgentClass.name + ': the valid empty set was rejected by a format-only prohibition');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'no PNG or JPEG images' }, { attachments: [{ type: 'image', src: 'https://cdn.example/a.jpg' }] }), false,
+      AgentClass.name + ': an explicitly prohibited JPEG satisfied a format-only prohibition');
     const pngOrJpegImage = agent._parseWorkflowAttachmentRequirement('one PNG or JPEG image');
     assert.equal(pngOrJpegImage.isGeneric, true,
       AgentClass.name + ': a coordinated image-format choice was parsed as filenames');

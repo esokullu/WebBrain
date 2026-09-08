@@ -3122,9 +3122,25 @@ export class Agent extends LoopDetector {
       };
     }
 
-    const hasRawGif = RAW_GIF_NOUN_REGEX.test(text);
-    const hasRawOrdinaryVideo = RAW_VIDEO_NOUN_REGEX.test(text);
-    const hasRawImage = RAW_IMAGE_NOUN_REGEX.test(text);
+    // Format-level negation (e.g. "no PNG images") does not set the
+    // type-level negation flags, so positive media intent comes only from
+    // affirmative occurrences: a media noun governed by no/not/without/zero
+    // in its own clause names no media.
+    const mediaOccurrenceIsNegated = (matchIndex) => {
+      const precedingSegment = negationText.slice(0, matchIndex)
+        .split(/(?:[,;]|\s+(?:and|but|plus|also|as\s+well\s+as)\s+)/iu)
+        .pop() || '';
+      return /(?<![\p{L}\p{N}_])(?:no|not(?!\s+only)|without(?:\s+any)?|zero|0)(?![\p{L}\p{N}_])/iu.test(precedingSegment);
+    };
+    const hasAffirmativeMediaMatch = (pattern) => {
+      for (const match of text.matchAll(new RegExp(pattern.source, 'giu'))) {
+        if (!mediaOccurrenceIsNegated(match.index || 0)) return true;
+      }
+      return false;
+    };
+    const hasRawGif = hasAffirmativeMediaMatch(RAW_GIF_NOUN_REGEX);
+    const hasRawOrdinaryVideo = hasAffirmativeMediaMatch(RAW_VIDEO_NOUN_REGEX);
+    const hasRawImage = hasAffirmativeMediaMatch(RAW_IMAGE_NOUN_REGEX);
 
     const wantsGif = hasRawGif && !isGifNegated;
     const wantsOrdinaryVideo = hasRawOrdinaryVideo && !isVideoNegated;
@@ -4091,6 +4107,16 @@ export class Agent extends LoopDetector {
       || (parsed.isVideoMinimum && (parsed.minimumVideoCount || parsed.expectedVideoCount || 1) > 0)
       || (parsed.isGifMinimum && (parsed.minimumGifCount || parsed.expectedGifCount || 1) > 0)
       || (parsed.minimumGenericCount || 0) > 0;
+    // A purely prohibitive contract (forbidden formats/negated types with no
+    // affirmative cardinality) requires nothing, so the empty set is valid.
+    const hasAffirmativeMediaCardinality = (parsed.hasExplicitImageCount && !parsed.isImageNegated)
+      || (parsed.hasExplicitVideoCount && !parsed.isVideoNegated)
+      || (parsed.hasExplicitGifCount && !parsed.isGifNegated)
+      || parsed.wantsImage || parsed.wantsOrdinaryVideo || parsed.wantsGif
+      || parsed.hasExplicitGenericCount || (parsed.alternativeCounts?.length > 0);
+    const hasProhibitiveMediaIntent = (parsed.forbiddenImageFormats?.length > 0)
+      || (parsed.forbiddenVideoFormats?.length > 0)
+      || parsed.isImageNegated || parsed.isVideoNegated || parsed.isGifNegated;
     const allowsNoAttachments = parsed.isGeneric && !hasPositiveMinimum
       && !(parsed.hasBoundedCountRange && parsed.minimumCount > 0) && (
       parsed.isAlternative
@@ -4101,7 +4127,8 @@ export class Agent extends LoopDetector {
         : (parsed.isMaximumCount
           || parsed.isImageMaximum
           || parsed.isVideoMaximum
-          || parsed.isGifMaximum)
+          || parsed.isGifMaximum
+          || (!hasAffirmativeMediaCardinality && hasProhibitiveMediaIntent))
           && (!parsed.wantsImage || parsed.isImageMaximum || parsed.isImageNegated)
           && (!parsed.wantsOrdinaryVideo || parsed.isVideoMaximum || parsed.isVideoNegated)
           && (!parsed.wantsGif || parsed.isGifMaximum || parsed.isGifNegated)
