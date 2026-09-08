@@ -90837,6 +90837,10 @@ test('social publication workflow follows the live X or Bluesky destination and 
         'an except clause adopted its forbidden X destination'],
       ['Post on X, except Bluesky', ['twitter'],
         'an except clause adopted its forbidden Bluesky destination'],
+      ['Post on X, except for Bluesky', ['twitter'],
+        'an except-for clause adopted its forbidden Bluesky destination'],
+      ['Post on Bluesky, except for X', ['bluesky'],
+        'an except-for clause adopted its forbidden X destination'],
       ['Post on Bluesky rather than posting on X', ['bluesky'],
         'rather-than clause adopted its expressly excluded X destination'],
       ['Post on Bluesky rather than on X', ['bluesky'],
@@ -93180,6 +93184,28 @@ test('upper-bound attachment qualifiers verify as maximum counts', () => {
     ]) {
       assert.equal(agent._workflowSocialPublishedAttachmentObserved(
         { value: 'one PNG image and one image' }, { attachments },
+      ), expected, AgentClass.name + ': ' + message);
+    }
+    for (const [attachments, expected, message] of [
+      [[image(1)], true, 'the required PNG alone was rejected by its scoped JPEG cap'],
+      [[image(1), { type: 'image', src: 'https://cdn.example/a.jpg' }], true, 'a PNG plus a capped JPEG was capped by the total image count'],
+      [[image(1), { type: 'image', src: 'https://cdn.example/a.jpg' }, { type: 'image', src: 'https://cdn.example/b.jpg' }], true, 'a PNG plus two capped JPEGs was capped by the total image count'],
+      [[image(1), { type: 'image', src: 'https://cdn.example/a.jpg' }, { type: 'image', src: 'https://cdn.example/b.jpg' }, { type: 'image', src: 'https://cdn.example/c.jpg' }], false, 'too many JPEGs satisfied the scoped JPEG cap'],
+      [[{ type: 'image', src: 'https://cdn.example/a.jpg' }], false, 'a lone JPEG satisfied the required PNG minimum'],
+    ]) {
+      assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+        { value: 'at least one PNG image and at most two JPEG images' }, { attachments },
+      ), expected, AgentClass.name + ': ' + message);
+    }
+    for (const [attachments, expected, message] of [
+      [[video(1)], true, 'the required MP4 alone was rejected by its scoped MOV cap'],
+      [[video(1), { type: 'video', src: 'https://cdn.example/b.mov' }], true, 'an MP4 plus a capped MOV was capped by the total video count'],
+      [[video(1), { type: 'video', src: 'https://cdn.example/b.mov' }, { type: 'video', src: 'https://cdn.example/c.mov' }], true, 'an MP4 plus two capped MOVs was capped by the total video count'],
+      [[video(1), { type: 'video', src: 'https://cdn.example/b.mov' }, { type: 'video', src: 'https://cdn.example/c.mov' }, { type: 'video', src: 'https://cdn.example/d.mov' }], false, 'too many MOVs satisfied the scoped MOV cap'],
+      [[{ type: 'video', src: 'https://cdn.example/b.mov' }], false, 'a lone MOV satisfied the required MP4 minimum'],
+    ]) {
+      assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+        { value: 'at least one MP4 video and at most two MOV videos' }, { attachments },
       ), expected, AgentClass.name + ': ' + message);
     }
     const imageButNoVideo = agent._parseWorkflowAttachmentRequirement('one image but no video');

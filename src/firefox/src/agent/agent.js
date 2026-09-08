@@ -195,7 +195,7 @@ const SOCIAL_POST_DESTINATION_NEGATION = new RegExp(
   'iu',
 );
 const SOCIAL_CONTRASTIVE_EXCLUSION = /(?<![\p{L}\p{N}_])(?:rather\s+than|instead\s+of)(?:\s+(?:post(?:ing)?|publish(?:ing)?|shar(?:e|ing)|tweet(?:ing)?|send(?:ing)?))?(?:\s+(?:on|onto|to|via|in|at))?\s*$/iu;
-const SOCIAL_DESTINATION_EXCLUSION = /^\s*(?:exclude|excluding|avoid|avoiding|skip|skipping|omit|omitting|except|no)\s+(?:(?:post(?:ing)?|publish(?:ing)?|shar(?:e|ing)|tweet(?:ing)?|send(?:ing)?)\s+)?(?:(?:on|onto|to|via|in|at)\s+)?(?:the\s+)?(?:x|twitter|bluesky|bsky(?:\.app)?)(?![\p{L}\p{N}_.-])\s*$/iu;
+const SOCIAL_DESTINATION_EXCLUSION = /^\s*(?:exclude|excluding|avoid|avoiding|skip|skipping|omit|omitting|except|no)\s+(?:for\s+)?(?:(?:post(?:ing)?|publish(?:ing)?|shar(?:e|ing)|tweet(?:ing)?|send(?:ing)?)\s+)?(?:(?:on|onto|to|via|in|at)\s+)?(?:the\s+)?(?:x|twitter|bluesky|bsky(?:\.app)?)(?![\p{L}\p{N}_.-])\s*$/iu;
 const socialPostNegationGovernsPublish = value => (
   SOCIAL_POST_NEGATION.test(String(value || '').trim())
   || SOCIAL_POST_DESTINATION_NEGATION.test(String(value || ''))
@@ -4150,7 +4150,7 @@ export class Agent extends LoopDetector {
         if (imageCount !== parsed.expectedCount || rawAttachments.length !== parsed.expectedCount) {
           return false;
         }
-      } else if (parsed.isImageMaximum || parsed.isMaximumCount) {
+      } else if (parsed.isImageMaximum || (parsed.isMaximumCount && parsed.maximumGenericCount > 0)) {
         const maximumCount = imageMaximumBound || parsed.maximumGenericCount || parsed.expectedCount;
         if (imageCount > maximumCount || rawAttachments.length > maximumCount) {
           return false;
@@ -4203,7 +4203,7 @@ export class Agent extends LoopDetector {
           if (typedVideoCount !== parsed.expectedCount || rawAttachments.length !== parsed.expectedCount) {
             return false;
           }
-        } else if (parsed.isVideoMaximum || parsed.isGifMaximum || parsed.isMaximumCount) {
+        } else if (parsed.isVideoMaximum || parsed.isGifMaximum || (parsed.isMaximumCount && parsed.maximumGenericCount > 0)) {
           const maximumCount = requiresGifOnly
             ? gifMaximumBound
             : (ordinaryVideoOnly ? videoMaximumBound : (videoMaximumBound + gifMaximumBound))
