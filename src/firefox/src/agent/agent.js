@@ -190,6 +190,14 @@ const SOCIAL_POST_NEGATION = new RegExp(
   `^(?:\\s*(?:nothing|nowhere|none)|しないで|してはいけない|してはならない|はいけない|はならない|はだめ|はいけません|はなりません|すんな|するな|禁止|ないで|\\s*(?:하지\\s*마|하지\\s*마세요|하지\\s*않|금지))`,
   'iu',
 );
+const SOCIAL_POST_DESTINATION_NEGATION = new RegExp(
+  `(?<![${SOCIAL_WORD_EDGE}])not(?![${SOCIAL_WORD_EDGE}])\\s+(?:on|onto|to|via|in|at)(?![${SOCIAL_WORD_EDGE}])`,
+  'iu',
+);
+const socialPostNegationGovernsPublish = value => (
+  SOCIAL_POST_NEGATION.test(String(value || '').trim())
+  || SOCIAL_POST_DESTINATION_NEGATION.test(String(value || ''))
+);
 // Negation before a publish verb normally forbids the publication, but in
 // idioms such as "don't forget to post" it governs the reminder verb instead.
 // Keep this narrowly anchored to the text immediately before the publish verb
@@ -3329,7 +3337,7 @@ export class Agent extends LoopDetector {
     const videoCount = rawAttachments.filter(isVideoAttachment).length;
     const gifCount = rawAttachments.filter(isGifAttachment).length;
     const ordinaryVideoCount = rawAttachments.filter(att => isVideoAttachment(att) && !isGifAttachment(att)).length;
-    if (parsed.hasBoundedCountRange) {
+    if (parsed.hasBoundedCountRange && !parsed.isAlternative) {
       const boundedCount = parsed.boundedRangeKind === 'image' ? imageCount
         : parsed.boundedRangeKind === 'video' ? ordinaryVideoCount
           : parsed.boundedRangeKind === 'gif' ? gifCount
@@ -3382,13 +3390,18 @@ export class Agent extends LoopDetector {
         const exactVideoAlt = parsed.wantsGif && !parsed.wantsOrdinaryVideo
           ? parsed.hasExplicitGifCount && !parsed.isGifMinimum && !parsed.isGifMaximum
           : parsed.hasExplicitVideoCount && !parsed.isVideoMinimum && !parsed.isVideoMaximum;
-        const matchesImageAlt = imageCount >= minImages
+        const matchesImageRange = !parsed.hasBoundedCountRange || parsed.boundedRangeKind !== 'image'
+          || (imageCount >= parsed.minimumCount && imageCount <= parsed.maximumCount);
+        const matchesVideoRange = !parsed.hasBoundedCountRange
+          || !['video', 'gif'].includes(parsed.boundedRangeKind)
+          || (alternativeVideoCount >= parsed.minimumCount && alternativeVideoCount <= parsed.maximumCount);
+        const matchesImageAlt = matchesImageRange && imageCount >= minImages
           && (!exactImageAlt || imageCount === parsed.expectedImageCount)
           && (!parsed.isImageMaximum || imageCount <= parsed.expectedImageCount)
           && videoCount === 0
           && (!exactImageAlt || rawAttachments.length === parsed.expectedImageCount)
           && (!parsed.isImageMaximum || rawAttachments.length <= parsed.expectedImageCount);
-        const matchesVideoAlt = alternativeVideoCount >= minVideos
+        const matchesVideoAlt = matchesVideoRange && alternativeVideoCount >= minVideos
           && (!exactVideoAlt || alternativeVideoCount === expectedAlternativeVideoCount)
           && (!isAlternativeVideoMaximum || alternativeVideoCount <= expectedAlternativeVideoCount)
           && (!(parsed.wantsGif && !parsed.wantsOrdinaryVideo) || rawAttachments.length === gifCount)
@@ -14778,7 +14791,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       if (publish) {
         const beforeVerb = c.maskedText.slice(0, publish.index);
         const afterVerb = c.maskedText.slice(publish.index + publish[0].length);
-        hasExplicitNeg = socialNegationGovernsPublish(beforeVerb) || SOCIAL_POST_NEGATION.test(afterVerb.trim());
+        hasExplicitNeg = socialNegationGovernsPublish(beforeVerb) || socialPostNegationGovernsPublish(afterVerb);
       } else {
         hasExplicitNeg = SOCIAL_NEGATION.test(c.maskedText);
       }
@@ -14804,9 +14817,9 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       let hasExplicitPostNeg = false;
       if (publish) {
         const afterVerb = c.maskedText.slice(publish.index + publish[0].length);
-        hasExplicitPostNeg = SOCIAL_POST_NEGATION.test(afterVerb.trim());
+        hasExplicitPostNeg = socialPostNegationGovernsPublish(afterVerb);
       } else {
-        hasExplicitPostNeg = SOCIAL_POST_NEGATION.test(c.maskedText.trim());
+        hasExplicitPostNeg = socialPostNegationGovernsPublish(c.maskedText);
       }
 
       if (hasExplicitPostNeg) {
@@ -14837,7 +14850,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       if (SOCIAL_READ_VERBS.test(before)) return false;
       if (socialNegationGovernsPublish(before)) return false;
       const after = targetText.slice(publish.index + publish[0].length);
-      if (SOCIAL_POST_NEGATION.test(after.trim())) return false;
+      if (socialPostNegationGovernsPublish(after)) return false;
       if (SOCIAL_NOUN_LIKE_PUBLISH.test(publish[0]) && SOCIAL_READ_VERBS.test(after)) return false;
       if (/^shares?$/i.test(publish[0]) && /(?<![\p{L}\p{N}_])(?:market|mind|revenue|profit|traffic|audience|wallet|fair|lion's|stock|equity|file|screen|time)\s+$/iu.test(before)) return false;
       return true;
@@ -14878,6 +14891,16 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       .filter(Boolean)
       .join(' ');
     const hasPublishIntent = this._socialPublicationCommandIn(trustedContext);
+    const clauses = this._socialPublicationClauses(trustedContext);
+    const hasContrastivePublishIntent = clauses.some((clause, index) => (
+      index > 0
+      && /^(?:but)$/iu.test(clause.delim || '')
+      && !clause.isNegated
+      && clauses[index - 1]?.isNegated
+      && SOCIAL_PUBLISH_VERBS.test(clauses[index - 1].maskedText || clauses[index - 1].text)
+      && !SOCIAL_READ_VERBS.test(clause.maskedText || clause.text)
+      && /(?<![\p{L}\p{N}_])(?:x|twitter|bluesky|bsky\.app)(?![\p{L}\p{N}_])/iu.test(clause.maskedText || clause.text)
+    ));
     for (const match of trustedContext.matchAll(/https?:\/\/[^\s<>"'`\u3002\u3001\uff0c\uff1b\uff1a\uff01\uff1f\u2026\u2025]+/gi)) {
       const url = this._workflowTrimUrlPunctuation(match[0]);
       const destination = this._socialPublishDestinationAdapter(url);
@@ -14932,7 +14955,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       const workflow = resolveAdapterWorkflowJob(url, 'publish-post');
       if (workflow?.job && workflow.adapterName === destination) targets.add(destination);
     }
-    if (!currentIsSocialPublish && !hasPublishIntent && targets.size < 1) return targets;
+    if (!currentIsSocialPublish && !hasPublishIntent && !hasContrastivePublishIntent && targets.size < 1) return targets;
     // A platform named anywhere in the task is not a destination: "read Acme's
     // posts on X, then share the findings in the survey" mentions both a
     // publish verb and X without ever asking for a post. The verb has to
@@ -14940,7 +14963,6 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     // publication target. Verbs and prepositions are the same multilingual
     // sets the URL scan uses, so "Publícalo en X" counts while English-only
     // matching would leave it unbound.
-    const clauses = this._socialPublicationClauses(trustedContext);
     const publishesTo = (platform) => {
       const destPreps = '(?:on|onto|to|via|in|at|en|sur|sobre|\u00e0|au|auf|su|em|na|no|nos|nas|para|\u0432|\u043d\u0430)';
       const coordConj = '(?:and|und|et|e|y|ve|и|oder|or|ou|o|as\\s+well\\s+as|&|\\/)';
@@ -14965,6 +14987,23 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       return clauses.some((clause, clauseIdx) => {
         if (!clause.text || clause.isNegated) return false;
         const targetText = clause.maskedText || clause.text;
+        // "Post this not on X but on Bluesky" carries the publish action into
+        // the positive contrastive destination even though that clause is
+        // elliptical. The negated source clause must not contribute X.
+        if (clauseIdx > 0 && /^(?:but)$/iu.test(clause.delim || '')
+            && clauses[clauseIdx - 1]?.isNegated
+            && SOCIAL_PUBLISH_VERBS.test(clauses[clauseIdx - 1].maskedText || clauses[clauseIdx - 1].text)
+            && !SOCIAL_READ_VERBS.test(targetText)) {
+          const contrastivePattern = new RegExp(coordPlatformPattern.source, 'iu');
+          const contrastiveMatch = contrastivePattern.exec(targetText);
+          if (contrastiveMatch) {
+            const beforePlat = targetText.slice(0, contrastiveMatch.index);
+            const afterPlat = targetText.slice(contrastiveMatch.index + contrastiveMatch[0].length);
+            if (!isPlaceholderBareXMatch(contrastiveMatch[0], afterPlat)
+                && !SOURCE_MODIFIER_BEFORE_PLATFORM.test(beforePlat)
+                && !NON_SOCIAL_DESTINATION_AFTER_PLATFORM.test(afterPlat)) return true;
+          }
+        }
         for (const verb of targetText.matchAll(verbPattern)) {
           const verbIndex = verb.index ?? 0;
           const beforeVerbClause = targetText.slice(0, verbIndex);
@@ -14972,7 +15011,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           if (socialNegationGovernsPublish(beforeVerbClause)) continue;
           const verbWord = verb[0] || '';
           const afterVerbText = targetText.slice(verbIndex + verbWord.length);
-          if (SOCIAL_POST_NEGATION.test(afterVerbText.trim())) continue;
+          if (socialPostNegationGovernsPublish(afterVerbText)) continue;
           if (SOCIAL_NOUN_LIKE_PUBLISH.test(verbWord) && (
             SOCIAL_READ_VERBS.test(afterVerbText)
             || /(?<![\p{L}\p{N}_])(?:of|about|regarding|concerning|sur|de|des|du|von|su|sobre|über|all|these|those|some|any|the|my|our|their|his|her|user's|recent|latest|past|old|new|more)\s+$/iu.test(beforeVerbClause)
@@ -15096,7 +15135,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       const before = targetText.slice(0, match.index);
       if (SOCIAL_READ_VERBS.test(before) || socialNegationGovernsPublish(before)) return false;
       const after = targetText.slice(match.index + match[0].length);
-      if (SOCIAL_POST_NEGATION.test(after.trim())) return false;
+      if (socialPostNegationGovernsPublish(after)) return false;
       return true;
     });
     if (publishesTo('(?:bluesky|bsky(?:\\.app)?)')) targets.add('bluesky');

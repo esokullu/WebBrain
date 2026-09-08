@@ -90789,6 +90789,8 @@ test('social publication workflow follows the live X or Bluesky destination and 
         'contrastive but clause after negated post was wrongly rejected for Bluesky'],
       ['Do not post on X and do post on Bluesky', ['bluesky'],
         'explicit affirmative publish clause inherited negation from X'],
+      ['Post this not on X but on Bluesky', ['bluesky'],
+        'post-verb destination negation selected X instead of contrastive Bluesky'],
       ['Post or publish this on X', ['twitter'],
         'affirmative coordinated publish verbs were wrongly rejected for X'],
       ['Post "Do not panic" on X', ['twitter'],
@@ -92898,6 +92900,18 @@ test('upper-bound attachment qualifiers verify as maximum counts', () => {
     assert.equal(agent._workflowSocialPublishedAttachmentObserved(
       { value: 'between one and two images' }, { attachments: [image(1), image(2), image(3)] }), false,
       AgentClass.name + ': three images exceeded the bounded range');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'between one and two images or one video' }, { attachments: [video(1)] }), true,
+      AgentClass.name + ': valid video alternative was rejected by the image range');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'between one and two images or one video' }, { attachments: [image(1)] }), true,
+      AgentClass.name + ': valid bounded-image alternative was rejected');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'between one and two images or one video' }, { attachments: [image(1), image(2), image(3)] }), false,
+      AgentClass.name + ': image alternative exceeded its bounded upper limit');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'between one and two images or one video' }, { attachments: [] }), false,
+      AgentClass.name + ': empty media satisfied a positive bounded alternative');
     assert.equal(agent._workflowSocialPublishedAttachmentObserved(
       { value: 'up to two GIFs' }, { attachments: [] }), true,
       AgentClass.name + ': zero GIFs should satisfy a standalone GIF maximum');
