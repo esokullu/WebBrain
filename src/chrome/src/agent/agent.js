@@ -315,7 +315,7 @@ const GENERIC_ATTACHMENT_WORDS = new Set([
   'item', 'items', 'piece', 'pieces', 'upload', 'uploads', 'asset', 'assets',
   'enclosure', 'enclosures', 'document', 'documents', 'documento', 'documentos',
   'a', 'an', 'the', 'of', 'in', 'with', 'some', 'any',
-  'and', 'but', 'or', 'either', 'plus', 'also', 'as', 'well', 'between', 'from', 'to',
+  'and', 'but', 'or', 'either', 'neither', 'nor', 'plus', 'also', 'as', 'well', 'between', 'from', 'to',
   'no', 'not', 'without', 'zero', 'none',
   'only', 'just', 'solely', 'exactly', 'exact', 'precisely',
   'sin', 'sans', 'sem', 'senza', 'ohne', 'kein', 'keine', 'keinen', 'aucun', 'aucune', 'ningun', 'ninguna', 'ningún', 'nenhum', 'nenhuma', 'nessun', 'nessuno', 'nessuna', 'nie', 'без', 'нет',
@@ -3089,7 +3089,7 @@ export class Agent extends LoopDetector {
     const coordinatedMediaNoun = '(?:images?|photos?|pictures?|pics?|videos?|clips?|recordings?|gifs?|animated[-_ ]gifs?)';
     const negationText = normalizeAttachmentNegationArticles(text);
     const coordinatedMediaListNegation = negationText.match(new RegExp(
-      `(?<![${SOCIAL_WORD_EDGE}])(?:no|not|without(?:\\s+any)?)\\s+(?:any\\s+)?(${coordinatedMediaNoun}(?:(?:\\s*[,;]\\s*(?:(?:and|or|nor)\\s+)?|\\s+(?:and|or|nor)\\s+)(?:any\\s+)?${coordinatedMediaNoun})+)`,
+      `(?<![${SOCIAL_WORD_EDGE}])(?:no|not|without(?:\\s+any)?|neither)\\s+(?:(?:any|a|an|the)\\s+)?(${coordinatedMediaNoun}(?:(?:\\s*[,;]\\s*(?:(?:and|or|nor)\\s+)?|\\s+(?:and|or|nor)\\s+)(?:(?:any|a|an|the)\\s+)?${coordinatedMediaNoun})+)`,
       'iu',
     ));
     const coordinatedNegatedMedia = coordinatedMediaListNegation?.[1] || '';
@@ -3624,7 +3624,43 @@ export class Agent extends LoopDetector {
       : commaMediaBranches;
     const hasEnumeratedMediaChoice = enumeratedMediaBranches.length > 1;
     const mediaAlternativeBranchTexts = hasEnumeratedMediaChoice ? enumeratedMediaBranches : [];
-    if (!hasEnumeratedMediaChoice && hasUnscopedDisjunction) {
+    const scopedEitherMatch = isGeneric
+      ? unscopedDisjunctionText.match(new RegExp(`(?<![${SOCIAL_WORD_EDGE}])either(?![${SOCIAL_WORD_EDGE}])`, 'iu'))
+      : null;
+    const disjunctionsBeforeEither = scopedEitherMatch
+      ? unscopedDisjunctionMatches.filter(match => (match.index || 0) < (scopedEitherMatch.index || 0))
+      : [];
+    const scopedEitherDisjunctions = scopedEitherMatch && disjunctionsBeforeEither.length === 0
+      ? unscopedDisjunctionMatches.filter(match => (
+        (match.index || 0) >= (scopedEitherMatch.index || 0) + scopedEitherMatch[0].length
+      ))
+      : [];
+    if (!hasEnumeratedMediaChoice && scopedEitherDisjunctions.length > 0) {
+      const eitherStart = scopedEitherMatch.index || 0;
+      const choiceStart = eitherStart + scopedEitherMatch[0].length;
+      const lastDisjunction = scopedEitherDisjunctions[scopedEitherDisjunctions.length - 1];
+      const afterLastDisjunction = text.slice((lastDisjunction.index || 0) + lastDisjunction[0].length);
+      const suffixMatch = afterLastDisjunction.match(/^([\s\S]*?)\s*[,;]\s*(?:and|plus|also|as\s+well\s+as)\s+([\s\S]+)$/iu);
+      const choiceEnd = suffixMatch
+        ? (lastDisjunction.index || 0) + lastDisjunction[0].length + suffixMatch[1].length
+        : text.length;
+      const sharedPrefix = text.slice(0, eitherStart)
+        .replace(/(?:\s*[,;]\s*)?(?:and|plus|also|as\s+well\s+as)\s*$/iu, '')
+        .trim();
+      const sharedSuffix = suffixMatch?.[2]?.trim() || '';
+      let branchStart = choiceStart;
+      const choices = [];
+      for (const match of scopedEitherDisjunctions) {
+        if ((match.index || 0) >= choiceEnd) break;
+        choices.push(text.slice(branchStart, match.index || 0).trim());
+        branchStart = (match.index || 0) + match[0].length;
+      }
+      choices.push(text.slice(branchStart, choiceEnd).trim());
+      for (const choice of choices.filter(Boolean)) {
+        mediaAlternativeBranchTexts.push([sharedPrefix, choice, sharedSuffix].filter(Boolean).join(' and '));
+      }
+    }
+    if (!hasEnumeratedMediaChoice && mediaAlternativeBranchTexts.length === 0 && hasUnscopedDisjunction) {
       let branchStart = 0;
       for (const match of unscopedDisjunctionMatches) {
         mediaAlternativeBranchTexts.push(text.slice(branchStart, match.index || 0).trim());

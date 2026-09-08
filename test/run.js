@@ -93105,6 +93105,48 @@ test('upper-bound attachment qualifiers verify as maximum counts', () => {
     assert.equal(agent._workflowSocialPublishedAttachmentObserved(
       { value: 'one image but no video' }, { attachments: [image(1), video(1)] },
     ), false, AgentClass.name + ': a video passed a contrastive no-video contract');
+    const sharedImageChoice = agent._parseWorkflowAttachmentRequirement(
+      'one image and either one video or one GIF',
+    );
+    assert.deepEqual(sharedImageChoice.mediaAlternativeBranches.map(branch => branch.normalized), [
+      'one image and one video',
+      'one image and one gif',
+    ], AgentClass.name + ': shared media conjunct was not distributed into every scoped alternative');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one image and either one video or one GIF' }, { attachments: [image(1), video(1)] },
+    ), true, AgentClass.name + ': image-plus-video scoped alternative was rejected');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one image and either one video or one GIF' }, { attachments: [image(1), gif(1)] },
+    ), true, AgentClass.name + ': image-plus-GIF scoped alternative was rejected');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one image and either one video or one GIF' }, { attachments: [gif(1)] },
+    ), false, AgentClass.name + ': GIF-only evidence omitted the shared image conjunct');
+    const sharedSuffixChoice = agent._parseWorkflowAttachmentRequirement(
+      'either one video or one GIF, and one image',
+    );
+    assert.deepEqual(sharedSuffixChoice.mediaAlternativeBranches.map(branch => branch.normalized), [
+      'one video and one image',
+      'one gif and one image',
+    ], AgentClass.name + ': shared media suffix was not distributed into every scoped alternative');
+    const neitherVideoNorGif = agent._parseWorkflowAttachmentRequirement(
+      'one image but neither a video nor a GIF',
+    );
+    assert.equal(neitherVideoNorGif.isGeneric, true,
+      AgentClass.name + ': neither/nor media prohibition was parsed as a filename');
+    assert.equal(neitherVideoNorGif.isVideoNegated, true);
+    assert.equal(neitherVideoNorGif.isGifNegated, true);
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one image but neither a video nor a GIF' }, { attachments: [image(1)] },
+    ), true, AgentClass.name + ': image-only evidence failed a neither-video-nor-GIF contract');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one image but neither a video nor a GIF' }, { attachments: [image(1), gif(1)] },
+    ), false, AgentClass.name + ': a GIF passed a neither-video-nor-GIF contract');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'neither images nor videos' }, { attachments: [] },
+    ), true, AgentClass.name + ': empty evidence failed a bare neither-images-nor-videos contract');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'neither images nor videos' }, { attachments: [image(1)] },
+    ), false, AgentClass.name + ': an image passed a bare neither-images-nor-videos contract');
     for (const [requirement, makeAttachment, minField, maxField] of [
       ['at least one image and at most two images', image, 'minimumImageCount', 'maximumImageCount'],
       ['at least one video and at most two videos', video, 'minimumVideoCount', 'maximumVideoCount'],
