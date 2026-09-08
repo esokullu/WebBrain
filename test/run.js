@@ -91154,6 +91154,12 @@ test('social destination rebinding refreshes platform-specific payload and uploa
       AgentClass.name + ': Bluesky-specific payload contaminated the X body');
     assert.equal(agent._extractWorkflowTaskBody('Post on X and "Bluesky only" on Bluesky', '', 'bluesky'), 'Bluesky only',
       AgentClass.name + ': Bluesky-specific payload was not recovered');
+    assert.equal(agent._extractWorkflowTaskBody('On X, publish: Launch now', '', 'twitter'), 'Launch now',
+      AgentClass.name + ': destination-first publish clause lost the X body');
+    assert.equal(agent._extractWorkflowTaskBody('On X and Bluesky, publish: Launch now', '', 'twitter'), 'Launch now',
+      AgentClass.name + ': destination-first publish clause lost the shared X body');
+    assert.equal(agent._extractWorkflowTaskBody('On X and Bluesky, publish: Launch now', '', 'bluesky'), 'Launch now',
+      AgentClass.name + ': destination-first publish clause lost the shared Bluesky body');
     assert.equal(guard.workflowMetadataRequirementsResolved, true);
     assert.deepEqual(guard.workflowSocialUploadEvidence, [],
       AgentClass.name + ': X upload provenance leaked into the Bluesky binding');
@@ -91329,6 +91335,14 @@ test('alternative social destinations require one verified publication, not ever
       ...guard,
       taskText: 'Post on X or else Bluesky.',
     }), true, AgentClass.name + ': or-else bridge turned alternative destinations into two mandatory posts');
+    assert.equal(agent._socialPublishTargetsAreAlternatives({
+      ...guard,
+      taskText: 'Post on X, otherwise post on Bluesky.',
+    }), true, AgentClass.name + ': otherwise fallback turned alternative destinations into two mandatory posts');
+    assert.equal(agent._socialPublishTargetsAreAlternatives({
+      ...guard,
+      taskText: 'Post on X or, if unavailable, Bluesky.',
+    }), true, AgentClass.name + ': conditional fallback turned alternative destinations into two mandatory posts');
     for (const taskText of [
       'Post this on X alongside Bluesky.',
       'Post this on X together with Bluesky.',

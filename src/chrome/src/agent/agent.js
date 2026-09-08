@@ -18114,8 +18114,8 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     // Only list-shaped glue may sit between the two platform mentions. An
     // unrelated branch such as "X or report the blocker; also post on
     // Bluesky" contains `or`, but it does not coordinate the destinations.
-    const directAlternativeBridge = /^\s*(?:(?:page|account|profile)\s*)?(?:,\s*)?(?:(?:or|oder|ou|o|oppure|veya|ya\s+da|\u0438\u043b\u0438|\u043b\u0438\u0431\u043e)(?![\p{L}\p{N}_])|(?:\u6216\u8005|\u6216|\u307e\u305f\u306f|\u305d\u308c\u3068\u3082|\uB610\uB294|\uD639\uC740))\s*(?:(?:alternatively|else)\s+)?(?:(?:post|publish|share|tweet|send|reply|respond)\s+(?:(?:this|that|it|the\s+following)\s+)?)?(?:(?:also\s+)?(?:on|onto|to|via|in|at|en|sur|sobre|\u00e0|au|auf|su|em|na|no|nos|nas|para|\u0432|\u043d\u0430)\s+)?(?:the\s+)?$/iu;
-    const explicitAlternativeBridge = /^\s*(?:(?:page|account|profile)\s*)?(?:,\s*)?(?:alternatively(?:\s+(?:on|onto|to|via|in|at))?|as\s+an\s+alternative\s+to)\s+(?:the\s+)?$/iu;
+    const directAlternativeBridge = /^\s*(?:(?:page|account|profile)\s*)?(?:,\s*)?(?:(?:or|otherwise|oder|ou|o|oppure|veya|ya\s+da|\u0438\u043b\u0438|\u043b\u0438\u0431\u043e)(?![\p{L}\p{N}_])|(?:\u6216\u8005|\u6216|\u307e\u305f\u306f|\u305d\u308c\u3068\u3082|\uB610\uB294|\uD639\uC740))\s*(?:(?:alternatively|otherwise|else)\s+)?(?:,\s*if\s+(?:unavailable|not\s+available|available|needed|necessary|possible|unable|unsuccessful|failing|failed|fails?|failure)\b[^,;]*,?\s*)?(?:(?:post|publish|share|tweet|send|reply|respond)\s+(?:(?:this|that|it|the\s+following)\s+)?)?(?:(?:also\s+)?(?:on|onto|to|via|in|at|en|sur|sobre|\u00e0|au|auf|su|em|na|no|nos|nas|para|\u0432|\u043d\u0430)\s+)?(?:the\s+)?$/iu;
+    const explicitAlternativeBridge = /^\s*(?:(?:page|account|profile)\s*)?(?:,\s*)?(?:(?:alternatively|otherwise)(?:\s+(?:on|onto|to|via|in|at))?|as\s+an\s+alternative\s+to)\s+(?:the\s+)?$/iu;
     const oneOfAlternativeLead = /(?<![\p{L}\p{N}_])one\s+of\s+(?:the\s+)?$/iu;
     const oneOfAlternativeBridge = /^\s*(?:,\s*)?(?:and|or)\s+(?:the\s+)?$/iu;
     const platformPattern = /(?:https?:\/\/(?:www\.)?(?:x\.com|twitter\.com|bsky\.app)(?:[/?#][^\s<>"'`\u3002\u3001\uff0c\uff1b\uff1a\uff01\uff1f\u2026\u2025]*|(?=[\s<>"'`\u3002\u3001\uff0c\uff1b\uff1a\uff01\uff1f\u2026\u2025,;!?]|$))|(?<![\p{L}\p{N}_])(?:x|twitter|bluesky|bsky\.app)(?![\p{L}\p{N}_]))/giu;
@@ -26636,6 +26636,20 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
               // publication clause, not part of the current platform's body.
               if (SOCIAL_PUBLISH_VERBS.test(next.maskedText || next.text || '')
                   || hasQuotedPayload(next.text)) break;
+              scoped += ` ${next.delim} ${next.text}`;
+              continue;
+            }
+            // Destination-first: "On X, publish: <body>" carries no publish
+            // verb in the platform clause, so a following comma/coordinated
+            // publish clause without an alien platform belongs to the same
+            // candidate and lets the colon body append on the next iteration.
+            if (SOCIAL_PUBLISH_VERBS.test(next.maskedText || next.text || '')
+                && (!anyPlatformPattern.test(next.maskedText || next.text || '')
+                  || platformPattern.test(next.maskedText || next.text || ''))
+                && ((next.delim || '').trim() === ','
+                  || (next.delim || '').trim() === '、'
+                  || SOCIAL_COORDINATING_DELIMITER.test(next.delim || '')
+                  || SOCIAL_SEQUENTIAL_DELIMITER.test(next.delim || ''))) {
               scoped += ` ${next.delim} ${next.text}`;
               continue;
             }
