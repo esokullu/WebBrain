@@ -2921,8 +2921,8 @@ export class CDPClient {
           ['.follow-button', '关注'], ['.send-btn', '发布评论'],
           ['.publish-btn', '发布'], ['.publish-button', '发布'],
         ] : onHost('tieba.baidu.com') ? [
-          ['.pc-pb-first-floor-interactive .action-item:has(use[*|href="#agree_pb"])', '点赞'],
-          ['.pc-pb-comments-desc .zan-container-dark:has(use[*|href="#agree_comment"])', '赞'],
+          ['.pc-pb-first-floor-interactive .action-item', '点赞', '#agree_pb'],
+          ['.pc-pb-comments-desc .zan-container-dark', '赞', '#agree_comment'],
         ] : [];
         const SELECTORS = [
           'a[href]', 'button', 'input:not([type="hidden"])', 'textarea', 'select',
@@ -2933,10 +2933,34 @@ export class CDPClient {
           ...SITE_RULES.map(([selector]) => selector)
         ];
 
-        function interactiveText(el) {
-          for (const [selector, label] of SITE_RULES) {
+        function matchesSiteRule(el, [selector, , iconHref]) {
+          try {
+            if (!el.matches(selector)) return false;
+          } catch (e) {
+            return false;
+          }
+          if (!iconHref) return true;
+          return Array.from(el.querySelectorAll('use')).some((use) => (
+            use.getAttribute('href') === iconHref
+            || use.getAttribute('xlink:href') === iconHref
+          ));
+        }
+
+        function matchesAnySiteSelector(el) {
+          return SITE_RULES.some(([selector]) => {
             try {
-              if (!el.matches(selector)) continue;
+              return el.matches(selector);
+            } catch (e) {
+              return false;
+            }
+          });
+        }
+
+        function interactiveText(el) {
+          for (const rule of SITE_RULES) {
+            const [selector, label] = rule;
+            try {
+              if (!matchesSiteRule(el, rule)) continue;
             } catch (e) {
               continue;
             }
@@ -2980,6 +3004,7 @@ export class CDPClient {
         let index = 0;
         all.forEach((el) => {
           if (!isVisiblyInteractive(el)) return;
+          if (matchesAnySiteSelector(el) && !SITE_RULES.some(rule => matchesSiteRule(el, rule))) return;
           const rect = el.getBoundingClientRect();
           elements.push({
             index: index++,

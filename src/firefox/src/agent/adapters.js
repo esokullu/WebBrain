@@ -16152,7 +16152,7 @@ const ADAPTERS = [
     notes: `
 - Tieba thread pages use a custom Vue action bar. On the first floor, the share, reply, like, and collect actions are icon-plus-count elements rather than native buttons; use the accessibility tree or interactive-element list and prefer the named "点赞" control over screenshot coordinates.
 - Reply-level likes are separate "赞" controls in each comment row. Re-read the active post or comment container after scrolling, switching "只看楼主", or changing 热门/正序/倒序; indices and visible rows can change.
-- "点赞", "关注", "回复", and "发贴" change account or public state. Perform them only when explicitly requested, then verify the icon/count or resulting state; a successful mouse dispatch alone is not proof.
+- "点赞", "关注", "回复", and "发帖" change account or public state. Perform them only when explicitly requested, then verify the icon/count or resulting state; a successful mouse dispatch alone is not proof.
 - The first-floor action bar may be below the initial viewport, while images open a viewer when clicked. Do not click nearby image coordinates or repeat a coordinate after an unexpected viewer opens; close or go back, then re-read the page.
 - Public pages may require Baidu sign-in. If "登录", QR verification, or "百度安全验证" appears, stop for the user and do not bypass, retry, or claim that the requested action succeeded.`,
   },

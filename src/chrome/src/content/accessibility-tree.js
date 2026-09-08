@@ -156,8 +156,10 @@
       ['.publish-button', '发布'],
     ],
     baiduTieba: [
-      ['.pc-pb-first-floor-interactive .action-item:has(use[*|href="#agree_pb"])', '点赞'],
-      ['.pc-pb-comments-desc .zan-container-dark:has(use[*|href="#agree_comment"])', '赞'],
+      // Match the stable action wrapper, then inspect SVG href/xlink:href via
+      // the DOM API because namespaced attribute selectors vary by engine.
+      ['.pc-pb-first-floor-interactive .action-item', '点赞', '#agree_pb'],
+      ['.pc-pb-comments-desc .zan-container-dark', '赞', '#agree_comment'],
     ],
   };
 
@@ -177,11 +179,18 @@
 
   function getSiteInteractionDescriptor(el) {
     if (!el || typeof el.matches !== 'function') return null;
-    for (const [selector, label] of currentSiteInteractionConfig().rules) {
+    for (const [selector, label, iconHref] of currentSiteInteractionConfig().rules) {
       try {
         if (!el.matches(selector)) continue;
       } catch {
         continue;
+      }
+      if (iconHref) {
+        const hasIcon = Array.from(el.querySelectorAll?.('use') || []).some(use => (
+          use.getAttribute('href') === iconHref
+          || use.getAttribute('xlink:href') === iconHref
+        ));
+        if (!hasIcon) continue;
       }
       const explicit = String(
         el.getAttribute('aria-label') || el.getAttribute('title') || ''

@@ -481,6 +481,18 @@
     }
   }
 
+  function _isSiteSelectorCandidate(el) {
+    try {
+      return _siteInteractiveSelectors().some(selector => el.matches(selector));
+    } catch {
+      return false;
+    }
+  }
+
+  function _isUsableSiteInteractive(el) {
+    return !_isSiteSelectorCandidate(el) || _isSiteInteractive(el);
+  }
+
   function _composedParent(node) {
     if (!node) return null;
     if (node.assignedSlot) return node.assignedSlot;
@@ -718,6 +730,7 @@
     const out = [];
     for (const el of all) {
       if (!isVisiblyInteractive(el)) continue;
+      if (!_isUsableSiteInteractive(el)) continue;
       if (modal && !_isComposedAncestor(modal, el)) continue;
       out.push(el);
     }
@@ -843,6 +856,7 @@
         try {
           root.querySelectorAll(sel).forEach(el => {
             if (seen.has(el)) return;
+            if (!_isUsableSiteInteractive(el)) return;
             const rect = el.getBoundingClientRect();
             if (!isUsable(el, rect)) return;
             seen.add(el);

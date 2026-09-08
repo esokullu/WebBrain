@@ -4633,22 +4633,28 @@ test('matches Baidu Tieba and exposes custom post like controls', () => {
   assert.equal(axChrome, axFirefox, 'Tieba accessibility shims must remain byte-identical');
   const start = axChrome.indexOf('const SITE_INTERACTION_RULES = {');
   const end = axChrome.indexOf('\n\n  function getRole(el) {', start);
+  assert.ok(start >= 0 && end > start, 'Tieba site interaction helper slice must have valid bounds');
+  assert.doesNotMatch(axChrome, /\*\|href/, 'Tieba selectors must not rely on namespace wildcard syntax');
   const location = { hostname: 'tieba.baidu.com' };
   const context = { window: {}, location };
   vm.runInNewContext(axChrome.slice(start, end), context);
   const api = context.window.__wbSiteInteractions;
-  const likeSelector = '.pc-pb-first-floor-interactive .action-item:has(use[*|href="#agree_pb"])';
-  const replyLikeSelector = '.pc-pb-comments-desc .zan-container-dark:has(use[*|href="#agree_comment"])';
-  const fakeElement = (selector, text) => ({
+  const likeSelector = '.pc-pb-first-floor-interactive .action-item';
+  const replyLikeSelector = '.pc-pb-comments-desc .zan-container-dark';
+  const fakeElement = (selector, text, iconHref) => ({
     innerText: text,
     textContent: text,
     matches: candidate => candidate === selector,
+    querySelectorAll: candidate => candidate === 'use'
+      ? [{ getAttribute: name => ['href', 'xlink:href'].includes(name) ? iconHref : null }]
+      : [],
     getAttribute: () => null,
   });
   assert.ok(api.selectors().includes(likeSelector));
   assert.ok(api.selectors().includes(replyLikeSelector));
-  assert.equal(api.describe(fakeElement(likeSelector, '98')).name, '点赞 98');
-  assert.equal(api.describe(fakeElement(replyLikeSelector, '21')).name, '赞 21');
+  assert.equal(api.describe(fakeElement(likeSelector, '98', '#agree_pb')).name, '点赞 98');
+  assert.equal(api.describe(fakeElement(replyLikeSelector, '21', '#agree_comment')).name, '赞 21');
+  assert.equal(api.describe(fakeElement(likeSelector, '37', '#comment_pb')), null);
   assert.equal(api.shouldPierceShadowRoots(), false);
 
   for (const [label, rel] of [
@@ -4658,12 +4664,14 @@ test('matches Baidu Tieba and exposes custom post like controls', () => {
     const content = fs.readFileSync(path.join(ROOT, rel), 'utf8');
     assert.match(content, /\.\.\._siteInteractiveSelectors\(\)/, `${label}: Tieba selectors must reach content discovery`);
     assert.match(content, /if \(_isSiteInteractive\(node\)\) return true/, `${label}: Tieba controls must be interactive`);
+    assert.match(content, /_isUsableSiteInteractive\(el\)/, `${label}: broad Tieba selectors must filter non-like action wrappers`);
   }
 
   const cdp = fs.readFileSync(path.join(ROOT, 'src/chrome/src/cdp/cdp-client.js'), 'utf8');
   assert.match(cdp, /onHost\('tieba\.baidu\.com'\)/);
   assert.match(cdp, /agree_pb/);
   assert.match(cdp, /agree_comment/);
+  assert.match(cdp, /matchesAnySiteSelector\(el\)[\s\S]*matchesSiteRule\(el, rule\)/);
 });
 
 test('matches twitter.com and x.com', () => {
