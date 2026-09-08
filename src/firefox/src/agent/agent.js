@@ -4332,6 +4332,17 @@ export class Agent extends LoopDetector {
       requirement?.attachment ?? requirement?.target ?? requirement?.filename,
     );
     if (target && record?.uploadNameBindingAmbiguous === true) return false;
+    // An unqualified alt-text value describes images: the completion probe
+    // records videos with an empty alt or an unrelated aria-label, so videos
+    // must not fail an image alt-text contract they never carried.
+    const isImageAttachmentForAlt = (attachment) => {
+      if (!attachment || typeof attachment !== 'object') return false;
+      const type = String(attachment.type || attachment.kind || '').toLowerCase();
+      if (type === 'image' || type === 'photo') return true;
+      if (type === 'video' || type === 'animated_gif' || type === 'gif') return false;
+      const src = String(attachment.src || attachment.url || '');
+      return !/\.(?:mp4|mov|webm|mkv|gif)(?:[?#]|$)/i.test(src);
+    };
     const relevantAttachments = target
       ? attachments.filter((attachment) => {
           if (!attachment || typeof attachment !== 'object') return false;
@@ -4345,7 +4356,7 @@ export class Agent extends LoopDetector {
           });
           return targetNames.some(expected => candidates.some(candidate => candidate === expected));
         })
-      : attachments;
+      : attachments.filter(isImageAttachmentForAlt);
     return relevantAttachments.length > 0 && relevantAttachments.every(attachment => (
       attachment && typeof attachment === 'object'
       && this._workflowMetadataValue(attachment.alt) === want

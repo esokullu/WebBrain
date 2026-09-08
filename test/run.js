@@ -91739,6 +91739,15 @@ test('X and Bluesky same-route publication accepts only one new permalink with t
           ],
         },
       ), false, AgentClass.name + ': one matching alt text hid a mismatched attachment');
+      assert.equal(agent._workflowSocialPublishedAltTextObserved(
+        { value: 'Diagram' },
+        {
+          attachments: [
+            { type: 'image', src: 'https://example.test/a.png', alt: 'Diagram' },
+            { type: 'video', src: 'https://example.test/b.mp4', alt: '' },
+          ],
+        },
+      ), true, AgentClass.name + ': an image alt-text contract was failed by a video without alt text');
 
       assert.equal(agent._workflowPublishedResourcePayloadMatch(
         {
