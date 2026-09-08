@@ -90821,6 +90821,10 @@ test('social publication workflow follows the live X or Bluesky destination and 
         'a bare no-X clause adopted its forbidden destination'],
       ['Post only on X, no Bluesky', ['twitter'],
         'a bare no-Bluesky clause adopted its forbidden destination'],
+      ['Post on Bluesky, avoiding X', ['bluesky'],
+        'an avoiding clause adopted its forbidden X destination'],
+      ['Post on X, avoid Bluesky', ['twitter'],
+        'an avoid clause adopted its forbidden Bluesky destination'],
       ['Post on Bluesky rather than posting on X', ['bluesky'],
         'rather-than clause adopted its expressly excluded X destination'],
       ['Post on Bluesky rather than on X', ['bluesky'],
@@ -91275,6 +91279,10 @@ test('alternative social destinations require one verified publication, not ever
       ...guard,
       taskText: 'Post this on X or alternatively on Bluesky.',
     }), true, AgentClass.name + ': alternatively adverb broke a destination choice');
+    assert.equal(agent._socialPublishTargetsAreAlternatives({
+      ...guard,
+      taskText: 'Post on X or else Bluesky.',
+    }), true, AgentClass.name + ': or-else bridge turned alternative destinations into two mandatory posts');
     assert.equal(agent._socialPublishTargetsAreAlternatives({
       ...guard,
       taskText: 'Post on https://x.com/home or https://bsky.app/.',
@@ -92966,6 +92974,38 @@ test('upper-bound attachment qualifiers verify as maximum counts', () => {
     assert.equal(agent._workflowSocialPublishedAttachmentObserved(
       { value: 'one MP4 video' }, { attachments: [{ type: 'video', src: 'https://video.twimg.com/media/video1.webm' }] }), false,
       AgentClass.name + ': a WebM video satisfied an MP4-only contract');
+    const pngOrJpegImage = agent._parseWorkflowAttachmentRequirement('one PNG or JPEG image');
+    assert.equal(pngOrJpegImage.isGeneric, true,
+      AgentClass.name + ': a coordinated image-format choice was parsed as filenames');
+    assert.deepEqual(pngOrJpegImage.specificTargets, [],
+      AgentClass.name + ': a coordinated image-format choice created specific targets');
+    assert.deepEqual(pngOrJpegImage.requestedImageFormats, ['png', 'jpeg']);
+    assert.deepEqual(pngOrJpegImage.mediaAlternativeBranches, [],
+      AgentClass.name + ': format-choice glue became whole-media branches');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one PNG or JPEG image' }, { attachments: [image(1)] }), true,
+      AgentClass.name + ': PNG did not satisfy the coordinated format choice');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one PNG or JPEG image' }, { attachments: [{ type: 'image', src: 'https://cdn.example/a.jpg' }] }), true,
+      AgentClass.name + ': JPEG did not satisfy the coordinated format choice');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one PNG or JPEG image' }, { attachments: [{ type: 'image', src: 'https://cdn.example/a.webp' }] }), false,
+      AgentClass.name + ': WebP satisfied a PNG-or-JPEG format choice');
+    for (const [requirement, makeAttachment, minField, maxField] of [
+      ['at least one image and at most two images', image, 'minimumImageCount', 'maximumImageCount'],
+      ['at least one video and at most two videos', video, 'minimumVideoCount', 'maximumVideoCount'],
+      ['at least one GIF and at most two GIFs', gif, 'minimumGifCount', 'maximumGifCount'],
+    ]) {
+      const parsedRange = agent._parseWorkflowAttachmentRequirement(requirement);
+      assert.equal(parsedRange[minField], 1, AgentClass.name + `: lower bound was lost for ${requirement}`);
+      assert.equal(parsedRange[maxField], 2, AgentClass.name + `: upper bound was lost for ${requirement}`);
+      for (const [count, expected] of [[0, false], [1, true], [2, true], [3, false]]) {
+        assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+          { value: requirement },
+          { attachments: Array.from({ length: count }, (_value, index) => makeAttachment(index + 1)) },
+        ), expected, AgentClass.name + `: ${count} attachments misverified for ${requirement}`);
+      }
+    }
     assert.equal(agent._workflowSocialPublishedAttachmentObserved(
       { value: 'up to two images' }, { attachments: [] }), true,
       AgentClass.name + ': zero images should satisfy "up to two images"');

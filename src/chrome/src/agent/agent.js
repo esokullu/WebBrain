@@ -261,7 +261,7 @@ const SOCIAL_POST_DESTINATION_NEGATION = new RegExp(
   'iu',
 );
 const SOCIAL_CONTRASTIVE_EXCLUSION = /(?<![\p{L}\p{N}_])(?:rather\s+than|instead\s+of)(?:\s+(?:post(?:ing)?|publish(?:ing)?|shar(?:e|ing)|tweet(?:ing)?|send(?:ing)?))?(?:\s+(?:on|onto|to|via|in|at))?\s*$/iu;
-const SOCIAL_DESTINATION_EXCLUSION = /^\s*(?:exclude|excluding|no)\s+(?:(?:post(?:ing)?|publish(?:ing)?|shar(?:e|ing)|tweet(?:ing)?|send(?:ing)?)\s+)?(?:(?:on|onto|to|via|in|at)\s+)?(?:the\s+)?(?:x|twitter|bluesky|bsky(?:\.app)?)(?![\p{L}\p{N}_.-])\s*$/iu;
+const SOCIAL_DESTINATION_EXCLUSION = /^\s*(?:exclude|excluding|avoid|avoiding|no)\s+(?:(?:post(?:ing)?|publish(?:ing)?|shar(?:e|ing)|tweet(?:ing)?|send(?:ing)?)\s+)?(?:(?:on|onto|to|via|in|at)\s+)?(?:the\s+)?(?:x|twitter|bluesky|bsky(?:\.app)?)(?![\p{L}\p{N}_.-])\s*$/iu;
 const socialPostNegationGovernsPublish = value => (
   SOCIAL_POST_NEGATION.test(String(value || '').trim())
   || SOCIAL_POST_DESTINATION_NEGATION.test(String(value || ''))
@@ -3130,16 +3130,24 @@ export class Agent extends LoopDetector {
     const wantsVideo = wantsOrdinaryVideo || wantsGif;
     const wantsImage = hasRawImage && !isImageNegated;
     const normalizeAttachmentFormat = format => (/^jpe?g$/iu.test(format) ? 'jpeg' : String(format || '').toLowerCase());
-    const requestedImageFormats = [...text.matchAll(new RegExp(
-      `(?<![${SOCIAL_WORD_EDGE}])(${IMAGE_ATTACHMENT_FORMAT})(?![${SOCIAL_WORD_EDGE}])\\s+(?:images?|photos?|pictures?|pics?)`,
+    const imageFormatQualifier = `${IMAGE_ATTACHMENT_FORMAT}(?:\\s*(?:or|and|/|,)\\s*${IMAGE_ATTACHMENT_FORMAT})*`;
+    const videoFormatQualifier = `${VIDEO_ATTACHMENT_FORMAT}(?:\\s*(?:or|and|/|,)\\s*${VIDEO_ATTACHMENT_FORMAT})*`;
+    const imageFormatMatches = [...text.matchAll(new RegExp(
+      `(?<![${SOCIAL_WORD_EDGE}])(${imageFormatQualifier})(?![${SOCIAL_WORD_EDGE}])\\s+(?:images?|photos?|pictures?|pics?)`,
       'giu',
-    ))].map(match => normalizeAttachmentFormat(match[1]))
+    ))];
+    const requestedImageFormats = imageFormatMatches.flatMap(match => [...match[1].matchAll(new RegExp(IMAGE_ATTACHMENT_FORMAT, 'giu'))]
+      .map(formatMatch => normalizeAttachmentFormat(formatMatch[0])))
       .filter((format, index, formats) => formats.indexOf(format) === index);
-    const requestedVideoFormats = [...text.matchAll(new RegExp(
-      `(?<![${SOCIAL_WORD_EDGE}])(${VIDEO_ATTACHMENT_FORMAT})(?![${SOCIAL_WORD_EDGE}])\\s+(?:videos?|clips?|recordings?)`,
+    const videoFormatMatches = [...text.matchAll(new RegExp(
+      `(?<![${SOCIAL_WORD_EDGE}])(${videoFormatQualifier})(?![${SOCIAL_WORD_EDGE}])\\s+(?:videos?|clips?|recordings?)`,
       'giu',
-    ))].map(match => normalizeAttachmentFormat(match[1]))
+    ))];
+    const requestedVideoFormats = videoFormatMatches.flatMap(match => [...match[1].matchAll(new RegExp(VIDEO_ATTACHMENT_FORMAT, 'giu'))]
+      .map(formatMatch => normalizeAttachmentFormat(formatMatch[0])))
       .filter((format, index, formats) => formats.indexOf(format) === index);
+    const mediaFormatQualifierSpans = [...imageFormatMatches, ...videoFormatMatches]
+      .map(match => [match.index || 0, (match.index || 0) + match[1].length]);
 
     const parseCountWord = (str) => {
       if (!str) return 0;
@@ -3224,8 +3232,8 @@ export class Agent extends LoopDetector {
       ? text.replace(MIN_ATTACHMENT_COUNT_STRIP_REGEX, ' ').replace(MAX_ATTACHMENT_COUNT_STRIP_REGEX, ' ').replace(/\s+/g, ' ').trim()
       : text;
     const countText = rawCountText
-      .replace(new RegExp(`(?<![${SOCIAL_WORD_EDGE}])${IMAGE_ATTACHMENT_FORMAT}(?![${SOCIAL_WORD_EDGE}])(?=\\s+(?:images?|photos?|pictures?|pics?))`, 'giu'), '')
-      .replace(new RegExp(`(?<![${SOCIAL_WORD_EDGE}])${VIDEO_ATTACHMENT_FORMAT}(?![${SOCIAL_WORD_EDGE}])(?=\\s+(?:videos?|clips?|recordings?))`, 'giu'), '');
+      .replace(new RegExp(`(?<![${SOCIAL_WORD_EDGE}])${imageFormatQualifier}(?![${SOCIAL_WORD_EDGE}])(?=\\s+(?:images?|photos?|pictures?|pics?))`, 'giu'), '')
+      .replace(new RegExp(`(?<![${SOCIAL_WORD_EDGE}])${videoFormatQualifier}(?![${SOCIAL_WORD_EDGE}])(?=\\s+(?:videos?|clips?|recordings?))`, 'giu'), '');
 
     let isGeneric = false;
     if (CJK_GENERIC_ATTACHMENT_REGEX.test(countText)) {
@@ -3237,20 +3245,45 @@ export class Agent extends LoopDetector {
     }
     // Scope each qualifier to the phrase it appears in, so a minimum on one
     // media type does not loosen an exact count on the other.
+    const qualifiedCountInSegment = (segment, qualifierRegex) => {
+      const withoutQualifier = String(segment || '').replace(
+        new RegExp(qualifierRegex.source, 'giu'),
+        ' ',
+      );
+      const match = withoutQualifier.match(new RegExp(`(?<![${SOCIAL_WORD_EDGE}])(${rangeCountToken})(?![${SOCIAL_WORD_EDGE}])`, 'iu'));
+      return parseCountWord(match?.[1]);
+    };
     let minScopedImage = false;
     let minScopedVideo = false;
     let minScopedGif = false;
     let minScopedGeneric = false;
+    let minimumImageCount = 0;
+    let minimumVideoCount = 0;
+    let minimumGifCount = 0;
+    let minimumGenericCount = 0;
     if (hasMinCountQualifier) {
       for (const segment of text.split(MIN_COUNT_SCOPE_SPLIT)) {
         if (!segment || !MIN_ATTACHMENT_COUNT_REGEX.test(segment)) continue;
         const segmentImage = RAW_IMAGE_NOUN_REGEX.test(segment);
         const segmentGif = RAW_GIF_NOUN_REGEX.test(segment);
         const segmentVideo = RAW_VIDEO_NOUN_REGEX.test(segment);
-        if (segmentImage) minScopedImage = true;
-        if (segmentVideo) minScopedVideo = true;
-        if (segmentGif) minScopedGif = true;
-        if (!segmentImage && !segmentVideo && !segmentGif) minScopedGeneric = true;
+        const segmentCount = qualifiedCountInSegment(segment, MIN_ATTACHMENT_COUNT_REGEX);
+        if (segmentImage) {
+          minScopedImage = true;
+          minimumImageCount = Math.max(minimumImageCount, segmentCount);
+        }
+        if (segmentVideo) {
+          minScopedVideo = true;
+          minimumVideoCount = Math.max(minimumVideoCount, segmentCount);
+        }
+        if (segmentGif) {
+          minScopedGif = true;
+          minimumGifCount = Math.max(minimumGifCount, segmentCount);
+        }
+        if (!segmentImage && !segmentVideo && !segmentGif) {
+          minScopedGeneric = true;
+          minimumGenericCount = Math.max(minimumGenericCount, segmentCount);
+        }
       }
     }
     for (const postfixMinimum of text.matchAll(
@@ -3263,10 +3296,19 @@ export class Agent extends LoopDetector {
       else minScopedGeneric = true;
     }
     for (const range of boundedCountRanges) {
-      if (range.kind === 'image') minScopedImage = true;
-      else if (range.kind === 'video') minScopedVideo = true;
-      else if (range.kind === 'gif') minScopedGif = true;
-      else minScopedGeneric = true;
+      if (range.kind === 'image') {
+        minScopedImage = true;
+        minimumImageCount = Math.max(minimumImageCount, range.minimumCount);
+      } else if (range.kind === 'video') {
+        minScopedVideo = true;
+        minimumVideoCount = Math.max(minimumVideoCount, range.minimumCount);
+      } else if (range.kind === 'gif') {
+        minScopedGif = true;
+        minimumGifCount = Math.max(minimumGifCount, range.minimumCount);
+      } else {
+        minScopedGeneric = true;
+        minimumGenericCount = Math.max(minimumGenericCount, range.minimumCount);
+      }
     }
     const isMinimumCount = isGeneric && hasMinCountQualifier;
     const isImageMinimum = isGeneric && (minScopedImage || minScopedGeneric);
@@ -3278,23 +3320,49 @@ export class Agent extends LoopDetector {
     let maxScopedVideo = false;
     let maxScopedGif = false;
     let maxScopedGeneric = false;
+    let maximumImageCount = 0;
+    let maximumVideoCount = 0;
+    let maximumGifCount = 0;
+    let maximumGenericCount = 0;
     if (hasMaxCountQualifier) {
       for (const segment of text.split(MIN_COUNT_SCOPE_SPLIT)) {
         if (!segment || !MAX_ATTACHMENT_COUNT_REGEX.test(segment)) continue;
         const segmentImage = RAW_IMAGE_NOUN_REGEX.test(segment);
         const segmentGif = RAW_GIF_NOUN_REGEX.test(segment);
         const segmentVideo = RAW_VIDEO_NOUN_REGEX.test(segment);
-        if (segmentImage) maxScopedImage = true;
-        if (segmentVideo) maxScopedVideo = true;
-        if (segmentGif) maxScopedGif = true;
-        if (!segmentImage && !segmentVideo && !segmentGif) maxScopedGeneric = true;
+        const segmentCount = qualifiedCountInSegment(segment, MAX_ATTACHMENT_COUNT_REGEX);
+        if (segmentImage) {
+          maxScopedImage = true;
+          maximumImageCount = maximumImageCount > 0 ? Math.min(maximumImageCount, segmentCount) : segmentCount;
+        }
+        if (segmentVideo) {
+          maxScopedVideo = true;
+          maximumVideoCount = maximumVideoCount > 0 ? Math.min(maximumVideoCount, segmentCount) : segmentCount;
+        }
+        if (segmentGif) {
+          maxScopedGif = true;
+          maximumGifCount = maximumGifCount > 0 ? Math.min(maximumGifCount, segmentCount) : segmentCount;
+        }
+        if (!segmentImage && !segmentVideo && !segmentGif) {
+          maxScopedGeneric = true;
+          maximumGenericCount = maximumGenericCount > 0 ? Math.min(maximumGenericCount, segmentCount) : segmentCount;
+        }
       }
     }
     for (const range of boundedCountRanges) {
-      if (range.kind === 'image') maxScopedImage = true;
-      else if (range.kind === 'video') maxScopedVideo = true;
-      else if (range.kind === 'gif') maxScopedGif = true;
-      else maxScopedGeneric = true;
+      if (range.kind === 'image') {
+        maxScopedImage = true;
+        maximumImageCount = maximumImageCount > 0 ? Math.min(maximumImageCount, range.maximumCount) : range.maximumCount;
+      } else if (range.kind === 'video') {
+        maxScopedVideo = true;
+        maximumVideoCount = maximumVideoCount > 0 ? Math.min(maximumVideoCount, range.maximumCount) : range.maximumCount;
+      } else if (range.kind === 'gif') {
+        maxScopedGif = true;
+        maximumGifCount = maximumGifCount > 0 ? Math.min(maximumGifCount, range.maximumCount) : range.maximumCount;
+      } else {
+        maxScopedGeneric = true;
+        maximumGenericCount = maximumGenericCount > 0 ? Math.min(maximumGenericCount, range.maximumCount) : range.maximumCount;
+      }
     }
     const isMaximumCount = isGeneric && hasMaxCountQualifier;
     const isImageMaximum = isGeneric && (maxScopedImage || maxScopedGeneric);
@@ -3386,9 +3454,11 @@ export class Agent extends LoopDetector {
     // whole media branches. In "one or two images and one video", the video
     // remains conjunctive and only the image cardinality is alternative.
     let unscopedDisjunctionText = qualifierMaskedDisjunctionText;
-    const nonBranchDisjunctionSpans = coordinatedMediaNegationSpan
-      ? [...scopedAlternativeSpans, coordinatedMediaNegationSpan]
-      : scopedAlternativeSpans;
+    const nonBranchDisjunctionSpans = [
+      ...scopedAlternativeSpans,
+      ...mediaFormatQualifierSpans,
+      ...(coordinatedMediaNegationSpan ? [coordinatedMediaNegationSpan] : []),
+    ];
     for (const [start, end] of nonBranchDisjunctionSpans.slice().sort((a, b) => b[0] - a[0])) {
       unscopedDisjunctionText = unscopedDisjunctionText.slice(0, start)
         + ' '.repeat(end - start)
@@ -3609,6 +3679,14 @@ export class Agent extends LoopDetector {
       isImageMaximum,
       isVideoMaximum,
       isGifMaximum,
+      minimumImageCount,
+      minimumVideoCount,
+      minimumGifCount,
+      minimumGenericCount,
+      maximumImageCount,
+      maximumVideoCount,
+      maximumGifCount,
+      maximumGenericCount,
       hasBoundedCountRange,
       boundedCountRanges,
       minimumCount: hasBoundedCountRange ? rangeMinimumCount : 0,
@@ -3735,7 +3813,11 @@ export class Agent extends LoopDetector {
     // An upper bound does not imply that one attachment is required. Empty
     // media is valid only when every conjunctive positive constraint permits
     // zero; for alternatives, one maximum-qualified branch is sufficient.
-    const allowsNoAttachments = parsed.isGeneric
+    const hasPositiveMinimum = (parsed.isImageMinimum && (parsed.minimumImageCount || parsed.expectedImageCount || 1) > 0)
+      || (parsed.isVideoMinimum && (parsed.minimumVideoCount || parsed.expectedVideoCount || 1) > 0)
+      || (parsed.isGifMinimum && (parsed.minimumGifCount || parsed.expectedGifCount || 1) > 0)
+      || (parsed.minimumGenericCount || 0) > 0;
+    const allowsNoAttachments = parsed.isGeneric && !hasPositiveMinimum
       && !(parsed.hasBoundedCountRange && parsed.minimumCount > 0) && (
       parsed.isAlternative
         ? (parsed.isMaximumCount
@@ -3809,8 +3891,7 @@ export class Agent extends LoopDetector {
       if (!requiredFormats?.length) return true;
       const observedFormats = candidates.map(attachmentFormat);
       return observedFormats.length > 0
-        && observedFormats.every(format => format && requiredFormats.includes(format))
-        && requiredFormats.every(format => observedFormats.includes(format));
+        && observedFormats.every(format => format && requiredFormats.includes(format));
     };
 
     const canMatchSpecificTargets = (targets, candidates) => {
@@ -3854,6 +3935,20 @@ export class Agent extends LoopDetector {
     if (!attachmentsMatchFormats(parsed.requestedImageFormats, rawAttachments.filter(isImageAttachment))) return false;
     if (!attachmentsMatchFormats(parsed.requestedVideoFormats,
       rawAttachments.filter(att => isVideoAttachment(att) && !isGifAttachment(att)))) return false;
+    const imageMinimumBound = parsed.minimumImageCount || parsed.expectedImageCount || 1;
+    const videoMinimumBound = parsed.minimumVideoCount || parsed.expectedVideoCount || 1;
+    const gifMinimumBound = parsed.minimumGifCount || parsed.expectedGifCount || 1;
+    const imageMaximumBound = parsed.maximumImageCount || parsed.expectedImageCount;
+    const videoMaximumBound = parsed.maximumVideoCount || parsed.expectedVideoCount;
+    const gifMaximumBound = parsed.maximumGifCount || parsed.expectedGifCount;
+    if (parsed.isImageMinimum && imageCount < imageMinimumBound) return false;
+    if (parsed.isVideoMinimum && ordinaryVideoCount < videoMinimumBound) return false;
+    if (parsed.isGifMinimum && gifCount < gifMinimumBound) return false;
+    if (parsed.isImageMaximum && imageCount > imageMaximumBound) return false;
+    if (parsed.isVideoMaximum && ordinaryVideoCount > videoMaximumBound) return false;
+    if (parsed.isGifMaximum && gifCount > gifMaximumBound) return false;
+    if (parsed.minimumGenericCount > 0 && rawAttachments.length < parsed.minimumGenericCount) return false;
+    if (parsed.maximumGenericCount > 0 && rawAttachments.length > parsed.maximumGenericCount) return false;
     const imageAlternativeCounts = parsed.imageAlternativeCounts || [];
     const videoAlternativeCounts = parsed.videoAlternativeCounts || [];
     const gifAlternativeCounts = parsed.gifAlternativeCounts || [];
@@ -3885,7 +3980,7 @@ export class Agent extends LoopDetector {
       if (gifAlternativeCounts.length && !gifAlternativeCounts.includes(gifCount)) return false;
       if (parsed.hasExplicitGifCount && !gifAlternativeCounts.length && !parsed.alternativeCounts?.length
           && !parsed.isGifMinimum && !parsed.isGifMaximum && gifCount !== parsed.expectedGifCount) return false;
-      if (parsed.hasExplicitGifCount && parsed.isGifMaximum && gifCount > parsed.expectedGifCount) return false;
+      if (parsed.hasExplicitGifCount && parsed.isGifMaximum && gifCount > gifMaximumBound) return false;
     }
     if (parsed.wantsGif && parsed.wantsOrdinaryVideo && !parsed.isAlternative) {
       const requiredOrdinaryVideoCount = videoAlternativeCounts.length
@@ -3895,7 +3990,7 @@ export class Agent extends LoopDetector {
       if (videoAlternativeCounts.length && !videoAlternativeCounts.includes(ordinaryVideoCount)) return false;
       if (parsed.hasExplicitVideoCount && !videoAlternativeCounts.length && !parsed.isVideoMinimum && !parsed.isVideoMaximum
           && ordinaryVideoCount !== parsed.expectedVideoCount) return false;
-      if (parsed.hasExplicitVideoCount && parsed.isVideoMaximum && ordinaryVideoCount > parsed.expectedVideoCount) return false;
+      if (parsed.hasExplicitVideoCount && parsed.isVideoMaximum && ordinaryVideoCount > videoMaximumBound) return false;
     }
     if (parsed.isGifNegated && gifCount > 0) return false;
     const exactTypedTotal = parsed.isGeneric && !parsed.isAlternative
@@ -3989,7 +4084,7 @@ export class Agent extends LoopDetector {
         if (!imageAlternativeCounts.length && parsed.hasExplicitImageCount && !parsed.isImageMinimum && !parsed.isImageMaximum && imageCount !== parsed.expectedImageCount) {
           return false;
         }
-        if (parsed.hasExplicitImageCount && parsed.isImageMaximum && imageCount > parsed.expectedImageCount) {
+        if (parsed.hasExplicitImageCount && parsed.isImageMaximum && imageCount > imageMaximumBound) {
           return false;
         }
         if (typedVideoAlternativeCounts.length && !typedVideoAlternativeCounts.includes(typedVideoCount)) {
@@ -3998,7 +4093,10 @@ export class Agent extends LoopDetector {
         if (!typedVideoAlternativeCounts.length && parsed.hasExplicitVideoCount && !parsed.isVideoMinimum && !parsed.isVideoMaximum && typedVideoCount !== parsed.expectedVideoCount) {
           return false;
         }
-        if (parsed.hasExplicitVideoCount && parsed.isVideoMaximum && typedVideoCount > parsed.expectedVideoCount) {
+        const typedVideoMaximumBound = parsed.wantsGif && !parsed.wantsOrdinaryVideo
+          ? gifMaximumBound
+          : videoMaximumBound;
+        if (parsed.hasExplicitVideoCount && parsed.isVideoMaximum && typedVideoCount > typedVideoMaximumBound) {
           return false;
         }
         if (parsed.hasExplicitImageCount && parsed.hasExplicitVideoCount
@@ -4026,7 +4124,8 @@ export class Agent extends LoopDetector {
           return false;
         }
       } else if (parsed.isImageMaximum || parsed.isMaximumCount) {
-        if (imageCount > parsed.expectedCount || rawAttachments.length > parsed.expectedCount) {
+        const maximumCount = imageMaximumBound || parsed.maximumGenericCount || parsed.expectedCount;
+        if (imageCount > maximumCount || rawAttachments.length > maximumCount) {
           return false;
         }
       } else {
@@ -4078,7 +4177,11 @@ export class Agent extends LoopDetector {
             return false;
           }
         } else if (parsed.isVideoMaximum || parsed.isGifMaximum || parsed.isMaximumCount) {
-          if (typedVideoCount > parsed.expectedCount || rawAttachments.length > parsed.expectedCount) {
+          const maximumCount = requiresGifOnly
+            ? gifMaximumBound
+            : (ordinaryVideoOnly ? videoMaximumBound : (videoMaximumBound + gifMaximumBound))
+              || parsed.maximumGenericCount || parsed.expectedCount;
+          if (typedVideoCount > maximumCount || rawAttachments.length > maximumCount) {
             return false;
           }
         } else if (typedVideoCount < parsed.expectedCount) {
@@ -4100,7 +4203,7 @@ export class Agent extends LoopDetector {
           return false;
         }
       } else if (parsed.isMaximumCount) {
-        if (rawAttachments.length > parsed.expectedCount) {
+        if (rawAttachments.length > (parsed.maximumGenericCount || parsed.expectedCount)) {
           return false;
         }
       } else {
@@ -17678,7 +17781,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     // Only list-shaped glue may sit between the two platform mentions. An
     // unrelated branch such as "X or report the blocker; also post on
     // Bluesky" contains `or`, but it does not coordinate the destinations.
-    const directAlternativeBridge = /^\s*(?:(?:page|account|profile)\s*)?(?:,\s*)?(?:(?:or|oder|ou|o|oppure|veya|ya\s+da|\u0438\u043b\u0438|\u043b\u0438\u0431\u043e)(?![\p{L}\p{N}_])|(?:\u6216\u8005|\u6216|\u307e\u305f\u306f|\u305d\u308c\u3068\u3082|\uB610\uB294|\uD639\uC740))\s*(?:alternatively\s+)?(?:(?:post|publish|share|tweet|send|reply|respond)\s+(?:(?:this|that|it|the\s+following)\s+)?)?(?:(?:also\s+)?(?:on|onto|to|via|in|at|en|sur|sobre|\u00e0|au|auf|su|em|na|no|nos|nas|para|\u0432|\u043d\u0430)\s+)?(?:the\s+)?$/iu;
+    const directAlternativeBridge = /^\s*(?:(?:page|account|profile)\s*)?(?:,\s*)?(?:(?:or|oder|ou|o|oppure|veya|ya\s+da|\u0438\u043b\u0438|\u043b\u0438\u0431\u043e)(?![\p{L}\p{N}_])|(?:\u6216\u8005|\u6216|\u307e\u305f\u306f|\u305d\u308c\u3068\u3082|\uB610\uB294|\uD639\uC740))\s*(?:(?:alternatively|else)\s+)?(?:(?:post|publish|share|tweet|send|reply|respond)\s+(?:(?:this|that|it|the\s+following)\s+)?)?(?:(?:also\s+)?(?:on|onto|to|via|in|at|en|sur|sobre|\u00e0|au|auf|su|em|na|no|nos|nas|para|\u0432|\u043d\u0430)\s+)?(?:the\s+)?$/iu;
     const platformPattern = /(?:https?:\/\/(?:www\.)?(?:x\.com|twitter\.com|bsky\.app)(?:[/?#][^\s<>"'`\u3002\u3001\uff0c\uff1b\uff1a\uff01\uff1f\u2026\u2025]*|(?=[\s<>"'`\u3002\u3001\uff0c\uff1b\uff1a\uff01\uff1f\u2026\u2025,;!?]|$))|(?<![\p{L}\p{N}_])(?:x|twitter|bluesky|bsky\.app)(?![\p{L}\p{N}_]))/giu;
     const texts = [guard?.taskText, guard?.approvedPlanAnchor]
       .map(value => String(value || '').trim())
