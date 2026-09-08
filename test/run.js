@@ -90841,6 +90841,10 @@ test('social publication workflow follows the live X or Bluesky destination and 
         'an except-for clause adopted its forbidden Bluesky destination'],
       ['Post on Bluesky, except for X', ['bluesky'],
         'an except-for clause adopted its forbidden X destination'],
+      ['Post on X, except for posting on Bluesky', ['twitter'],
+        'a verb-bearing except-for clause adopted its forbidden Bluesky destination'],
+      ['Post on Bluesky, excluding publishing on X', ['bluesky'],
+        'a verb-bearing excluding clause adopted its forbidden X destination'],
       ['Post on Bluesky rather than posting on X', ['bluesky'],
         'rather-than clause adopted its expressly excluded X destination'],
       ['Post on Bluesky rather than on X', ['bluesky'],
@@ -93166,6 +93170,15 @@ test('upper-bound attachment qualifiers verify as maximum counts', () => {
     assert.equal(agent._workflowSocialPublishedAttachmentObserved(
       { value: 'one PNG or one JPEG image' }, { attachments: [image(1), { type: 'image', src: 'https://cdn.example/a.jpg' }] }), false,
       AgentClass.name + ': two images satisfied a single-image format choice');
+    for (const [attachments, expected, message] of [
+      [[{ type: 'image', src: 'https://cdn.example/a.jpg' }], true, 'the required JPEG was rejected by a separate PNG prohibition'],
+      [[{ type: 'image', src: 'https://cdn.example/a.webp' }], false, 'an unrequested WebP satisfied a required JPEG'],
+      [[image(1)], false, 'a prohibited PNG satisfied the JPEG contract'],
+    ]) {
+      assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+        { value: 'no PNG images and one JPEG image' }, { attachments },
+      ), expected, AgentClass.name + ': ' + message);
+    }
     for (const [attachments, expected, message] of [
       [[image(1)], true, 'one image alone was rejected by a no-more-than video cap'],
       [[image(1), video(1)], true, 'one image plus one video was rejected by a no-more-than video cap'],

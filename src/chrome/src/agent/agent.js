@@ -3151,15 +3151,18 @@ export class Agent extends LoopDetector {
     const normalizeAttachmentFormat = format => (/^jpe?g$/iu.test(format) ? 'jpeg' : String(format || '').toLowerCase());
     // A coordinated format choice may repeat the cardinality before each
     // format ("one PNG or one JPEG image"): the shared media noun is still
-    // omitted, so an optional count is accepted after every conjunction.
+    // omitted, so an optional count is accepted after "or". A counted "and"
+    // starts a separate quantified clause ("no PNG images and one JPEG
+    // image"), so conjunctions other than "or" take no count and negation
+    // stays scoped to each repeated format clause.
     const formatChoiceCountWord = '(?:\\d+|zero|one|two|three|four|five|six|seven|eight|nine|ten|a|an|single|both)';
-    const imageFormatQualifier = `${IMAGE_ATTACHMENT_FORMAT}(?:\\s*(?:or|and|/|,)\\s*(?:${formatChoiceCountWord}\\s+)?${IMAGE_ATTACHMENT_FORMAT})*`;
-    const videoFormatQualifier = `${VIDEO_ATTACHMENT_FORMAT}(?:\\s*(?:or|and|/|,)\\s*(?:${formatChoiceCountWord}\\s+)?${VIDEO_ATTACHMENT_FORMAT})*`;
+    const imageFormatQualifier = `${IMAGE_ATTACHMENT_FORMAT}(?:\\s*or\\s*(?:${formatChoiceCountWord}\\s+)?${IMAGE_ATTACHMENT_FORMAT}|\\s*(?:and|/|,)\\s*${IMAGE_ATTACHMENT_FORMAT})*`;
+    const videoFormatQualifier = `${VIDEO_ATTACHMENT_FORMAT}(?:\\s*or\\s*(?:${formatChoiceCountWord}\\s+)?${VIDEO_ATTACHMENT_FORMAT}|\\s*(?:and|/|,)\\s*${VIDEO_ATTACHMENT_FORMAT})*`;
     const formatPostfixLead = '(?:in|as)\\s+(?:the\\s+)?';
     const formatPostfixSuffix = '(?:\\s+formats?)?';
     const mediaFormatMatchIsNegated = (start) => {
       const precedingSegment = negationText.slice(0, start)
-        .split(/(?:[,;]|\\s+(?:and|but|plus|also|as\\s+well\\s+as)\\s+)/iu)
+        .split(/(?:[,;]|\s+(?:and|but|plus|also|as\s+well\s+as)\s+)/iu)
         .pop() || '';
       return /(?<![\p{L}\p{N}_])(?:no(?!\s+(?:more\s+than|fewer\s+than|less\s+than))|not(?!\s+only)(?!\s+(?:more\s+than|fewer\s+than|less\s+than))|without(?:\s+any)?|zero|0)(?![\p{L}\p{N}_])/iu.test(precedingSegment);
     };
@@ -17752,7 +17755,11 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       if (publish) {
         const beforeVerb = c.maskedText.slice(0, publish.index);
         const afterVerb = c.maskedText.slice(publish.index + publish[0].length);
-        hasExplicitNeg = socialNegationGovernsPublish(beforeVerb) || socialPostNegationGovernsPublish(afterVerb);
+        // An exclusion clause may carry its own publish verb ("except for
+        // posting on Bluesky"), so the destination-exclusion matcher runs on
+        // verb-bearing clauses too instead of only generic publish negation.
+        hasExplicitNeg = socialNegationGovernsPublish(beforeVerb) || socialPostNegationGovernsPublish(afterVerb)
+          || SOCIAL_DESTINATION_EXCLUSION.test(c.maskedText);
       } else {
         hasExplicitNeg = SOCIAL_NEGATION.test(c.maskedText)
           || SOCIAL_DESTINATION_EXCLUSION.test(c.maskedText);
