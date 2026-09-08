@@ -261,6 +261,7 @@ const SOCIAL_POST_DESTINATION_NEGATION = new RegExp(
   'iu',
 );
 const SOCIAL_CONTRASTIVE_EXCLUSION = /(?<![\p{L}\p{N}_])(?:rather\s+than|instead\s+of)(?:\s+(?:post(?:ing)?|publish(?:ing)?|shar(?:e|ing)|tweet(?:ing)?|send(?:ing)?))?(?:\s+(?:on|onto|to|via|in|at))?\s*$/iu;
+const SOCIAL_DESTINATION_EXCLUSION = /^\s*(?:exclude|excluding)\s+(?:(?:post(?:ing)?|publish(?:ing)?|shar(?:e|ing)|tweet(?:ing)?|send(?:ing)?)\s+)?(?:(?:on|onto|to|via|in|at)\s+)?(?:the\s+)?(?:x|twitter|bluesky|bsky(?:\.app)?)(?![\p{L}\p{N}_.-])\s*$/iu;
 const socialPostNegationGovernsPublish = value => (
   SOCIAL_POST_NEGATION.test(String(value || '').trim())
   || SOCIAL_POST_DESTINATION_NEGATION.test(String(value || ''))
@@ -3826,6 +3827,9 @@ export class Agent extends LoopDetector {
 
     let matchingAttachments = rawAttachments;
     if (parsed.wantsImage && parsed.wantsVideo) {
+      const requiresGifOnly = parsed.wantsGif && !parsed.wantsOrdinaryVideo;
+      if (requiresGifOnly && rawAttachments.length !== (imageCount + gifCount)) return false;
+      if (ordinaryVideoOnly && rawAttachments.length !== (imageCount + ordinaryVideoCount)) return false;
       if (parsed.isAlternative) {
         const minImages = imageAlternativeCounts.length
           ? Math.min(...imageAlternativeCounts)
@@ -17205,7 +17209,8 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         const afterVerb = c.maskedText.slice(publish.index + publish[0].length);
         hasExplicitNeg = socialNegationGovernsPublish(beforeVerb) || socialPostNegationGovernsPublish(afterVerb);
       } else {
-        hasExplicitNeg = SOCIAL_NEGATION.test(c.maskedText);
+        hasExplicitNeg = SOCIAL_NEGATION.test(c.maskedText)
+          || SOCIAL_DESTINATION_EXCLUSION.test(c.maskedText);
       }
 
       if (hasExplicitNeg) {
@@ -17222,9 +17227,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       }
     }
 
-    let carriedPostNegation = false;
-    for (let i = clauses.length - 1; i >= 0; i--) {
-      const c = clauses[i];
+    for (const c of clauses) {
       const publish = c.maskedText.match(SOCIAL_PUBLISH_VERBS);
       let hasExplicitPostNeg = false;
       if (publish) {
@@ -17236,11 +17239,6 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
 
       if (hasExplicitPostNeg) {
         c.isNegated = true;
-        carriedPostNegation = true;
-      } else if (carriedPostNegation && i < clauses.length - 1 && SOCIAL_COORDINATING_DELIMITER.test(clauses[i + 1].delim)) {
-        c.isNegated = true;
-      } else {
-        carriedPostNegation = false;
       }
     }
 

@@ -90809,6 +90809,14 @@ test('social publication workflow follows the live X or Bluesky destination and 
         'post-verb neither/nor destination scope adopted a forbidden platform'],
       ['Post neither on X nor on Bluesky', [],
         'pre-preposition neither/nor destination scope adopted a forbidden platform'],
+      ['Post on Bluesky and not on X', ['bluesky'],
+        'a later negated destination propagated backward onto affirmative Bluesky'],
+      ['Post on X and not on Bluesky', ['twitter'],
+        'a later negated destination propagated backward onto affirmative X'],
+      ['Post on Bluesky, excluding X', ['bluesky'],
+        'an explicitly excluded X destination was adopted'],
+      ['Post on Bluesky, exclude X', ['bluesky'],
+        'an exclude clause adopted its forbidden X destination'],
       ['Post on Bluesky rather than posting on X', ['bluesky'],
         'rather-than clause adopted its expressly excluded X destination'],
       ['Post on Bluesky rather than on X', ['bluesky'],
@@ -92950,6 +92958,18 @@ test('upper-bound attachment qualifiers verify as maximum counts', () => {
     assert.equal(agent._workflowSocialPublishedAttachmentObserved(
       { value: 'one video and at most two GIFs' }, { attachments: [video(1), video(2), gif(1)] }), false,
       AgentClass.name + ': the GIF maximum loosened the exact ordinary-video count');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one image and at most two GIFs' }, { attachments: [image(1)] }), true,
+      AgentClass.name + ': zero optional GIFs did not satisfy a mixed GIF maximum');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one image and at most two GIFs' }, { attachments: [image(1), gif(1)] }), true,
+      AgentClass.name + ': one GIF did not satisfy a mixed GIF maximum');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one image and at most two GIFs' }, { attachments: [image(1), gif(1), gif(2)] }), true,
+      AgentClass.name + ': two GIFs did not satisfy a mixed GIF maximum');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one image and at most two GIFs' }, { attachments: [image(1), video(1)] }), false,
+      AgentClass.name + ': an ordinary video satisfied a mixed GIF-only constraint');
     assert.equal(agent._workflowSocialPublishedAttachmentObserved(
       { value: 'up to two videos' }, { attachments: [] }), true,
       AgentClass.name + ': zero videos should satisfy a standalone video maximum');
