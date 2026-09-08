@@ -3070,11 +3070,27 @@ export class Agent extends LoopDetector {
     let minimumGifCount = 0;
     let minimumGenericCount = 0;
     if (hasMinCountQualifier) {
-      for (const segment of text.split(MIN_COUNT_SCOPE_SPLIT)) {
+      const minSegments = text.split(MIN_COUNT_SCOPE_SPLIT);
+      for (let segmentIndex = 0; segmentIndex < minSegments.length; segmentIndex++) {
+        const segment = minSegments[segmentIndex];
         if (!segment || !MIN_ATTACHMENT_COUNT_REGEX.test(segment)) continue;
-        const segmentImage = RAW_IMAGE_NOUN_REGEX.test(segment);
-        const segmentGif = RAW_GIF_NOUN_REGEX.test(segment);
-        const segmentVideo = RAW_VIDEO_NOUN_REGEX.test(segment);
+        let segmentImage = RAW_IMAGE_NOUN_REGEX.test(segment);
+        let segmentGif = RAW_GIF_NOUN_REGEX.test(segment);
+        let segmentVideo = RAW_VIDEO_NOUN_REGEX.test(segment);
+        if (!segmentImage && !segmentVideo && !segmentGif) {
+          // A bare lower bound ("at least one and at most two images")
+          // inherits the trailing segment's media noun when exactly one type
+          // follows, instead of becoming a generic minimum for every type.
+          const trailing = minSegments.slice(segmentIndex + 1).join(' ');
+          const trailingImage = RAW_IMAGE_NOUN_REGEX.test(trailing);
+          const trailingGif = RAW_GIF_NOUN_REGEX.test(trailing);
+          const trailingVideo = RAW_VIDEO_NOUN_REGEX.test(trailing);
+          if (Number(trailingImage) + Number(trailingGif) + Number(trailingVideo) === 1) {
+            segmentImage = trailingImage;
+            segmentGif = trailingGif;
+            segmentVideo = trailingVideo;
+          }
+        }
         const segmentCount = qualifiedCountInSegment(segment, MIN_ATTACHMENT_COUNT_REGEX);
         if (segmentImage) {
           minScopedImage = true;
@@ -15797,6 +15813,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       const verbPattern = new RegExp(SOCIAL_PUBLISH_VERBS.source, 'giu');
       return clauses.some((clause, clauseIdx) => {
         if (!clause.text || clause.isNegated) return false;
+        // Colon-scoped payload is body prose, not a new destination command:
+        // "Post on X: I posted on Bluesky yesterday." must not adopt Bluesky
+        // without a genuine coordinated command boundary.
+        if ((clause.delim || '').trim() === ':') return false;
         const targetText = clause.maskedText || clause.text;
         // "Post this not on X but on Bluesky" carries the publish action into
         // the positive contrastive destination even though that clause is
@@ -15995,7 +16015,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     // Only list-shaped glue may sit between the two platform mentions. An
     // unrelated branch such as "X or report the blocker; also post on
     // Bluesky" contains `or`, but it does not coordinate the destinations.
-    const directAlternativeBridge = /^\s*(?:(?:page|account|profile)\s*)?(?:,\s*)?(?:(?:or|otherwise|failing\s+that|oder|ou|o|oppure|veya|ya\s+da|\u0438\u043b\u0438|\u043b\u0438\u0431\u043e)(?![\p{L}\p{N}_])|(?:\u6216\u8005|\u6216|\u307e\u305f\u306f|\u305d\u308c\u3068\u3082|\uB610\uB294|\uD639\uC740))\s*(?:,\s*)?(?:(?:alternatively|otherwise|else)(?:\s*,\s*|\s+))?(?:,\s*if\s+(?:unavailable|not\s+available|available|needed|necessary|possible|unable|unsuccessful|failing|failed|fails?|failure)\b[^,;]*,?\s*)?(?:(?:post|publish|share|tweet|send|reply|respond)\s+(?:(?:this|that|it|the\s+following)\s+)?)?(?:(?:also\s+)?(?:on|onto|to|via|in|at|en|sur|sobre|\u00e0|au|auf|su|em|na|no|nos|nas|para|\u0432|\u043d\u0430)\s+)?(?:the\s+)?$/iu;
+    const directAlternativeBridge = /^\s*(?:(?:page|account|profile)\s*)?(?:,\s*)?(?:if\s+(?:unavailable|not\s+available|available|needed|necessary|possible|possibly|unable|unsuccessful|failing|failed|fails?|failure)\b[^,;]*,?\s*)?(?:(?:or|otherwise|failing\s+that|oder|ou|o|oppure|veya|ya\s+da|\u0438\u043b\u0438|\u043b\u0438\u0431\u043e)(?![\p{L}\p{N}_])|(?:\u6216\u8005|\u6216|\u307e\u305f\u306f|\u305d\u308c\u3068\u3082|\uB610\uB294|\uD639\uC740))\s*(?:,\s*)?(?:(?:alternatively|otherwise|else)(?:\s*,\s*|\s+))?(?:,\s*if\s+(?:unavailable|not\s+available|available|needed|necessary|possible|unable|unsuccessful|failing|failed|fails?|failure)\b[^,;]*,?\s*)?(?:(?:post|publish|share|tweet|send|reply|respond)\s+(?:(?:this|that|it|the\s+following)\s+)?)?(?:(?:also\s+)?(?:on|onto|to|via|in|at|en|sur|sobre|\u00e0|au|auf|su|em|na|no|nos|nas|para|\u0432|\u043d\u0430)\s+)?(?:the\s+)?$/iu;
     const explicitAlternativeBridge = /^\s*(?:(?:page|account|profile)\s*)?(?:,\s*)?(?:(?:alternatively|otherwise|failing\s+that)(?:\s*,\s*)?(?:[\s,]+(?:on|onto|to|via|in|at))?|as\s+an\s+alternative\s+to)\s*(?:the\s+)?$/iu;
     const oneOfAlternativeLead = /(?<![\p{L}\p{N}_])one\s+of\s+(?:the\s+)?$/iu;
     const oneOfAlternativeBridge = /^\s*(?:,\s*)?(?:and|or)\s+(?:the\s+)?$/iu;

@@ -91025,6 +91025,8 @@ test('social publication workflow follows the live X or Bluesky destination and 
         'coordinated destinations on X plus Bluesky should both be targeted'],
       ['Post on X: hello; and on Bluesky: goodbye', ['twitter', 'bluesky'],
         'per-destination bodies should still discover both platforms'],
+      ['Post on X: I posted on Bluesky yesterday.', ['twitter'],
+        'colon-scoped body prose adopted Bluesky as a destination'],
       ['Post on X along with Bluesky', ['twitter', 'bluesky'],
         'coordinated destinations on X along with Bluesky should both be targeted'],
       ['Post on X, then on Bluesky', ['twitter', 'bluesky'],
@@ -91386,6 +91388,10 @@ test('alternative social destinations require one verified publication, not ever
       ...guard,
       taskText: 'Post on X, or alternatively, Bluesky.',
     }), true, AgentClass.name + ': punctuated alternatively bridge required a second public post');
+    assert.equal(agent._socialPublishTargetsAreAlternatives({
+      ...guard,
+      taskText: 'Post on X if possible, otherwise on Bluesky.',
+    }), true, AgentClass.name + ': leading-condition fallback required a second public post');
     assert.deepEqual(agent._missingSocialPublishTargets({ ...guard, taskText: 'Post on Bluesky' }), ['bluesky'],
       AgentClass.name + ': a run bound to X reported no missing destination for a Bluesky-only request');
     assert.deepEqual(agent._missingSocialPublishTargets({ ...guard, taskText: 'Post on X' }), [],
@@ -93359,6 +93365,16 @@ test('upper-bound attachment qualifiers verify as maximum counts', () => {
     ]) {
       assert.equal(agent._workflowSocialPublishedAttachmentObserved(
         { value: 'at least one image and at most two JPEG images' }, { attachments },
+      ), expected, AgentClass.name + ': ' + message);
+    }
+    for (const [attachments, expected, message] of [
+      [[image(1)], true, 'one image was rejected by a paired image bound'],
+      [[image(1), image(2)], true, 'two images were rejected by a paired image bound'],
+      [[], false, 'empty attachments satisfied a paired image minimum'],
+      [[image(1), image(2), image(3)], false, 'three images satisfied a paired image maximum'],
+    ]) {
+      assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+        { value: 'at least one and at most two images' }, { attachments },
       ), expected, AgentClass.name + ': ' + message);
     }
     for (const [attachments, expected, message] of [
