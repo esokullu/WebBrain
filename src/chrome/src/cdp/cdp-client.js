@@ -2931,6 +2931,7 @@ export class CDPClient {
           ['.follow-person-btn', '关注楼主'],
           ['.follow-forum-btn', '关注本吧'],
           ['.pc-pb-reply-box', '回复'],
+          ['.pc-pb-reply-box .publish-btn', '发布'],
         ] : [];
         const SELECTORS = [
           'a[href]', 'button', 'input:not([type="hidden"])', 'textarea', 'select',

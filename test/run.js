@@ -4654,6 +4654,7 @@ test('matches Baidu Tieba and exposes custom post and reply controls', () => {
   const followPersonSelector = '.follow-person-btn';
   const followForumSelector = '.follow-forum-btn';
   const replyBoxSelector = '.pc-pb-reply-box';
+  const publishSelector = '.pc-pb-reply-box .publish-btn';
   const fakeElement = (selector, text, iconHref) => ({
     innerText: text,
     textContent: text,
@@ -4671,6 +4672,7 @@ test('matches Baidu Tieba and exposes custom post and reply controls', () => {
   assert.ok(api.selectors().includes(followPersonSelector));
   assert.ok(api.selectors().includes(followForumSelector));
   assert.ok(api.selectors().includes(replyBoxSelector));
+  assert.ok(api.selectors().includes(publishSelector));
   assert.equal(api.describe(fakeElement(firstFloorSelector, '转发', '#share_pb')).name, '转发');
   assert.equal(api.describe(fakeElement(firstFloorSelector, '98', '#agree_pb')).name, '点赞 98');
   assert.equal(api.describe(fakeElement(firstFloorSelector, '5', '#collect')).name, '收藏 5');
@@ -4681,6 +4683,7 @@ test('matches Baidu Tieba and exposes custom post and reply controls', () => {
   assert.equal(api.describe(fakeElement(followPersonSelector, '关注楼主')).name, '关注楼主');
   assert.equal(api.describe(fakeElement(followForumSelector, '关注本吧')).name, '关注本吧');
   assert.equal(api.describe(fakeElement(replyBoxSelector, '想说点啥？')).name, '回复 想说点啥？');
+  assert.equal(api.describe(fakeElement(publishSelector, '发布')).name, '发布');
   assert.equal(api.describe(fakeElement(firstFloorSelector, '14', '#comment_pb')), null);
   assert.equal(api.shouldPierceShadowRoots(), false);
 
@@ -4700,6 +4703,7 @@ test('matches Baidu Tieba and exposes custom post and reply controls', () => {
   assert.match(cdp, /agree_pb/);
   assert.match(cdp, /collect/);
   assert.match(cdp, /comment_comment/);
+  assert.match(cdp, /publish-btn.*发布/);
   assert.match(cdp, /agree_comment/);
   assert.match(cdp, /matchesAnySiteSelector\(el\)[\s\S]*matchesSiteRule\(el, rule\)/);
 });

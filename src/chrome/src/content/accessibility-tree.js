@@ -168,6 +168,7 @@
       ['.follow-person-btn', '关注楼主'],
       ['.follow-forum-btn', '关注本吧'],
       ['.pc-pb-reply-box', '回复'],
+      ['.pc-pb-reply-box .publish-btn', '发布'],
     ],
   };
 
