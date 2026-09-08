@@ -3095,12 +3095,11 @@ export class Agent extends LoopDetector {
 
     const hasRawGif = RAW_GIF_NOUN_REGEX.test(text);
     const hasRawOrdinaryVideo = RAW_VIDEO_NOUN_REGEX.test(text);
-    const hasRawVideo = hasRawGif || hasRawOrdinaryVideo;
     const hasRawImage = RAW_IMAGE_NOUN_REGEX.test(text);
 
     const wantsGif = hasRawGif && !isGifNegated;
     const wantsOrdinaryVideo = hasRawOrdinaryVideo && !isVideoNegated;
-    const wantsVideo = (hasRawVideo && !isVideoNegated) || wantsGif;
+    const wantsVideo = wantsOrdinaryVideo || wantsGif;
     const wantsImage = hasRawImage && !isImageNegated;
 
     const parseCountWord = (str) => {
@@ -3360,8 +3359,18 @@ export class Agent extends LoopDetector {
         .map(branch => branch.trim())
         .filter(Boolean)
       : [];
-    const hasEnumeratedMediaChoice = oneOfMediaBranches.length > 1;
-    const mediaAlternativeBranchTexts = hasEnumeratedMediaChoice ? oneOfMediaBranches : [];
+    const commaMediaDisjunction = new RegExp(`[,;]\\s*${COUNT_DISJUNCTION_PATTERN}\\s+`, 'iu');
+    const leadingMediaDisjunction = new RegExp(`^${COUNT_DISJUNCTION_PATTERN}\\s*`, 'iu');
+    const commaMediaBranches = isGeneric && commaMediaDisjunction.test(text)
+      ? text.replace(/^either\s+/iu, '').split(/\s*[,;]\s*/u)
+        .map(branch => branch.replace(leadingMediaDisjunction, '').trim())
+        .filter(Boolean)
+      : [];
+    const enumeratedMediaBranches = oneOfMediaBranches.length > 1
+      ? oneOfMediaBranches
+      : commaMediaBranches;
+    const hasEnumeratedMediaChoice = enumeratedMediaBranches.length > 1;
+    const mediaAlternativeBranchTexts = hasEnumeratedMediaChoice ? enumeratedMediaBranches : [];
     if (!hasEnumeratedMediaChoice && hasUnscopedDisjunction) {
       let branchStart = 0;
       for (const match of unscopedDisjunctionMatches) {
@@ -3853,7 +3862,9 @@ export class Agent extends LoopDetector {
         const typedVideoAlternativeCounts = parsed.wantsGif && !parsed.wantsOrdinaryVideo
           ? gifAlternativeCounts
           : videoAlternativeCounts;
-        const typedVideoCount = parsed.wantsGif && !parsed.wantsOrdinaryVideo ? gifCount : videoCount;
+        const typedVideoCount = parsed.wantsGif && !parsed.wantsOrdinaryVideo ? gifCount
+          : ordinaryVideoOnly ? ordinaryVideoCount
+            : videoCount;
         const minImages = imageAlternativeCounts.length
           ? Math.min(...imageAlternativeCounts)
           : (parsed.isImageMaximum ? 0 : (parsed.expectedImageCount > 0 ? parsed.expectedImageCount : 1));
@@ -3877,10 +3888,10 @@ export class Agent extends LoopDetector {
         if (typedVideoAlternativeCounts.length && !typedVideoAlternativeCounts.includes(typedVideoCount)) {
           return false;
         }
-        if (!typedVideoAlternativeCounts.length && parsed.hasExplicitVideoCount && !parsed.isVideoMinimum && !parsed.isVideoMaximum && videoCount !== parsed.expectedVideoCount) {
+        if (!typedVideoAlternativeCounts.length && parsed.hasExplicitVideoCount && !parsed.isVideoMinimum && !parsed.isVideoMaximum && typedVideoCount !== parsed.expectedVideoCount) {
           return false;
         }
-        if (parsed.hasExplicitVideoCount && parsed.isVideoMaximum && videoCount > parsed.expectedVideoCount) {
+        if (parsed.hasExplicitVideoCount && parsed.isVideoMaximum && typedVideoCount > parsed.expectedVideoCount) {
           return false;
         }
         if (parsed.hasExplicitImageCount && parsed.hasExplicitVideoCount

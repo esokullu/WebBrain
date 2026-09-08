@@ -92929,6 +92929,15 @@ test('upper-bound attachment qualifiers verify as maximum counts', () => {
     assert.equal(agent._workflowSocialPublishedAttachmentObserved(
       { value: 'up to two videos' }, { attachments: [] }), true,
       AgentClass.name + ': zero videos should satisfy a standalone video maximum');
+    const imageWithoutGifs = agent._parseWorkflowAttachmentRequirement('one image and no GIFs');
+    assert.equal(imageWithoutGifs.wantsVideo, false,
+      AgentClass.name + ': a negated GIF mention created positive video intent');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one image and no GIFs' }, { attachments: [image(1)] }), true,
+      AgentClass.name + ': one image did not satisfy a no-GIF requirement');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one image and no GIFs' }, { attachments: [image(1), gif(1)] }), false,
+      AgentClass.name + ': a GIF satisfied a no-GIF requirement');
 
     const boundedImages = agent._parseWorkflowAttachmentRequirement('between one and two images');
     assert.equal(boundedImages.isGeneric, true,
@@ -94171,6 +94180,29 @@ test('attachment verification matches specific attachment names without substrin
           [alternativeImage(1), alternativeVideo(1)],
           [alternativeGif(1), alternativeVideo(1)],
           [alternativeImage(1), alternativeImage(2)],
+        ],
+      },
+      {
+        requirement: 'either one image and one video or one GIF',
+        valid: [[alternativeImage(1), alternativeVideo(1)], [alternativeGif(1)]],
+        invalid: [
+          [alternativeImage(1), alternativeGif(1)],
+          [alternativeImage(1)],
+          [alternativeVideo(1)],
+        ],
+      },
+      {
+        requirement: 'either one image, two videos, or three GIFs',
+        branchCount: 3,
+        valid: [
+          [alternativeImage(1)],
+          [alternativeVideo(1), alternativeVideo(2)],
+          [alternativeGif(1), alternativeGif(2), alternativeGif(3)],
+        ],
+        invalid: [
+          [alternativeGif(1)],
+          [alternativeImage(1), alternativeVideo(1), alternativeVideo(2)],
+          [alternativeVideo(1), alternativeVideo(2), alternativeVideo(3)],
         ],
       },
     ]) {
