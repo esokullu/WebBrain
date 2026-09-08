@@ -158,8 +158,16 @@
     baiduTieba: [
       // Match the stable action wrapper, then inspect SVG href/xlink:href via
       // the DOM API because namespaced attribute selectors vary by engine.
+      ['.pc-pb-first-floor-interactive .action-item', '转发', '#share_pb'],
       ['.pc-pb-first-floor-interactive .action-item', '点赞', '#agree_pb'],
+      ['.pc-pb-first-floor-interactive .action-item', '收藏', '#collect'],
+      ['.pc-pb-first-floor-interactive .more-action', '更多', '#ellipsis'],
       ['.pc-pb-comments-desc .zan-container-dark', '赞', '#agree_comment'],
+      ['.pc-pb-comments-desc .reply-container', '回复', '#comment_comment'],
+      ['.pc-pb-comments-desc .more-action', '更多', '#ellipsis_comment'],
+      ['.follow-person-btn', '关注楼主'],
+      ['.follow-forum-btn', '关注本吧'],
+      ['.pc-pb-reply-box', '回复'],
     ],
   };
 

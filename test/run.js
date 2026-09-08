@@ -4601,7 +4601,7 @@ test('matches Baidu search surfaces without hijacking other Baidu products', () 
   assert.equal(firefoxAdapter?.notes, adapter?.notes);
 });
 
-test('matches Baidu Tieba and exposes custom post like controls', () => {
+test('matches Baidu Tieba and exposes custom post and reply controls', () => {
   const trustedUrls = [
     'https://tieba.baidu.com/',
     'https://tieba.baidu.com/f?kw=python',
@@ -4630,7 +4630,8 @@ test('matches Baidu Tieba and exposes custom post like controls', () => {
 
   const adapter = getActiveAdapter('https://tieba.baidu.com/p/11007201094?mo_device=1');
   assert.match(adapter?.notes || '', /custom Vue action bar/);
-  assert.match(adapter?.notes || '', /named "点赞" control/);
+  assert.match(adapter?.notes || '', /semantic controls/);
+  assert.match(adapter?.notes || '', /转发.*点赞.*收藏/s);
   assert.match(adapter?.notes || '', /百度安全验证/);
   assert.equal(getActiveAdapterFx('https://tieba.baidu.com/p/11007201094')?.notes, adapter?.notes);
 
@@ -4645,8 +4646,14 @@ test('matches Baidu Tieba and exposes custom post like controls', () => {
   const context = { window: {}, location };
   vm.runInNewContext(axChrome.slice(start, end), context);
   const api = context.window.__wbSiteInteractions;
-  const likeSelector = '.pc-pb-first-floor-interactive .action-item';
+  const firstFloorSelector = '.pc-pb-first-floor-interactive .action-item';
+  const firstFloorMoreSelector = '.pc-pb-first-floor-interactive .more-action';
   const replyLikeSelector = '.pc-pb-comments-desc .zan-container-dark';
+  const replySelector = '.pc-pb-comments-desc .reply-container';
+  const replyMoreSelector = '.pc-pb-comments-desc .more-action';
+  const followPersonSelector = '.follow-person-btn';
+  const followForumSelector = '.follow-forum-btn';
+  const replyBoxSelector = '.pc-pb-reply-box';
   const fakeElement = (selector, text, iconHref) => ({
     innerText: text,
     textContent: text,
@@ -4656,11 +4663,25 @@ test('matches Baidu Tieba and exposes custom post like controls', () => {
       : [],
     getAttribute: () => null,
   });
-  assert.ok(api.selectors().includes(likeSelector));
+  assert.ok(api.selectors().includes(firstFloorSelector));
+  assert.ok(api.selectors().includes(firstFloorMoreSelector));
   assert.ok(api.selectors().includes(replyLikeSelector));
-  assert.equal(api.describe(fakeElement(likeSelector, '98', '#agree_pb')).name, '点赞 98');
+  assert.ok(api.selectors().includes(replySelector));
+  assert.ok(api.selectors().includes(replyMoreSelector));
+  assert.ok(api.selectors().includes(followPersonSelector));
+  assert.ok(api.selectors().includes(followForumSelector));
+  assert.ok(api.selectors().includes(replyBoxSelector));
+  assert.equal(api.describe(fakeElement(firstFloorSelector, '转发', '#share_pb')).name, '转发');
+  assert.equal(api.describe(fakeElement(firstFloorSelector, '98', '#agree_pb')).name, '点赞 98');
+  assert.equal(api.describe(fakeElement(firstFloorSelector, '5', '#collect')).name, '收藏 5');
+  assert.equal(api.describe(fakeElement(firstFloorMoreSelector, '', '#ellipsis')).name, '更多');
   assert.equal(api.describe(fakeElement(replyLikeSelector, '21', '#agree_comment')).name, '赞 21');
-  assert.equal(api.describe(fakeElement(likeSelector, '37', '#comment_pb')), null);
+  assert.equal(api.describe(fakeElement(replySelector, '回复', '#comment_comment')).name, '回复');
+  assert.equal(api.describe(fakeElement(replyMoreSelector, '', '#ellipsis_comment')).name, '更多');
+  assert.equal(api.describe(fakeElement(followPersonSelector, '关注楼主')).name, '关注楼主');
+  assert.equal(api.describe(fakeElement(followForumSelector, '关注本吧')).name, '关注本吧');
+  assert.equal(api.describe(fakeElement(replyBoxSelector, '想说点啥？')).name, '回复 想说点啥？');
+  assert.equal(api.describe(fakeElement(firstFloorSelector, '14', '#comment_pb')), null);
   assert.equal(api.shouldPierceShadowRoots(), false);
 
   for (const [label, rel] of [
@@ -4675,7 +4696,10 @@ test('matches Baidu Tieba and exposes custom post like controls', () => {
 
   const cdp = fs.readFileSync(path.join(ROOT, 'src/chrome/src/cdp/cdp-client.js'), 'utf8');
   assert.match(cdp, /onHost\('tieba\.baidu\.com'\)/);
+  assert.match(cdp, /share_pb/);
   assert.match(cdp, /agree_pb/);
+  assert.match(cdp, /collect/);
+  assert.match(cdp, /comment_comment/);
   assert.match(cdp, /agree_comment/);
   assert.match(cdp, /matchesAnySiteSelector\(el\)[\s\S]*matchesSiteRule\(el, rule\)/);
 });
