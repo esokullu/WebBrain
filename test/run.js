@@ -94002,6 +94002,45 @@ test('attachment verification matches specific attachment names without substrin
       AgentClass.name + ': simultaneous image and video should reject "one image or one video"'
     );
 
+    const alternativeImage = index => ({ type: 'image', src: `https://example.test/alternative-${index}.png` });
+    const alternativeVideo = index => ({ type: 'video', src: `https://example.test/alternative-${index}.mp4` });
+    const alternativeGif = index => ({ type: 'animated_gif', src: `https://example.test/alternative-${index}.gif` });
+    for (const { requirement, valid, invalid } of [
+      {
+        requirement: 'either one image or two videos',
+        valid: [[alternativeImage(1)], [alternativeVideo(1), alternativeVideo(2)]],
+        invalid: [[alternativeVideo(1)]],
+      },
+      {
+        requirement: 'one image or two GIFs',
+        valid: [[alternativeImage(1)], [alternativeGif(1), alternativeGif(2)]],
+        invalid: [[alternativeGif(1)], [alternativeVideo(1), alternativeVideo(2)], [alternativeImage(1), alternativeGif(1)]],
+      },
+      {
+        requirement: 'one GIF or two videos',
+        valid: [[alternativeGif(1)], [alternativeVideo(1), alternativeVideo(2)]],
+        invalid: [[alternativeVideo(1)], [alternativeGif(1), alternativeVideo(1)], [alternativeGif(1), alternativeGif(2)]],
+      },
+    ]) {
+      const parsedTypedAlternative = agent._parseWorkflowAttachmentRequirement({ value: requirement });
+      assert.equal(parsedTypedAlternative.isGeneric, true,
+        AgentClass.name + `: typed alternative was parsed as filenames for "${requirement}"`);
+      assert.equal(parsedTypedAlternative.isAlternative, true,
+        AgentClass.name + `: typed alternative grammar was lost for "${requirement}"`);
+      for (const attachments of valid) {
+        assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+          { value: requirement },
+          { attachments },
+        ), true, AgentClass.name + `: a permitted branch did not satisfy "${requirement}"`);
+      }
+      for (const attachments of invalid) {
+        assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+          { value: requirement },
+          { attachments },
+        ), false, AgentClass.name + `: a non-permitted branch satisfied "${requirement}"`);
+      }
+    }
+
     for (const [sameTypeRequirement, attachment] of [
       ['one or two images', index => ({ type: 'image', src: `https://example.test/${index}.png` })],
       ['one image or two images', index => ({ type: 'image', src: `https://example.test/${index}.png` })],

@@ -242,7 +242,7 @@ const GENERIC_ATTACHMENT_WORDS = new Set([
   'item', 'items', 'piece', 'pieces', 'upload', 'uploads', 'asset', 'assets',
   'enclosure', 'enclosures', 'document', 'documents', 'documento', 'documentos',
   'a', 'an', 'the', 'of', 'in', 'with', 'some', 'any',
-  'and', 'or', 'plus', 'also', 'as', 'well', 'between', 'from', 'to',
+  'and', 'or', 'either', 'plus', 'also', 'as', 'well', 'between', 'from', 'to',
   'no', 'not', 'without', 'zero', 'none',
   'only', 'just', 'solely', 'exactly', 'exact', 'precisely',
   'sin', 'sans', 'sem', 'senza', 'ohne', 'kein', 'keine', 'keinen', 'aucun', 'aucune', 'ningun', 'ninguna', 'ningún', 'nenhum', 'nenhuma', 'nessun', 'nessuno', 'nessuna', 'nie', 'без', 'нет',
@@ -3355,7 +3355,9 @@ export class Agent extends LoopDetector {
             : rawAttachments.length;
       if (boundedCount < parsed.minimumCount || boundedCount > parsed.maximumCount) return false;
     }
-    if (parsed.wantsGif) {
+    const gifIsAlternativeToAnotherType = parsed.isAlternative
+      && (parsed.wantsImage || parsed.wantsOrdinaryVideo);
+    if (parsed.wantsGif && !gifIsAlternativeToAnotherType) {
       const requiredGifCount = parsed.alternativeCounts?.length
         ? Math.min(...parsed.alternativeCounts)
         : (parsed.isGifMaximum ? 0 : (parsed.expectedGifCount > 0 ? parsed.expectedGifCount : 1));
@@ -3364,7 +3366,7 @@ export class Agent extends LoopDetector {
           && !parsed.isGifMinimum && !parsed.isGifMaximum && gifCount !== parsed.expectedGifCount) return false;
       if (parsed.hasExplicitGifCount && parsed.isGifMaximum && gifCount > parsed.expectedGifCount) return false;
     }
-    if (parsed.wantsGif && parsed.wantsOrdinaryVideo) {
+    if (parsed.wantsGif && parsed.wantsOrdinaryVideo && !parsed.isAlternative) {
       const requiredOrdinaryVideoCount = parsed.isVideoMaximum ? 0 : (parsed.expectedVideoCount > 0 ? parsed.expectedVideoCount : 1);
       if (ordinaryVideoCount < requiredOrdinaryVideoCount) return false;
       if (parsed.hasExplicitVideoCount && !parsed.isVideoMinimum && !parsed.isVideoMaximum
@@ -3495,7 +3497,26 @@ export class Agent extends LoopDetector {
       // cardinalities. Their typed checks above are authoritative when both
       // subtypes were requested; comparing their combined count with one
       // subtype's exact/maximum mode would turn a maximum into an exact total.
-      if (!(parsed.wantsGif && parsed.wantsOrdinaryVideo)) {
+      if (parsed.isAlternative && parsed.wantsGif && parsed.wantsOrdinaryVideo) {
+        const minGifs = parsed.isGifMaximum ? 0 : (parsed.expectedGifCount > 0 ? parsed.expectedGifCount : 1);
+        const minOrdinaryVideos = parsed.isVideoMaximum ? 0 : (parsed.expectedVideoCount > 0 ? parsed.expectedVideoCount : 1);
+        const exactGifAlt = parsed.hasExplicitGifCount && !parsed.isGifMinimum && !parsed.isGifMaximum;
+        const exactVideoAlt = parsed.hasExplicitVideoCount && !parsed.isVideoMinimum && !parsed.isVideoMaximum;
+        const matchesGifAlt = gifCount >= minGifs
+          && (!exactGifAlt || gifCount === parsed.expectedGifCount)
+          && (!parsed.isGifMaximum || gifCount <= parsed.expectedGifCount)
+          && ordinaryVideoCount === 0
+          && rawAttachments.length === gifCount;
+        const matchesOrdinaryVideoAlt = ordinaryVideoCount >= minOrdinaryVideos
+          && (!exactVideoAlt || ordinaryVideoCount === parsed.expectedVideoCount)
+          && (!parsed.isVideoMaximum || ordinaryVideoCount <= parsed.expectedVideoCount)
+          && gifCount === 0
+          && rawAttachments.length === ordinaryVideoCount;
+        if (!matchesGifAlt && !matchesOrdinaryVideoAlt) return false;
+        matchingAttachments = matchesGifAlt
+          ? rawAttachments.filter(isGifAttachment)
+          : rawAttachments.filter(att => isVideoAttachment(att) && !isGifAttachment(att));
+      } else if (!(parsed.wantsGif && parsed.wantsOrdinaryVideo)) {
         const hasExactVideoCount = (parsed.hasExplicitVideoCount && !parsed.isVideoNegated && !parsed.isVideoMinimum && !parsed.isVideoMaximum)
           || (parsed.hasExplicitGifCount && !parsed.isGifNegated && !parsed.isGifMinimum && !parsed.isGifMaximum)
           || (parsed.hasExplicitGenericCount && !parsed.isMaximumCount);
