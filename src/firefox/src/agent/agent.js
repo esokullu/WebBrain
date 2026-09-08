@@ -295,8 +295,10 @@ const VIDEO_ATTACHMENT_FORMAT = '(?:mp4|mov|webm|mkv)';
 
 // A minimum qualifier binds the count phrase it sits in, not the whole
 // requirement: "at least two images and one video" still wants exactly one
-// video. These are the boundaries between those phrases.
-const MIN_COUNT_SCOPE_SPLIT = /(?:\s*[,;&+]\s*|\s+(?:and|or|und|oder|et|ou|e|o|y|plus|as\s+well\s+as|oppure|ve|veya|ya\s+da|и|или|либо|그리고|또는|혹은)\s+|(?:和|与|及|以及|或|或者|、|，|와|과|및|と|や|または|それとも))/i;
+// video. These are the boundaries between those phrases. Contrastive "but"
+// is accepted attachment grammar ("one image but at most two videos"), so it
+// splits scopes the same way "and" does.
+const MIN_COUNT_SCOPE_SPLIT = /(?:\s*[,;&+]\s*|\s+(?:and|but|or|und|oder|et|ou|e|o|y|plus|as\s+well\s+as|oppure|ve|veya|ya\s+da|и|или|либо|그리고|또는|혹은)\s+|(?:和|与|及|以及|或|或者|、|，|와|과|및|と|や|または|それとも))/i;
 
 // Quoted attachment names are parked behind these placeholders while a target
 // list is split, so a conjunction inside a quoted name is never a separator.
@@ -15953,8 +15955,8 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     // Only list-shaped glue may sit between the two platform mentions. An
     // unrelated branch such as "X or report the blocker; also post on
     // Bluesky" contains `or`, but it does not coordinate the destinations.
-    const directAlternativeBridge = /^\s*(?:(?:page|account|profile)\s*)?(?:,\s*)?(?:(?:or|otherwise|oder|ou|o|oppure|veya|ya\s+da|\u0438\u043b\u0438|\u043b\u0438\u0431\u043e)(?![\p{L}\p{N}_])|(?:\u6216\u8005|\u6216|\u307e\u305f\u306f|\u305d\u308c\u3068\u3082|\uB610\uB294|\uD639\uC740))\s*(?:(?:alternatively|otherwise|else)\s+)?(?:,\s*if\s+(?:unavailable|not\s+available|available|needed|necessary|possible|unable|unsuccessful|failing|failed|fails?|failure)\b[^,;]*,?\s*)?(?:(?:post|publish|share|tweet|send|reply|respond)\s+(?:(?:this|that|it|the\s+following)\s+)?)?(?:(?:also\s+)?(?:on|onto|to|via|in|at|en|sur|sobre|\u00e0|au|auf|su|em|na|no|nos|nas|para|\u0432|\u043d\u0430)\s+)?(?:the\s+)?$/iu;
-    const explicitAlternativeBridge = /^\s*(?:(?:page|account|profile)\s*)?(?:,\s*)?(?:(?:alternatively|otherwise)(?:\s+(?:on|onto|to|via|in|at))?|as\s+an\s+alternative\s+to)\s+(?:the\s+)?$/iu;
+    const directAlternativeBridge = /^\s*(?:(?:page|account|profile)\s*)?(?:,\s*)?(?:(?:or|otherwise|failing\s+that|oder|ou|o|oppure|veya|ya\s+da|\u0438\u043b\u0438|\u043b\u0438\u0431\u043e)(?![\p{L}\p{N}_])|(?:\u6216\u8005|\u6216|\u307e\u305f\u306f|\u305d\u308c\u3068\u3082|\uB610\uB294|\uD639\uC740))\s*(?:(?:alternatively|otherwise|else)\s+)?(?:,\s*if\s+(?:unavailable|not\s+available|available|needed|necessary|possible|unable|unsuccessful|failing|failed|fails?|failure)\b[^,;]*,?\s*)?(?:(?:post|publish|share|tweet|send|reply|respond)\s+(?:(?:this|that|it|the\s+following)\s+)?)?(?:(?:also\s+)?(?:on|onto|to|via|in|at|en|sur|sobre|\u00e0|au|auf|su|em|na|no|nos|nas|para|\u0432|\u043d\u0430)\s+)?(?:the\s+)?$/iu;
+    const explicitAlternativeBridge = /^\s*(?:(?:page|account|profile)\s*)?(?:,\s*)?(?:(?:alternatively|otherwise|failing\s+that)(?:\s+(?:on|onto|to|via|in|at))?|as\s+an\s+alternative\s+to)\s+(?:the\s+)?$/iu;
     const oneOfAlternativeLead = /(?<![\p{L}\p{N}_])one\s+of\s+(?:the\s+)?$/iu;
     const oneOfAlternativeBridge = /^\s*(?:,\s*)?(?:and|or)\s+(?:the\s+)?$/iu;
     const platformPattern = /(?:https?:\/\/(?:www\.)?(?:x\.com|twitter\.com|bsky\.app)(?:[/?#][^\s<>"'`\u3002\u3001\uff0c\uff1b\uff1a\uff01\uff1f\u2026\u2025]*|(?=[\s<>"'`\u3002\u3001\uff0c\uff1b\uff1a\uff01\uff1f\u2026\u2025,;!?]|$))|(?<![\p{L}\p{N}_])(?:x|twitter|bluesky|bsky\.app)(?![\p{L}\p{N}_]))/giu;

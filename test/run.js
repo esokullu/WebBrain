@@ -91357,6 +91357,10 @@ test('alternative social destinations require one verified publication, not ever
       ...guard,
       taskText: 'Post on X or, if unavailable, Bluesky.',
     }), true, AgentClass.name + ': conditional fallback turned alternative destinations into two mandatory posts');
+    assert.equal(agent._socialPublishTargetsAreAlternatives({
+      ...guard,
+      taskText: 'Post on X, failing that Bluesky.',
+    }), true, AgentClass.name + ': failing-that fallback turned alternative destinations into two mandatory posts');
     assert.deepEqual(agent._missingSocialPublishTargets({ ...guard, taskText: 'Post on Bluesky' }), ['bluesky'],
       AgentClass.name + ': a run bound to X reported no missing destination for a Bluesky-only request');
     assert.deepEqual(agent._missingSocialPublishTargets({ ...guard, taskText: 'Post on X' }), [],
@@ -93198,6 +93202,15 @@ test('upper-bound attachment qualifiers verify as maximum counts', () => {
     ]) {
       assert.equal(agent._workflowSocialPublishedAttachmentObserved(
         { value: 'one image and no more than one video' }, { attachments },
+      ), expected, AgentClass.name + ': ' + message);
+    }
+    for (const [attachments, expected, message] of [
+      [[image(1), video(1), video(2)], true, 'image plus two videos was rejected by a contrastive video cap'],
+      [[], false, 'empty attachments satisfied a contrastive exact image'],
+      [[image(1)], true, 'one image alone was rejected by a contrastive video cap'],
+    ]) {
+      assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+        { value: 'one image but at most two videos' }, { attachments },
       ), expected, AgentClass.name + ': ' + message);
     }
     assert.equal(agent._parseWorkflowAttachmentRequirement('one image together with one video').isGeneric, true,
