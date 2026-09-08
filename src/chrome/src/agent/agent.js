@@ -3130,7 +3130,9 @@ export class Agent extends LoopDetector {
       const precedingSegment = negationText.slice(0, matchIndex)
         .split(/(?:[,;]|\s+(?:and|but|plus|also|as\s+well\s+as)\s+)/iu)
         .pop() || '';
-      return /(?<![\p{L}\p{N}_])(?:no|not(?!\s+only)|without(?:\s+any)?|zero|0)(?![\p{L}\p{N}_])/iu.test(precedingSegment);
+      // Minimum/maximum phrases ("no more than", "no fewer than") bound a
+      // count instead of negating the media, so they never mark an occurrence.
+      return /(?<![\p{L}\p{N}_])(?:no(?!\s+(?:more\s+than|fewer\s+than|less\s+than))|not(?!\s+only)(?!\s+(?:more\s+than|fewer\s+than|less\s+than))|without(?:\s+any)?|zero|0)(?![\p{L}\p{N}_])/iu.test(precedingSegment);
     };
     const hasAffirmativeMediaMatch = (pattern) => {
       for (const match of text.matchAll(new RegExp(pattern.source, 'giu'))) {
@@ -3147,15 +3149,19 @@ export class Agent extends LoopDetector {
     const wantsVideo = wantsOrdinaryVideo || wantsGif;
     const wantsImage = hasRawImage && !isImageNegated;
     const normalizeAttachmentFormat = format => (/^jpe?g$/iu.test(format) ? 'jpeg' : String(format || '').toLowerCase());
-    const imageFormatQualifier = `${IMAGE_ATTACHMENT_FORMAT}(?:\\s*(?:or|and|/|,)\\s*${IMAGE_ATTACHMENT_FORMAT})*`;
-    const videoFormatQualifier = `${VIDEO_ATTACHMENT_FORMAT}(?:\\s*(?:or|and|/|,)\\s*${VIDEO_ATTACHMENT_FORMAT})*`;
+    // A coordinated format choice may repeat the cardinality before each
+    // format ("one PNG or one JPEG image"): the shared media noun is still
+    // omitted, so an optional count is accepted after every conjunction.
+    const formatChoiceCountWord = '(?:\\d+|zero|one|two|three|four|five|six|seven|eight|nine|ten|a|an|single|both)';
+    const imageFormatQualifier = `${IMAGE_ATTACHMENT_FORMAT}(?:\\s*(?:or|and|/|,)\\s*(?:${formatChoiceCountWord}\\s+)?${IMAGE_ATTACHMENT_FORMAT})*`;
+    const videoFormatQualifier = `${VIDEO_ATTACHMENT_FORMAT}(?:\\s*(?:or|and|/|,)\\s*(?:${formatChoiceCountWord}\\s+)?${VIDEO_ATTACHMENT_FORMAT})*`;
     const formatPostfixLead = '(?:in|as)\\s+(?:the\\s+)?';
     const formatPostfixSuffix = '(?:\\s+formats?)?';
     const mediaFormatMatchIsNegated = (start) => {
       const precedingSegment = negationText.slice(0, start)
         .split(/(?:[,;]|\\s+(?:and|but|plus|also|as\\s+well\\s+as)\\s+)/iu)
         .pop() || '';
-      return /(?<![\p{L}\p{N}_])(?:no|not(?!\s+only)|without(?:\s+any)?|zero|0)(?![\p{L}\p{N}_])/iu.test(precedingSegment);
+      return /(?<![\p{L}\p{N}_])(?:no(?!\s+(?:more\s+than|fewer\s+than|less\s+than))|not(?!\s+only)(?!\s+(?:more\s+than|fewer\s+than|less\s+than))|without(?:\s+any)?|zero|0)(?![\p{L}\p{N}_])/iu.test(precedingSegment);
     };
     const collectMediaFormatMatches = (formatQualifier, nounPattern) => {
       const matches = [];
@@ -18201,8 +18207,22 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     } catch {
       return ['unknown'];
     }
-    // One destination is already covered by the ordinary terminal evidence.
-    if (!targets || targets.size < 2) return [];
+    // One destination is already covered by the ordinary terminal evidence,
+    // but only when the bound workflow is that destination. A run bound to X
+    // for a Bluesky-only request must still report Bluesky as missing.
+    if (!targets || targets.size < 2) {
+      const boundAdapter = state?.siteWorkflow?.adapterName;
+      const boundIsSocialPublish = !!state?.siteWorkflow?.job
+        && state.siteWorkflow.job.id === 'publish-post'
+        && ['twitter', 'bluesky'].includes(boundAdapter);
+      if (boundIsSocialPublish && targets?.size === 1 && !targets.has(boundAdapter)) {
+        const satisfied = Array.isArray(state.socialPublishSatisfiedTargets)
+          ? state.socialPublishSatisfiedTargets
+          : [];
+        return [...targets].filter(name => !satisfied.includes(name));
+      }
+      return [];
+    }
     const satisfied = Array.isArray(state.socialPublishSatisfiedTargets)
       ? state.socialPublishSatisfiedTargets
       : [];

@@ -91343,6 +91343,10 @@ test('alternative social destinations require one verified publication, not ever
       ...guard,
       taskText: 'Post on X or, if unavailable, Bluesky.',
     }), true, AgentClass.name + ': conditional fallback turned alternative destinations into two mandatory posts');
+    assert.deepEqual(agent._missingSocialPublishTargets({ ...guard, taskText: 'Post on Bluesky' }), ['bluesky'],
+      AgentClass.name + ': a run bound to X reported no missing destination for a Bluesky-only request');
+    assert.deepEqual(agent._missingSocialPublishTargets({ ...guard, taskText: 'Post on X' }), [],
+      AgentClass.name + ': a run bound to its sole requested destination reported it missing');
     for (const taskText of [
       'Post this on X alongside Bluesky.',
       'Post this on X together with Bluesky.',
@@ -93144,6 +93148,33 @@ test('upper-bound attachment qualifiers verify as maximum counts', () => {
     assert.equal(agent._workflowSocialPublishedAttachmentObserved(
       { value: 'one PNG or JPEG image' }, { attachments: [{ type: 'image', src: 'https://cdn.example/a.webp' }] }), false,
       AgentClass.name + ': WebP satisfied a PNG-or-JPEG format choice');
+    const repeatedCountFormatChoice = agent._parseWorkflowAttachmentRequirement('one PNG or one JPEG image');
+    assert.equal(repeatedCountFormatChoice.isGeneric, true,
+      AgentClass.name + ': a repeated-count format choice was parsed as filenames');
+    assert.deepEqual(repeatedCountFormatChoice.specificTargets, [],
+      AgentClass.name + ': a repeated-count format choice created specific targets');
+    assert.deepEqual(repeatedCountFormatChoice.requestedImageFormats, ['png', 'jpeg']);
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one PNG or one JPEG image' }, { attachments: [image(1)] }), true,
+      AgentClass.name + ': PNG did not satisfy the repeated-count format choice');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one PNG or one JPEG image' }, { attachments: [{ type: 'image', src: 'https://cdn.example/a.jpg' }] }), true,
+      AgentClass.name + ': JPEG did not satisfy the repeated-count format choice');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one PNG or one JPEG image' }, { attachments: [{ type: 'image', src: 'https://cdn.example/a.webp' }] }), false,
+      AgentClass.name + ': WebP satisfied a repeated-count format choice');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one PNG or one JPEG image' }, { attachments: [image(1), { type: 'image', src: 'https://cdn.example/a.jpg' }] }), false,
+      AgentClass.name + ': two images satisfied a single-image format choice');
+    for (const [attachments, expected, message] of [
+      [[image(1)], true, 'one image alone was rejected by a no-more-than video cap'],
+      [[image(1), video(1)], true, 'one image plus one video was rejected by a no-more-than video cap'],
+      [[image(1), video(1), video(2)], false, 'too many videos satisfied a no-more-than video cap'],
+    ]) {
+      assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+        { value: 'one image and no more than one video' }, { attachments },
+      ), expected, AgentClass.name + ': ' + message);
+    }
     const unrestrictedOrPngImage = agent._parseWorkflowAttachmentRequirement('one image or one PNG image');
     assert.equal(unrestrictedOrPngImage.mediaAlternativeBranches.length, 2,
       AgentClass.name + ': a format token consumed the noun slot of a whole-media alternative');
