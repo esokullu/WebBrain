@@ -2942,14 +2942,24 @@ export class Agent extends LoopDetector {
     }
 
     const DISJUNCTION_REGEX = /(?:\b(?:or|oder|ou|o|oppure|или|либо|veya|ya\s+da)\b|[或或者]|(?:또는|혹은)|(?:または|それとも))/i;
-    const isAlternative = isGeneric && wantsImage && wantsVideo && DISJUNCTION_REGEX.test(text);
+    const hasDisjunction = isGeneric && DISJUNCTION_REGEX.test(text);
+    const requestedTypeCount = Number(wantsImage) + Number(wantsOrdinaryVideo) + Number(wantsGif);
+    const alternativeCounts = hasDisjunction && requestedTypeCount <= 1
+      ? [...countText.matchAll(new RegExp(`(?<![${SOCIAL_WORD_EDGE}])(${countPrefix})(?![${SOCIAL_WORD_EDGE}])`, 'giu'))]
+        .filter(match => isExplicitCountWord(match[1]))
+        .map(match => parseCountWord(match[1]))
+        .filter((count, index, counts) => counts.indexOf(count) === index)
+      : [];
+    const isAlternative = hasDisjunction;
 
     let hasExplicitGenericCount = false;
     let expectedCount = 1;
     if (isGeneric) {
       const combinedVideoCount = expectedVideoCount + expectedGifCount;
       if (isAlternative) {
-        if (expectedImageCount > 0 && combinedVideoCount > 0) {
+        if (alternativeCounts.length > 0) {
+          expectedCount = Math.min(...alternativeCounts);
+        } else if (expectedImageCount > 0 && combinedVideoCount > 0) {
           expectedCount = Math.min(expectedImageCount, combinedVideoCount);
         } else if (expectedImageCount > 0) {
           expectedCount = expectedImageCount;
@@ -3016,6 +3026,7 @@ export class Agent extends LoopDetector {
       isVideoNegated,
       isGifNegated,
       isAlternative,
+      alternativeCounts,
       isMinimumCount,
       isImageMinimum,
       isVideoMinimum,
@@ -3102,9 +3113,12 @@ export class Agent extends LoopDetector {
     if (!want) return rawAttachments.length > 0;
 
     const parsed = this._parseWorkflowAttachmentRequirement(want);
-    if (parsed.wantsNone || parsed.expectedCount === 0 || parsed.isNegative) {
+    if (parsed.wantsNone
+        || (parsed.expectedCount === 0 && !parsed.alternativeCounts?.length)
+        || parsed.isNegative) {
       return rawAttachments.length === 0;
     }
+    if (!rawAttachments.length && parsed.alternativeCounts?.includes(0)) return true;
     // An upper bound does not imply that one attachment is required. Empty
     // media is valid only when every conjunctive positive constraint permits
     // zero; for alternatives, one maximum-qualified branch is sufficient.
@@ -3158,9 +3172,12 @@ export class Agent extends LoopDetector {
     const gifCount = rawAttachments.filter(isGifAttachment).length;
     const ordinaryVideoCount = rawAttachments.filter(att => isVideoAttachment(att) && !isGifAttachment(att)).length;
     if (parsed.wantsGif) {
-      const requiredGifCount = parsed.isGifMaximum ? 0 : (parsed.expectedGifCount > 0 ? parsed.expectedGifCount : 1);
+      const requiredGifCount = parsed.alternativeCounts?.length
+        ? Math.min(...parsed.alternativeCounts)
+        : (parsed.isGifMaximum ? 0 : (parsed.expectedGifCount > 0 ? parsed.expectedGifCount : 1));
       if (gifCount < requiredGifCount) return false;
-      if (parsed.hasExplicitGifCount && !parsed.isGifMinimum && !parsed.isGifMaximum && gifCount !== parsed.expectedGifCount) return false;
+      if (parsed.hasExplicitGifCount && !parsed.alternativeCounts?.length
+          && !parsed.isGifMinimum && !parsed.isGifMaximum && gifCount !== parsed.expectedGifCount) return false;
       if (parsed.hasExplicitGifCount && parsed.isGifMaximum && gifCount > parsed.expectedGifCount) return false;
     }
     if (parsed.wantsGif && parsed.wantsOrdinaryVideo) {
@@ -3264,7 +3281,11 @@ export class Agent extends LoopDetector {
       if (videoCount > 0) return false;
       const hasExactImageCount = !parsed.isImageMinimum && !parsed.isImageMaximum
         && ((parsed.hasExplicitImageCount && !parsed.isImageNegated) || parsed.hasExplicitGenericCount);
-      if (hasExactImageCount) {
+      if (parsed.alternativeCounts?.length) {
+        if (!parsed.alternativeCounts.includes(imageCount) || rawAttachments.length !== imageCount) {
+          return false;
+        }
+      } else if (hasExactImageCount) {
         if (imageCount !== parsed.expectedCount || rawAttachments.length !== parsed.expectedCount) {
           return false;
         }
@@ -3288,7 +3309,11 @@ export class Agent extends LoopDetector {
         const hasExactVideoCount = (parsed.hasExplicitVideoCount && !parsed.isVideoNegated && !parsed.isVideoMinimum && !parsed.isVideoMaximum)
           || (parsed.hasExplicitGifCount && !parsed.isGifNegated && !parsed.isGifMinimum && !parsed.isGifMaximum)
           || (parsed.hasExplicitGenericCount && !parsed.isMaximumCount);
-        if (hasExactVideoCount) {
+        if (parsed.alternativeCounts?.length) {
+          if (!parsed.alternativeCounts.includes(videoCount) || rawAttachments.length !== videoCount) {
+            return false;
+          }
+        } else if (hasExactVideoCount) {
           if (videoCount !== parsed.expectedCount || rawAttachments.length !== parsed.expectedCount) {
             return false;
           }
@@ -3302,7 +3327,11 @@ export class Agent extends LoopDetector {
       }
       matchingAttachments = rawAttachments.filter(isVideoAttachment);
     } else {
-      if (parsed.hasExplicitCardinality && !parsed.isMinimumCount && !parsed.isMaximumCount) {
+      if (parsed.alternativeCounts?.length) {
+        if (!parsed.alternativeCounts.includes(rawAttachments.length)) {
+          return false;
+        }
+      } else if (parsed.hasExplicitCardinality && !parsed.isMinimumCount && !parsed.isMaximumCount) {
         if (rawAttachments.length !== parsed.expectedCount) {
           return false;
         }
@@ -23160,10 +23189,48 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     return '';
   }
 
-  _extractWorkflowTaskBody(taskText, approvedPlan) {
-    const candidates = [taskText, approvedPlan]
+  _extractWorkflowTaskBody(taskText, approvedPlan, adapterName = '') {
+    const rawCandidates = [taskText, approvedPlan]
       .map(t => String(t || '').trim())
       .filter(Boolean);
+    const scopedCandidates = [];
+    let sawNamedSocialPlatform = false;
+    if (adapterName === 'twitter' || adapterName === 'bluesky') {
+      const platformPattern = adapterName === 'twitter'
+        ? /(?:https?:\/\/(?:www\.)?(?:x\.com|twitter\.com)(?:[/?#]|$)|(?<![\p{L}\p{N}_])(?:x|twitter)(?![\p{L}\p{N}_]))/iu
+        : /(?:https?:\/\/(?:www\.)?bsky\.app(?:[/?#]|$)|(?<![\p{L}\p{N}_])(?:bluesky|bsky\.app)(?![\p{L}\p{N}_]))/iu;
+      const anyPlatformPattern = /(?:https?:\/\/(?:www\.)?(?:x\.com|twitter\.com|bsky\.app)(?:[/?#]|$)|(?<![\p{L}\p{N}_])(?:x|twitter|bluesky|bsky\.app)(?![\p{L}\p{N}_]))/iu;
+      for (const rawCandidate of rawCandidates) {
+        const clauses = this._socialPublicationClauses(rawCandidate);
+        let carriedPublishVerb = 'post';
+        for (let index = 0; index < clauses.length; index++) {
+          const clause = clauses[index];
+          const masked = clause.maskedText || clause.text || '';
+          const publish = masked.match(SOCIAL_PUBLISH_VERBS);
+          if (publish?.[0]) carriedPublishVerb = publish[0];
+          if (anyPlatformPattern.test(masked)) sawNamedSocialPlatform = true;
+          if (!platformPattern.test(masked)) continue;
+          let scoped = publish ? clause.text : `${carriedPublishVerb} ${clause.text}`;
+          for (let nextIndex = index + 1; nextIndex < clauses.length; nextIndex++) {
+            const next = clauses[nextIndex];
+            if ((next.delim || '').trim() === ':') {
+              scoped += `:${next.text}`;
+              break;
+            }
+            if (SOCIAL_COORDINATING_DELIMITER.test(next.delim || '')
+                && anyPlatformPattern.test(next.maskedText || next.text || '')) {
+              scoped += ` ${next.delim} ${next.text}`;
+              continue;
+            }
+            break;
+          }
+          scopedCandidates.push(scoped);
+        }
+      }
+    }
+    const candidates = scopedCandidates.length > 0
+      ? scopedCandidates
+      : (sawNamedSocialPlatform ? [] : rawCandidates);
     let bestBody = '';
     const publishVerbPattern = `(?:${SOCIAL_PUBLISH_VERBS.source}|message|update)`;
     const quotedPattern = new RegExp(`${publishVerbPattern}[\\s\\S]*?(?:“([\\s\\S]+?)”|「([\\s\\S]+?)」|『([\\s\\S]+?)』|«([\\s\\S]+?)»|"([\\s\\S]+?)")`, 'iu');
@@ -23386,7 +23453,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           const details = this._normalizeWorkflowMetadataRequirementsDetails(
             obj?.workflowFields ?? obj?.workflow_fields,
           );
-          const extractedBody = this._extractWorkflowTaskBody(taskText, approvedPlanText);
+          const extractedBody = this._extractWorkflowTaskBody(taskText, approvedPlanText, siteWorkflow?.adapterName);
           if (extractedBody) {
             const bodyReq = details.items.find(r => r.field === 'body');
             if (bodyReq) {
@@ -23426,7 +23493,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       if (this._workflowJobStoresMetadataRequirements(siteWorkflow)) {
         const guard = this._planExecutionGuards.get(tabId);
         if (guard && guard.workflowMetadataRequirementsResolved !== true) {
-          const extractedBody = this._extractWorkflowTaskBody(taskText, approvedPlanText);
+          const extractedBody = this._extractWorkflowTaskBody(taskText, approvedPlanText, siteWorkflow?.adapterName);
           if (extractedBody) {
             guard.workflowMetadataRequirements = [{
               field: 'body',

@@ -91002,7 +91002,7 @@ test('social destination rebinding refreshes platform-specific payload and uploa
     agent.useSiteAdapters = true;
     agent._persist = () => {};
     const tabId = 9040 + index;
-    const taskText = 'Post "A much longer announcement" on X and "B" on Bluesky.';
+    const taskText = 'Post "Launch now" on X and "Launch" on Bluesky.';
     agent.conversations.set(tabId, [
       { role: 'system', content: 'system' },
       { role: 'user', content: taskText },
@@ -91018,7 +91018,7 @@ test('social destination rebinding refreshes platform-specific payload and uploa
       siteWorkflow: twitterWorkflow,
       siteWorkflowUrl: 'https://x.com/compose/post',
     });
-    guard.workflowMetadataRequirements = [{ field: 'body', value: 'A much longer announcement' }];
+    guard.workflowMetadataRequirements = [{ field: 'body', value: 'Launch now' }];
     guard.workflowMetadataRequirementsResolved = true;
     guard.workflowSocialUploadEvidence = [{ name: 'x-card.png', attachmentState: 'input_attached', actionSequence: 3 }];
     agent._currentUrl = async () => 'https://bsky.app/';
@@ -91033,7 +91033,7 @@ test('social destination rebinding refreshes platform-specific payload and uploa
           allowedActions: [],
           forbiddenActions: [],
           targets: [],
-          workflowFields: [{ field: 'body', value: 'B' }],
+          workflowFields: [{ field: 'body', value: 'Launch' }],
           confidence: 0.99,
           pageScopePolicy: 'page',
         }),
@@ -91041,8 +91041,12 @@ test('social destination rebinding refreshes platform-specific payload and uploa
     };
     assert.equal(await agent._adoptLiveSocialPublishWorkflow(tabId, { chat: async () => ({ content: '{}' }) }), true);
     assert.equal(classifiedAdapter, 'bluesky', AgentClass.name + ': rebind classified the stale platform');
-    assert.deepEqual(guard.workflowMetadataRequirements, [{ field: 'body', value: 'B' }],
+    assert.deepEqual(guard.workflowMetadataRequirements, [{ field: 'body', value: 'Launch' }],
       AgentClass.name + ': longer X body overwrote the Bluesky-specific payload');
+    assert.equal(agent._extractWorkflowTaskBody(taskText, '', 'twitter'), 'Launch now',
+      AgentClass.name + ': X-scoped body recovery selected the Bluesky payload');
+    assert.equal(agent._extractWorkflowTaskBody(taskText, '', 'bluesky'), 'Launch',
+      AgentClass.name + ': Bluesky-scoped body recovery selected the X payload');
     assert.equal(guard.workflowMetadataRequirementsResolved, true);
     assert.deepEqual(guard.workflowSocialUploadEvidence, [],
       AgentClass.name + ': X upload provenance leaked into the Bluesky binding');
@@ -93643,6 +93647,30 @@ test('attachment verification matches specific attachment names without substrin
       false,
       AgentClass.name + ': simultaneous image and video should reject "one image or one video"'
     );
+
+    for (const [sameTypeRequirement, attachment] of [
+      ['one or two images', index => ({ type: 'image', src: `https://example.test/${index}.png` })],
+      ['one image or two images', index => ({ type: 'image', src: `https://example.test/${index}.png` })],
+      ['one or two videos', index => ({ type: 'video', src: `https://example.test/${index}.mp4` })],
+      ['one or two GIFs', index => ({ type: 'animated_gif', src: `https://example.test/${index}.gif` })],
+      ['one or two attachments', index => ({ type: 'image', src: `https://example.test/${index}.png` })],
+    ]) {
+      const parsedSameType = agent._parseWorkflowAttachmentRequirement(sameTypeRequirement);
+      assert.equal(parsedSameType.isAlternative, true,
+        AgentClass.name + `: same-type disjunction was not retained for "${sameTypeRequirement}"`);
+      assert.deepEqual(parsedSameType.alternativeCounts, [1, 2],
+        AgentClass.name + `: alternative counts were lost for "${sameTypeRequirement}"`);
+      for (const count of [1, 2]) {
+        assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+          { value: sameTypeRequirement },
+          { attachments: Array.from({ length: count }, (_, index) => attachment(index)) },
+        ), true, AgentClass.name + `: ${count} attachments should satisfy "${sameTypeRequirement}"`);
+      }
+      assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+        { value: sameTypeRequirement },
+        { attachments: Array.from({ length: 3 }, (_, index) => attachment(index)) },
+      ), false, AgentClass.name + `: three attachments should reject "${sameTypeRequirement}"`);
+    }
 
     // Media-only generic phrase check
     const parsedOnly = agent._parseWorkflowAttachmentRequirement({ value: 'images only' });
