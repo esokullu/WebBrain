@@ -274,7 +274,7 @@ const SOCIAL_CLAUSE_BREAK = new RegExp(
 // variable, not a destination. The platform pattern is case-insensitive, so
 // the test is on the following noun (duration, variable, field, or similar),
 // not on the letter's case.
-const PLACEHOLDER_X_AFTER_PLATFORM = /^\s*(?:days?|hours?|hrs?|minutes?|mins?|seconds?|secs?|weeks?|months?|years?|variables?|values?|fields?|inputs?|columns?|rows?|cells?|axis|coordinates?|params?(?:eters?)?|placeholders?|amounts?|counts?|numbers?|digits?|items?|steps?)\b|^\s*[:=+\-*/]|^\s*\d/iu;
+const PLACEHOLDER_X_AFTER_PLATFORM = /^\s*(?:(?:business|calendar|working|work|more|additional)\s+)*(?:days?|hours?|hrs?|minutes?|mins?|seconds?|secs?|weeks?|months?|years?|variables?|values?|fields?|inputs?|columns?|rows?|cells?|axis|coordinates?|params?(?:eters?)?|placeholders?|amounts?|counts?|numbers?|digits?|items?|steps?)\b|^\s*[:=+\-*/]|^\s*\d/iu;
 const isPlaceholderBareXMatch = (matchedText, afterText) => {
   const matched = String(matchedText || '');
   if (/twitter/i.test(matched) || /x\.com/i.test(matched)) return false;
@@ -1695,14 +1695,20 @@ export class Agent extends LoopDetector {
     if (socialUploadEvidence && result && typeof result === 'object') {
       result.socialUploadEvidence = socialUploadEvidence;
     }
-    // A removal in the social composer shows as the old filename disappearing
-    // from later observations. Prune it there so the pre-dispatch binding
-    // snapshots only active uploads instead of every file ever attached.
+    // Only a complete root AX read proves that an omitted composer filename was
+    // removed. Partial, paginated, and viewport-filtered observations preserve
+    // all active provenance.
     if (result && typeof result === 'object') {
       const socialObservationText = [result.pageContent, result.text, result.content, result.pageText]
         .filter(value => typeof value === 'string' && value.trim())
         .join('\n');
-      if (socialObservationText) this._pruneStaleSocialPublishUploadEvidence(tabId, socialObservationText);
+      const completeComposerSnapshot = name === 'get_accessibility_tree'
+        && isExhaustiveAccessibilityInventoryRead(args, result).rootReadComplete;
+      if (socialObservationText) {
+        this._pruneStaleSocialPublishUploadEvidence(tabId, socialObservationText, {
+          completeComposerSnapshot,
+        });
+      }
     }
     const workflowControlEvidence = this._rememberWorkflowControlActionEvidence(
       tabId,
@@ -3313,17 +3319,12 @@ export class Agent extends LoopDetector {
     // never create one. Require one upload name per DOM-observed media node and
     // a type-compatible bijection before adding the names to the record.
     if (!attachments.length) return record;
-    let effectiveNames = names;
-    if (names.length !== attachments.length) {
-      // An upload, removal, and replacement can leave both filenames in the
-      // binding for one DOM-observed attachment when the removal never
-      // surfaced as observation text. Fall back to the most recent uploads so
-      // the replacement can still verify instead of refusing to join either
-      // name and pushing the run toward a duplicate post. Fewer names than
-      // nodes still fails closed: provenance may never invent media.
-      if (names.length <= attachments.length) return record;
-      effectiveNames = names.slice(-attachments.length);
-    }
+    // Upload order alone cannot prove which files remain in the composer after
+    // a removal. Join names only when active provenance and observed media have
+    // the same cardinality; otherwise leave the CDN record unnamed and fail
+    // closed for filename-specific requirements.
+    if (names.length !== attachments.length) return record;
+    const effectiveNames = names;
     const nameKind = (name) => (
       /\.gif(?:[?#]|$)/i.test(name) ? 'video'
         : /\.(?:mp4|mov|webm|mkv)(?:[?#]|$)/i.test(name) ? 'video'
@@ -3538,22 +3539,26 @@ export class Agent extends LoopDetector {
       matchingAttachments = rawAttachments.filter(isImageAttachment);
     } else if (parsed.wantsVideo && !parsed.wantsImage) {
       if (imageCount > 0) return false;
-      const hasExactVideoCount = (parsed.hasExplicitVideoCount && !parsed.isVideoNegated && !parsed.isVideoMinimum && !parsed.isVideoMaximum)
-        || (parsed.hasExplicitGifCount && !parsed.isGifNegated && !parsed.isGifMinimum && !parsed.isGifMaximum)
-        || (parsed.hasExplicitGenericCount && !parsed.isMaximumCount);
-      if (hasExactVideoCount) {
-        if (videoCount !== parsed.expectedCount || rawAttachments.length !== parsed.expectedCount) {
-          return false;
-        }
-      } else if (parsed.isVideoMaximum || parsed.isGifMaximum || parsed.isMaximumCount) {
-        if (videoCount > parsed.expectedCount || rawAttachments.length > parsed.expectedCount) {
-          return false;
-        }
-        if (videoCount < 1) {
-          return false;
-        }
-      } else {
-        if (videoCount < parsed.expectedCount) {
+      // Ordinary videos and GIFs share the DOM video class but have separate
+      // cardinalities. Their typed checks above are authoritative when both
+      // subtypes were requested; comparing their combined count with one
+      // subtype's exact/maximum mode would turn a maximum into an exact total.
+      if (!(parsed.wantsGif && parsed.wantsOrdinaryVideo)) {
+        const hasExactVideoCount = (parsed.hasExplicitVideoCount && !parsed.isVideoNegated && !parsed.isVideoMinimum && !parsed.isVideoMaximum)
+          || (parsed.hasExplicitGifCount && !parsed.isGifNegated && !parsed.isGifMinimum && !parsed.isGifMaximum)
+          || (parsed.hasExplicitGenericCount && !parsed.isMaximumCount);
+        if (hasExactVideoCount) {
+          if (videoCount !== parsed.expectedCount || rawAttachments.length !== parsed.expectedCount) {
+            return false;
+          }
+        } else if (parsed.isVideoMaximum || parsed.isGifMaximum || parsed.isMaximumCount) {
+          if (videoCount > parsed.expectedCount || rawAttachments.length > parsed.expectedCount) {
+            return false;
+          }
+          if (videoCount < 1) {
+            return false;
+          }
+        } else if (videoCount < parsed.expectedCount) {
           return false;
         }
       }
@@ -16331,13 +16336,12 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     return evidence;
   }
 
-  // An upload, removal, and replacement in the social composer leaves every
-  // uploaded filename in evidence while only the replacement is still active.
-  // The pre-dispatch binding would then carry two names for one observed
-  // attachment and refuse to join either, so a correctly published replacement
-  // can never verify. Prune filenames the latest observation no longer shows
-  // so the dispatch snapshot keeps only active uploads.
-  _pruneStaleSocialPublishUploadEvidence(tabId, observationText) {
+  // Reconcile upload provenance only from a complete composer snapshot. A
+  // partial, paginated, or viewport-filtered observation can omit an active
+  // filename, so absence there is not evidence that the media was removed.
+  _pruneStaleSocialPublishUploadEvidence(tabId, observationText, {
+    completeComposerSnapshot = false,
+  } = {}) {
     const guard = this._planExecutionGuards.get(tabId);
     const siteWorkflow = guard?.siteWorkflow;
     if (!guard?.enabled
@@ -16346,7 +16350,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     const prior = Array.isArray(guard.workflowSocialUploadEvidence)
       ? guard.workflowSocialUploadEvidence
       : [];
-    if (prior.length < 2) return 0;
+    if (prior.length < 2 || !completeComposerSnapshot) return 0;
     let normalized = String(observationText || '');
     if (!normalized.trim()) return 0;
     try { normalized = normalized.normalize('NFKC'); } catch {}

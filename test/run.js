@@ -92468,6 +92468,13 @@ test('placeholder x values are not social destinations', () => {
       ['bluesky'],
       AgentClass.name + ': placeholder x variable bound an unintended X destination',
     );
+    for (const qualifier of ['business', 'calendar', 'more']) {
+      assert.deepEqual(
+        [...agent._trustedSocialPublishTargetAdapters({ taskText: `Publish this in x ${qualifier} days on Bluesky` })].sort(),
+        ['bluesky'],
+        AgentClass.name + `: placeholder x ${qualifier} days bound an unintended X destination`,
+      );
+    }
     assert.deepEqual(
       [...agent._trustedSocialPublishTargetAdapters({ taskText: 'Post on X' })].sort(),
       ['twitter'],
@@ -92481,7 +92488,7 @@ test('placeholder x values are not social destinations', () => {
   }
 });
 
-test('replaced composer media drops stale upload provenance', () => {
+test('social upload provenance reconciles only from complete composer snapshots', () => {
   for (const [index, AgentClass] of [AgentCh, AgentFx].entries()) {
     const agent = new AgentClass({});
     agent.useSiteAdapters = true;
@@ -92501,34 +92508,68 @@ test('replaced composer media drops stale upload provenance', () => {
       siteWorkflow,
       siteWorkflowUrl: 'https://x.com/compose/post',
     });
-    guard.workflowSocialUploadEvidence = [
-      { name: 'old.png', attachmentState: 'input_attached', actionSequence: 1 },
-      { name: 'replacement.png', attachmentState: 'input_attached', actionSequence: 3 },
-    ];
-    // The composer now shows only the replacement: the removed filename is
-    // pruned so the dispatch snapshot keeps only active uploads.
+    const upload = (name, actionSequence) => ({
+      name,
+      attachmentState: 'input_attached',
+      actionSequence,
+    });
+    guard.workflowSocialUploadEvidence = [upload('a.png', 1), upload('b.png', 2)];
+
+    // A partial/paginated observation can omit an active filename. Preserve
+    // both rather than treating absence from one page as a removal signal.
     assert.equal(
-      agent._pruneStaleSocialPublishUploadEvidence(tabId, 'composer shows replacement.png with a Remove button'),
-      1,
-      AgentClass.name + ': a removed composer file was retained in upload provenance',
+      agent._pruneStaleSocialPublishUploadEvidence(tabId, 'composer page shows a.png'),
+      0,
+      AgentClass.name + ': a partial composer observation pruned active provenance',
     );
     assert.deepEqual(
       guard.workflowSocialUploadEvidence.map(item => item.name),
-      ['replacement.png'],
-      AgentClass.name + ': pruning kept the removed file instead of the replacement',
+      ['a.png', 'b.png'],
+      AgentClass.name + ': an omitted active upload was lost after a partial observation',
     );
-    // When the removal never surfaced as observation text, the join still
-    // prefers the most recent upload so the replacement can verify instead of
-    // refusing both names and pushing the run toward a duplicate post.
-    const staleBinding = { uploadedAttachmentNames: ['old.png', 'replacement.png'] };
-    const cdnRecord = { attachments: [{ type: 'image', src: 'https://pbs.twimg.com/media/XYZ123?format=png' }] };
-    const joined = agent._workflowSocialRecordWithUploadedAttachmentNames(cdnRecord, staleBinding);
-    assert.equal(joined.attachments?.[0]?.name, 'replacement.png',
-      AgentClass.name + ': stale provenance did not fall back to the replacement upload');
+
+    // Upload recency cannot reveal which of two earlier files was removed.
+    // Refuse to assign the last two history entries to the two published nodes.
+    guard.workflowSocialUploadEvidence.push(upload('c.png', 3));
+    const cdnRecord = {
+      attachments: [
+        { type: 'image', src: 'https://pbs.twimg.com/media/XYZ123?format=png' },
+        { type: 'image', src: 'https://pbs.twimg.com/media/XYZ456?format=png' },
+      ],
+    };
+    const ambiguous = agent._workflowSocialRecordWithUploadedAttachmentNames(cdnRecord, {
+      uploadedAttachmentNames: ['a.png', 'b.png', 'c.png'],
+    });
+    assert.equal(ambiguous, cdnRecord,
+      AgentClass.name + ': upload recency was used to guess active composer media');
+    assert.equal(ambiguous.attachments.some(item => item.name), false,
+      AgentClass.name + ': ambiguous upload history supplied a false filename');
+
+    // A complete, untruncated root snapshot does establish that a.png and
+    // c.png remain active, so it can safely prune b.png before dispatch.
     assert.equal(
-      agent._workflowSocialPublishedAttachmentObserved({ value: 'replacement.png' }, joined),
+      agent._pruneStaleSocialPublishUploadEvidence(
+        tabId,
+        'complete composer shows a.png and c.png with Remove buttons',
+        { completeComposerSnapshot: true },
+      ),
+      1,
+      AgentClass.name + ': a complete composer snapshot did not prune removed media',
+    );
+    assert.deepEqual(
+      guard.workflowSocialUploadEvidence.map(item => item.name),
+      ['a.png', 'c.png'],
+      AgentClass.name + ': complete snapshot retained the wrong active provenance',
+    );
+    const joined = agent._workflowSocialRecordWithUploadedAttachmentNames(cdnRecord, {
+      uploadedAttachmentNames: guard.workflowSocialUploadEvidence.map(item => item.name),
+    });
+    assert.deepEqual(joined.attachments.map(item => item.name), ['a.png', 'c.png'],
+      AgentClass.name + ': reconciled active provenance did not join published media');
+    assert.equal(
+      agent._workflowSocialPublishedAttachmentObserved({ value: 'a.png and c.png' }, joined),
       true,
-      AgentClass.name + ': the replacement file could not verify after a removal',
+      AgentClass.name + ': active replacement media could not verify after reconciliation',
     );
   }
 });
@@ -92549,6 +92590,7 @@ test('upper-bound attachment qualifiers verify as maximum counts', () => {
     assert.equal(capped.isImageMaximum, true, AgentClass.name + ': the capped maximum was not retained');
     const image = index => ({ type: 'image', src: `https://pbs.twimg.com/media/image${index}.png` });
     const video = index => ({ type: 'video', src: `https://video.twimg.com/media/video${index}.mp4` });
+    const gif = index => ({ type: 'animated_gif', src: `https://video.twimg.com/tweet_video/gif${index}.mp4` });
     assert.equal(agent._workflowSocialPublishedAttachmentObserved(
       { value: 'up to two images' }, { attachments: [image(1)] }), true,
       AgentClass.name + ': one image should satisfy "up to two images"');
@@ -92570,6 +92612,23 @@ test('upper-bound attachment qualifiers verify as maximum counts', () => {
     assert.equal(agent._workflowSocialPublishedAttachmentObserved(
       { value: 'one video and at most two images' }, { attachments: [video(1), image(1), video(2)] }), false,
       AgentClass.name + ': the image maximum incorrectly loosened the exact video count');
+    const cappedGifs = agent._parseWorkflowAttachmentRequirement('one video and at most two GIFs');
+    assert.equal(cappedGifs.expectedVideoCount, 1, AgentClass.name + ': the exact ordinary-video count was lost');
+    assert.equal(cappedGifs.expectedGifCount, 2, AgentClass.name + ': the GIF maximum count was lost');
+    assert.equal(cappedGifs.isVideoMaximum, false, AgentClass.name + ': the GIF maximum leaked onto ordinary videos');
+    assert.equal(cappedGifs.isGifMaximum, true, AgentClass.name + ': the GIF upper bound was not retained');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one video and at most two GIFs' }, { attachments: [video(1), gif(1)] }), true,
+      AgentClass.name + ': one video plus one GIF should satisfy the GIF maximum');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one video and at most two GIFs' }, { attachments: [video(1), gif(1), gif(2)] }), true,
+      AgentClass.name + ': one video plus two GIFs should satisfy the GIF maximum');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one video and at most two GIFs' }, { attachments: [video(1), gif(1), gif(2), gif(3)] }), false,
+      AgentClass.name + ': three GIFs exceeded the requested maximum');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one video and at most two GIFs' }, { attachments: [video(1), video(2), gif(1)] }), false,
+      AgentClass.name + ': the GIF maximum loosened the exact ordinary-video count');
   }
 });
 
