@@ -25554,7 +25554,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     const quotedPattern = new RegExp(`${publishVerbPattern}[\\s\\S]*?(?:“([\\s\\S]+?)”|「([\\s\\S]+?)」|『([\\s\\S]+?)』|«([\\s\\S]+?)»|"([\\s\\S]+?)")`, 'iu');
     const singleQuotePattern = new RegExp(`${publishVerbPattern}[\\s\\S]*?(?:(?<!\\p{L})'([\\s\\S]+?)'(?!\\p{L}))`, 'iu');
     const colonPattern = new RegExp(`${publishVerbPattern}[\\s\\S]*?(?<!https?|ftp|sftp)(?:(?<!\\d)[:：]|[:：](?!\\d{2}))(?!\\/\\/)\\s*([\\s\\S]+)$`, 'iu');
-    const altTextMetadataPattern = /(?<![\p{L}\p{N}_])(?:attachment\s+)?(?:alt(?:ernative)?\s+text|image\s+alt\s+text|media\s+alt\s+text)\s*(?::|=)?\s*(?:"(?:\\.|[^"])*"|'(?:\\.|[^'])*'|“[\s\S]*?”|«[\s\S]*?»|「[\s\S]*?」|『[\s\S]*?』)/giu;
+    const altTextMetadataPattern = /(?<![\p{L}\p{N}_])(?:attachment\s+)?(?:alt(?:ernative)?\s+text|image\s+alt\s+text|media\s+alt\s+text)\s*(?::|=)?\s*(?:"(?:\\[^"\\]|[^"\\])*"|'(?:\\[^'\\]|[^'\\])*'|“[^”]*”|«[^»]*»|「[^」]*」|『[^』]*』)/giu;
     for (const candidateText of candidates) {
       // A quoted alt-text value describes an attachment; it is not the post
       // body merely because it follows the publish verb.
