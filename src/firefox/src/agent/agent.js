@@ -2909,6 +2909,15 @@ export class Agent extends LoopDetector {
         if (!segmentImage && !segmentVideo && !segmentGif) minScopedGeneric = true;
       }
     }
+    for (const postfixMinimum of text.matchAll(
+      /(?<![\p{L}\p{N}_])or\s+more\s+(images?|photos?|pictures?|pics?|videos?|clips?|recordings?|gifs?|attachments?|files?|media|uploads?|items?|assets?)(?![\p{L}\p{N}_])/giu,
+    )) {
+      const noun = postfixMinimum[1] || '';
+      if (RAW_GIF_NOUN_REGEX.test(noun)) minScopedGif = true;
+      else if (RAW_IMAGE_NOUN_REGEX.test(noun)) minScopedImage = true;
+      else if (RAW_VIDEO_NOUN_REGEX.test(noun)) minScopedVideo = true;
+      else minScopedGeneric = true;
+    }
     if (hasBoundedCountRange) {
       if (boundedRangeKind === 'image') minScopedImage = true;
       else if (boundedRangeKind === 'video') minScopedVideo = true;
@@ -2995,7 +3004,9 @@ export class Agent extends LoopDetector {
     }
 
     const DISJUNCTION_REGEX = /(?:\b(?:or|oder|ou|o|oppure|или|либо|veya|ya\s+da)\b|[或或者]|(?:또는|혹은)|(?:または|それとも))/i;
-    const hasDisjunction = isGeneric && DISJUNCTION_REGEX.test(text);
+    // "one or more" is one lower-bound phrase, not a choice between counts.
+    const disjunctionText = text.replace(MIN_ATTACHMENT_COUNT_STRIP_REGEX, ' ');
+    const hasDisjunction = isGeneric && DISJUNCTION_REGEX.test(disjunctionText);
     const requestedTypeCount = Number(wantsImage) + Number(wantsOrdinaryVideo) + Number(wantsGif);
     const alternativeCounts = hasDisjunction && requestedTypeCount <= 1
       ? [...countText.matchAll(new RegExp(`(?<![${SOCIAL_WORD_EDGE}])(${countPrefix})(?![${SOCIAL_WORD_EDGE}])`, 'giu'))]
@@ -3293,10 +3304,10 @@ export class Agent extends LoopDetector {
       const type = attachmentType(att);
       if (type === 'animated_gif' || type === 'gif') return true;
       const src = String(att?.src || att?.url || '');
-      const alt = String(att?.alt || att?.description || '');
+      const name = String(att?.name || '');
       return /\.gif(?:\.mp4)?(?:[?#]|$)/i.test(src)
         || /\/tweet_video(?:_thumb)?\//i.test(src)
-        || /\.gif(?:[?#\s]|$)/i.test(alt);
+        || /\.gif(?:[?#]|$)/i.test(name);
     };
 
     const canMatchSpecificTargets = (targets, candidates) => {
@@ -15010,7 +15021,11 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           if (SOCIAL_READ_VERBS.test(beforeVerbClause)) continue;
           if (socialNegationGovernsPublish(beforeVerbClause)) continue;
           const verbWord = verb[0] || '';
-          const afterVerbText = targetText.slice(verbIndex + verbWord.length);
+          const unscopedAfterVerbText = targetText.slice(verbIndex + verbWord.length);
+          const nextPublish = unscopedAfterVerbText.match(SOCIAL_PUBLISH_VERBS);
+          const afterVerbText = nextPublish
+            ? unscopedAfterVerbText.slice(0, nextPublish.index)
+            : unscopedAfterVerbText;
           if (socialPostNegationGovernsPublish(afterVerbText)) continue;
           if (SOCIAL_NOUN_LIKE_PUBLISH.test(verbWord) && (
             SOCIAL_READ_VERBS.test(afterVerbText)
@@ -15018,7 +15033,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
             || NON_SOCIAL_DESTINATION_IN_TEXT.test(beforeVerbClause)
           )) continue;
           if (/^shares?$/i.test(verbWord) && /(?<![\p{L}\p{N}_])(?:market|mind|revenue|profit|traffic|audience|wallet|fair|lion's|stock|equity|file|screen|time)\s+$/iu.test(beforeVerbClause)) continue;
-          const afterVerb = targetText.slice(verbIndex + verbWord.length);
+          const afterVerb = afterVerbText;
           const beforeVerb = targetText.slice(0, verbIndex);
 
           for (const matchAfter of afterVerb.matchAll(platformPattern)) {

@@ -90791,6 +90791,8 @@ test('social publication workflow follows the live X or Bluesky destination and 
         'explicit affirmative publish clause inherited negation from X'],
       ['Post this not on X but on Bluesky', ['bluesky'],
         'post-verb destination negation selected X instead of contrastive Bluesky'],
+      ['Post on X without posting on Bluesky', ['twitter'],
+        'a nested negated publish clause added its forbidden Bluesky destination'],
       ['Post or publish this on X', ['twitter'],
         'affirmative coordinated publish verbs were wrongly rejected for X'],
       ['Post "Do not panic" on X', ['twitter'],
@@ -93519,6 +93521,7 @@ test('attachment verification matches specific attachment names without substrin
     // A GIF is a video, but an ordinary video is not a GIF.
     const gifMedia = {
       mp4: { type: 'video', src: 'https://video.twimg.com/media/clip.mp4' },
+      altNamedMp4: { type: 'video', src: 'https://video.twimg.com/media/clip.mp4', alt: 'demo.gif' },
       typed: { type: 'animated_gif', src: 'https://video.twimg.com/tweet_video/loop.mp4' },
       named: { type: 'video', src: 'https://video.twimg.com/tweet_video/animation.gif.mp4', alt: 'animation.gif' },
       plain: { type: 'video', src: 'https://cdn.example.com/loop.gif' },
@@ -93550,6 +93553,19 @@ test('attachment verification matches specific attachment names without substrin
       ),
       true,
       AgentClass.name + ': an ordinary mp4 should pass a negated GIF requirement',
+    );
+    assert.equal(
+      agent._workflowSocialPublishedAttachmentObserved({ value: 'a GIF' }, { attachments: [gifMedia.altNamedMp4] }),
+      false,
+      AgentClass.name + ': alt text ending in .gif reclassified an ordinary mp4',
+    );
+    assert.equal(
+      agent._workflowSocialPublishedAttachmentObserved(
+        { value: 'one video and no GIFs' },
+        { attachments: [gifMedia.altNamedMp4] },
+      ),
+      true,
+      AgentClass.name + ': GIF-like alt text violated a no-GIF requirement for an ordinary mp4',
     );
     const twoGifRequirement = agent._parseWorkflowAttachmentRequirement({ value: 'two GIFs' });
     assert.equal(twoGifRequirement.expectedGifCount, 2,
@@ -93631,6 +93647,7 @@ test('attachment verification matches specific attachment names without substrin
 
     // Minimum-count qualifiers bound the count from below instead of naming a file.
     for (const [minReq, minCount] of [
+      ['one or more images', 1],
       ['at least two images', 2],
       ['at least 2 images', 2],
       ['minimum of 3 photos', 3],
@@ -93700,6 +93717,23 @@ test('attachment verification matches specific attachment names without substrin
       scopedVideoMinimum,
       { attachments: [image(1), image(2), video(1), video(2)] },
     ), false, AgentClass.name + ': the video minimum incorrectly loosened the exact image count');
+
+    const postfixVideoMinimum = { value: 'one image and one or more videos' };
+    const parsedPostfixVideoMinimum = agent._parseWorkflowAttachmentRequirement(postfixVideoMinimum);
+    assert.equal(parsedPostfixVideoMinimum.isAlternative, false,
+      AgentClass.name + ': "or more" was parsed as a media alternative');
+    assert.equal(parsedPostfixVideoMinimum.isVideoMinimum, true,
+      AgentClass.name + ': postfix video minimum scope was lost');
+    assert.equal(parsedPostfixVideoMinimum.isImageMinimum, false,
+      AgentClass.name + ': postfix video minimum leaked onto the image count');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      postfixVideoMinimum,
+      { attachments: [image(1), video(1), video(2)] },
+    ), true, AgentClass.name + ': extra video did not satisfy the postfix minimum');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      postfixVideoMinimum,
+      { attachments: [image(1)] },
+    ), false, AgentClass.name + ': missing videos satisfied the postfix minimum');
 
     const alternativeScopedMinimum = { value: 'at least two images or one video' };
     const parsedAlternativeScopedMinimum = agent._parseWorkflowAttachmentRequirement(alternativeScopedMinimum);
