@@ -90829,6 +90829,10 @@ test('social publication workflow follows the live X or Bluesky destination and 
         'a skip clause adopted its forbidden X destination'],
       ['Post on X, skipping Bluesky', ['twitter'],
         'a skipping clause adopted its forbidden Bluesky destination'],
+      ['Post on Bluesky, omit X', ['bluesky'],
+        'an omit clause adopted its forbidden X destination'],
+      ['Post on X, omitting Bluesky', ['twitter'],
+        'an omitting clause adopted its forbidden Bluesky destination'],
       ['Post on Bluesky rather than posting on X', ['bluesky'],
         'rather-than clause adopted its expressly excluded X destination'],
       ['Post on Bluesky rather than on X', ['bluesky'],
@@ -93048,6 +93052,39 @@ test('upper-bound attachment qualifiers verify as maximum counts', () => {
       { value: 'two PNG images and one JPEG image' },
       { attachments: [image(1), { type: 'image', src: 'https://cdn.example/a.jpg' }] },
     ), false, AgentClass.name + ': too few PNGs satisfied unequal conjunctive format counts');
+    const exactAndCappedFormats = agent._parseWorkflowAttachmentRequirement(
+      'one PNG image and at most one JPEG image',
+    );
+    assert.deepEqual(exactAndCappedFormats.imageFormatConstraints, [
+      { format: 'png', exactCount: 1, minimumCount: 0, maximumCount: 0 },
+      { format: 'jpeg', exactCount: 0, minimumCount: 0, maximumCount: 1 },
+    ], AgentClass.name + ': exact and bounded format clauses were flattened');
+    assert.equal(exactAndCappedFormats.minimumImageCount, 1,
+      AgentClass.name + ': exact format count was omitted from the aggregate minimum');
+    assert.equal(exactAndCappedFormats.maximumImageCount, 2,
+      AgentClass.name + ': per-format maxima were collapsed into an image-wide cap');
+    for (const [attachments, expected, message] of [
+      [[], false, 'zero images satisfied a required exact PNG'],
+      [[{ type: 'image', src: 'https://cdn.example/a.jpg' }], false, 'a lone JPEG satisfied a required exact PNG'],
+      [[image(1)], true, 'the required PNG without an optional JPEG was rejected'],
+      [[image(1), { type: 'image', src: 'https://cdn.example/a.jpg' }], true, 'a PNG plus a capped JPEG was rejected'],
+      [[image(1), { type: 'image', src: 'https://cdn.example/a.jpg' }, { type: 'image', src: 'https://cdn.example/b.jpg' }], false, 'too many JPEGs satisfied the per-format cap'],
+    ]) {
+      assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+        { value: 'one PNG image and at most one JPEG image' }, { attachments },
+      ), expected, AgentClass.name + ': ' + message);
+    }
+    const imageButNoVideo = agent._parseWorkflowAttachmentRequirement('one image but no video');
+    assert.equal(imageButNoVideo.isGeneric, true,
+      AgentClass.name + ': contrastive media conjunction was parsed as a filename');
+    assert.equal(imageButNoVideo.isVideoNegated, true,
+      AgentClass.name + ': contrastive negative video constraint was lost');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one image but no video' }, { attachments: [image(1)] },
+    ), true, AgentClass.name + ': an image-only publication failed the contrastive contract');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one image but no video' }, { attachments: [image(1), video(1)] },
+    ), false, AgentClass.name + ': a video passed a contrastive no-video contract');
     for (const [requirement, makeAttachment, minField, maxField] of [
       ['at least one image and at most two images', image, 'minimumImageCount', 'maximumImageCount'],
       ['at least one video and at most two videos', video, 'minimumVideoCount', 'maximumVideoCount'],

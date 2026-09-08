@@ -195,7 +195,7 @@ const SOCIAL_POST_DESTINATION_NEGATION = new RegExp(
   'iu',
 );
 const SOCIAL_CONTRASTIVE_EXCLUSION = /(?<![\p{L}\p{N}_])(?:rather\s+than|instead\s+of)(?:\s+(?:post(?:ing)?|publish(?:ing)?|shar(?:e|ing)|tweet(?:ing)?|send(?:ing)?))?(?:\s+(?:on|onto|to|via|in|at))?\s*$/iu;
-const SOCIAL_DESTINATION_EXCLUSION = /^\s*(?:exclude|excluding|avoid|avoiding|skip|skipping|no)\s+(?:(?:post(?:ing)?|publish(?:ing)?|shar(?:e|ing)|tweet(?:ing)?|send(?:ing)?)\s+)?(?:(?:on|onto|to|via|in|at)\s+)?(?:the\s+)?(?:x|twitter|bluesky|bsky(?:\.app)?)(?![\p{L}\p{N}_.-])\s*$/iu;
+const SOCIAL_DESTINATION_EXCLUSION = /^\s*(?:exclude|excluding|avoid|avoiding|skip|skipping|omit|omitting|no)\s+(?:(?:post(?:ing)?|publish(?:ing)?|shar(?:e|ing)|tweet(?:ing)?|send(?:ing)?)\s+)?(?:(?:on|onto|to|via|in|at)\s+)?(?:the\s+)?(?:x|twitter|bluesky|bsky(?:\.app)?)(?![\p{L}\p{N}_.-])\s*$/iu;
 const socialPostNegationGovernsPublish = value => (
   SOCIAL_POST_NEGATION.test(String(value || '').trim())
   || SOCIAL_POST_DESTINATION_NEGATION.test(String(value || ''))
@@ -249,7 +249,7 @@ const GENERIC_ATTACHMENT_WORDS = new Set([
   'item', 'items', 'piece', 'pieces', 'upload', 'uploads', 'asset', 'assets',
   'enclosure', 'enclosures', 'document', 'documents', 'documento', 'documentos',
   'a', 'an', 'the', 'of', 'in', 'with', 'some', 'any',
-  'and', 'or', 'either', 'plus', 'also', 'as', 'well', 'between', 'from', 'to',
+  'and', 'but', 'or', 'either', 'plus', 'also', 'as', 'well', 'between', 'from', 'to',
   'no', 'not', 'without', 'zero', 'none',
   'only', 'just', 'solely', 'exactly', 'exact', 'precisely',
   'sin', 'sans', 'sem', 'senza', 'ohne', 'kein', 'keine', 'keinen', 'aucun', 'aucune', 'ningun', 'ninguna', 'ningún', 'nenhum', 'nenhuma', 'nessun', 'nessuno', 'nessuna', 'nie', 'без', 'нет',
@@ -3026,8 +3026,8 @@ export class Agent extends LoopDetector {
       }
     }
     const isMinimumCount = isGeneric && hasMinCountQualifier;
-    const isImageMinimum = isGeneric && (minScopedImage || minScopedGeneric);
-    const isVideoMinimum = isGeneric && (minScopedVideo || minScopedGeneric);
+    let isImageMinimum = isGeneric && (minScopedImage || minScopedGeneric);
+    let isVideoMinimum = isGeneric && (minScopedVideo || minScopedGeneric);
     const isGifMinimum = isGeneric && (minScopedGif || minScopedGeneric);
     // Scope each upper-bound qualifier to the phrase it appears in, so a
     // maximum on one media type does not tighten an exact count on the other.
@@ -3080,8 +3080,8 @@ export class Agent extends LoopDetector {
       }
     }
     const isMaximumCount = isGeneric && hasMaxCountQualifier;
-    const isImageMaximum = isGeneric && (maxScopedImage || maxScopedGeneric);
-    const isVideoMaximum = isGeneric && (maxScopedVideo || maxScopedGeneric);
+    let isImageMaximum = isGeneric && (maxScopedImage || maxScopedGeneric);
+    let isVideoMaximum = isGeneric && (maxScopedVideo || maxScopedGeneric);
     const isGifMaximum = isGeneric && (maxScopedGif || maxScopedGeneric);
 
     const countPrefix = '(?:\\d+|zero|cero|zéro|a|an|one|two|three|four|five|six|seven|eight|nine|ten|single|both|multiple|un|une|deux|trois|quatre|cinq|uno|una|unos|unas|dos|tres|cuatro|cinco|due|tre|quattro|cinque|ein|eine|einen|einer|zwei|drei|vier|fünf|um|uma|dois|duas|três|один|одна|одно|два|две|три|четыре|пять|[一二两三四五六七八九十]|하나|둘|셋|넷|다섯|한(?=\\s*(?:장|개|건|편|개의|장의))|두(?=\\s*(?:장|개|건|편|개의|장의))|세(?=\\s*(?:장|개|건|편|개의|장의))|네(?=\\s*(?:장|개|건|편|개의|장의))|[일이삼사오](?=\\s*(?:장|개|건|편|개의|장의)))';
@@ -3132,50 +3132,75 @@ export class Agent extends LoopDetector {
 
     const DISJUNCTION_REGEX = /(?:\b(?:or|oder|ou|o|oppure|или|либо|veya|ya\s+da)\b|[或或者]|(?:또는|혹은)|(?:または|それとも))/i;
     const COUNT_DISJUNCTION_PATTERN = '(?:\\b(?:or|oder|ou|o|oppure|или|либо|veya|ya\\s+da)\\b|[或或者]|(?:또는|혹은)|(?:または|それとも))';
-    const formatCountQualifierLead = new RegExp(
-      `(?:${MIN_ATTACHMENT_COUNT_REGEX.source}|${MAX_ATTACHMENT_COUNT_REGEX.source})\\s*$`,
-      'iu',
-    );
+    const formatCountMinimumLead = new RegExp(`(?:${MIN_ATTACHMENT_COUNT_REGEX.source})\\s*$`, 'iu');
+    const formatCountMaximumLead = new RegExp(`(?:${MAX_ATTACHMENT_COUNT_REGEX.source})\\s*$`, 'iu');
     const formatCountRangeLead = new RegExp(
-      `(?:\\bbetween\\s+${rangeCountToken}\\s+and|\\bfrom\\s+${rangeCountToken}\\s+to|\\b${rangeCountToken}\\s+to)\\s*$`,
+      `(?:\\bbetween\\s+(${rangeCountToken})\\s+and|\\bfrom\\s+(${rangeCountToken})\\s+to|\\b(${rangeCountToken})\\s+to)\\s*$`,
       'iu',
     );
     const collectFormatCountRequirements = (formatPattern, nounPattern) => [...text.matchAll(new RegExp(
       `(?<![${SOCIAL_WORD_EDGE}])(${countPrefix})(?![${SOCIAL_WORD_EDGE}])\\s+(${formatPattern})(?![${SOCIAL_WORD_EDGE}])\\s+(?:${nounPattern})`,
       'giu',
-    ))].map(match => ({
-      count: parseCountWord(match[1]),
-      format: normalizeAttachmentFormat(match[2]),
-      start: match.index || 0,
-      end: (match.index || 0) + match[0].length,
-    })).filter(requirement => requirement.count > 0
-      && !formatCountQualifierLead.test(text.slice(0, requirement.start))
-      && !formatCountRangeLead.test(text.slice(0, requirement.start)));
+    ))].map((match) => {
+      const count = parseCountWord(match[1]);
+      const start = match.index || 0;
+      const lead = text.slice(0, start);
+      const range = lead.match(formatCountRangeLead);
+      const isMinimum = !range && formatCountMinimumLead.test(lead);
+      const isMaximum = !range && formatCountMaximumLead.test(lead);
+      return {
+        format: normalizeAttachmentFormat(match[2]),
+        exactCount: !range && !isMinimum && !isMaximum ? count : 0,
+        minimumCount: range ? parseCountWord(range[1] || range[2] || range[3]) : (isMinimum ? count : 0),
+        maximumCount: range || isMaximum ? count : 0,
+        start,
+        end: start + match[0].length,
+      };
+    }).filter(requirement => requirement.exactCount > 0
+      || requirement.minimumCount > 0 || requirement.maximumCount > 0);
     const formatRequirementsAreConjunctive = requirements => requirements.length <= 1
       || requirements.slice(1).every((requirement, index) => (
         !DISJUNCTION_REGEX.test(text.slice(requirements[index].end, requirement.start))
       ));
-    const aggregateFormatCounts = requirements => {
-      // One qualified format already inherits the ordinary type count. This
-      // extra contract is only needed when multiple exact format clauses must
-      // retain independent cardinalities.
+    const aggregateFormatConstraints = requirements => {
+      // One qualified format already inherits the ordinary type bounds. This
+      // extra contract is needed when multiple format clauses have independent
+      // exact, minimum, or maximum cardinalities.
       if (requirements.length < 2 || !formatRequirementsAreConjunctive(requirements)) return [];
-      const counts = new Map();
+      const constraints = new Map();
       for (const requirement of requirements) {
-        counts.set(requirement.format, (counts.get(requirement.format) || 0) + requirement.count);
+        const current = constraints.get(requirement.format) || {
+          format: requirement.format,
+          exactCount: 0,
+          minimumCount: 0,
+          maximumCount: 0,
+        };
+        current.exactCount += requirement.exactCount;
+        current.minimumCount = Math.max(current.minimumCount, requirement.minimumCount);
+        if (requirement.maximumCount > 0) {
+          current.maximumCount = current.maximumCount > 0
+            ? Math.min(current.maximumCount, requirement.maximumCount)
+            : requirement.maximumCount;
+        }
+        constraints.set(requirement.format, current);
       }
-      return [...counts].map(([format, count]) => ({ format, count }));
+      return [...constraints.values()];
     };
-    const parsedImageFormatCounts = collectFormatCountRequirements(
+    const parsedImageFormatConstraints = collectFormatCountRequirements(
       IMAGE_ATTACHMENT_FORMAT,
       'images?|photos?|pictures?|pics?',
     );
-    const parsedVideoFormatCounts = collectFormatCountRequirements(
+    const parsedVideoFormatConstraints = collectFormatCountRequirements(
       VIDEO_ATTACHMENT_FORMAT,
       'videos?|clips?|recordings?',
     );
-    const imageFormatCounts = aggregateFormatCounts(parsedImageFormatCounts);
-    const videoFormatCounts = aggregateFormatCounts(parsedVideoFormatCounts);
+    const imageFormatConstraints = aggregateFormatConstraints(parsedImageFormatConstraints);
+    const videoFormatConstraints = aggregateFormatConstraints(parsedVideoFormatConstraints);
+    const exactFormatCounts = constraints => constraints
+      .filter(constraint => constraint.exactCount > 0)
+      .map(constraint => ({ format: constraint.format, count: constraint.exactCount }));
+    const imageFormatCounts = exactFormatCounts(imageFormatConstraints);
+    const videoFormatCounts = exactFormatCounts(videoFormatConstraints);
     if (imageFormatCounts.length > 0) {
       expectedImageCount = imageFormatCounts.reduce((total, requirement) => total + requirement.count, 0);
       hasExplicitImageCount = true;
@@ -3183,6 +3208,40 @@ export class Agent extends LoopDetector {
     if (videoFormatCounts.length > 0) {
       expectedVideoCount = videoFormatCounts.reduce((total, requirement) => total + requirement.count, 0);
       hasExplicitVideoCount = true;
+    }
+    const formatConstraintBounds = (constraints) => {
+      let minimumCount = 0;
+      let maximumCount = 0;
+      let hasUnboundedFormat = false;
+      for (const constraint of constraints) {
+        minimumCount += Math.max(constraint.exactCount, constraint.minimumCount);
+        const upperBound = constraint.exactCount > 0
+          ? (constraint.maximumCount > 0
+            ? Math.min(constraint.exactCount, constraint.maximumCount)
+            : constraint.exactCount)
+          : constraint.maximumCount;
+        if (upperBound > 0) maximumCount += upperBound;
+        else hasUnboundedFormat = true;
+      }
+      return { minimumCount, maximumCount: hasUnboundedFormat ? 0 : maximumCount };
+    };
+    if (imageFormatConstraints.length > 0) {
+      const bounds = formatConstraintBounds(imageFormatConstraints);
+      minScopedImage = bounds.minimumCount > 0;
+      minimumImageCount = bounds.minimumCount;
+      maxScopedImage = bounds.maximumCount > 0;
+      maximumImageCount = bounds.maximumCount;
+      isImageMinimum = isGeneric && (minScopedImage || minScopedGeneric);
+      isImageMaximum = isGeneric && (maxScopedImage || maxScopedGeneric);
+    }
+    if (videoFormatConstraints.length > 0) {
+      const bounds = formatConstraintBounds(videoFormatConstraints);
+      minScopedVideo = bounds.minimumCount > 0;
+      minimumVideoCount = bounds.minimumCount;
+      maxScopedVideo = bounds.maximumCount > 0;
+      maximumVideoCount = bounds.maximumCount;
+      isVideoMinimum = isGeneric && (minScopedVideo || minScopedGeneric);
+      isVideoMaximum = isGeneric && (maxScopedVideo || maxScopedGeneric);
     }
     const scopedCountAlternativeRegex = new RegExp(
       `(?<![${SOCIAL_WORD_EDGE}])(${countPrefix})(?![${SOCIAL_WORD_EDGE}])(?:\\s+([\\p{L}\\p{N}_-]+))?\\s*${COUNT_DISJUNCTION_PATTERN}\\s*(${countPrefix})(?![${SOCIAL_WORD_EDGE}])\\s+([\\p{L}\\p{N}_-]+)`,
@@ -3468,6 +3527,8 @@ export class Agent extends LoopDetector {
       requestedVideoFormats,
       imageFormatCounts,
       videoFormatCounts,
+      imageFormatConstraints,
+      videoFormatConstraints,
       specificTargets,
       specificTargetAlternatives: namedTargetAlternatives || [],
       normalized: text,
@@ -3706,11 +3767,15 @@ export class Agent extends LoopDetector {
     const ordinaryVideoCount = ordinaryVideoAttachments.length;
     if (!attachmentsMatchFormats(parsed.requestedImageFormats, imageAttachments)) return false;
     if (!attachmentsMatchFormats(parsed.requestedVideoFormats, ordinaryVideoAttachments)) return false;
-    const attachmentsMatchFormatCounts = (requirements, candidates) => (requirements || []).every(
-      requirement => candidates.filter(att => attachmentFormat(att) === requirement.format).length === requirement.count,
-    );
-    if (!attachmentsMatchFormatCounts(parsed.imageFormatCounts, imageAttachments)) return false;
-    if (!attachmentsMatchFormatCounts(parsed.videoFormatCounts, ordinaryVideoAttachments)) return false;
+    const attachmentsMatchFormatConstraints = (constraints, candidates) => (constraints || []).every((constraint) => {
+      const observedCount = candidates.filter(att => attachmentFormat(att) === constraint.format).length;
+      if (constraint.exactCount > 0 && observedCount !== constraint.exactCount) return false;
+      if (constraint.minimumCount > 0 && observedCount < constraint.minimumCount) return false;
+      if (constraint.maximumCount > 0 && observedCount > constraint.maximumCount) return false;
+      return true;
+    });
+    if (!attachmentsMatchFormatConstraints(parsed.imageFormatConstraints, imageAttachments)) return false;
+    if (!attachmentsMatchFormatConstraints(parsed.videoFormatConstraints, ordinaryVideoAttachments)) return false;
     const imageMinimumBound = parsed.minimumImageCount || parsed.expectedImageCount || 1;
     const videoMinimumBound = parsed.minimumVideoCount || parsed.expectedVideoCount || 1;
     const gifMinimumBound = parsed.minimumGifCount || parsed.expectedGifCount || 1;
