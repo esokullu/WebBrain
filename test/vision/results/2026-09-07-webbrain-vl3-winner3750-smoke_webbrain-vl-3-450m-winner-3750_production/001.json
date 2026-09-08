@@ -1,0 +1,170 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-09-07T12:45:26.795Z",
+  "id": "001",
+  "model": "webbrain-vl-3-450m-winner-3750",
+  "endpoint": "http://127.0.0.1:8335/v1/chat/completions",
+  "promptMode": "production",
+  "question": {
+    "schemaVersion": 1,
+    "id": "001",
+    "difficulty": {
+      "level": 1,
+      "slug": "easy",
+      "label": "Easy"
+    },
+    "category": "authentication",
+    "title": "Welcome back",
+    "image": "images/001.png",
+    "question": "What is preventing the user from completing Sign in? Focus on the “Welcome back” screen.",
+    "defaultPromptMode": "production"
+  },
+  "image": {
+    "path": "images/001.png",
+    "bytes": 121862,
+    "sha256": "ebc7460f2b041e1b39c4fe671bb79744cb6dae04910c3fa142f6441980a08723"
+  },
+  "request": {
+    "systemPrompt": "You are the vision subsystem of a web-automation agent. A screenshot of the current browser viewport is attached. Describe what is on screen so the planning agent can decide its next action.\n\nFormat — keep it terse, structured, no flowery prose:\n\n1) Page purpose: one line (e.g. \"GitHub repo issue list\", \"Gmail compose\", \"Stripe checkout form\").\n2) Visible text: list the EXACT strings on buttons, links, headings, tabs, and menu items. Quote them verbatim. Do not paraphrase.\n3) Inputs: list each visible form field with its label, placeholder, current value, and whether it is focused/disabled.\n4) State signals: loading spinners, toasts, modals, error banners, success messages, CAPTCHAs, cookie/consent banners, overlays.\n5) Blockers: anything that would prevent the next likely action (overlay, disabled submit, missing data, auth prompt).\n6) Unknowns: if you cannot read something clearly, say so. Do not guess numbers, names, or identifiers.\n\nRules: no prose intro, no conclusion, no \"this screenshot shows...\", no layout description unless it matters (e.g. \"left nav is collapsed\"). If the page is blank or still loading, say that in one line and stop.",
+    "userText": "Describe this screenshot of the current browser viewport for a web-automation agent. Follow the format in the system prompt.",
+    "foldSystem": false,
+    "temperature": 0,
+    "maxTokens": 800,
+    "chatTemplateKwargs": {
+      "enable_thinking": false,
+      "think": false,
+      "thinking": false
+    }
+  },
+  "response": {
+    "status": 200,
+    "content": "1) Page purpose: Web form for account creation.\n2) Visible text: \"WebScene\", \"Home\", \"Workspace\", \"Activity\", \"Welcome back\", \"Use your account to continue\", \"Email\", \"You@example.com\", \"Password\", \"Enter password\", \"Sign in\", \"Need help?\".\n3) Inputs: label='Email', value='you@example.com', invalid=true.\n4) State signals: \"Need help?\" modal overlay.\n5) Blockers: None.\n6) Unknowns: None.",
+    "reasoningChars": 0,
+    "usage": {
+      "prompt_tokens": 1103,
+      "completion_tokens": 112,
+      "total_tokens": 1215
+    },
+    "timings": null
+  },
+  "latencyMs": {
+    "headers": 3668,
+    "total": 3669
+  },
+  "score": {
+    "success": false,
+    "ratio": 0.6,
+    "earned": 6,
+    "possible": 10,
+    "threshold": 0.72,
+    "sectionCount": 6,
+    "criticalFailures": [
+      "purpose"
+    ],
+    "dimensions": {
+      "page_purpose": {
+        "earned": 0,
+        "possible": 1,
+        "ratio": 0
+      },
+      "visible_text": {
+        "earned": 4,
+        "possible": 4,
+        "ratio": 1
+      },
+      "inputs": {
+        "earned": 0,
+        "possible": 1,
+        "ratio": 0
+      },
+      "blockers": {
+        "earned": 0,
+        "possible": 2,
+        "ratio": 0
+      }
+    },
+    "checks": [
+      {
+        "id": "purpose",
+        "dimension": "page_purpose",
+        "section": 1,
+        "kind": "any",
+        "values": [
+          "sign in",
+          "login",
+          "identity verification",
+          "session expired"
+        ],
+        "weight": 1,
+        "critical": true,
+        "passed": false,
+        "matched": [],
+        "scopeFound": true
+      },
+      {
+        "id": "heading",
+        "dimension": "visible_text",
+        "section": 2,
+        "kind": "literal",
+        "value": "Welcome back",
+        "weight": 2,
+        "critical": true,
+        "caseSensitive": true,
+        "passed": true,
+        "matched": [
+          "Welcome back"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "button",
+        "dimension": "visible_text",
+        "section": 2,
+        "kind": "literal",
+        "value": "Sign in",
+        "weight": 2,
+        "critical": true,
+        "caseSensitive": true,
+        "passed": true,
+        "matched": [
+          "Sign in"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "email-input",
+        "dimension": "inputs",
+        "section": 3,
+        "kind": "all",
+        "values": [
+          "Email",
+          "empty"
+        ],
+        "weight": 1,
+        "critical": false,
+        "passed": false,
+        "matched": [
+          "Email"
+        ],
+        "scopeFound": true
+      },
+      {
+        "id": "blocker",
+        "dimension": "blockers",
+        "section": 5,
+        "kind": "any",
+        "values": [
+          "missing",
+          "email",
+          "password"
+        ],
+        "weight": 2,
+        "critical": false,
+        "passed": false,
+        "matched": [],
+        "scopeFound": true
+      }
+    ]
+  },
+  "error": null
+}

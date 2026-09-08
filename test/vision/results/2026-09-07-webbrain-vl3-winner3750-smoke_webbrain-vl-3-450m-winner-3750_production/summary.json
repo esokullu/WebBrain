@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-09-07T12:45:26.799Z",
+  "model": "webbrain-vl-3-450m-winner-3750",
+  "endpoint": "http://127.0.0.1:8335/v1/chat/completions",
+  "promptMode": "production",
+  "productionUserText": "Describe this screenshot of the current browser viewport for a web-automation agent. Follow the format in the system prompt.",
+  "promptSha256": "8465a0e60af8f3e4dcc5ff188a7682c22b1d52974db54ccb42ff8a1a5346a207",
+  "overall": {
+    "cases": 1,
+    "scored": 1,
+    "errors": 0,
+    "successes": 0,
+    "successRate": 0,
+    "meanScore": 0.6,
+    "meanLatencyMs": 3669
+  },
+  "byDifficulty": {
+    "easy": {
+      "cases": 1,
+      "scored": 1,
+      "errors": 0,
+      "successes": 0,
+      "successRate": 0,
+      "meanScore": 0.6,
+      "meanLatencyMs": 3669
+    }
+  },
+  "byCategory": {
+    "authentication": {
+      "cases": 1,
+      "scored": 1,
+      "errors": 0,
+      "successes": 0,
+      "successRate": 0,
+      "meanScore": 0.6,
+      "meanLatencyMs": 3669
+    }
+  }
+}

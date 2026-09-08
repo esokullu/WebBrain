@@ -4,6 +4,11 @@ node_modules/
 test/anonymous/.test-profile/
 ci/artifacts/
 
+# Benchmark runner process state and console logs
+test/llm/analysis/**/*.pid
+test/llm/analysis/**/*.log
+test/llm/worker-logs/
+
 # ---- Expo / React Native local state ----
 .expo/
 expo-env.d.ts

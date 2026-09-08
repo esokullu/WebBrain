@@ -1,0 +1,21 @@
+{
+  "runTag": "2026-09-07-nanbeige4.2-3b-smoke",
+  "model": "nanbeige4.2-3b",
+  "browser": "chrome",
+  "base": "http://127.0.0.1:1234",
+  "saveRequest": true,
+  "tier": "full",
+  "modeOverride": null,
+  "chatTemplateCompat": "off",
+  "structuredToolsSent": true,
+  "reasoningEffort": null,
+  "freeze": null,
+  "cases": 1,
+  "totalLatencyMs": 180015,
+  "errors": 1,
+  "withToolCall": 0,
+  "withToolCallFromContent": 0,
+  "byTool": {
+    "(error)": 1
+  }
+}

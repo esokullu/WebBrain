@@ -1,0 +1,23 @@
+{
+  "runTag": "2026-09-07-google-gemma-4-e2b-compact-smoke-c4-v1",
+  "model": "google/gemma-4-e2b",
+  "browser": "chrome",
+  "base": "http://127.0.0.1:1234",
+  "saveRequest": true,
+  "tier": "compact",
+  "modeOverride": null,
+  "chatTemplateCompat": "off",
+  "structuredToolsSent": true,
+  "reasoningEffort": null,
+  "freeze": null,
+  "cases": 4,
+  "totalLatencyMs": 8114,
+  "errors": 0,
+  "withToolCall": 3,
+  "withToolCallFromContent": 0,
+  "byTool": {
+    "navigate": 2,
+    "(no_tool_call)": 1,
+    "get_accessibility_tree": 1
+  }
+}

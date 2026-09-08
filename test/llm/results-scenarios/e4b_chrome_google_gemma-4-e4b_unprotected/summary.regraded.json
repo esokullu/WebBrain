@@ -9,7 +9,8 @@
       "other": 0,
       "no_tool": 0,
       "empty": 0,
-      "error": 0
+      "error": 0,
+      "skipped": 0
     }
   },
   "changes": []
