@@ -3417,6 +3417,58 @@ export class Agent extends LoopDetector {
 
     const DISJUNCTION_REGEX = /(?:\b(?:or|oder|ou|o|oppure|или|либо|veya|ya\s+da)\b|[或或者]|(?:또는|혹은)|(?:または|それとも))/i;
     const COUNT_DISJUNCTION_PATTERN = '(?:\\b(?:or|oder|ou|o|oppure|или|либо|veya|ya\\s+da)\\b|[或或者]|(?:또는|혹은)|(?:または|それとも))';
+    const formatCountQualifierLead = new RegExp(
+      `(?:${MIN_ATTACHMENT_COUNT_REGEX.source}|${MAX_ATTACHMENT_COUNT_REGEX.source})\\s*$`,
+      'iu',
+    );
+    const formatCountRangeLead = new RegExp(
+      `(?:\\bbetween\\s+${rangeCountToken}\\s+and|\\bfrom\\s+${rangeCountToken}\\s+to|\\b${rangeCountToken}\\s+to)\\s*$`,
+      'iu',
+    );
+    const collectFormatCountRequirements = (formatPattern, nounPattern) => [...text.matchAll(new RegExp(
+      `(?<![${SOCIAL_WORD_EDGE}])(${countPrefix})(?![${SOCIAL_WORD_EDGE}])\\s+(${formatPattern})(?![${SOCIAL_WORD_EDGE}])\\s+(?:${nounPattern})`,
+      'giu',
+    ))].map(match => ({
+      count: parseCountWord(match[1]),
+      format: normalizeAttachmentFormat(match[2]),
+      start: match.index || 0,
+      end: (match.index || 0) + match[0].length,
+    })).filter(requirement => requirement.count > 0
+      && !formatCountQualifierLead.test(text.slice(0, requirement.start))
+      && !formatCountRangeLead.test(text.slice(0, requirement.start)));
+    const formatRequirementsAreConjunctive = requirements => requirements.length <= 1
+      || requirements.slice(1).every((requirement, index) => (
+        !DISJUNCTION_REGEX.test(text.slice(requirements[index].end, requirement.start))
+      ));
+    const aggregateFormatCounts = requirements => {
+      // One qualified format already inherits the ordinary type count. This
+      // extra contract is only needed when multiple exact format clauses must
+      // retain independent cardinalities.
+      if (requirements.length < 2 || !formatRequirementsAreConjunctive(requirements)) return [];
+      const counts = new Map();
+      for (const requirement of requirements) {
+        counts.set(requirement.format, (counts.get(requirement.format) || 0) + requirement.count);
+      }
+      return [...counts].map(([format, count]) => ({ format, count }));
+    };
+    const parsedImageFormatCounts = collectFormatCountRequirements(
+      IMAGE_ATTACHMENT_FORMAT,
+      'images?|photos?|pictures?|pics?',
+    );
+    const parsedVideoFormatCounts = collectFormatCountRequirements(
+      VIDEO_ATTACHMENT_FORMAT,
+      'videos?|clips?|recordings?',
+    );
+    const imageFormatCounts = aggregateFormatCounts(parsedImageFormatCounts);
+    const videoFormatCounts = aggregateFormatCounts(parsedVideoFormatCounts);
+    if (imageFormatCounts.length > 0) {
+      expectedImageCount = imageFormatCounts.reduce((total, requirement) => total + requirement.count, 0);
+      hasExplicitImageCount = true;
+    }
+    if (videoFormatCounts.length > 0) {
+      expectedVideoCount = videoFormatCounts.reduce((total, requirement) => total + requirement.count, 0);
+      hasExplicitVideoCount = true;
+    }
     const scopedCountAlternativeRegex = new RegExp(
       `(?<![${SOCIAL_WORD_EDGE}])(${countPrefix})(?![${SOCIAL_WORD_EDGE}])(?:\\s+([\\p{L}\\p{N}_-]+))?\\s*${COUNT_DISJUNCTION_PATTERN}\\s*(${countPrefix})(?![${SOCIAL_WORD_EDGE}])\\s+([\\p{L}\\p{N}_-]+)`,
       'giu',
@@ -3698,6 +3750,8 @@ export class Agent extends LoopDetector {
       wantsGif,
       requestedImageFormats,
       requestedVideoFormats,
+      imageFormatCounts,
+      videoFormatCounts,
       specificTargets,
       specificTargetAlternatives: namedTargetAlternatives || [],
       normalized: text,
@@ -3928,13 +3982,19 @@ export class Agent extends LoopDetector {
       ));
     }
 
-    const imageCount = rawAttachments.filter(isImageAttachment).length;
+    const imageAttachments = rawAttachments.filter(isImageAttachment);
+    const ordinaryVideoAttachments = rawAttachments.filter(att => isVideoAttachment(att) && !isGifAttachment(att));
+    const imageCount = imageAttachments.length;
     const videoCount = rawAttachments.filter(isVideoAttachment).length;
     const gifCount = rawAttachments.filter(isGifAttachment).length;
-    const ordinaryVideoCount = rawAttachments.filter(att => isVideoAttachment(att) && !isGifAttachment(att)).length;
-    if (!attachmentsMatchFormats(parsed.requestedImageFormats, rawAttachments.filter(isImageAttachment))) return false;
-    if (!attachmentsMatchFormats(parsed.requestedVideoFormats,
-      rawAttachments.filter(att => isVideoAttachment(att) && !isGifAttachment(att)))) return false;
+    const ordinaryVideoCount = ordinaryVideoAttachments.length;
+    if (!attachmentsMatchFormats(parsed.requestedImageFormats, imageAttachments)) return false;
+    if (!attachmentsMatchFormats(parsed.requestedVideoFormats, ordinaryVideoAttachments)) return false;
+    const attachmentsMatchFormatCounts = (requirements, candidates) => (requirements || []).every(
+      requirement => candidates.filter(att => attachmentFormat(att) === requirement.format).length === requirement.count,
+    );
+    if (!attachmentsMatchFormatCounts(parsed.imageFormatCounts, imageAttachments)) return false;
+    if (!attachmentsMatchFormatCounts(parsed.videoFormatCounts, ordinaryVideoAttachments)) return false;
     const imageMinimumBound = parsed.minimumImageCount || parsed.expectedImageCount || 1;
     const videoMinimumBound = parsed.minimumVideoCount || parsed.expectedVideoCount || 1;
     const gifMinimumBound = parsed.minimumGifCount || parsed.expectedGifCount || 1;
@@ -17782,6 +17842,8 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     // unrelated branch such as "X or report the blocker; also post on
     // Bluesky" contains `or`, but it does not coordinate the destinations.
     const directAlternativeBridge = /^\s*(?:(?:page|account|profile)\s*)?(?:,\s*)?(?:(?:or|oder|ou|o|oppure|veya|ya\s+da|\u0438\u043b\u0438|\u043b\u0438\u0431\u043e)(?![\p{L}\p{N}_])|(?:\u6216\u8005|\u6216|\u307e\u305f\u306f|\u305d\u308c\u3068\u3082|\uB610\uB294|\uD639\uC740))\s*(?:(?:alternatively|else)\s+)?(?:(?:post|publish|share|tweet|send|reply|respond)\s+(?:(?:this|that|it|the\s+following)\s+)?)?(?:(?:also\s+)?(?:on|onto|to|via|in|at|en|sur|sobre|\u00e0|au|auf|su|em|na|no|nos|nas|para|\u0432|\u043d\u0430)\s+)?(?:the\s+)?$/iu;
+    const oneOfAlternativeLead = /(?<![\p{L}\p{N}_])one\s+of\s+(?:the\s+)?$/iu;
+    const oneOfAlternativeBridge = /^\s*(?:,\s*)?(?:and|or)\s+(?:the\s+)?$/iu;
     const platformPattern = /(?:https?:\/\/(?:www\.)?(?:x\.com|twitter\.com|bsky\.app)(?:[/?#][^\s<>"'`\u3002\u3001\uff0c\uff1b\uff1a\uff01\uff1f\u2026\u2025]*|(?=[\s<>"'`\u3002\u3001\uff0c\uff1b\uff1a\uff01\uff1f\u2026\u2025,;!?]|$))|(?<![\p{L}\p{N}_])(?:x|twitter|bluesky|bsky\.app)(?![\p{L}\p{N}_]))/giu;
     const texts = [guard?.taskText, guard?.approvedPlanAnchor]
       .map(value => String(value || '').trim())
@@ -17802,7 +17864,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         const left = platforms[index - 1];
         const right = platforms[index];
         if (left.name === right.name) continue;
-        if (directAlternativeBridge.test(masked.slice(left.end, right.index))) return true;
+        const bridge = masked.slice(left.end, right.index);
+        if (directAlternativeBridge.test(bridge)
+            || (oneOfAlternativeLead.test(masked.slice(0, left.index))
+              && oneOfAlternativeBridge.test(bridge))) return true;
       }
       return false;
     });

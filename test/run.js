@@ -91267,6 +91267,11 @@ test('alternative social destinations require one verified publication, not ever
       AgentClass.name + ': unrelated or branch weakened two required destinations');
     assert.deepEqual(agent._missingSocialPublishTargets(unrelatedOr), ['bluesky'],
       AgentClass.name + ': unrelated or branch hid the missing Bluesky publication');
+    const oneOfDestinations = { ...guard, taskText: 'Post on one of X and Bluesky.' };
+    assert.equal(agent._socialPublishTargetsAreAlternatives(oneOfDestinations), true,
+      AgentClass.name + ': a one-of destination list required both public posts');
+    assert.deepEqual(agent._missingSocialPublishTargets(oneOfDestinations), [],
+      AgentClass.name + ': a satisfied one-of destination still required another public post');
     assert.equal(agent._socialPublishTargetsAreAlternatives({
       ...guard,
       taskText: 'Post on X or publish on Bluesky.',
@@ -92991,6 +92996,38 @@ test('upper-bound attachment qualifiers verify as maximum counts', () => {
     assert.equal(agent._workflowSocialPublishedAttachmentObserved(
       { value: 'one PNG or JPEG image' }, { attachments: [{ type: 'image', src: 'https://cdn.example/a.webp' }] }), false,
       AgentClass.name + ': WebP satisfied a PNG-or-JPEG format choice');
+    const pngAndJpegImages = agent._parseWorkflowAttachmentRequirement('one PNG image and one JPEG image');
+    assert.equal(pngAndJpegImages.expectedImageCount, 2,
+      AgentClass.name + ': conjunctive image-format counts were not summed');
+    assert.deepEqual(pngAndJpegImages.imageFormatCounts, [
+      { format: 'png', count: 1 },
+      { format: 'jpeg', count: 1 },
+    ], AgentClass.name + ': conjunctive image-format counts were flattened');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one PNG image and one JPEG image' },
+      { attachments: [image(1), { type: 'image', src: 'https://cdn.example/a.jpg' }] },
+    ), true, AgentClass.name + ': one PNG plus one JPEG did not satisfy the conjunctive contract');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one PNG image and one JPEG image' }, { attachments: [image(1)] },
+    ), false, AgentClass.name + ': one PNG satisfied a two-format conjunctive contract');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one PNG image and one JPEG image' }, { attachments: [image(1), image(2)] },
+    ), false, AgentClass.name + ': two PNGs satisfied a PNG-plus-JPEG contract');
+    const twoPngAndJpegImages = agent._parseWorkflowAttachmentRequirement('two PNG images and one JPEG image');
+    assert.equal(twoPngAndJpegImages.expectedImageCount, 3,
+      AgentClass.name + ': unequal conjunctive format counts were not summed');
+    assert.deepEqual(twoPngAndJpegImages.imageFormatCounts, [
+      { format: 'png', count: 2 },
+      { format: 'jpeg', count: 1 },
+    ]);
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'two PNG images and one JPEG image' },
+      { attachments: [image(1), image(2), { type: 'image', src: 'https://cdn.example/a.jpg' }] },
+    ), true, AgentClass.name + ': two PNGs plus one JPEG did not satisfy the conjunctive contract');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'two PNG images and one JPEG image' },
+      { attachments: [image(1), { type: 'image', src: 'https://cdn.example/a.jpg' }] },
+    ), false, AgentClass.name + ': too few PNGs satisfied unequal conjunctive format counts');
     for (const [requirement, makeAttachment, minField, maxField] of [
       ['at least one image and at most two images', image, 'minimumImageCount', 'maximumImageCount'],
       ['at least one video and at most two videos', video, 'minimumVideoCount', 'maximumVideoCount'],
