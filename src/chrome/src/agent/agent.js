@@ -18216,7 +18216,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     // Only list-shaped glue may sit between the two platform mentions. An
     // unrelated branch such as "X or report the blocker; also post on
     // Bluesky" contains `or`, but it does not coordinate the destinations.
-    const directAlternativeBridge = /^\s*(?:(?:page|account|profile)\s*)?(?:,\s*)?(?:if\s+(?:unavailable|not\s+available|available|needed|necessary|possible|possibly|unable|unsuccessful|failing|failed|fails?|failure)\b[^,;]*,?\s*)?(?:(?:or|otherwise|failing\s+that|oder|ou|o|oppure|veya|ya\s+da|\u0438\u043b\u0438|\u043b\u0438\u0431\u043e)(?![\p{L}\p{N}_])|(?:\u6216\u8005|\u6216|\u307e\u305f\u306f|\u305d\u308c\u3068\u3082|\uB610\uB294|\uD639\uC740))\s*(?:,\s*)?(?:(?:alternatively|otherwise|else)(?:\s*,\s*|\s+))?(?:,\s*if\s+(?:unavailable|not\s+available|available|needed|necessary|possible|unable|unsuccessful|failing|failed|fails?|failure)\b[^,;]*,?\s*)?(?:(?:post|publish|share|tweet|send|reply|respond)\s+(?:(?:this|that|it|the\s+following)\s+)?)?(?:(?:also\s+)?(?:on|onto|to|via|in|at|en|sur|sobre|\u00e0|au|auf|su|em|na|no|nos|nas|para|\u0432|\u043d\u0430)\s+)?(?:the\s+)?$/iu;
+    const directAlternativeBridge = /^\s*(?:(?:page|account|profile)\s*)?(?:,\s*)?(?:if\s+(?:unavailable|not\s+available|available|needed|necessary|possible|possibly|unable|unsuccessful|failing|failed|fails?|failure)\b[^,;]*,?\s*)?(?:(?:or|otherwise|failing\s+that|oder|ou|o|oppure|veya|ya\s+da|\u0438\u043b\u0438|\u043b\u0438\u0431\u043e)(?![\p{L}\p{N}_])|(?:\u6216\u8005|\u6216|\u307e\u305f\u306f|\u305d\u308c\u3068\u3082|\uB610\uB294|\uD639\uC740))\s*(?:,\s*)?(?:(?:alternatively|otherwise|else)(?:\s*,\s*|\s+))?(?:,\s*if\s+(?:(?:that|it|this)\s+)?(?:unavailable|not\s+available|available|needed|necessary|possible|unable|unsuccessful|failing|failed|fails?|failure)\b[^,;]*,?\s*)?(?:(?:post|publish|share|tweet|send|reply|respond)\s+(?:(?:this|that|it|the\s+following)\s+)?)?(?:(?:also\s+)?(?:on|onto|to|via|in|at|en|sur|sobre|\u00e0|au|auf|su|em|na|no|nos|nas|para|\u0432|\u043d\u0430)\s+)?(?:the\s+)?$/iu;
     const explicitAlternativeBridge = /^\s*(?:(?:page|account|profile)\s*)?(?:,\s*)?(?:(?:alternatively|otherwise|failing\s+that)(?:\s*,\s*)?(?:[\s,]+(?:on|onto|to|via|in|at))?|as\s+an\s+alternative\s+to)\s*(?:the\s+)?$/iu;
     const oneOfAlternativeLead = /(?<![\p{L}\p{N}_])one\s+of\s+(?:the\s+)?$/iu;
     const oneOfAlternativeBridge = /^\s*(?:,\s*)?(?:and|or)\s+(?:the\s+)?$/iu;
@@ -26729,6 +26729,16 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         }
         return false;
       };
+      // A following attachment/metadata instruction ("attach image.png")
+      // is a separate requirement, not body prose. Quoted filenames stay
+      // invisible because this runs on masked text.
+      const metadataInstructionPattern = new RegExp(
+        `(?<![\\p{L}\\p{N}_])(?:attach(?:ed|ing|ment)?s?|upload(?:ed|ing|s)?|detach(?:ed|ing)?)(?![\\p{L}\\p{N}_])`
+        + `|\\.(?:png|jpe?g|webp|avif|heic|bmp|svg|gif|mp4|mov|webm|mkv)(?=[?#]|[\\s.,;:!?]|$)`
+        + `|(?<![\\p{L}\\p{N}_])alt(?:ernative)?\\s+text(?![\\p{L}\\p{N}_])`,
+        'iu',
+      );
+      const startsMetadataInstruction = clauseMasked => metadataInstructionPattern.test(String(clauseMasked || ''));
       for (const rawCandidate of rawCandidates) {
         const clauses = this._socialPublicationClauses(rawCandidate);
         let carriedPublishVerb = 'post';
@@ -26786,6 +26796,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
                   }
                   continue;
                 }
+                if (startsMetadataInstruction(bodyClause.maskedText || bodyClause.text || '')) break;
                 if (bodyDelim === '') {
                   if (startsNewPublication(bodyClause.maskedText || bodyClause.text || '')) break;
                   scoped += `\n${bodyClause.text}`;

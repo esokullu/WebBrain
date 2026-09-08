@@ -91189,6 +91189,8 @@ test('social destination rebinding refreshes platform-specific payload and uploa
       AgentClass.name + ': body sentence with a bare publish verb was cut off');
     assert.equal(agent._extractWorkflowTaskBody('Post on X: Hello. We publish weekly research about Bluesky.', '', 'twitter'), 'Hello. We publish weekly research about Bluesky.',
       AgentClass.name + ': incidental platform mention ended the post body');
+    assert.equal(agent._extractWorkflowTaskBody('Post on X with body: "Hello"; attach image.png with alt text "cat"', '', 'twitter'), 'Hello',
+      AgentClass.name + ': trailing attachment instruction contaminated the post body');
     assert.equal(agent._extractWorkflowTaskBody('Post on X: hello; and on Bluesky: goodbye', '', 'twitter'), 'hello',
       AgentClass.name + ': a following destination body contaminated the X body');
     assert.equal(agent._extractWorkflowTaskBody('Post on X: hello; and on Bluesky: goodbye', '', 'bluesky'), 'goodbye',
@@ -91384,6 +91386,10 @@ test('alternative social destinations require one verified publication, not ever
       ...guard,
       taskText: 'Post on X, failing that, on Bluesky.',
     }), true, AgentClass.name + ': punctuated failing-that fallback required a second public post');
+    assert.equal(agent._socialPublishTargetsAreAlternatives({
+      ...guard,
+      taskText: 'Post on X or, if that fails, post on Bluesky.',
+    }), true, AgentClass.name + ': pronoun-bearing fallback required a second public post');
     assert.equal(agent._socialPublishTargetsAreAlternatives({
       ...guard,
       taskText: 'Post on X, or alternatively, Bluesky.',
