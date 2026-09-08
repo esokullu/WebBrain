@@ -33528,7 +33528,12 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
                       const src = String(node.getAttribute?.('src') || node.src || '').toLowerCase();
                       if (src.includes('profile_images') || src.includes('/avatar/') || src.includes('/emoji/') || src.includes('twemoji')) return true;
                       const alt = String(node.getAttribute?.('alt') || '');
-                      if (/^\\p{Emoji}+$/u.test(alt)) return true;
+                      // Digits (and "#" / "*") carry the Emoji property as keycap
+                      // bases, so a numeric-only alt such as "1" must not read as
+                      // an emoji: only discard the node when some other Emoji
+                      // character is present. This probe is injected through a
+                      // template literal, so backslashes are doubled here.
+                      if (/^(?=[\\s\\S]*[^\\d\\s#*])\\p{Emoji}+$/u.test(alt)) return true;
                     } catch {}
                     return false;
                   };

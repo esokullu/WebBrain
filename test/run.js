@@ -25599,6 +25599,11 @@ test('publication resource records keep the owning social card when it embeds an
       getAttribute: name => (name === 'data-testid' ? 'tweetPhoto' : (name === 'src' ? 'https://pbs.twimg.com/media/pic.jpg' : null)),
       closest: () => null,
     };
+    const numericAltPhotoNode = {
+      tagName: 'img',
+      getAttribute: name => (name === 'alt' ? '2026' : (name === 'src' ? 'https://pbs.twimg.com/media/pic2.jpg' : null)),
+      closest: () => null,
+    };
     const linkPreviewNode = {
       tagName: 'img',
       getAttribute: name => (name === 'src' ? 'https://pbs.twimg.com/card_img/thumb.jpg' : null),
@@ -25621,11 +25626,11 @@ test('publication resource records keep the owning social card when it embeds an
       querySelectorAll: selector => {
         const s = String(selector);
         if (s.includes('img') || s.includes('video') || s.includes('tweetPhoto')) {
-          return [avatarNode, emojiNode, linkPreviewNode, photoNode, videoComponentNode, videoNode];
+          return [avatarNode, emojiNode, linkPreviewNode, photoNode, numericAltPhotoNode, videoComponentNode, videoNode];
         }
         return [plainPermalink];
       },
-      contains: node => [plainPermalink, mediaCard, avatarNode, emojiNode, linkPreviewNode, photoNode, videoComponentNode, videoNode].includes(node),
+      contains: node => [plainPermalink, mediaCard, avatarNode, emojiNode, linkPreviewNode, photoNode, numericAltPhotoNode, videoComponentNode, videoNode].includes(node),
     };
     const mediaPermalink = {
       ...plainPermalink,
@@ -25633,7 +25638,7 @@ test('publication resource records keep the owning social card when it embeds an
     };
     const mediaRecord = invariant.publicationResourceRecordRoot(mediaPermalink, identity, identityOf);
     assert.equal(mediaRecord.root, mediaCard);
-    assert.deepEqual(mediaRecord.attachments, [photoNode, videoComponentNode],
+    assert.deepEqual(mediaRecord.attachments, [photoNode, numericAltPhotoNode, videoComponentNode],
       `${label}: media attachments failed to deduplicate nested videoNode or failed to include photo`);
 
     // A Bluesky external link card names no card container: its thumbnail sits
