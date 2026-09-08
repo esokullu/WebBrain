@@ -91197,8 +91197,14 @@ test('social destination rebinding refreshes platform-specific payload and uploa
       AgentClass.name + ': trailing attachment instruction contaminated the post body');
     assert.equal(agent._extractWorkflowTaskBody('Post on X: Hello. We uploaded our new release today.', '', 'twitter'), 'Hello. We uploaded our new release today.',
       AgentClass.name + ': prose mentioning an upload without media ended the post body');
+    assert.equal(agent._extractWorkflowTaskBody('Post on X: Hello. I upload photos every weekend.', '', 'twitter'), 'Hello. I upload photos every weekend.',
+      AgentClass.name + ': narrative prose naming media ended the post body');
     assert.equal(agent._extractWorkflowTaskBody('Post on X: Hello world. Then let me know when it is done', '', 'twitter'), 'Hello world',
       AgentClass.name + ': sequential follow-up instruction contaminated the post body');
+    assert.equal(agent._workflowExtractedBodySupersedesClassified('Alpha beta', 'Alpha beta gamma delta'), true,
+      AgentClass.name + ': a permitted word-boundary excerpt did not restore the full task body');
+    assert.equal(agent._workflowExtractedBodySupersedesClassified('Hello world', 'Hello world. Please confirm'), false,
+      AgentClass.name + ': a complete classified body grew into an operational follow-up');
     assert.equal(agent._extractWorkflowTaskBody('Post on X: hello; and on Bluesky: goodbye', '', 'twitter'), 'hello',
       AgentClass.name + ': a following destination body contaminated the X body');
     assert.equal(agent._extractWorkflowTaskBody('Post on X: hello; and on Bluesky: goodbye', '', 'bluesky'), 'goodbye',
@@ -91410,6 +91416,10 @@ test('alternative social destinations require one verified publication, not ever
       ...guard,
       taskText: 'Post on X; if that fails, post on Bluesky.',
     }), true, AgentClass.name + ': standalone conditional fallback required a second public post');
+    assert.equal(agent._socialPublishTargetsAreAlternatives({
+      ...guard,
+      taskText: 'Post on X; if that does not work, post on Bluesky.',
+    }), true, AgentClass.name + ': does-not-work fallback required a second public post');
     assert.deepEqual(agent._missingSocialPublishTargets({ ...guard, taskText: 'Post on Bluesky' }), ['bluesky'],
       AgentClass.name + ': a run bound to X reported no missing destination for a Bluesky-only request');
     assert.deepEqual(agent._missingSocialPublishTargets({ ...guard, taskText: 'Post on X' }), [],

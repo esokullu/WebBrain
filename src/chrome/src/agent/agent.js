@@ -2524,6 +2524,30 @@ export class Agent extends LoopDetector {
     return (typeof maxLength === 'number' && maxLength > 0) ? text.slice(0, maxLength) : text;
   }
 
+  // The classifier contract permits a short excerpt for a long post, so an
+  // extracted task body may supersede the classified value: an explicit
+  // placeholder, an exact match, a mid-token truncation the extraction
+  // continues, or a word-boundary excerpt prefixing further body prose.
+  // An operational follow-up ("Then let me know when it is done") is not
+  // post prose, so a remainder reading as one keeps the classified value
+  // and genuinely complete bodies never grow.
+  _workflowExtractedBodySupersedesClassified(classifiedValue, extractedBody) {
+    if (classifiedValue === '[from task]') return true;
+    const normalizedExtracted = this._workflowMetadataValue(extractedBody);
+    const normalizedClassified = this._workflowMetadataValue(classifiedValue);
+    if (normalizedExtracted === normalizedClassified) return true;
+    const continuationIndex = normalizedExtracted.indexOf(normalizedClassified);
+    if (normalizedClassified.length > 0 && continuationIndex >= 0
+      && /[\p{L}\p{N}_]$/u.test(normalizedClassified)
+      && /^[\p{L}\p{N}_]/u.test(normalizedExtracted.slice(continuationIndex + normalizedClassified.length))) {
+      return true;
+    }
+    if (normalizedClassified.length === 0 || continuationIndex !== 0) return false;
+    const excerptRemainder = normalizedExtracted.slice(normalizedClassified.length);
+    return excerptRemainder.trim().length > 0
+      && !/^[\s.,;:!?]*(?:then|next|after(?:wards)?|finally|also|please|let\s+me\s+know|tell\s+me|confirm(?:ing)?|verif\w*|notif\w*|report|update\s+me|thanks?|thank\s+you)\b/iu.test(excerptRemainder);
+  }
+
   // AX formatLine truncates values at 60 chars and appends '...', plus
   // value_len/value_fp of the full inventory string. Prefix alone is not
   // exact readback: the fingerprint and length must match the requested value.
@@ -18246,7 +18270,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     // Only list-shaped glue may sit between the two platform mentions. An
     // unrelated branch such as "X or report the blocker; also post on
     // Bluesky" contains `or`, but it does not coordinate the destinations.
-    const directAlternativeBridge = /^\s*(?:(?:page|account|profile)\s*)?(?:[,;]\s*)?(?:(?:if\s+(?:(?:that|it|this)\s+)?(?:unavailable|not\s+available|available|needed|necessary|possible|possibly|unable|unsuccessful|failing|failed|fails?|failure)\b[^,;]*,?\s*)(?:(?:or|otherwise|failing\s+that|oder|ou|o|oppure|veya|ya\s+da|\u0438\u043b\u0438|\u043b\u0438\u0431\u043e)(?![\p{L}\p{N}_])|(?:\u6216\u8005|\u6216|\u307e\u305f\u306f|\u305d\u308c\u3068\u3082|\uB610\uB294|\uD639\uC740))?|(?:(?:or|otherwise|failing\s+that|oder|ou|o|oppure|veya|ya\s+da|\u0438\u043b\u0438|\u043b\u0438\u0431\u043e)(?![\p{L}\p{N}_])|(?:\u6216\u8005|\u6216|\u307e\u305f\u306f|\u305d\u308c\u3068\u3082|\uB610\uB294|\uD639\uC740)))\s*(?:,\s*)?(?:(?:alternatively|otherwise|else)(?:\s*,\s*|\s+))?(?:,\s*if\s+(?:(?:that|it|this)\s+)?(?:unavailable|not\s+available|available|needed|necessary|possible|unable|unsuccessful|failing|failed|fails?|failure)\b[^,;]*,?\s*)?(?:(?:post|publish|share|tweet|send|reply|respond)\s+(?:(?:this|that|it|the\s+following)\s+)?)?(?:(?:also\s+)?(?:on|onto|to|via|in|at|en|sur|sobre|\u00e0|au|auf|su|em|na|no|nos|nas|para|\u0432|\u043d\u0430)\s+)?(?:the\s+)?$/iu;
+    const directAlternativeBridge = /^\s*(?:(?:page|account|profile)\s*)?(?:[,;]\s*)?(?:(?:if\s+(?:(?:that|it|this)\s+)?(?:unavailable|not\s+available|not\s+work(?:ing|s)?|(?:do|does|did)\s+not\s+work|(?:do|does|did)n['’]?t\s+work|available|needed|necessary|possible|possibly|unable|unsuccessful|failing|failed|fails?|failure)\b[^,;]*,?\s*)(?:(?:or|otherwise|failing\s+that|oder|ou|o|oppure|veya|ya\s+da|\u0438\u043b\u0438|\u043b\u0438\u0431\u043e)(?![\p{L}\p{N}_])|(?:\u6216\u8005|\u6216|\u307e\u305f\u306f|\u305d\u308c\u3068\u3082|\uB610\uB294|\uD639\uC740))?|(?:(?:or|otherwise|failing\s+that|oder|ou|o|oppure|veya|ya\s+da|\u0438\u043b\u0438|\u043b\u0438\u0431\u043e)(?![\p{L}\p{N}_])|(?:\u6216\u8005|\u6216|\u307e\u305f\u306f|\u305d\u308c\u3068\u3082|\uB610\uB294|\uD639\uC740)))\s*(?:,\s*)?(?:(?:alternatively|otherwise|else)(?:\s*,\s*|\s+))?(?:,\s*if\s+(?:(?:that|it|this)\s+)?(?:unavailable|not\s+available|not\s+work(?:ing|s)?|(?:do|does|did)\s+not\s+work|(?:do|does|did)n['’]?t\s+work|available|needed|necessary|possible|unable|unsuccessful|failing|failed|fails?|failure)\b[^,;]*,?\s*)?(?:(?:post|publish|share|tweet|send|reply|respond)\s+(?:(?:this|that|it|the\s+following)\s+)?)?(?:(?:also\s+)?(?:on|onto|to|via|in|at|en|sur|sobre|\u00e0|au|auf|su|em|na|no|nos|nas|para|\u0432|\u043d\u0430)\s+)?(?:the\s+)?$/iu;
     const explicitAlternativeBridge = /^\s*(?:(?:page|account|profile)\s*)?(?:,\s*)?(?:(?:alternatively|otherwise|failing\s+that)(?:\s*,\s*)?(?:[\s,]+(?:on|onto|to|via|in|at))?|as\s+an\s+alternative\s+to)\s*(?:the\s+)?$/iu;
     const oneOfAlternativeLead = /(?<![\p{L}\p{N}_])one\s+of\s+(?:the\s+)?$/iu;
     const oneOfAlternativeBridge = /^\s*(?:,\s*)?(?:and|or)\s+(?:the\s+)?$/iu;
@@ -26762,15 +26786,26 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       // A following attachment/metadata instruction ("attach image.png")
       // is a separate requirement, not body prose. The action verb must
       // govern a media target in the same clause: ordinary prose such as
-      // "We uploaded our new release today." names no media. Quoted
-      // filenames stay invisible because this runs on masked text.
+      // "We uploaded our new release today." names no media. The command
+      // must also be imperative: first-person or narrative prose such as
+      // "I upload photos every weekend." names media without instructing
+      // an attachment. Quoted filenames stay invisible because this runs
+      // on masked text.
       const mediaInstructionTarget = '(?:\\.(?:png|jpe?g|webp|avif|heic|bmp|svg|gif|mp4|mov|webm|mkv)(?=[?#]|[\\s.,;:!?]|$)|images?|photos?|pictures?|pics?|videos?|clips?|recordings?|gifs?|attachments?|files?|media|uploads?)';
       const metadataInstructionPattern = new RegExp(
         `(?<![\\p{L}\\p{N}_])(?:attach(?:ed|ing|ment)?s?|upload(?:ed|ing|s)?|detach(?:ed|ing)?)(?![\\p{L}\\p{N}_])[\\s\\S]*?${mediaInstructionTarget}`
         + `|(?<![\\p{L}\\p{N}_])alt(?:ernative)?\\s+text(?![\\p{L}\\p{N}_])`,
         'iu',
       );
-      const startsMetadataInstruction = clauseMasked => metadataInstructionPattern.test(String(clauseMasked || ''));
+      const metadataAttachmentVerb = /(?<![\p{L}\p{N}_])(?:attach(?:ed|ing|ment)?s?|upload(?:ed|ing|s)?|detach(?:ed|ing)?)(?![\p{L}\p{N}_])/iu;
+      const metadataNarrativeSubject = /(?<![\p{L}\p{N}_])(?:i|we|you|he|she|they|it)(?![\p{L}\p{N}_])[\s,]*$/iu;
+      const startsMetadataInstruction = (clauseMasked) => {
+        const text = String(clauseMasked || '');
+        if (!metadataInstructionPattern.test(text)) return false;
+        const verb = text.match(metadataAttachmentVerb);
+        if (!verb) return true;
+        return !metadataNarrativeSubject.test(text.slice(0, verb.index));
+      };
       for (const rawCandidate of rawCandidates) {
         const clauses = this._socialPublicationClauses(rawCandidate);
         let carriedPublishVerb = 'post';
@@ -27117,20 +27152,9 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
             const bodyReq = details.items.find(r => r.field === 'body');
             if (bodyReq) {
               // An operational follow-up ("Then let me know when it is done")
-              // is not post prose: replace an explicit placeholder, an exact
-              // match, or a truncation the extraction identifiably continues
-              // (the classified value ends mid-token and the extraction
-              // carries that same token on). A value ending at a word
-              // boundary is complete as stated and never grows.
-              const normalizedExtracted = this._workflowMetadataValue(extractedBody);
-              const normalizedClassified = this._workflowMetadataValue(bodyReq.value);
-              const continuationIndex = normalizedExtracted.indexOf(normalizedClassified);
-              const continuesMidWord = normalizedClassified.length > 0 && continuationIndex >= 0
-                && /[\p{L}\p{N}_]$/u.test(normalizedClassified)
-                && /^[\p{L}\p{N}_]/u.test(normalizedExtracted.slice(continuationIndex + normalizedClassified.length));
-              if (bodyReq.value === '[from task]'
-                  || normalizedExtracted === normalizedClassified
-                  || continuesMidWord) {
+              // is not post prose; a word-boundary excerpt the classifier
+              // contract permits still restores the full task body.
+              if (this._workflowExtractedBodySupersedesClassified(bodyReq.value, extractedBody)) {
                 bodyReq.value = this._workflowMetadataValue(extractedBody, 25000);
               }
             } else if (siteWorkflow?.job?.id === 'publish-post' || siteWorkflow?.job?.id === 'publish-content') {
