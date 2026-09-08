@@ -15734,10 +15734,32 @@ function isDirectBaiduSearchUrl(url) {
   return host === 'news.baidu.com' && /^\/ns(?:\/|$)/.test(path);
 }
 
+function isDirectBaiduTiebaUrl(url) {
+  let parts;
+  try {
+    parts = adapterUrlParts(url);
+  } catch (e) {
+    return false;
+  }
+  return Boolean(parts) && normalizedHostname(parts.parsed.hostname) === 'tieba.baidu.com';
+}
+
 function isBaiduTiebaUrl(url) {
-  const parts = adapterUrlParts(url);
+  if (isDirectBaiduTiebaUrl(url)) return true;
+  let parts;
+  try {
+    parts = adapterUrlParts(url);
+  } catch (e) {
+    return false;
+  }
   if (!parts) return false;
-  return normalizedHostname(parts.parsed.hostname) === 'tieba.baidu.com';
+  const host = parts.parsed.hostname.toLowerCase();
+  if (host !== 'passport.baidu.com' && host !== 'wappass.baidu.com') return false;
+  const targets = [];
+  for (const param of ['backurl', 'u']) {
+    targets.push(...parts.parsed.searchParams.getAll(param));
+  }
+  return targets.length > 0 && targets.every(isDirectBaiduTiebaUrl);
 }
 
 function isBaiduSearchUrl(url) {

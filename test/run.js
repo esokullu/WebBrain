@@ -4607,6 +4607,9 @@ test('matches Baidu Tieba and exposes custom post like controls', () => {
     'https://tieba.baidu.com/f?kw=python',
     'https://tieba.baidu.com/p/11007201094?mo_device=1',
     'https://tieba.baidu.com/mo/q/forum?kw=Python&page=1',
+    'https://wappass.baidu.com/passport/?login&tpl=tb&u=https%3A%2F%2Ftieba.baidu.com%2F',
+    'https://passport.baidu.com/v2/?login&backurl=https%3A%2F%2Ftieba.baidu.com%2Fp%2F11007201094',
+    'https://wappass.baidu.com/static/captcha/tuxing_v2.html?backurl=https%3A%2F%2Ftieba.baidu.com%2F&u=https%3A%2F%2Ftieba.baidu.com%2Ff%3Fkw%3Dpython',
   ];
   for (const url of trustedUrls) {
     assert.equal(getActiveAdapter(url)?.name, 'baidu-tieba');
@@ -4617,6 +4620,9 @@ test('matches Baidu Tieba and exposes custom post like controls', () => {
     'https://tieba.baidu.com.evil.example/p/11007201094',
     'https://www.baidu.com/p/11007201094',
     'https://example.com/?next=https://tieba.baidu.com/p/11007201094',
+    'https://passport.baidu.com/v2/?login',
+    'https://passport.baidu.com/v2/?login&u=https%3A%2F%2Ftieba.baidu.com.evil.example%2F',
+    'https://wappass.baidu.com/passport/?backurl=https%3A%2F%2Ftieba.baidu.com%2F&u=https%3A%2F%2Fmap.baidu.com%2F',
   ]) {
     assert.notEqual(getActiveAdapter(url)?.name, 'baidu-tieba');
     assert.notEqual(getActiveAdapterFx(url)?.name, 'baidu-tieba');
