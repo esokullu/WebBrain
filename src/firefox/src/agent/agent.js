@@ -2870,15 +2870,15 @@ export class Agent extends LoopDetector {
     // than accidentally constraining every attachment in a mixed requirement.
     const rangeCountToken = '(?:\\d+|zero|one|two|three|four|five|six|seven|eight|nine|ten|a|an)';
     const boundedCountRangeRegex = new RegExp(
-      `\\b(?:between\\s+(${rangeCountToken})\\s+and\\s+(${rangeCountToken})|from\\s+(${rangeCountToken})\\s+to\\s+(${rangeCountToken}))`
+      `\\b(?:between\\s+(${rangeCountToken})\\s+and\\s+(${rangeCountToken})|from\\s+(${rangeCountToken})\\s+to\\s+(${rangeCountToken})|(${rangeCountToken})\\s+to\\s+(${rangeCountToken}))`
       + '\\s+(images?|photos?|pictures?|pics?|videos?|clips?|recordings?|gifs?|attachments?|files?|media|uploads?|items?|assets?)\\b',
       'giu',
     );
     const boundedCountRanges = [...text.matchAll(boundedCountRangeRegex)]
       .map(match => {
-        const minimumCount = parseCountWord(match[1] || match[3]);
-        const maximumCount = parseCountWord(match[2] || match[4]);
-        const noun = match[5] || '';
+        const minimumCount = parseCountWord(match[1] || match[3] || match[5]);
+        const maximumCount = parseCountWord(match[2] || match[4] || match[6]);
+        const noun = match[7] || '';
         const kind = RAW_GIF_NOUN_REGEX.test(noun) ? 'gif'
           : RAW_IMAGE_NOUN_REGEX.test(noun) ? 'image'
             : RAW_VIDEO_NOUN_REGEX.test(noun) ? 'video'
@@ -15355,7 +15355,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     // Only list-shaped glue may sit between the two platform mentions. An
     // unrelated branch such as "X or report the blocker; also post on
     // Bluesky" contains `or`, but it does not coordinate the destinations.
-    const directAlternativeBridge = /^\s*(?:(?:page|account|profile)\s*)?(?:,\s*)?(?:(?:or|oder|ou|o|oppure|veya|ya\s+da|\u0438\u043b\u0438|\u043b\u0438\u0431\u043e)(?![\p{L}\p{N}_])|(?:\u6216\u8005|\u6216|\u307e\u305f\u306f|\u305d\u308c\u3068\u3082|\uB610\uB294|\uD639\uC740))\s*(?:(?:post|publish|share|tweet|send|reply|respond)\s+(?:(?:this|that|it|the\s+following)\s+)?)?(?:(?:also\s+)?(?:on|onto|to|via|in|at|en|sur|sobre|\u00e0|au|auf|su|em|na|no|nos|nas|para|\u0432|\u043d\u0430)\s+)?(?:the\s+)?$/iu;
+    const directAlternativeBridge = /^\s*(?:(?:page|account|profile)\s*)?(?:,\s*)?(?:(?:or|oder|ou|o|oppure|veya|ya\s+da|\u0438\u043b\u0438|\u043b\u0438\u0431\u043e)(?![\p{L}\p{N}_])|(?:\u6216\u8005|\u6216|\u307e\u305f\u306f|\u305d\u308c\u3068\u3082|\uB610\uB294|\uD639\uC740))\s*(?:alternatively\s+)?(?:(?:post|publish|share|tweet|send|reply|respond)\s+(?:(?:this|that|it|the\s+following)\s+)?)?(?:(?:also\s+)?(?:on|onto|to|via|in|at|en|sur|sobre|\u00e0|au|auf|su|em|na|no|nos|nas|para|\u0432|\u043d\u0430)\s+)?(?:the\s+)?$/iu;
     const platformPattern = /(?:https?:\/\/(?:www\.)?(?:x\.com|twitter\.com|bsky\.app)(?:[/?#]|$)|(?<![\p{L}\p{N}_])(?:x|twitter|bluesky|bsky\.app)(?![\p{L}\p{N}_]))/giu;
     const texts = [guard?.taskText, guard?.approvedPlanAnchor]
       .map(value => String(value || '').trim())

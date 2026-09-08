@@ -91241,6 +91241,10 @@ test('alternative social destinations require one verified publication, not ever
     }), true, AgentClass.name + ': repeated publish object broke a destination alternative');
     assert.equal(agent._socialPublishTargetsAreAlternatives({
       ...guard,
+      taskText: 'Post this on X or alternatively on Bluesky.',
+    }), true, AgentClass.name + ': alternatively adverb broke a destination choice');
+    assert.equal(agent._socialPublishTargetsAreAlternatives({
+      ...guard,
       taskText: 'Post on X or post this update on Bluesky.',
     }), false, AgentClass.name + ': a distinct repeated payload was weakened to a destination alternative');
   }
@@ -92951,6 +92955,19 @@ test('upper-bound attachment qualifiers verify as maximum counts', () => {
     assert.equal(agent._workflowSocialPublishedAttachmentObserved(
       { value: 'between one and two images' }, { attachments: [image(1), image(2), image(3)] }), false,
       AgentClass.name + ': three images exceeded the bounded range');
+    const bareBoundedImages = agent._parseWorkflowAttachmentRequirement('one to two images');
+    assert.deepEqual(bareBoundedImages.boundedCountRanges, [
+      { minimumCount: 1, maximumCount: 2, kind: 'image' },
+    ], AgentClass.name + ': bare attachment range was not preserved');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one to two images' }, { attachments: [image(1)] }), true,
+      AgentClass.name + ': one image should satisfy a bare one-to-two range');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one to two images' }, { attachments: [image(1), image(2)] }), true,
+      AgentClass.name + ': two images should satisfy a bare one-to-two range');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one to two images' }, { attachments: [image(1), image(2), image(3)] }), false,
+      AgentClass.name + ': three images exceeded the bare one-to-two range');
     assert.equal(agent._workflowSocialPublishedAttachmentObserved(
       { value: 'between one and two images or one video' }, { attachments: [video(1)] }), true,
       AgentClass.name + ': valid video alternative was rejected by the image range');
