@@ -91047,6 +91047,14 @@ test('social destination rebinding refreshes platform-specific payload and uploa
       AgentClass.name + ': X-scoped body recovery selected the Bluesky payload');
     assert.equal(agent._extractWorkflowTaskBody(taskText, '', 'bluesky'), 'Launch',
       AgentClass.name + ': Bluesky-scoped body recovery selected the X payload');
+    assert.equal(agent._extractWorkflowTaskBody('Post "Same body" on X and Bluesky', '', 'twitter'), 'Same body',
+      AgentClass.name + ': X lost a shared multi-platform payload');
+    assert.equal(agent._extractWorkflowTaskBody('Post "Same body" on X and Bluesky', '', 'bluesky'), 'Same body',
+      AgentClass.name + ': Bluesky lost a shared multi-platform payload');
+    assert.equal(agent._extractWorkflowTaskBody('Post on X and "Bluesky only" on Bluesky', '', 'twitter'), '',
+      AgentClass.name + ': Bluesky-specific payload contaminated the X body');
+    assert.equal(agent._extractWorkflowTaskBody('Post on X and "Bluesky only" on Bluesky', '', 'bluesky'), 'Bluesky only',
+      AgentClass.name + ': Bluesky-specific payload was not recovered');
     assert.equal(guard.workflowMetadataRequirementsResolved, true);
     assert.deepEqual(guard.workflowSocialUploadEvidence, [],
       AgentClass.name + ': X upload provenance leaked into the Bluesky binding');
@@ -91138,6 +91146,53 @@ test('multi-platform social publication requires verified evidence for every des
     assert.deepEqual(agent._missingSocialPublishTargets(guard), []);
     assert.equal(agent._executionEvidenceSatisfied(guard), true,
       AgentClass.name + ': both verified platforms did not complete the task');
+  }
+});
+
+test('alternative social destinations require one verified publication, not every named platform', () => {
+  for (const [index, AgentClass] of [AgentCh, AgentFx].entries()) {
+    const agent = new AgentClass({});
+    agent._persist = () => {};
+    const tabId = 9120 + index;
+    const taskText = 'Post this update on either X or Bluesky.';
+    agent.conversations.set(tabId, [
+      { role: 'system', content: 'system' },
+      { role: 'user', content: taskText },
+    ]);
+    const twitterWorkflow = agent._resolvePlannerSiteWorkflow('https://x.com/compose/post', {
+      request_kind: 'execute',
+      site_job: 'publish-post',
+    });
+    const guard = agent._startPlanExecutionGuard(tabId, 'act', {
+      requestKind: 'execute',
+      requiresStateChange: true,
+      requiresSubmission: true,
+      siteWorkflow: twitterWorkflow,
+      siteWorkflowUrl: 'https://x.com/compose/post',
+    });
+    guard.successfulConsequentialToolCalls = 1;
+    guard.evidenceTaskKey = guard.taskKey;
+    assert.deepEqual(agent._missingSocialPublishTargets(guard).sort(), ['bluesky', 'twitter'],
+      AgentClass.name + ': an alternative destination was considered complete before any publication');
+    guard.workflowTerminalEvidence = {
+      bindingKey: agent._adapterWorkflowBindingKey(guard.siteWorkflow),
+      job: guard.siteWorkflow.job.id,
+      verificationKind: agent._workflowVerificationKind(guard.siteWorkflow),
+      source: 'dispatch_bound_published_resource',
+    };
+    guard.verifiedSubmissionEvidence = true;
+    agent._recordSocialPublishTargetSatisfied(guard);
+    assert.deepEqual(guard.socialPublishSatisfiedTargets, ['twitter']);
+    assert.equal(agent._socialPublishTargetsAreAlternatives(guard), true);
+    assert.deepEqual(agent._missingSocialPublishTargets(guard), [],
+      AgentClass.name + ': a verified alternative still required a second public post');
+    assert.equal(agent._executionEvidenceSatisfied(guard), true,
+      AgentClass.name + ': one verified alternative did not complete the publication task');
+
+    const conjunctive = { ...guard, taskText: 'Post this update on both X and Bluesky.' };
+    assert.equal(agent._socialPublishTargetsAreAlternatives(conjunctive), false);
+    assert.deepEqual(agent._missingSocialPublishTargets(conjunctive), ['bluesky'],
+      AgentClass.name + ': conjunctive destinations were weakened to alternatives');
   }
 });
 
@@ -92377,6 +92432,42 @@ test('publish-post alt text is a distinct verified metadata requirement', async 
       'Launch update',
       AgentClass.name + ': masking alt text hid the actual quoted post body',
     );
+    assert.equal(
+      agent._extractWorkflowTaskBody('Post chart.png on X with alt text: Sales growth'),
+      '',
+      AgentClass.name + ': unquoted alt text was misclassified as the post body',
+    );
+
+    const scopedAltDetails = agent._normalizeWorkflowMetadataRequirementsDetails([
+      { field: 'attachment', value: 'chart.png and logo.png' },
+      { field: 'alt_text', attachment: 'chart.png', value: 'Sales chart' },
+      { field: 'alt_text', attachment: 'logo.png', value: 'Company logo' },
+    ]);
+    assert.equal(scopedAltDetails.incomplete, false,
+      AgentClass.name + ': per-attachment alt text entries were rejected as duplicate fields');
+    assert.deepEqual(scopedAltDetails.items, [
+      { field: 'attachment', value: 'chart.png and logo.png' },
+      { field: 'alt_text', value: 'Sales chart', attachment: 'chart.png' },
+      { field: 'alt_text', value: 'Company logo', attachment: 'logo.png' },
+    ]);
+    const correctlyDescribedMedia = {
+      attachments: [
+        { type: 'image', name: 'chart.png', src: 'https://cdn.example/a', alt: 'Sales chart' },
+        { type: 'image', name: 'logo.png', src: 'https://cdn.example/b', alt: 'Company logo' },
+      ],
+    };
+    assert.equal(scopedAltDetails.items.filter(item => item.field === 'alt_text').every(
+      requirement => agent._workflowSocialPublishedAltTextObserved(requirement, correctlyDescribedMedia),
+    ), true, AgentClass.name + ': correct per-attachment alt text did not verify');
+    assert.equal(agent._workflowSocialPublishedAltTextObserved(
+      { field: 'alt_text', attachment: 'chart.png', value: 'Sales chart' },
+      {
+        attachments: [
+          { type: 'image', name: 'chart.png', alt: 'Company logo' },
+          { type: 'image', name: 'logo.png', alt: 'Sales chart' },
+        ],
+      },
+    ), false, AgentClass.name + ': alt text on the wrong attachment was accepted');
 
     const tabId = 9880 + index;
     const siteWorkflow = agent._resolvePlannerSiteWorkflow('https://x.com/home', {
