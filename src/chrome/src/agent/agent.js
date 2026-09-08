@@ -3103,7 +3103,8 @@ export class Agent extends LoopDetector {
     const isGifNegated = GIF_NEGATION_REGEX.test(negationText)
       || Boolean(coordinatedNegatedMedia && RAW_GIF_NOUN_REGEX.test(coordinatedNegatedMedia));
 
-    if (isImageNegated && isVideoNegated) {
+    const hasPositiveGif = RAW_GIF_NOUN_REGEX.test(text) && !isGifNegated;
+    if (isImageNegated && isVideoNegated && !hasPositiveGif) {
       return {
         isGeneric: true,
         isNegative: true,
@@ -3134,6 +3135,12 @@ export class Agent extends LoopDetector {
     const videoFormatQualifier = `${VIDEO_ATTACHMENT_FORMAT}(?:\\s*(?:or|and|/|,)\\s*${VIDEO_ATTACHMENT_FORMAT})*`;
     const formatPostfixLead = '(?:in|as)\\s+(?:the\\s+)?';
     const formatPostfixSuffix = '(?:\\s+formats?)?';
+    const mediaFormatMatchIsNegated = (start) => {
+      const precedingSegment = negationText.slice(0, start)
+        .split(/(?:[,;]|\\s+(?:and|but|plus|also|as\\s+well\\s+as)\\s+)/iu)
+        .pop() || '';
+      return /(?<![\p{L}\p{N}_])(?:no|not(?!\s+only)|without(?:\s+any)?|zero|0)(?![\p{L}\p{N}_])/iu.test(precedingSegment);
+    };
     const collectMediaFormatMatches = (formatQualifier, nounPattern) => {
       const matches = [];
       for (const match of text.matchAll(new RegExp(
@@ -3141,7 +3148,12 @@ export class Agent extends LoopDetector {
         'giu',
       ))) {
         const start = match.index || 0;
-        matches.push({ formats: match[1], start, end: start + match[1].length });
+        matches.push({
+          formats: match[1],
+          start,
+          end: start + match[1].length,
+          isNegated: mediaFormatMatchIsNegated(start),
+        });
       }
       for (const match of text.matchAll(new RegExp(
         `(?<![${SOCIAL_WORD_EDGE}])(?:${nounPattern})(?![${SOCIAL_WORD_EDGE}])\\s+${formatPostfixLead}(${formatQualifier})(?![${SOCIAL_WORD_EDGE}])${formatPostfixSuffix}`,
@@ -3149,7 +3161,12 @@ export class Agent extends LoopDetector {
       ))) {
         const formatOffset = match[0].lastIndexOf(match[1]);
         const start = (match.index || 0) + Math.max(0, formatOffset);
-        matches.push({ formats: match[1], start, end: start + match[1].length });
+        matches.push({
+          formats: match[1],
+          start,
+          end: start + match[1].length,
+          isNegated: mediaFormatMatchIsNegated(start),
+        });
       }
       return matches;
     };
@@ -3157,15 +3174,25 @@ export class Agent extends LoopDetector {
       imageFormatQualifier,
       'images?|photos?|pictures?|pics?',
     );
-    const requestedImageFormats = imageFormatMatches.flatMap(match => [...match.formats.matchAll(new RegExp(IMAGE_ATTACHMENT_FORMAT, 'giu'))]
+    const requestedImageFormats = imageFormatMatches.filter(match => !match.isNegated)
+      .flatMap(match => [...match.formats.matchAll(new RegExp(IMAGE_ATTACHMENT_FORMAT, 'giu'))]
       .map(formatMatch => normalizeAttachmentFormat(formatMatch[0])))
+      .filter((format, index, formats) => formats.indexOf(format) === index);
+    const forbiddenImageFormats = imageFormatMatches.filter(match => match.isNegated)
+      .flatMap(match => [...match.formats.matchAll(new RegExp(IMAGE_ATTACHMENT_FORMAT, 'giu'))]
+        .map(formatMatch => normalizeAttachmentFormat(formatMatch[0])))
       .filter((format, index, formats) => formats.indexOf(format) === index);
     const videoFormatMatches = collectMediaFormatMatches(
       videoFormatQualifier,
       'videos?|clips?|recordings?',
     );
-    const requestedVideoFormats = videoFormatMatches.flatMap(match => [...match.formats.matchAll(new RegExp(VIDEO_ATTACHMENT_FORMAT, 'giu'))]
+    const requestedVideoFormats = videoFormatMatches.filter(match => !match.isNegated)
+      .flatMap(match => [...match.formats.matchAll(new RegExp(VIDEO_ATTACHMENT_FORMAT, 'giu'))]
       .map(formatMatch => normalizeAttachmentFormat(formatMatch[0])))
+      .filter((format, index, formats) => formats.indexOf(format) === index);
+    const forbiddenVideoFormats = videoFormatMatches.filter(match => match.isNegated)
+      .flatMap(match => [...match.formats.matchAll(new RegExp(VIDEO_ATTACHMENT_FORMAT, 'giu'))]
+        .map(formatMatch => normalizeAttachmentFormat(formatMatch[0])))
       .filter((format, index, formats) => formats.indexOf(format) === index);
     const mediaFormatQualifierSpans = [...imageFormatMatches, ...videoFormatMatches]
       .map(match => [match.start, match.end]);
@@ -3471,9 +3498,15 @@ export class Agent extends LoopDetector {
         `(?<![${SOCIAL_WORD_EDGE}])(${countPrefix})(?![${SOCIAL_WORD_EDGE}])\\s+(?:${nounPattern})(?![${SOCIAL_WORD_EDGE}])\\s+${formatPostfixLead}(${formatPattern})(?![${SOCIAL_WORD_EDGE}])${formatPostfixSuffix}`,
         'giu',
       )),
-    ].map(match => parseMediaCountMatch(match, normalizeAttachmentFormat(match[2])))
-      .filter(requirement => requirement.exactCount > 0
-        || requirement.minimumCount > 0 || requirement.maximumCount > 0);
+    ].map((match) => {
+      const requirement = parseMediaCountMatch(match, normalizeAttachmentFormat(match[2]));
+      const formatOffset = match[0].lastIndexOf(match[2]);
+      return {
+        ...requirement,
+        isNegated: mediaFormatMatchIsNegated((match.index || 0) + Math.max(0, formatOffset)),
+      };
+    }).filter(requirement => !requirement.isNegated && (requirement.exactCount > 0
+        || requirement.minimumCount > 0 || requirement.maximumCount > 0));
     const collectUnrestrictedCountRequirements = nounPattern => [...text.matchAll(new RegExp(
       `(?<![${SOCIAL_WORD_EDGE}])(${countPrefix})(?![${SOCIAL_WORD_EDGE}])\\s+(?:${nounPattern})(?![${SOCIAL_WORD_EDGE}])`,
       'giu',
@@ -3931,6 +3964,8 @@ export class Agent extends LoopDetector {
       wantsGif,
       requestedImageFormats,
       requestedVideoFormats,
+      forbiddenImageFormats,
+      forbiddenVideoFormats,
       imageFormatCounts,
       videoFormatCounts,
       imageFormatConstraints,
@@ -4173,6 +4208,8 @@ export class Agent extends LoopDetector {
     const videoCount = rawAttachments.filter(isVideoAttachment).length;
     const gifCount = rawAttachments.filter(isGifAttachment).length;
     const ordinaryVideoCount = ordinaryVideoAttachments.length;
+    if (imageAttachments.some(att => parsed.forbiddenImageFormats?.includes(attachmentFormat(att)))) return false;
+    if (ordinaryVideoAttachments.some(att => parsed.forbiddenVideoFormats?.includes(attachmentFormat(att)))) return false;
     if (!parsed.imageUnrestrictedConstraint
         && !attachmentsMatchFormats(parsed.requestedImageFormats, imageAttachments)) return false;
     if (!parsed.videoUnrestrictedConstraint

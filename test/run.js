@@ -93069,6 +93069,26 @@ test('upper-bound attachment qualifiers verify as maximum counts', () => {
     assert.equal(agent._workflowSocialPublishedAttachmentObserved(
       { value: 'one video in MP4 format' }, { attachments: [{ type: 'video', src: 'https://cdn.example/a.webm' }] }), false,
       AgentClass.name + ': a WebM video satisfied a postfix MP4 contract');
+    const pngWithoutJpeg = agent._parseWorkflowAttachmentRequirement('one PNG image and no JPEG images');
+    assert.deepEqual(pngWithoutJpeg.requestedImageFormats, ['png'],
+      AgentClass.name + ': a negated JPEG qualifier was folded into the allowed image formats');
+    assert.deepEqual(pngWithoutJpeg.forbiddenImageFormats, ['jpeg'],
+      AgentClass.name + ': a negated JPEG qualifier was not retained');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one PNG image and no JPEG images' }, { attachments: [image(1)] }), true,
+      AgentClass.name + ': the required PNG was rejected by a separate JPEG prohibition');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one PNG image and no JPEG images' }, { attachments: [{ type: 'image', src: 'https://cdn.example/a.jpg' }] }), false,
+      AgentClass.name + ': an explicitly prohibited JPEG satisfied the image contract');
+    const mp4WithoutWebm = agent._parseWorkflowAttachmentRequirement('one video in MP4 format and no WebM videos');
+    assert.deepEqual(mp4WithoutWebm.requestedVideoFormats, ['mp4']);
+    assert.deepEqual(mp4WithoutWebm.forbiddenVideoFormats, ['webm']);
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one video in MP4 format and no WebM videos' }, { attachments: [video(1)] }), true,
+      AgentClass.name + ': the required MP4 was rejected by a separate WebM prohibition');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one video in MP4 format and no WebM videos' }, { attachments: [{ type: 'video', src: 'https://cdn.example/a.webm' }] }), false,
+      AgentClass.name + ': an explicitly prohibited WebM satisfied the video contract');
     const pngOrJpegImage = agent._parseWorkflowAttachmentRequirement('one PNG or JPEG image');
     assert.equal(pngOrJpegImage.isGeneric, true,
       AgentClass.name + ': a coordinated image-format choice was parsed as filenames');
@@ -93338,6 +93358,22 @@ test('upper-bound attachment qualifiers verify as maximum counts', () => {
           AgentClass.name + `: forbidden media satisfied "${coordinatedNegative}"`);
       }
     }
+    const gifWithOtherTypesProhibited = agent._parseWorkflowAttachmentRequirement(
+      'one GIF but no images or videos',
+    );
+    assert.notEqual(gifWithOtherTypesProhibited.wantsNone, true,
+      AgentClass.name + ': broad media negation discarded an affirmative GIF');
+    assert.equal(gifWithOtherTypesProhibited.wantsGif, true,
+      AgentClass.name + ': an affirmative GIF was treated as negated');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one GIF but no images or videos' }, { attachments: [gif(1)] }), true,
+      AgentClass.name + ': a GIF did not satisfy the positive GIF-only contract');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one GIF but no images or videos' }, { attachments: [video(1)] }), false,
+      AgentClass.name + ': an ordinary video satisfied the positive GIF-only contract');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one GIF but no images or videos' }, { attachments: [gif(1), image(1)] }), false,
+      AgentClass.name + ': a prohibited image survived beside the required GIF');
     assert.equal(agent._workflowSocialPublishedAttachmentObserved(
       { value: 'one image and no videos or GIFs' }, { attachments: [image(1)] }), true,
       AgentClass.name + ': embedded coordinated media negation rejected the required image');
