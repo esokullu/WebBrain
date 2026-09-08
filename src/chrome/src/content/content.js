@@ -266,8 +266,16 @@
     }
   }
 
+  function _isStandardInteractive(el) {
+    try {
+      return INTERACTIVE_SELECTORS.some(selector => el.matches(selector));
+    } catch {
+      return false;
+    }
+  }
+
   function _isUsableSiteInteractive(el) {
-    return !_isSiteSelectorCandidate(el) || _isSiteInteractive(el);
+    return _isStandardInteractive(el) || !_isSiteSelectorCandidate(el) || _isSiteInteractive(el);
   }
 
   function _composedParent(node) {

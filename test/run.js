@@ -4695,6 +4695,26 @@ test('matches Baidu Tieba and exposes custom post and reply controls', () => {
     assert.match(content, /\.\.\._siteInteractiveSelectors\(\)/, `${label}: Tieba selectors must reach content discovery`);
     assert.match(content, /if \(_isSiteInteractive\(node\)\) return true/, `${label}: Tieba controls must be interactive`);
     assert.match(content, /_isUsableSiteInteractive\(el\)/, `${label}: broad Tieba selectors must filter non-like action wrappers`);
+    const filterStart = content.indexOf('  const INTERACTIVE_SELECTORS = [');
+    const filterEnd = content.indexOf('\n\n  function _composedParent', filterStart);
+    assert.ok(filterStart >= 0 && filterEnd > filterStart, `${label}: site-interaction filter slice must have valid bounds`);
+    const filterContext = {
+      window: {
+        __wbSiteInteractions: {
+          selectors: () => [firstFloorSelector],
+          isInteractive: el => el.siteInteractive === true,
+        },
+      },
+    };
+    vm.runInNewContext(`${content.slice(filterStart, filterEnd)}\nthis.isUsableSiteInteractive = _isUsableSiteInteractive;`, filterContext);
+    const candidate = ({ nativeSelector = '', siteInteractive = false } = {}) => ({
+      siteInteractive,
+      matches: selector => selector === firstFloorSelector || selector === nativeSelector,
+    });
+    assert.equal(filterContext.isUsableSiteInteractive(candidate({ siteInteractive: true })), true, `${label}: valid custom actions must remain discoverable`);
+    assert.equal(filterContext.isUsableSiteInteractive(candidate()), false, `${label}: non-interactive broad-selector wrappers must remain filtered`);
+    assert.equal(filterContext.isUsableSiteInteractive(candidate({ nativeSelector: 'a[href]' })), true, `${label}: native links must survive broad site-rule filtering`);
+    assert.equal(filterContext.isUsableSiteInteractive(candidate({ nativeSelector: '[role="button"]' })), true, `${label}: ARIA controls must survive broad site-rule filtering`);
   }
 
   const cdp = fs.readFileSync(path.join(ROOT, 'src/chrome/src/cdp/cdp-client.js'), 'utf8');
@@ -4705,7 +4725,8 @@ test('matches Baidu Tieba and exposes custom post and reply controls', () => {
   assert.match(cdp, /comment_comment/);
   assert.match(cdp, /publish-btn.*发布/);
   assert.match(cdp, /agree_comment/);
-  assert.match(cdp, /matchesAnySiteSelector\(el\)[\s\S]*matchesSiteRule\(el, rule\)/);
+  assert.match(cdp, /NATIVE_SELECTORS[\s\S]*matchesNativeInteractive\(el\)/);
+  assert.match(cdp, /!matchesNativeInteractive\(el\)[\s\S]*matchesAnySiteSelector\(el\)[\s\S]*matchesSiteRule\(el, rule\)/);
 });
 
 test('matches twitter.com and x.com', () => {

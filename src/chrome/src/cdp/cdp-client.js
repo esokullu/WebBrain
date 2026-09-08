@@ -2933,14 +2933,14 @@ export class CDPClient {
           ['.pc-pb-reply-box', '回复'],
           ['.pc-pb-reply-box .publish-btn', '发布'],
         ] : [];
-        const SELECTORS = [
+        const NATIVE_SELECTORS = [
           'a[href]', 'button', 'input:not([type="hidden"])', 'textarea', 'select',
           '[role="button"]', '[role="link"]', '[role="tab"]', '[role="menuitem"]',
           '[role="textbox"]', '[role="combobox"]', '[role="searchbox"]',
           '[contenteditable=""]', '[contenteditable="true"]', '[contenteditable="plaintext-only"]',
-          '[onclick]', '[data-action]', 'summary', 'label',
-          ...SITE_RULES.map(([selector]) => selector)
+          '[onclick]', '[data-action]', 'summary', 'label'
         ];
+        const SELECTORS = [...NATIVE_SELECTORS, ...SITE_RULES.map(([selector]) => selector)];
 
         function matchesSiteRule(el, [selector, , iconHref]) {
           try {
@@ -2957,6 +2957,16 @@ export class CDPClient {
 
         function matchesAnySiteSelector(el) {
           return SITE_RULES.some(([selector]) => {
+            try {
+              return el.matches(selector);
+            } catch (e) {
+              return false;
+            }
+          });
+        }
+
+        function matchesNativeInteractive(el) {
+          return NATIVE_SELECTORS.some((selector) => {
             try {
               return el.matches(selector);
             } catch (e) {
@@ -3013,7 +3023,7 @@ export class CDPClient {
         let index = 0;
         all.forEach((el) => {
           if (!isVisiblyInteractive(el)) return;
-          if (matchesAnySiteSelector(el) && !SITE_RULES.some(rule => matchesSiteRule(el, rule))) return;
+          if (!matchesNativeInteractive(el) && matchesAnySiteSelector(el) && !SITE_RULES.some(rule => matchesSiteRule(el, rule))) return;
           const rect = el.getBoundingClientRect();
           elements.push({
             index: index++,
