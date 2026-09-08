@@ -3132,22 +3132,43 @@ export class Agent extends LoopDetector {
     const normalizeAttachmentFormat = format => (/^jpe?g$/iu.test(format) ? 'jpeg' : String(format || '').toLowerCase());
     const imageFormatQualifier = `${IMAGE_ATTACHMENT_FORMAT}(?:\\s*(?:or|and|/|,)\\s*${IMAGE_ATTACHMENT_FORMAT})*`;
     const videoFormatQualifier = `${VIDEO_ATTACHMENT_FORMAT}(?:\\s*(?:or|and|/|,)\\s*${VIDEO_ATTACHMENT_FORMAT})*`;
-    const imageFormatMatches = [...text.matchAll(new RegExp(
-      `(?<![${SOCIAL_WORD_EDGE}])(${imageFormatQualifier})(?![${SOCIAL_WORD_EDGE}])\\s+(?:images?|photos?|pictures?|pics?)`,
-      'giu',
-    ))];
-    const requestedImageFormats = imageFormatMatches.flatMap(match => [...match[1].matchAll(new RegExp(IMAGE_ATTACHMENT_FORMAT, 'giu'))]
+    const formatPostfixLead = '(?:in|as)\\s+(?:the\\s+)?';
+    const formatPostfixSuffix = '(?:\\s+formats?)?';
+    const collectMediaFormatMatches = (formatQualifier, nounPattern) => {
+      const matches = [];
+      for (const match of text.matchAll(new RegExp(
+        `(?<![${SOCIAL_WORD_EDGE}])(${formatQualifier})(?![${SOCIAL_WORD_EDGE}])\\s+(?:${nounPattern})`,
+        'giu',
+      ))) {
+        const start = match.index || 0;
+        matches.push({ formats: match[1], start, end: start + match[1].length });
+      }
+      for (const match of text.matchAll(new RegExp(
+        `(?<![${SOCIAL_WORD_EDGE}])(?:${nounPattern})(?![${SOCIAL_WORD_EDGE}])\\s+${formatPostfixLead}(${formatQualifier})(?![${SOCIAL_WORD_EDGE}])${formatPostfixSuffix}`,
+        'giu',
+      ))) {
+        const formatOffset = match[0].lastIndexOf(match[1]);
+        const start = (match.index || 0) + Math.max(0, formatOffset);
+        matches.push({ formats: match[1], start, end: start + match[1].length });
+      }
+      return matches;
+    };
+    const imageFormatMatches = collectMediaFormatMatches(
+      imageFormatQualifier,
+      'images?|photos?|pictures?|pics?',
+    );
+    const requestedImageFormats = imageFormatMatches.flatMap(match => [...match.formats.matchAll(new RegExp(IMAGE_ATTACHMENT_FORMAT, 'giu'))]
       .map(formatMatch => normalizeAttachmentFormat(formatMatch[0])))
       .filter((format, index, formats) => formats.indexOf(format) === index);
-    const videoFormatMatches = [...text.matchAll(new RegExp(
-      `(?<![${SOCIAL_WORD_EDGE}])(${videoFormatQualifier})(?![${SOCIAL_WORD_EDGE}])\\s+(?:videos?|clips?|recordings?)`,
-      'giu',
-    ))];
-    const requestedVideoFormats = videoFormatMatches.flatMap(match => [...match[1].matchAll(new RegExp(VIDEO_ATTACHMENT_FORMAT, 'giu'))]
+    const videoFormatMatches = collectMediaFormatMatches(
+      videoFormatQualifier,
+      'videos?|clips?|recordings?',
+    );
+    const requestedVideoFormats = videoFormatMatches.flatMap(match => [...match.formats.matchAll(new RegExp(VIDEO_ATTACHMENT_FORMAT, 'giu'))]
       .map(formatMatch => normalizeAttachmentFormat(formatMatch[0])))
       .filter((format, index, formats) => formats.indexOf(format) === index);
     const mediaFormatQualifierSpans = [...imageFormatMatches, ...videoFormatMatches]
-      .map(match => [match.index || 0, (match.index || 0) + match[1].length]);
+      .map(match => [match.start, match.end]);
 
     const parseCountWord = (str) => {
       if (!str) return 0;
@@ -3233,7 +3254,9 @@ export class Agent extends LoopDetector {
       : text;
     const countText = rawCountText
       .replace(new RegExp(`(?<![${SOCIAL_WORD_EDGE}])${imageFormatQualifier}(?![${SOCIAL_WORD_EDGE}])(?=\\s+(?:images?|photos?|pictures?|pics?))`, 'giu'), '')
-      .replace(new RegExp(`(?<![${SOCIAL_WORD_EDGE}])${videoFormatQualifier}(?![${SOCIAL_WORD_EDGE}])(?=\\s+(?:videos?|clips?|recordings?))`, 'giu'), '');
+      .replace(new RegExp(`(?<![${SOCIAL_WORD_EDGE}])${videoFormatQualifier}(?![${SOCIAL_WORD_EDGE}])(?=\\s+(?:videos?|clips?|recordings?))`, 'giu'), '')
+      .replace(new RegExp(`((?:images?|photos?|pictures?|pics?))\\s+${formatPostfixLead}${imageFormatQualifier}(?![${SOCIAL_WORD_EDGE}])${formatPostfixSuffix}`, 'giu'), '$1')
+      .replace(new RegExp(`((?:videos?|clips?|recordings?))\\s+${formatPostfixLead}${videoFormatQualifier}(?![${SOCIAL_WORD_EDGE}])${formatPostfixSuffix}`, 'giu'), '$1');
 
     let isGeneric = false;
     if (CJK_GENERIC_ATTACHMENT_REGEX.test(countText)) {
@@ -3439,12 +3462,18 @@ export class Agent extends LoopDetector {
         end: start + match[0].length,
       };
     };
-    const collectFormatCountRequirements = (formatPattern, nounPattern) => [...text.matchAll(new RegExp(
-      `(?<![${SOCIAL_WORD_EDGE}])(${countPrefix})(?![${SOCIAL_WORD_EDGE}])\\s+(${formatPattern})(?![${SOCIAL_WORD_EDGE}])\\s+(?:${nounPattern})`,
-      'giu',
-    ))].map(match => parseMediaCountMatch(match, normalizeAttachmentFormat(match[2])))
+    const collectFormatCountRequirements = (formatPattern, nounPattern) => [
+      ...text.matchAll(new RegExp(
+        `(?<![${SOCIAL_WORD_EDGE}])(${countPrefix})(?![${SOCIAL_WORD_EDGE}])\\s+(${formatPattern})(?![${SOCIAL_WORD_EDGE}])\\s+(?:${nounPattern})`,
+        'giu',
+      )),
+      ...text.matchAll(new RegExp(
+        `(?<![${SOCIAL_WORD_EDGE}])(${countPrefix})(?![${SOCIAL_WORD_EDGE}])\\s+(?:${nounPattern})(?![${SOCIAL_WORD_EDGE}])\\s+${formatPostfixLead}(${formatPattern})(?![${SOCIAL_WORD_EDGE}])${formatPostfixSuffix}`,
+        'giu',
+      )),
+    ].map(match => parseMediaCountMatch(match, normalizeAttachmentFormat(match[2])))
       .filter(requirement => requirement.exactCount > 0
-      || requirement.minimumCount > 0 || requirement.maximumCount > 0);
+        || requirement.minimumCount > 0 || requirement.maximumCount > 0);
     const collectUnrestrictedCountRequirements = nounPattern => [...text.matchAll(new RegExp(
       `(?<![${SOCIAL_WORD_EDGE}])(${countPrefix})(?![${SOCIAL_WORD_EDGE}])\\s+(?:${nounPattern})(?![${SOCIAL_WORD_EDGE}])`,
       'giu',
@@ -3489,10 +3518,14 @@ export class Agent extends LoopDetector {
     );
     const parsedImageUnrestrictedConstraints = collectUnrestrictedCountRequirements(
       'images?|photos?|pictures?|pics?',
-    );
+    ).filter(requirement => !parsedImageFormatConstraints.some(formatted => (
+      formatted.start === requirement.start && formatted.end > requirement.end
+    )));
     const parsedVideoUnrestrictedConstraints = collectUnrestrictedCountRequirements(
       'videos?|clips?|recordings?',
-    );
+    ).filter(requirement => !parsedVideoFormatConstraints.some(formatted => (
+      formatted.start === requirement.start && formatted.end > requirement.end
+    )));
     const imageMediaConstraints = aggregateFormatConstraints([
       ...parsedImageFormatConstraints,
       ...parsedImageUnrestrictedConstraints,
@@ -17835,7 +17868,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     // matching would leave it unbound.
     const publishesTo = (platform) => {
       const destPreps = '(?:on|onto|to|via|in|at|en|sur|sobre|\u00e0|au|auf|su|em|na|no|nos|nas|para|\u0432|\u043d\u0430)';
-      const coordConj = '(?:and|und|et|e|y|ve|и|oder|or|ou|o|as\\s+well\\s+as|&|\\/)';
+      const coordConj = '(?:and|und|et|e|y|ve|и|oder|or|ou|o|as\\s+well\\s+as|alongside|together\\s+with|&|\\/)';
       const listModifiers = '(?:both|either|all|one\\s+of(?:\\s+the)?|ambos|ambas|entrambi|entrambe|beide|beiden|les\\s+deux|tous\\s+les\\s+deux|\u043e\u0431\u0430|\u043e\u0431\u0435|\u4e24\u8005|\u4e24\u4e2a|\u4e24|\u4e21\u65b9|\u4e21\u8005|\u4e21|\ub458\\s*\ub2e4|\ub458|\uc591\uc790|\uc591)';
       const coordItem = `(?:the\\s+)?(?:${listModifiers}\\s+)?[a-z0-9_.-]+(?:\\s+page|\\s+account|\\s+profile)?`;
       const coordPrefix = `(?:${coordItem}(?:\\s*,\\s*${coordItem})*\\s*(?:,\\s*${coordConj}|,|;|\\s+${coordConj})\\s+(?:the\\s+)?)`;
@@ -18045,6 +18078,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     // unrelated branch such as "X or report the blocker; also post on
     // Bluesky" contains `or`, but it does not coordinate the destinations.
     const directAlternativeBridge = /^\s*(?:(?:page|account|profile)\s*)?(?:,\s*)?(?:(?:or|oder|ou|o|oppure|veya|ya\s+da|\u0438\u043b\u0438|\u043b\u0438\u0431\u043e)(?![\p{L}\p{N}_])|(?:\u6216\u8005|\u6216|\u307e\u305f\u306f|\u305d\u308c\u3068\u3082|\uB610\uB294|\uD639\uC740))\s*(?:(?:alternatively|else)\s+)?(?:(?:post|publish|share|tweet|send|reply|respond)\s+(?:(?:this|that|it|the\s+following)\s+)?)?(?:(?:also\s+)?(?:on|onto|to|via|in|at|en|sur|sobre|\u00e0|au|auf|su|em|na|no|nos|nas|para|\u0432|\u043d\u0430)\s+)?(?:the\s+)?$/iu;
+    const explicitAlternativeBridge = /^\s*(?:(?:page|account|profile)\s*)?(?:,\s*)?(?:alternatively(?:\s+(?:on|onto|to|via|in|at))?|as\s+an\s+alternative\s+to)\s+(?:the\s+)?$/iu;
     const oneOfAlternativeLead = /(?<![\p{L}\p{N}_])one\s+of\s+(?:the\s+)?$/iu;
     const oneOfAlternativeBridge = /^\s*(?:,\s*)?(?:and|or)\s+(?:the\s+)?$/iu;
     const platformPattern = /(?:https?:\/\/(?:www\.)?(?:x\.com|twitter\.com|bsky\.app)(?:[/?#][^\s<>"'`\u3002\u3001\uff0c\uff1b\uff1a\uff01\uff1f\u2026\u2025]*|(?=[\s<>"'`\u3002\u3001\uff0c\uff1b\uff1a\uff01\uff1f\u2026\u2025,;!?]|$))|(?<![\p{L}\p{N}_])(?:x|twitter|bluesky|bsky\.app)(?![\p{L}\p{N}_]))/giu;
@@ -18069,6 +18103,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         if (left.name === right.name) continue;
         const bridge = masked.slice(left.end, right.index);
         if (directAlternativeBridge.test(bridge)
+            || explicitAlternativeBridge.test(bridge)
             || (oneOfAlternativeLead.test(masked.slice(0, left.index))
               && oneOfAlternativeBridge.test(bridge))) return true;
       }

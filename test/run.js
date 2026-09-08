@@ -91315,8 +91315,31 @@ test('alternative social destinations require one verified publication, not ever
     }), true, AgentClass.name + ': alternatively adverb broke a destination choice');
     assert.equal(agent._socialPublishTargetsAreAlternatives({
       ...guard,
+      taskText: 'Post on X, alternatively Bluesky.',
+    }), true, AgentClass.name + ': a direct alternatively bridge required a second public post');
+    assert.equal(agent._socialPublishTargetsAreAlternatives({
+      ...guard,
+      taskText: 'Post on X as an alternative to Bluesky.',
+    }), true, AgentClass.name + ': an explicit alternative-to bridge required a second public post');
+    assert.equal(agent._socialPublishTargetsAreAlternatives({
+      ...guard,
       taskText: 'Post on X or else Bluesky.',
     }), true, AgentClass.name + ': or-else bridge turned alternative destinations into two mandatory posts');
+    for (const taskText of [
+      'Post this on X alongside Bluesky.',
+      'Post this on X together with Bluesky.',
+    ]) {
+      const conjunctiveList = { ...guard, taskText };
+      assert.deepEqual(
+        [...agent._trustedSocialPublishTargetAdapters(conjunctiveList)].sort(),
+        ['bluesky', 'twitter'],
+        AgentClass.name + ': a conjunctive destination bridge omitted a requested platform',
+      );
+      assert.equal(agent._socialPublishTargetsAreAlternatives(conjunctiveList), false,
+        AgentClass.name + ': a conjunctive destination bridge became a one-of choice');
+      assert.deepEqual(agent._missingSocialPublishTargets(conjunctiveList), ['bluesky'],
+        AgentClass.name + ': a conjunctive destination bridge allowed completion after one post');
+    }
     assert.equal(agent._socialPublishTargetsAreAlternatives({
       ...guard,
       taskText: 'Post on https://x.com/home or https://bsky.app/.',
@@ -93018,6 +93041,34 @@ test('upper-bound attachment qualifiers verify as maximum counts', () => {
     assert.equal(agent._workflowSocialPublishedAttachmentObserved(
       { value: 'one MP4 video' }, { attachments: [{ type: 'video', src: 'https://video.twimg.com/media/video1.webm' }] }), false,
       AgentClass.name + ': a WebM video satisfied an MP4-only contract');
+    const postfixPngImage = agent._parseWorkflowAttachmentRequirement('one image in PNG format');
+    assert.equal(postfixPngImage.isGeneric, true,
+      AgentClass.name + ': a postfix PNG qualifier was parsed as a filename');
+    assert.deepEqual(postfixPngImage.specificTargets, [],
+      AgentClass.name + ': a postfix PNG qualifier created a specific target');
+    assert.deepEqual(postfixPngImage.requestedImageFormats, ['png']);
+    assert.equal(postfixPngImage.expectedImageCount, 1,
+      AgentClass.name + ': a postfix format duplicated the image count as an unrestricted slot');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one image in PNG format' }, { attachments: [image(1)] }), true,
+      AgentClass.name + ': a PNG image did not satisfy its postfix format contract');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one image in PNG format' }, { attachments: [{ type: 'image', src: 'https://cdn.example/a.jpg' }] }), false,
+      AgentClass.name + ': a JPEG image satisfied a postfix PNG contract');
+    const postfixMp4Video = agent._parseWorkflowAttachmentRequirement('one video in MP4 format');
+    assert.equal(postfixMp4Video.isGeneric, true,
+      AgentClass.name + ': a postfix MP4 qualifier was parsed as a filename');
+    assert.deepEqual(postfixMp4Video.specificTargets, [],
+      AgentClass.name + ': a postfix MP4 qualifier created a specific target');
+    assert.deepEqual(postfixMp4Video.requestedVideoFormats, ['mp4']);
+    assert.equal(postfixMp4Video.expectedVideoCount, 1,
+      AgentClass.name + ': a postfix format duplicated the video count as an unrestricted slot');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one video in MP4 format' }, { attachments: [video(1)] }), true,
+      AgentClass.name + ': an MP4 video did not satisfy its postfix format contract');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one video in MP4 format' }, { attachments: [{ type: 'video', src: 'https://cdn.example/a.webm' }] }), false,
+      AgentClass.name + ': a WebM video satisfied a postfix MP4 contract');
     const pngOrJpegImage = agent._parseWorkflowAttachmentRequirement('one PNG or JPEG image');
     assert.equal(pngOrJpegImage.isGeneric, true,
       AgentClass.name + ': a coordinated image-format choice was parsed as filenames');
