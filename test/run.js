@@ -93227,6 +93227,90 @@ test('attachment verification matches specific attachment names without substrin
     );
     assert.equal(wrongSecondAttachment, false, AgentClass.name + ': wrong second attachment should reject');
 
+    const namedAlternatives = agent._parseWorkflowAttachmentRequirement({
+      value: 'chart.png or graph.png',
+    });
+    assert.deepEqual(namedAlternatives.specificTargetAlternatives, [['chart.png'], ['graph.png']],
+      AgentClass.name + ': named attachment alternatives were flattened into one required set');
+    for (const allowedName of ['chart.png', 'graph.png']) {
+      assert.equal(
+        agent._workflowSocialPublishedAttachmentObserved(
+          { value: 'chart.png or graph.png' },
+          { attachments: [{ type: 'image', src: `https://pbs.twimg.com/media/${allowedName}` }] },
+        ),
+        true,
+        AgentClass.name + `: permitted attachment alternative ${allowedName} was rejected`,
+      );
+    }
+    assert.equal(
+      agent._workflowSocialPublishedAttachmentObserved(
+        { value: 'chart.png or graph.png' },
+        {
+          attachments: [
+            { type: 'image', src: 'https://pbs.twimg.com/media/chart.png' },
+            { type: 'image', src: 'https://pbs.twimg.com/media/graph.png' },
+          ],
+        },
+      ),
+      false,
+      AgentClass.name + ': both alternatives were accepted when exactly one was requested',
+    );
+    assert.equal(
+      agent._workflowSocialPublishedAttachmentObserved(
+        { value: 'chart.png or graph.png' },
+        { attachments: [{ type: 'image', src: 'https://pbs.twimg.com/media/other.png' }] },
+      ),
+      false,
+      AgentClass.name + ': unrelated media satisfied a named attachment alternative',
+    );
+    assert.deepEqual(
+      agent._parseWorkflowAttachmentRequirement('either chart.png or graph.png').specificTargetAlternatives,
+      [['chart.png'], ['graph.png']],
+      AgentClass.name + ': either modifier became part of a filename alternative',
+    );
+    assert.deepEqual(
+      agent._parseWorkflowAttachmentRequirement('report-or-draft.png').specificTargetAlternatives,
+      [],
+      AgentClass.name + ': disjunction text inside one hyphenated filename created alternatives',
+    );
+    const groupedAlternatives = agent._parseWorkflowAttachmentRequirement({
+      value: 'chart.png and logo.png or summary.jpg',
+    });
+    assert.deepEqual(groupedAlternatives.specificTargetAlternatives,
+      [['chart.png', 'logo.png'], ['summary.jpg']],
+      AgentClass.name + ': conjunctive groups inside attachment alternatives were not preserved');
+    assert.equal(
+      agent._workflowSocialPublishedAttachmentObserved(
+        { value: 'chart.png and logo.png or summary.jpg' },
+        {
+          attachments: [
+            { type: 'image', src: 'https://pbs.twimg.com/media/chart.png' },
+            { type: 'image', src: 'https://pbs.twimg.com/media/logo.png' },
+          ],
+        },
+      ),
+      true,
+      AgentClass.name + ': complete conjunctive alternative group was rejected',
+    );
+    assert.equal(
+      agent._workflowSocialPublishedAttachmentObserved(
+        { value: 'chart.png and logo.png or summary.jpg' },
+        { attachments: [{ type: 'image', src: 'https://pbs.twimg.com/media/chart.png' }] },
+      ),
+      false,
+      AgentClass.name + ': incomplete conjunctive alternative group was accepted',
+    );
+    for (const [allowedName, type] of [['chart.png', 'image'], ['clip.mp4', 'video']]) {
+      assert.equal(
+        agent._workflowSocialPublishedAttachmentObserved(
+          { value: 'chart.png or clip.mp4' },
+          { attachments: [{ type, src: `https://cdn.example/${allowedName}` }] },
+        ),
+        true,
+        AgentClass.name + `: cross-type named alternative ${allowedName} was rejected`,
+      );
+    }
+
     // Multilingual conjunctions / delimiters in specific targets
     for (const conjCase of [
       'image1.png, image2.png',

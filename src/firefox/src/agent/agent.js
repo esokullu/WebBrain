@@ -2590,7 +2590,7 @@ export class Agent extends LoopDetector {
     return segments;
   }
 
-  _parseSpecificAttachmentTargets(value) {
+  _parseSpecificAttachmentTargets(value, splitOverride = null) {
     let text = String(value || '').trim();
     if (!text) return [];
     // A quoted span is one filename however many conjunctions it holds, so
@@ -2612,7 +2612,8 @@ export class Agent extends LoopDetector {
       (whole, index) => (quotedNames[Number(index)] !== undefined ? quotedNames[Number(index)] : whole),
     );
     text = text.replace(/^['"“”«»`]+|['"“”«»`]+$/g, '').trim();
-    const splitRegex = /(?:\s*[,;\n，、]\s*(?:and|und|et|e|y|ve|и|oder|or|as\s+well\s+as|&)\s*|\s*[,;\n，、]\s*|\s+(?:and|und|et|e|y|ve|и|oder|or|as\s+well\s+as|&)\s+|[와과및]\s*|[和与及以及]\s*|(?<=\.[a-z0-9]{2,5})\s*(?:と|や)\s*)/i;
+    const splitRegex = splitOverride
+      || /(?:\s*[,;\n，、]\s*(?:and|und|et|e|y|ve|и|oder|or|as\s+well\s+as|&)\s*|\s*[,;\n，、]\s*|\s+(?:and|und|et|e|y|ve|и|oder|or|as\s+well\s+as|&)\s+|[와과및]\s*|[和与及以及]\s*|(?<=\.[a-z0-9]{2,5})\s*(?:と|や)\s*)/i;
     const parts = this._splitAttachmentTargetList(text, splitRegex)
       .map(p => restoreQuoted(p).trim())
       .filter(Boolean);
@@ -2964,6 +2965,7 @@ export class Agent extends LoopDetector {
 
     let hasExplicitGenericCount = false;
     let expectedCount = 1;
+    let namedTargetAlternatives = [];
     if (isGeneric) {
       const combinedVideoCount = expectedVideoCount + expectedGifCount;
       if (isAlternative) {
@@ -3009,10 +3011,27 @@ export class Agent extends LoopDetector {
       }
     } else {
       const specificTargets = this._parseSpecificAttachmentTargets(rawVal);
-      if (specificTargets.length > 1) {
+      // Word joiners need surrounding whitespace so a filename such as
+      // report-or-draft.png remains one target. CJK joiners need no spaces.
+      const disjunctionSplit = /(?:\s+(?:or|oder|ou|o|oppure|или|либо|veya|ya\s+da)\s+|\s*(?:或者|或|または|それとも|또는|혹은)\s*)/iu;
+      const specificTargetAlternatives = DISJUNCTION_REGEX.test(text)
+        ? this._parseSpecificAttachmentTargets(rawVal, disjunctionSplit)
+          .map(group => this._parseSpecificAttachmentTargets(
+            group.replace(/^(?:either|one\s+of)\s+/iu, ''),
+          ))
+          .filter(group => group.length > 0)
+        : [];
+      if (specificTargetAlternatives.length > 1) {
+        expectedCount = Math.min(...specificTargetAlternatives.map(group => group.length));
+        hasExplicitGenericCount = true;
+      } else if (specificTargets.length > 1) {
         expectedCount = Math.max(expectedCount, specificTargets.length);
         hasExplicitGenericCount = true;
       }
+      // Kept below and returned with the rest of the parsed contract.
+      namedTargetAlternatives = specificTargetAlternatives.length > 1
+        ? specificTargetAlternatives
+        : [];
     }
 
     const hasExplicitPositiveImageCount = hasExplicitImageCount && !isImageNegated;
@@ -3050,6 +3069,7 @@ export class Agent extends LoopDetector {
       wantsOrdinaryVideo,
       wantsGif,
       specificTargets,
+      specificTargetAlternatives: namedTargetAlternatives || [],
       normalized: text,
     };
   }
@@ -3176,6 +3196,40 @@ export class Agent extends LoopDetector {
         || /\/tweet_video(?:_thumb)?\//i.test(src)
         || /\.gif(?:[?#\s]|$)/i.test(alt);
     };
+
+    const canMatchSpecificTargets = (targets, candidates) => {
+      const matchFrom = (targetIdx, usedIndices) => {
+        if (targetIdx >= targets.length) return true;
+        const targetNames = this._targetAttachmentNames(targets[targetIdx]);
+        for (let index = 0; index < candidates.length; index++) {
+          if (usedIndices.has(index)) continue;
+          const candidateNames = this._extractAttachmentCandidateNames(candidates[index]);
+          const matched = targetNames.some(targetName => {
+            const targetHasExt = /\.[a-z0-9]+$/i.test(targetName);
+            return candidateNames.some(candidateName => (
+              candidateName === targetName
+              || (!targetHasExt && candidateName.replace(/\.[a-z0-9]+$/i, '') === targetName)
+            ));
+          });
+          if (!matched) continue;
+          usedIndices.add(index);
+          if (matchFrom(targetIdx + 1, usedIndices)) return true;
+          usedIndices.delete(index);
+        }
+        return false;
+      };
+      return candidates.length >= targets.length && matchFrom(0, new Set());
+    };
+
+    // A named disjunction is authoritative across file types. Checking the
+    // aggregate image/video nouns first would make "chart.png or clip.mp4"
+    // require both types and defeat the alternative contract.
+    if (parsed.specificTargetAlternatives?.length) {
+      return parsed.specificTargetAlternatives.some(group => (
+        rawAttachments.length === group.length
+        && canMatchSpecificTargets(group, rawAttachments)
+      ));
+    }
 
     const imageCount = rawAttachments.filter(isImageAttachment).length;
     const videoCount = rawAttachments.filter(isVideoAttachment).length;
@@ -3381,35 +3435,7 @@ export class Agent extends LoopDetector {
       return false;
     }
 
-    const canMatchAll = (targetIdx, usedIndices) => {
-      if (targetIdx >= targetsToCheck.length) return true;
-      const target = targetsToCheck[targetIdx];
-      const targetNames = this._targetAttachmentNames(target);
-      for (let i = 0; i < matchingAttachments.length; i++) {
-        if (usedIndices.has(i)) continue;
-        const att = matchingAttachments[i];
-        const candidates = this._extractAttachmentCandidateNames(att);
-        const isMatch = targetNames.some(t => {
-          const targetHasExt = /\.[a-z0-9]+$/i.test(t);
-          return candidates.some(candidate => {
-            if (candidate === t) return true;
-            if (!targetHasExt) {
-              const candidateBase = candidate.replace(/\.[a-z0-9]+$/i, '');
-              if (candidateBase === t) return true;
-            }
-            return false;
-          });
-        });
-        if (isMatch) {
-          usedIndices.add(i);
-          if (canMatchAll(targetIdx + 1, usedIndices)) return true;
-          usedIndices.delete(i);
-        }
-      }
-      return false;
-    };
-
-    return canMatchAll(0, new Set());
+    return canMatchSpecificTargets(targetsToCheck, matchingAttachments);
   }
 
   _workflowSocialPublishedAltTextObserved(requirement, record) {
