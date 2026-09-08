@@ -300,7 +300,7 @@ const GENERIC_ATTACHMENT_WORDS = new Set([
   'item', 'items', 'piece', 'pieces', 'upload', 'uploads', 'asset', 'assets',
   'enclosure', 'enclosures', 'document', 'documents', 'documento', 'documentos',
   'a', 'an', 'the', 'of', 'in', 'with', 'some', 'any',
-  'and', 'or', 'plus', 'also', 'as', 'well',
+  'and', 'or', 'plus', 'also', 'as', 'well', 'between', 'from', 'to',
   'no', 'not', 'without', 'zero', 'none',
   'only', 'just', 'solely', 'exactly', 'exact', 'precisely',
   'sin', 'sans', 'sem', 'senza', 'ohne', 'kein', 'keine', 'keinen', 'aucun', 'aucune', 'ningun', 'ninguna', 'ningún', 'nenhum', 'nenhuma', 'nessun', 'nessuno', 'nessuna', 'nie', 'без', 'нет',
@@ -3129,11 +3129,31 @@ export class Agent extends LoopDetector {
       return explicitWords.has(s);
     };
 
+    // A bounded range carries two independent limits. Keep the noun in the
+    // match so the bounds can be applied to the requested media subtype rather
+    // than accidentally constraining every attachment in a mixed requirement.
+    const rangeCountToken = '(?:\\d+|zero|one|two|three|four|five|six|seven|eight|nine|ten|a|an)';
+    const boundedCountRangeMatch = text.match(new RegExp(
+      `\\b(?:between\\s+(${rangeCountToken})\\s+and\\s+(${rangeCountToken})|from\\s+(${rangeCountToken})\\s+to\\s+(${rangeCountToken}))`
+      + '\\s+(images?|photos?|pictures?|pics?|videos?|clips?|recordings?|gifs?|attachments?|files?|media|uploads?|items?|assets?)\\b',
+      'iu',
+    ));
+    const rangeMinimumCount = parseCountWord(boundedCountRangeMatch?.[1] || boundedCountRangeMatch?.[3]);
+    const rangeMaximumCount = parseCountWord(boundedCountRangeMatch?.[2] || boundedCountRangeMatch?.[4]);
+    const hasBoundedCountRange = Boolean(
+      boundedCountRangeMatch && rangeMaximumCount >= rangeMinimumCount,
+    );
+    const boundedRangeNoun = hasBoundedCountRange ? boundedCountRangeMatch[5] : '';
+    const boundedRangeKind = RAW_GIF_NOUN_REGEX.test(boundedRangeNoun) ? 'gif'
+      : RAW_IMAGE_NOUN_REGEX.test(boundedRangeNoun) ? 'image'
+        : RAW_VIDEO_NOUN_REGEX.test(boundedRangeNoun) ? 'video'
+          : 'generic';
+
     // A minimum- or maximum-count qualifier says how many attachments are
     // wanted, not which file, so both the generic-media test and the count
     // scan read the requirement with the qualifier removed.
-    const hasMinCountQualifier = MIN_ATTACHMENT_COUNT_REGEX.test(text);
-    const hasMaxCountQualifier = MAX_ATTACHMENT_COUNT_REGEX.test(text);
+    const hasMinCountQualifier = MIN_ATTACHMENT_COUNT_REGEX.test(text) || hasBoundedCountRange;
+    const hasMaxCountQualifier = MAX_ATTACHMENT_COUNT_REGEX.test(text) || hasBoundedCountRange;
     const countText = (hasMinCountQualifier || hasMaxCountQualifier)
       ? text.replace(MIN_ATTACHMENT_COUNT_STRIP_REGEX, ' ').replace(MAX_ATTACHMENT_COUNT_STRIP_REGEX, ' ').replace(/\s+/g, ' ').trim()
       : text;
@@ -3164,6 +3184,12 @@ export class Agent extends LoopDetector {
         if (!segmentImage && !segmentVideo && !segmentGif) minScopedGeneric = true;
       }
     }
+    if (hasBoundedCountRange) {
+      if (boundedRangeKind === 'image') minScopedImage = true;
+      else if (boundedRangeKind === 'video') minScopedVideo = true;
+      else if (boundedRangeKind === 'gif') minScopedGif = true;
+      else minScopedGeneric = true;
+    }
     const isMinimumCount = isGeneric && hasMinCountQualifier;
     const isImageMinimum = isGeneric && (minScopedImage || minScopedGeneric);
     const isVideoMinimum = isGeneric && (minScopedVideo || minScopedGeneric);
@@ -3185,6 +3211,12 @@ export class Agent extends LoopDetector {
         if (segmentGif) maxScopedGif = true;
         if (!segmentImage && !segmentVideo && !segmentGif) maxScopedGeneric = true;
       }
+    }
+    if (hasBoundedCountRange) {
+      if (boundedRangeKind === 'image') maxScopedImage = true;
+      else if (boundedRangeKind === 'video') maxScopedVideo = true;
+      else if (boundedRangeKind === 'gif') maxScopedGif = true;
+      else maxScopedGeneric = true;
     }
     const isMaximumCount = isGeneric && hasMaxCountQualifier;
     const isImageMaximum = isGeneric && (maxScopedImage || maxScopedGeneric);
@@ -3294,6 +3326,10 @@ export class Agent extends LoopDetector {
       if (!isAlternative && wantsImage && wantsVideo && expectedCount < 2) {
         expectedCount = 2;
       }
+      if (hasBoundedCountRange) {
+        expectedCount = rangeMaximumCount;
+        if (boundedRangeKind === 'generic') hasExplicitGenericCount = true;
+      }
     } else {
       const specificTargets = this._parseSpecificAttachmentTargets(rawVal);
       // Word joiners need surrounding whitespace so a filename such as
@@ -3304,10 +3340,10 @@ export class Agent extends LoopDetector {
           .map(group => this._parseSpecificAttachmentTargets(group))
           .filter(group => group.length > 0)
         : [];
-      // In "logo.png and either chart.png or graph.png", `either` scopes the
-      // choice while everything before it remains a requirement in both
-      // branches. Distribute that shared prefix instead of parsing ordinary
-      // AND-before-OR precedence and accidentally accepting graph.png alone.
+      // In "logo.png and either chart.png or graph.png, and caption.png",
+      // `either` scopes the choice while the surrounding conjuncts remain
+      // requirements in both branches. Distribute both sides instead of
+      // accepting a branch that omits a shared file.
       if (specificTargetAlternatives.length > 1) {
         const eitherIndex = specificTargetAlternatives[0]
           .findIndex(target => /^(?:either|one\s+of)\s+/iu.test(target));
@@ -3315,8 +3351,28 @@ export class Agent extends LoopDetector {
           const sharedPrefix = specificTargetAlternatives[0].slice(0, eitherIndex);
           const firstChoice = specificTargetAlternatives[0].slice(eitherIndex);
           firstChoice[0] = firstChoice[0].replace(/^(?:either|one\s+of)\s+/iu, '');
-          specificTargetAlternatives = [firstChoice, ...specificTargetAlternatives.slice(1)]
-            .map(group => [...sharedPrefix, ...group]);
+          const choiceGroups = [firstChoice, ...specificTargetAlternatives.slice(1)];
+          const maskedTargets = this._maskQuotedPayload(String(rawVal || ''));
+          const trailingConjunct = /[,;]\s*(?:and|plus|also|as\s+well\s+as)\s+/giu;
+          let trailingBoundary = null;
+          for (const match of maskedTargets.matchAll(trailingConjunct)) trailingBoundary = match;
+          const sharedSuffix = trailingBoundary
+            ? this._parseSpecificAttachmentTargets(
+              String(rawVal || '').slice((trailingBoundary.index || 0) + trailingBoundary[0].length),
+            )
+            : [];
+          if (sharedSuffix.length > 0) {
+            const lastGroup = choiceGroups[choiceGroups.length - 1];
+            const suffixStart = lastGroup.length - sharedSuffix.length;
+            const suffixIsTail = suffixStart >= 1 && sharedSuffix.every(
+              (target, index) => lastGroup[suffixStart + index] === target,
+            );
+            if (suffixIsTail) choiceGroups[choiceGroups.length - 1] = lastGroup.slice(0, suffixStart);
+            else sharedSuffix.length = 0;
+          }
+          specificTargetAlternatives = choiceGroups.map(group => (
+            [...new Set([...sharedPrefix, ...group, ...sharedSuffix])]
+          ));
         }
       }
       if (specificTargetAlternatives.length > 1) {
@@ -3362,6 +3418,10 @@ export class Agent extends LoopDetector {
       isImageMaximum,
       isVideoMaximum,
       isGifMaximum,
+      hasBoundedCountRange,
+      minimumCount: hasBoundedCountRange ? rangeMinimumCount : 0,
+      maximumCount: hasBoundedCountRange ? rangeMaximumCount : 0,
+      boundedRangeKind,
       wantsImage,
       wantsVideo,
       wantsOrdinaryVideo,
@@ -3450,7 +3510,8 @@ export class Agent extends LoopDetector {
     // An upper bound does not imply that one attachment is required. Empty
     // media is valid only when every conjunctive positive constraint permits
     // zero; for alternatives, one maximum-qualified branch is sufficient.
-    const allowsNoAttachments = parsed.isGeneric && (
+    const allowsNoAttachments = parsed.isGeneric
+      && !(parsed.hasBoundedCountRange && parsed.minimumCount > 0) && (
       parsed.isAlternative
         ? (parsed.isMaximumCount
           || (parsed.wantsImage && parsed.isImageMaximum)
@@ -3533,6 +3594,13 @@ export class Agent extends LoopDetector {
     const videoCount = rawAttachments.filter(isVideoAttachment).length;
     const gifCount = rawAttachments.filter(isGifAttachment).length;
     const ordinaryVideoCount = rawAttachments.filter(att => isVideoAttachment(att) && !isGifAttachment(att)).length;
+    if (parsed.hasBoundedCountRange) {
+      const boundedCount = parsed.boundedRangeKind === 'image' ? imageCount
+        : parsed.boundedRangeKind === 'video' ? ordinaryVideoCount
+          : parsed.boundedRangeKind === 'gif' ? gifCount
+            : rawAttachments.length;
+      if (boundedCount < parsed.minimumCount || boundedCount > parsed.maximumCount) return false;
+    }
     if (parsed.wantsGif) {
       const requiredGifCount = parsed.alternativeCounts?.length
         ? Math.min(...parsed.alternativeCounts)
@@ -16883,6 +16951,9 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       if (!isCoordinated) carriedNegation = false;
 
       const publish = c.maskedText.match(SOCIAL_PUBLISH_VERBS);
+      const hasExplicitAffirmative = Boolean(
+        publish && /(?<![\p{L}\p{N}_])do\s*$/iu.test(c.maskedText.slice(0, publish.index)),
+      );
       let hasExplicitNeg = false;
       if (publish) {
         const beforeVerb = c.maskedText.slice(0, publish.index);
@@ -16895,10 +16966,14 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       if (hasExplicitNeg) {
         c.isNegated = true;
         carriedNegation = true;
-      } else if (carriedNegation) {
+      } else if (carriedNegation && !hasExplicitAffirmative) {
         c.isNegated = true;
       } else {
         c.isNegated = false;
+        // An explicit affirmative publish clause ("and do post...") starts a
+        // new polarity scope. Elliptical coordinated destinations still
+        // inherit the preceding negation.
+        if (hasExplicitAffirmative) carriedNegation = false;
       }
     }
 

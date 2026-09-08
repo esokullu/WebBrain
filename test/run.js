@@ -90787,6 +90787,8 @@ test('social publication workflow follows the live X or Bluesky destination and 
         'multiple publish destinations joined by or under negation were wrongly treated as a publish destination'],
       ['Do not post on X, but publish on Bluesky', ['bluesky'],
         'contrastive but clause after negated post was wrongly rejected for Bluesky'],
+      ['Do not post on X and do post on Bluesky', ['bluesky'],
+        'explicit affirmative publish clause inherited negation from X'],
       ['Post or publish this on X', ['twitter'],
         'affirmative coordinated publish verbs were wrongly rejected for X'],
       ['Post "Do not panic" on X', ['twitter'],
@@ -92870,6 +92872,32 @@ test('upper-bound attachment qualifiers verify as maximum counts', () => {
     assert.equal(agent._workflowSocialPublishedAttachmentObserved(
       { value: 'up to two videos' }, { attachments: [] }), true,
       AgentClass.name + ': zero videos should satisfy a standalone video maximum');
+
+    const boundedImages = agent._parseWorkflowAttachmentRequirement('between one and two images');
+    assert.equal(boundedImages.isGeneric, true,
+      AgentClass.name + ': bounded image range was parsed as filenames');
+    assert.equal(boundedImages.hasBoundedCountRange, true,
+      AgentClass.name + ': bounded image range marker was lost');
+    assert.equal(boundedImages.minimumCount, 1,
+      AgentClass.name + ': bounded image lower limit was lost');
+    assert.equal(boundedImages.maximumCount, 2,
+      AgentClass.name + ': bounded image upper limit was lost');
+    assert.equal(boundedImages.boundedRangeKind, 'image',
+      AgentClass.name + ': bounded image range was not scoped to images');
+    assert.deepEqual(boundedImages.specificTargets, [],
+      AgentClass.name + ': bounded image range created filename targets');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'between one and two images' }, { attachments: [image(1)] }), true,
+      AgentClass.name + ': one image should satisfy the bounded range');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'between one and two images' }, { attachments: [image(1), image(2)] }), true,
+      AgentClass.name + ': two images should satisfy the bounded range');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'between one and two images' }, { attachments: [] }), false,
+      AgentClass.name + ': zero images satisfied a positive bounded range');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'between one and two images' }, { attachments: [image(1), image(2), image(3)] }), false,
+      AgentClass.name + ': three images exceeded the bounded range');
     assert.equal(agent._workflowSocialPublishedAttachmentObserved(
       { value: 'up to two GIFs' }, { attachments: [] }), true,
       AgentClass.name + ': zero GIFs should satisfy a standalone GIF maximum');
@@ -93338,6 +93366,33 @@ test('attachment verification matches specific attachment names without substrin
       ),
       false,
       AgentClass.name + ': alternative file alone satisfied a missing shared conjunct',
+    );
+    const trailingSharedConjunct = agent._parseWorkflowAttachmentRequirement(
+      'either chart.png or graph.png, and logo.png',
+    );
+    assert.deepEqual(trailingSharedConjunct.specificTargetAlternatives,
+      [['chart.png', 'logo.png'], ['graph.png', 'logo.png']],
+      AgentClass.name + ': trailing shared conjunct was not retained in every alternative branch');
+    assert.equal(
+      agent._workflowSocialPublishedAttachmentObserved(
+        { value: 'either chart.png or graph.png, and logo.png' },
+        {
+          attachments: [
+            { type: 'image', src: 'https://pbs.twimg.com/media/chart.png' },
+            { type: 'image', src: 'https://pbs.twimg.com/media/logo.png' },
+          ],
+        },
+      ),
+      true,
+      AgentClass.name + ': valid choice plus trailing shared conjunct was rejected',
+    );
+    assert.equal(
+      agent._workflowSocialPublishedAttachmentObserved(
+        { value: 'either chart.png or graph.png, and logo.png' },
+        { attachments: [{ type: 'image', src: 'https://pbs.twimg.com/media/chart.png' }] },
+      ),
+      false,
+      AgentClass.name + ': choice without trailing shared conjunct was accepted',
     );
     for (const [allowedName, type] of [['chart.png', 'image'], ['clip.mp4', 'video']]) {
       assert.equal(
