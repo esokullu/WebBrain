@@ -4282,7 +4282,10 @@ export class Agent extends LoopDetector {
         const minimum = lowerBound(constraint);
         const maximum = upperBound(constraint);
         if (maximum < minimum || observedCount < minimum) return false;
-        if (!unrestricted && observedCount > maximum) return false;
+        // A per-format maximum caps every matching attachment even when
+        // wildcard slots coexist; only exact counts may overflow into
+        // unrestricted slots.
+        if (observedCount > maximum && (!unrestricted || constraint.maximumCount > 0)) return false;
         minimumAssigned += minimum;
         maximumAssigned += Math.min(observedCount, maximum);
       }
@@ -26744,12 +26747,23 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
               for (let bodyIndex = nextIndex + 1; bodyIndex < clauses.length; bodyIndex++) {
                 const bodyClause = clauses[bodyIndex];
                 const bodyDelim = bodyClause.delim || '';
-                // Adjacent delimiters ("hello; and on Bluesky") leave an empty
-                // interior fragment whose glue belongs to neither body; skip
-                // it. A terminal fragment's punctuation ("weekly.") closes
-                // the body itself, so it is preserved.
+                // Adjacent delimiters ("red, white, and blue") leave an empty
+                // fragment whose glue still belongs to the body; it is dropped
+                // only when the next substantial clause starts another
+                // destination command ("hello; and on Bluesky"). A terminal
+                // fragment's punctuation ("weekly.") closes the body itself.
                 if (!bodyClause.text.trim()) {
-                  if (bodyIndex === clauses.length - 1 && /^[.!?;:,、，。；：]$/.test(bodyDelim)) scoped += bodyDelim;
+                  let probe = bodyIndex + 1;
+                  while (probe < clauses.length && !clauses[probe].text.trim()) probe++;
+                  const following = clauses[probe];
+                  const followingStartsDestination = following
+                    && ((SOCIAL_COORDINATING_DELIMITER.test(following.delim || '')
+                      && anyPlatformPattern.test(following.maskedText || following.text || ''))
+                      || startsNewPublication(following.maskedText || following.text || ''));
+                  if (!followingStartsDestination) {
+                    if (/^[.!?;:,、，。；：]$/.test(bodyDelim)) scoped += bodyDelim;
+                    else if (bodyDelim) scoped += ` ${bodyDelim}`;
+                  }
                   continue;
                 }
                 if (bodyDelim === '') {

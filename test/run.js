@@ -91181,6 +91181,8 @@ test('social destination rebinding refreshes platform-specific payload and uploa
       AgentClass.name + ': body continuation line after inline colon text was lost');
     assert.equal(agent._extractWorkflowTaskBody('Post on X: hello, world', '', 'twitter'), 'hello, world',
       AgentClass.name + ': comma-delimited body text after the colon was lost');
+    assert.equal(agent._extractWorkflowTaskBody('Post on X: red, white, and blue', '', 'twitter'), 'red, white, and blue',
+      AgentClass.name + ': punctuation before a coordinating body word was lost');
     assert.equal(agent._extractWorkflowTaskBody('Post on X: Hello. We publish weekly.', '', 'twitter'), 'Hello. We publish weekly.',
       AgentClass.name + ': body sentence with a bare publish verb was cut off');
     assert.equal(agent._extractWorkflowTaskBody('Post on X: Hello. We publish weekly research about Bluesky.', '', 'twitter'), 'Hello. We publish weekly research about Bluesky.',
@@ -93341,16 +93343,6 @@ test('upper-bound attachment qualifiers verify as maximum counts', () => {
       { format: '', exactCount: 1, minimumCount: 0, maximumCount: 0 },
       AgentClass.name + ': an unrestricted media slot was not retained');
     for (const [attachments, expected, message] of [
-      [[image(1)], false, 'one PNG satisfied two conjunctive image slots'],
-      [[image(1), { type: 'image', src: 'https://cdn.example/a.jpg' }], true, 'PNG plus unrestricted JPEG was rejected'],
-      [[image(1), image(2)], true, 'a second PNG could not fill the unrestricted image slot'],
-      [[{ type: 'image', src: 'https://cdn.example/a.jpg' }, { type: 'image', src: 'https://cdn.example/b.jpg' }], false, 'two JPEGs satisfied the required PNG slot'],
-    ]) {
-      assert.equal(agent._workflowSocialPublishedAttachmentObserved(
-        { value: 'one PNG image and one image' }, { attachments },
-      ), expected, AgentClass.name + ': ' + message);
-    }
-    for (const [attachments, expected, message] of [
       [[image(1)], true, 'the required PNG alone was rejected by its scoped JPEG cap'],
       [[image(1), { type: 'image', src: 'https://cdn.example/a.jpg' }], true, 'a PNG plus a capped JPEG was capped by the total image count'],
       [[image(1), { type: 'image', src: 'https://cdn.example/a.jpg' }, { type: 'image', src: 'https://cdn.example/b.jpg' }], true, 'a PNG plus two capped JPEGs was capped by the total image count'],
@@ -93359,6 +93351,14 @@ test('upper-bound attachment qualifiers verify as maximum counts', () => {
     ]) {
       assert.equal(agent._workflowSocialPublishedAttachmentObserved(
         { value: 'at least one PNG image and at most two JPEG images' }, { attachments },
+      ), expected, AgentClass.name + ': ' + message);
+    }
+    for (const [attachments, expected, message] of [
+      [[image(1), { type: 'image', src: 'https://cdn.example/a.jpg' }, { type: 'image', src: 'https://cdn.example/b.jpg' }], true, 'a generic image plus two capped JPEGs was rejected'],
+      [[image(1), { type: 'image', src: 'https://cdn.example/a.jpg' }, { type: 'image', src: 'https://cdn.example/b.jpg' }, { type: 'image', src: 'https://cdn.example/c.jpg' }], false, 'a third JPEG overflowed into the generic image slot'],
+    ]) {
+      assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+        { value: 'at least one image and at most two JPEG images' }, { attachments },
       ), expected, AgentClass.name + ': ' + message);
     }
     for (const [attachments, expected, message] of [
