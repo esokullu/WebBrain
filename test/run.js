@@ -93735,6 +93735,20 @@ test('attachment verification matches specific attachment names without substrin
       { attachments: [image(1)] },
     ), false, AgentClass.name + ': missing videos satisfied the postfix minimum');
 
+    const independentlyScopedMaximum = { value: 'at least one image and at most two videos' };
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      independentlyScopedMaximum,
+      { attachments: [image(1), image(2), image(3), image(4)] },
+    ), true, AgentClass.name + ': the video maximum imposed an aggregate limit on valid images');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      independentlyScopedMaximum,
+      { attachments: [image(1), video(1), video(2)] },
+    ), true, AgentClass.name + ': the scoped video maximum rejected its boundary');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      independentlyScopedMaximum,
+      { attachments: [image(1), video(1), video(2), video(3)] },
+    ), false, AgentClass.name + ': the scoped video maximum accepted too many videos');
+
     const alternativeScopedMinimum = { value: 'at least two images or one video' };
     const parsedAlternativeScopedMinimum = agent._parseWorkflowAttachmentRequirement(alternativeScopedMinimum);
     assert.equal(parsedAlternativeScopedMinimum.isImageMinimum, true,
@@ -94005,6 +94019,31 @@ test('attachment verification matches specific attachment names without substrin
     const alternativeImage = index => ({ type: 'image', src: `https://example.test/alternative-${index}.png` });
     const alternativeVideo = index => ({ type: 'video', src: `https://example.test/alternative-${index}.mp4` });
     const alternativeGif = index => ({ type: 'animated_gif', src: `https://example.test/alternative-${index}.gif` });
+    const scopedCountAlternative = { value: 'one or two images and one video' };
+    const parsedScopedCountAlternative = agent._parseWorkflowAttachmentRequirement(scopedCountAlternative);
+    assert.equal(parsedScopedCountAlternative.isAlternative, false,
+      AgentClass.name + ': a same-type count choice made the surrounding media conjunctive clause alternative');
+    assert.deepEqual(parsedScopedCountAlternative.imageAlternativeCounts, [1, 2],
+      AgentClass.name + ': scoped image count alternatives were lost');
+    for (const attachments of [
+      [alternativeImage(1), alternativeVideo(1)],
+      [alternativeImage(1), alternativeImage(2), alternativeVideo(1)],
+    ]) {
+      assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+        scopedCountAlternative,
+        { attachments },
+      ), true, AgentClass.name + ': a valid scoped image-count branch was rejected');
+    }
+    for (const attachments of [
+      [alternativeImage(1), alternativeImage(2)],
+      [alternativeImage(1), alternativeImage(2), alternativeImage(3), alternativeVideo(1)],
+      [alternativeImage(1), alternativeVideo(1), alternativeVideo(2)],
+    ]) {
+      assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+        scopedCountAlternative,
+        { attachments },
+      ), false, AgentClass.name + ': invalid conjunctive media satisfied a scoped count alternative');
+    }
     for (const { requirement, valid, invalid } of [
       {
         requirement: 'either one image or two videos',

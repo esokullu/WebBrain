@@ -3004,17 +3004,64 @@ export class Agent extends LoopDetector {
     }
 
     const DISJUNCTION_REGEX = /(?:\b(?:or|oder|ou|o|oppure|или|либо|veya|ya\s+da)\b|[或或者]|(?:또는|혹은)|(?:または|それとも))/i;
-    // "one or more" is one lower-bound phrase, not a choice between counts.
-    const disjunctionText = text.replace(MIN_ATTACHMENT_COUNT_STRIP_REGEX, ' ');
-    const hasDisjunction = isGeneric && DISJUNCTION_REGEX.test(disjunctionText);
+    const COUNT_DISJUNCTION_PATTERN = '(?:\\b(?:or|oder|ou|o|oppure|или|либо|veya|ya\\s+da)\\b|[或或者]|(?:또는|혹은)|(?:または|それとも))';
+    const scopedCountAlternativeRegex = new RegExp(
+      `(?<![${SOCIAL_WORD_EDGE}])(${countPrefix})(?![${SOCIAL_WORD_EDGE}])(?:\\s+([\\p{L}\\p{N}_-]+))?\\s*${COUNT_DISJUNCTION_PATTERN}\\s*(${countPrefix})(?![${SOCIAL_WORD_EDGE}])\\s+([\\p{L}\\p{N}_-]+)`,
+      'giu',
+    );
+    const attachmentKindForAlternativeNoun = noun => {
+      if (RAW_GIF_NOUN_REGEX.test(noun)) return 'gif';
+      if (RAW_IMAGE_NOUN_REGEX.test(noun)) return 'image';
+      if (RAW_VIDEO_NOUN_REGEX.test(noun)) return 'video';
+      if (/^(?:attachments?|files?|media|uploads?|pieces?|items?|assets?|enclosures?|documents?)$/iu.test(noun)) return 'generic';
+      return '';
+    };
+    const scopedAlternativeCounts = { image: [], video: [], gif: [], generic: [] };
+    const scopedAlternativeSpans = [];
+    if (isGeneric) {
+      for (const match of countText.matchAll(scopedCountAlternativeRegex)) {
+        const secondKind = attachmentKindForAlternativeNoun(match[4] || '');
+        const firstKind = match[2]
+          ? attachmentKindForAlternativeNoun(match[2])
+          : secondKind;
+        if (!secondKind || firstKind !== secondKind) continue;
+        const counts = [parseCountWord(match[1]), parseCountWord(match[3])];
+        if (!counts.every(Number.isFinite)) continue;
+        scopedAlternativeCounts[secondKind].push(...counts);
+        scopedAlternativeSpans.push([match.index || 0, (match.index || 0) + match[0].length]);
+      }
+    }
+    for (const kind of Object.keys(scopedAlternativeCounts)) {
+      scopedAlternativeCounts[kind] = scopedAlternativeCounts[kind]
+        .filter((count, index, counts) => counts.indexOf(count) === index);
+    }
+    // Remove same-type count choices before deciding whether an "or" selects
+    // whole media branches. In "one or two images and one video", the video
+    // remains conjunctive and only the image cardinality is alternative.
+    let unscopedDisjunctionText = countText;
+    for (const [start, end] of scopedAlternativeSpans.slice().sort((a, b) => b[0] - a[0])) {
+      unscopedDisjunctionText = unscopedDisjunctionText.slice(0, start)
+        + ' '.repeat(end - start)
+        + unscopedDisjunctionText.slice(end);
+    }
+    const hasUnscopedDisjunction = isGeneric && DISJUNCTION_REGEX.test(unscopedDisjunctionText);
+    const hasScopedCountAlternative = scopedAlternativeSpans.length > 0;
     const requestedTypeCount = Number(wantsImage) + Number(wantsOrdinaryVideo) + Number(wantsGif);
-    const alternativeCounts = hasDisjunction && requestedTypeCount <= 1
-      ? [...countText.matchAll(new RegExp(`(?<![${SOCIAL_WORD_EDGE}])(${countPrefix})(?![${SOCIAL_WORD_EDGE}])`, 'giu'))]
+    const isAlternative = hasUnscopedDisjunction
+      || (requestedTypeCount <= 1 && hasScopedCountAlternative);
+    const scopedSingleTypeCounts = wantsImage ? scopedAlternativeCounts.image
+      : wantsGif ? scopedAlternativeCounts.gif
+        : wantsOrdinaryVideo ? scopedAlternativeCounts.video
+          : scopedAlternativeCounts.generic;
+    const alternativeCounts = isAlternative && requestedTypeCount <= 1
+      ? (scopedSingleTypeCounts.length > 0 ? scopedSingleTypeCounts : [...countText.matchAll(new RegExp(`(?<![${SOCIAL_WORD_EDGE}])(${countPrefix})(?![${SOCIAL_WORD_EDGE}])`, 'giu'))]
         .filter(match => isExplicitCountWord(match[1]))
         .map(match => parseCountWord(match[1]))
-        .filter((count, index, counts) => counts.indexOf(count) === index)
+        .filter((count, index, counts) => counts.indexOf(count) === index))
       : [];
-    const isAlternative = hasDisjunction;
+    const imageAlternativeCounts = scopedAlternativeCounts.image;
+    const videoAlternativeCounts = scopedAlternativeCounts.video;
+    const gifAlternativeCounts = scopedAlternativeCounts.gif;
 
     let hasExplicitGenericCount = false;
     let expectedCount = 1;
@@ -3164,6 +3211,9 @@ export class Agent extends LoopDetector {
       isGifNegated,
       isAlternative,
       alternativeCounts,
+      imageAlternativeCounts,
+      videoAlternativeCounts,
+      gifAlternativeCounts,
       isMinimumCount,
       isImageMinimum,
       isVideoMinimum,
@@ -3348,6 +3398,9 @@ export class Agent extends LoopDetector {
     const videoCount = rawAttachments.filter(isVideoAttachment).length;
     const gifCount = rawAttachments.filter(isGifAttachment).length;
     const ordinaryVideoCount = rawAttachments.filter(att => isVideoAttachment(att) && !isGifAttachment(att)).length;
+    const imageAlternativeCounts = parsed.imageAlternativeCounts || [];
+    const videoAlternativeCounts = parsed.videoAlternativeCounts || [];
+    const gifAlternativeCounts = parsed.gifAlternativeCounts || [];
     if (parsed.hasBoundedCountRange && !parsed.isAlternative) {
       const boundedCount = parsed.boundedRangeKind === 'image' ? imageCount
         : parsed.boundedRangeKind === 'video' ? ordinaryVideoCount
@@ -3358,23 +3411,30 @@ export class Agent extends LoopDetector {
     const gifIsAlternativeToAnotherType = parsed.isAlternative
       && (parsed.wantsImage || parsed.wantsOrdinaryVideo);
     if (parsed.wantsGif && !gifIsAlternativeToAnotherType) {
-      const requiredGifCount = parsed.alternativeCounts?.length
+      const requiredGifCount = gifAlternativeCounts.length
+        ? Math.min(...gifAlternativeCounts)
+        : parsed.alternativeCounts?.length
         ? Math.min(...parsed.alternativeCounts)
         : (parsed.isGifMaximum ? 0 : (parsed.expectedGifCount > 0 ? parsed.expectedGifCount : 1));
       if (gifCount < requiredGifCount) return false;
-      if (parsed.hasExplicitGifCount && !parsed.alternativeCounts?.length
+      if (gifAlternativeCounts.length && !gifAlternativeCounts.includes(gifCount)) return false;
+      if (parsed.hasExplicitGifCount && !gifAlternativeCounts.length && !parsed.alternativeCounts?.length
           && !parsed.isGifMinimum && !parsed.isGifMaximum && gifCount !== parsed.expectedGifCount) return false;
       if (parsed.hasExplicitGifCount && parsed.isGifMaximum && gifCount > parsed.expectedGifCount) return false;
     }
     if (parsed.wantsGif && parsed.wantsOrdinaryVideo && !parsed.isAlternative) {
-      const requiredOrdinaryVideoCount = parsed.isVideoMaximum ? 0 : (parsed.expectedVideoCount > 0 ? parsed.expectedVideoCount : 1);
+      const requiredOrdinaryVideoCount = videoAlternativeCounts.length
+        ? Math.min(...videoAlternativeCounts)
+        : (parsed.isVideoMaximum ? 0 : (parsed.expectedVideoCount > 0 ? parsed.expectedVideoCount : 1));
       if (ordinaryVideoCount < requiredOrdinaryVideoCount) return false;
-      if (parsed.hasExplicitVideoCount && !parsed.isVideoMinimum && !parsed.isVideoMaximum
+      if (videoAlternativeCounts.length && !videoAlternativeCounts.includes(ordinaryVideoCount)) return false;
+      if (parsed.hasExplicitVideoCount && !videoAlternativeCounts.length && !parsed.isVideoMinimum && !parsed.isVideoMaximum
           && ordinaryVideoCount !== parsed.expectedVideoCount) return false;
       if (parsed.hasExplicitVideoCount && parsed.isVideoMaximum && ordinaryVideoCount > parsed.expectedVideoCount) return false;
     }
     if (parsed.isGifNegated && gifCount > 0) return false;
     const exactTypedTotal = parsed.isGeneric && !parsed.isAlternative
+      && !imageAlternativeCounts.length && !videoAlternativeCounts.length && !gifAlternativeCounts.length
       && (!parsed.wantsImage || (parsed.hasExplicitImageCount && !parsed.isImageMinimum && !parsed.isImageMaximum))
       && (!parsed.wantsOrdinaryVideo || (parsed.hasExplicitVideoCount && !parsed.isVideoMinimum && !parsed.isVideoMaximum))
       && (!parsed.wantsGif || (parsed.hasExplicitGifCount && !parsed.isGifMinimum && !parsed.isGifMaximum));
@@ -3388,33 +3448,43 @@ export class Agent extends LoopDetector {
     let matchingAttachments = rawAttachments;
     if (parsed.wantsImage && parsed.wantsVideo) {
       if (parsed.isAlternative) {
-        const minImages = parsed.isImageMaximum ? 0 : (parsed.expectedImageCount > 0 ? parsed.expectedImageCount : 1);
+        const minImages = imageAlternativeCounts.length
+          ? Math.min(...imageAlternativeCounts)
+          : (parsed.isImageMaximum ? 0 : (parsed.expectedImageCount > 0 ? parsed.expectedImageCount : 1));
         const expectedAlternativeVideoCount = parsed.wantsGif && !parsed.wantsOrdinaryVideo
           ? parsed.expectedGifCount
           : parsed.expectedVideoCount;
+        const alternativeVideoCounts = parsed.wantsGif && !parsed.wantsOrdinaryVideo
+          ? gifAlternativeCounts
+          : videoAlternativeCounts;
         const alternativeVideoCount = parsed.wantsGif && !parsed.wantsOrdinaryVideo
           ? gifCount
           : videoCount;
         const isAlternativeVideoMaximum = parsed.wantsGif && !parsed.wantsOrdinaryVideo
           ? parsed.isGifMaximum
           : parsed.isVideoMaximum;
-        const minVideos = isAlternativeVideoMaximum ? 0 : (expectedAlternativeVideoCount > 0 ? expectedAlternativeVideoCount : 1);
-        const exactImageAlt = parsed.hasExplicitImageCount && !parsed.isImageMinimum && !parsed.isImageMaximum;
-        const exactVideoAlt = parsed.wantsGif && !parsed.wantsOrdinaryVideo
+        const minVideos = alternativeVideoCounts.length
+          ? Math.min(...alternativeVideoCounts)
+          : (isAlternativeVideoMaximum ? 0 : (expectedAlternativeVideoCount > 0 ? expectedAlternativeVideoCount : 1));
+        const exactImageAlt = !imageAlternativeCounts.length
+          && parsed.hasExplicitImageCount && !parsed.isImageMinimum && !parsed.isImageMaximum;
+        const exactVideoAlt = !alternativeVideoCounts.length && (parsed.wantsGif && !parsed.wantsOrdinaryVideo
           ? parsed.hasExplicitGifCount && !parsed.isGifMinimum && !parsed.isGifMaximum
-          : parsed.hasExplicitVideoCount && !parsed.isVideoMinimum && !parsed.isVideoMaximum;
+          : parsed.hasExplicitVideoCount && !parsed.isVideoMinimum && !parsed.isVideoMaximum);
         const matchesImageRange = !parsed.hasBoundedCountRange || parsed.boundedRangeKind !== 'image'
           || (imageCount >= parsed.minimumCount && imageCount <= parsed.maximumCount);
         const matchesVideoRange = !parsed.hasBoundedCountRange
           || !['video', 'gif'].includes(parsed.boundedRangeKind)
           || (alternativeVideoCount >= parsed.minimumCount && alternativeVideoCount <= parsed.maximumCount);
         const matchesImageAlt = matchesImageRange && imageCount >= minImages
+          && (!imageAlternativeCounts.length || imageAlternativeCounts.includes(imageCount))
           && (!exactImageAlt || imageCount === parsed.expectedImageCount)
           && (!parsed.isImageMaximum || imageCount <= parsed.expectedImageCount)
           && videoCount === 0
           && (!exactImageAlt || rawAttachments.length === parsed.expectedImageCount)
           && (!parsed.isImageMaximum || rawAttachments.length <= parsed.expectedImageCount);
         const matchesVideoAlt = matchesVideoRange && alternativeVideoCount >= minVideos
+          && (!alternativeVideoCounts.length || alternativeVideoCounts.includes(alternativeVideoCount))
           && (!exactVideoAlt || alternativeVideoCount === expectedAlternativeVideoCount)
           && (!isAlternativeVideoMaximum || alternativeVideoCount <= expectedAlternativeVideoCount)
           && (!(parsed.wantsGif && !parsed.wantsOrdinaryVideo) || rawAttachments.length === gifCount)
@@ -3428,40 +3498,44 @@ export class Agent extends LoopDetector {
           ? rawAttachments.filter(isImageAttachment)
           : rawAttachments.filter(isVideoAttachment);
       } else {
-        const minImages = parsed.isImageMaximum ? 0 : (parsed.expectedImageCount > 0 ? parsed.expectedImageCount : 1);
-        const minVideos = parsed.wantsGif && !parsed.wantsOrdinaryVideo
-          ? (parsed.isGifMaximum ? 0 : (parsed.expectedGifCount > 0 ? parsed.expectedGifCount : 1))
-          : (parsed.isVideoMaximum ? 0 : (parsed.expectedVideoCount > 0 ? parsed.expectedVideoCount : 1));
-        if (imageCount < minImages || videoCount < minVideos) {
+        const typedVideoAlternativeCounts = parsed.wantsGif && !parsed.wantsOrdinaryVideo
+          ? gifAlternativeCounts
+          : videoAlternativeCounts;
+        const typedVideoCount = parsed.wantsGif && !parsed.wantsOrdinaryVideo ? gifCount : videoCount;
+        const minImages = imageAlternativeCounts.length
+          ? Math.min(...imageAlternativeCounts)
+          : (parsed.isImageMaximum ? 0 : (parsed.expectedImageCount > 0 ? parsed.expectedImageCount : 1));
+        const minVideos = typedVideoAlternativeCounts.length
+          ? Math.min(...typedVideoAlternativeCounts)
+          : parsed.wantsGif && !parsed.wantsOrdinaryVideo
+            ? (parsed.isGifMaximum ? 0 : (parsed.expectedGifCount > 0 ? parsed.expectedGifCount : 1))
+            : (parsed.isVideoMaximum ? 0 : (parsed.expectedVideoCount > 0 ? parsed.expectedVideoCount : 1));
+        if (imageCount < minImages || typedVideoCount < minVideos) {
           return false;
         }
-        if (parsed.hasExplicitImageCount && !parsed.isImageMinimum && !parsed.isImageMaximum && imageCount !== parsed.expectedImageCount) {
+        if (imageAlternativeCounts.length && !imageAlternativeCounts.includes(imageCount)) {
+          return false;
+        }
+        if (!imageAlternativeCounts.length && parsed.hasExplicitImageCount && !parsed.isImageMinimum && !parsed.isImageMaximum && imageCount !== parsed.expectedImageCount) {
           return false;
         }
         if (parsed.hasExplicitImageCount && parsed.isImageMaximum && imageCount > parsed.expectedImageCount) {
           return false;
         }
-        if (parsed.hasExplicitVideoCount && !parsed.isVideoMinimum && !parsed.isVideoMaximum && videoCount !== parsed.expectedVideoCount) {
+        if (typedVideoAlternativeCounts.length && !typedVideoAlternativeCounts.includes(typedVideoCount)) {
+          return false;
+        }
+        if (!typedVideoAlternativeCounts.length && parsed.hasExplicitVideoCount && !parsed.isVideoMinimum && !parsed.isVideoMaximum && videoCount !== parsed.expectedVideoCount) {
           return false;
         }
         if (parsed.hasExplicitVideoCount && parsed.isVideoMaximum && videoCount > parsed.expectedVideoCount) {
           return false;
         }
         if (parsed.hasExplicitImageCount && parsed.hasExplicitVideoCount
+            && !imageAlternativeCounts.length && !videoAlternativeCounts.length && !gifAlternativeCounts.length
             && !parsed.isImageMinimum && !parsed.isVideoMinimum && !parsed.isImageMaximum && !parsed.isVideoMaximum) {
           if (rawAttachments.length !== (parsed.expectedImageCount + parsed.expectedVideoCount + parsed.expectedGifCount)) {
             return false;
-          }
-        } else if (parsed.isImageMaximum || parsed.isVideoMaximum || parsed.isGifMaximum) {
-          const maxTotal = (parsed.wantsImage ? parsed.expectedImageCount : 0)
-            + (parsed.wantsOrdinaryVideo ? parsed.expectedVideoCount : 0)
-            + (parsed.wantsGif ? parsed.expectedGifCount : 0);
-          if (maxTotal > 0 && rawAttachments.length > maxTotal) {
-            return false;
-          } else if (parsed.hasExplicitCardinality) {
-            if (rawAttachments.length > (imageCount + videoCount)) {
-              return false;
-            }
           }
         } else if (parsed.hasExplicitCardinality) {
           if (rawAttachments.length > (imageCount + videoCount)) {
