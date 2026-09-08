@@ -278,6 +278,7 @@ const {
   getMessageRecipientGuardPolicy: getMessageRecipientGuardPolicyFx,
   getAdapterWorkflowRouting: getAdapterWorkflowRoutingFx,
   resolveAdapterWorkflowJob: resolveAdapterWorkflowJobFx,
+  listAdapters: listAdaptersFx,
   listAdapterWorkflowProfiles: listAdapterWorkflowProfilesFx,
 } = await import(
   'file://' + path.join(ROOT, 'src/firefox/src/agent/adapters.js').replace(/\\/g, '/')
@@ -4621,14 +4622,27 @@ test('matches twitter.com and x.com', () => {
 
 test('matches Bluesky and exposes a mirrored publish-post workflow', () => {
   const chromeAdapter = getActiveAdapter('https://bsky.app/');
-  const firefoxAdapter = getActiveAdapterFx('https://bsky.app/profile/webbrain.one');
+  const firefoxAdapter = getActiveAdapterFx('https://www.bsky.app/profile/webbrain.one');
   assert.equal(chromeAdapter?.name, 'bluesky');
   assert.equal(firefoxAdapter?.name, 'bluesky');
   assert.deepEqual(validateAdapterWorkflowProfile(chromeAdapter), { ok: true });
   assert.deepEqual(validateAdapterWorkflowProfileFx(firefoxAdapter), { ok: true });
   assert.deepEqual(firefoxAdapter?.workflow, chromeAdapter?.workflow);
   assert.deepEqual(chromeAdapter?.jobs, ['publish-post']);
+  assert.match(chromeAdapter?.notes || '', /hidden <input type=file>/i);
+  assert.match(chromeAdapter?.notes || '', /complete text, mentions, link card, media, language, and account/i);
   assert.match(chromeAdapter?.notes || '', /new bsky\.app\/profile\/<account>\/post\/<id> link/i);
+  for (const [getAdapter, resolveWorkflow, adapters] of [
+    [getActiveAdapter, resolveAdapterWorkflowJob, listAdapters],
+    [getActiveAdapterFx, resolveAdapterWorkflowJobFx, listAdaptersFx],
+  ]) {
+    assert.equal(adapters().filter(adapter => adapter.name === 'bluesky').length, 1,
+      'Bluesky should have one consolidated adapter');
+    for (const url of ['https://bsky.app/', 'https://www.bsky.app/']) {
+      assert.deepEqual(getAdapter(url)?.jobs, ['publish-post']);
+      assert.equal(resolveWorkflow(url, 'publish-post')?.adapterName, 'bluesky');
+    }
+  }
   assert.notEqual(getActiveAdapter('https://bsky.app.evil.example/')?.name, 'bluesky');
   assert.notEqual(getActiveAdapterFx('https://bsky.app.evil.example/')?.name, 'bluesky');
 });
@@ -9896,9 +9910,9 @@ test('12306 exposes a validated regional workflow profile with browser parity', 
     'producthunt',
     'microsoft-forms',
     'gmail',
-    'bluesky',
     'twitter',
     'linkedin',
+    'bluesky',
     'youtube',
     'railway-12306',
     'douyin',
