@@ -4601,6 +4601,71 @@ test('matches Baidu search surfaces without hijacking other Baidu products', () 
   assert.equal(firefoxAdapter?.notes, adapter?.notes);
 });
 
+test('matches Baidu Tieba and exposes custom post like controls', () => {
+  const trustedUrls = [
+    'https://tieba.baidu.com/',
+    'https://tieba.baidu.com/f?kw=python',
+    'https://tieba.baidu.com/p/11007201094?mo_device=1',
+    'https://tieba.baidu.com/mo/q/forum?kw=Python&page=1',
+  ];
+  for (const url of trustedUrls) {
+    assert.equal(getActiveAdapter(url)?.name, 'baidu-tieba');
+    assert.equal(getActiveAdapterFx(url)?.name, 'baidu-tieba');
+  }
+
+  for (const url of [
+    'https://tieba.baidu.com.evil.example/p/11007201094',
+    'https://www.baidu.com/p/11007201094',
+    'https://example.com/?next=https://tieba.baidu.com/p/11007201094',
+  ]) {
+    assert.notEqual(getActiveAdapter(url)?.name, 'baidu-tieba');
+    assert.notEqual(getActiveAdapterFx(url)?.name, 'baidu-tieba');
+  }
+
+  const adapter = getActiveAdapter('https://tieba.baidu.com/p/11007201094?mo_device=1');
+  assert.match(adapter?.notes || '', /custom Vue action bar/);
+  assert.match(adapter?.notes || '', /named "点赞" control/);
+  assert.match(adapter?.notes || '', /百度安全验证/);
+  assert.equal(getActiveAdapterFx('https://tieba.baidu.com/p/11007201094')?.notes, adapter?.notes);
+
+  const axChrome = fs.readFileSync(path.join(ROOT, 'src/chrome/src/content/accessibility-tree.js'), 'utf8');
+  const axFirefox = fs.readFileSync(path.join(ROOT, 'src/firefox/src/content/accessibility-tree.js'), 'utf8');
+  assert.equal(axChrome, axFirefox, 'Tieba accessibility shims must remain byte-identical');
+  const start = axChrome.indexOf('const SITE_INTERACTION_RULES = {');
+  const end = axChrome.indexOf('\n\n  function getRole(el) {', start);
+  const location = { hostname: 'tieba.baidu.com' };
+  const context = { window: {}, location };
+  vm.runInNewContext(axChrome.slice(start, end), context);
+  const api = context.window.__wbSiteInteractions;
+  const likeSelector = '.pc-pb-first-floor-interactive .action-item:has(use[*|href="#agree_pb"])';
+  const replyLikeSelector = '.pc-pb-comments-desc .zan-container-dark:has(use[*|href="#agree_comment"])';
+  const fakeElement = (selector, text) => ({
+    innerText: text,
+    textContent: text,
+    matches: candidate => candidate === selector,
+    getAttribute: () => null,
+  });
+  assert.ok(api.selectors().includes(likeSelector));
+  assert.ok(api.selectors().includes(replyLikeSelector));
+  assert.equal(api.describe(fakeElement(likeSelector, '98')).name, '点赞 98');
+  assert.equal(api.describe(fakeElement(replyLikeSelector, '21')).name, '赞 21');
+  assert.equal(api.shouldPierceShadowRoots(), false);
+
+  for (const [label, rel] of [
+    ['chrome', 'src/chrome/src/content/content.js'],
+    ['firefox', 'src/firefox/src/content/content.js'],
+  ]) {
+    const content = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    assert.match(content, /\.\.\._siteInteractiveSelectors\(\)/, `${label}: Tieba selectors must reach content discovery`);
+    assert.match(content, /if \(_isSiteInteractive\(node\)\) return true/, `${label}: Tieba controls must be interactive`);
+  }
+
+  const cdp = fs.readFileSync(path.join(ROOT, 'src/chrome/src/cdp/cdp-client.js'), 'utf8');
+  assert.match(cdp, /onHost\('tieba\.baidu\.com'\)/);
+  assert.match(cdp, /agree_pb/);
+  assert.match(cdp, /agree_comment/);
+});
+
 test('matches twitter.com and x.com', () => {
   assert.equal(getActiveAdapter('https://twitter.com/elonmusk')?.name, 'twitter');
   assert.equal(getActiveAdapter('https://x.com/elonmusk')?.name, 'twitter');

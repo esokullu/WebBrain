@@ -2920,6 +2920,9 @@ export class CDPClient {
           ['.follow-wrapper', '关注'], ['.follow-btn', '关注'],
           ['.follow-button', '关注'], ['.send-btn', '发布评论'],
           ['.publish-btn', '发布'], ['.publish-button', '发布'],
+        ] : onHost('tieba.baidu.com') ? [
+          ['.pc-pb-first-floor-interactive .action-item:has(use[*|href="#agree_pb"])', '点赞'],
+          ['.pc-pb-comments-desc .zan-container-dark:has(use[*|href="#agree_comment"])', '赞'],
         ] : [];
         const SELECTORS = [
           'a[href]', 'button', 'input:not([type="hidden"])', 'textarea', 'select',

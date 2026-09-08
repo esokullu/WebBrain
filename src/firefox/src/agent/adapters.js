@@ -15734,6 +15734,12 @@ function isDirectBaiduSearchUrl(url) {
   return host === 'news.baidu.com' && /^\/ns(?:\/|$)/.test(path);
 }
 
+function isBaiduTiebaUrl(url) {
+  const parts = adapterUrlParts(url);
+  if (!parts) return false;
+  return normalizedHostname(parts.parsed.hostname) === 'tieba.baidu.com';
+}
+
 function isBaiduSearchUrl(url) {
   if (isDirectBaiduSearchUrl(url)) return true;
   let parts;
@@ -16138,6 +16144,17 @@ const ADAPTERS = [
 - Use image or video cards only after opening the source page or detail view; thumbnails, captions, and neighboring card text can be mismatched or truncated, and lazy-loaded card indices are not stable after scrolling.
 - Read-only web search and result opening do not require sign-in. If "登录" or "扫码登录" appears, ask the user to authenticate only for an explicitly requested account feature; do not block ordinary search, loop on the dialog, or claim that login is required for public results.
 - If wappass.baidu.com/static/captcha shows "百度安全验证", stop and ask the user to complete it manually. After completion, continue the encoded backurl and re-read the results; do not bypass the challenge, discard the query, or loop on the search URL.`,
+  },
+  {
+    name: 'baidu-tieba',
+    category: 'general',
+    matches: isBaiduTiebaUrl,
+    notes: `
+- Tieba thread pages use a custom Vue action bar. On the first floor, the share, reply, like, and collect actions are icon-plus-count elements rather than native buttons; use the accessibility tree or interactive-element list and prefer the named "点赞" control over screenshot coordinates.
+- Reply-level likes are separate "赞" controls in each comment row. Re-read the active post or comment container after scrolling, switching "只看楼主", or changing 热门/正序/倒序; indices and visible rows can change.
+- "点赞", "关注", "回复", and "发贴" change account or public state. Perform them only when explicitly requested, then verify the icon/count or resulting state; a successful mouse dispatch alone is not proof.
+- The first-floor action bar may be below the initial viewport, while images open a viewer when clicked. Do not click nearby image coordinates or repeat a coordinate after an unexpected viewer opens; close or go back, then re-read the page.
+- Public pages may require Baidu sign-in. If "登录", QR verification, or "百度安全验证" appears, stop for the user and do not bypass, retry, or claim that the requested action succeeded.`,
   },
   {
     name: 'slack',

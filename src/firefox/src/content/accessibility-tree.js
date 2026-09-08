@@ -155,6 +155,10 @@
       ['.publish-btn', '发布'],
       ['.publish-button', '发布'],
     ],
+    baiduTieba: [
+      ['.pc-pb-first-floor-interactive .action-item:has(use[*|href="#agree_pb"])', '点赞'],
+      ['.pc-pb-comments-desc .zan-container-dark:has(use[*|href="#agree_comment"])', '赞'],
+    ],
   };
 
   function currentSiteInteractionConfig() {
@@ -162,6 +166,7 @@
     const onHost = (domain) => hostname === domain || hostname.endsWith(`.${domain}`);
     if (onHost('bilibili.com')) return { key: 'bilibili', rules: SITE_INTERACTION_RULES.bilibili };
     if (onHost('xiaohongshu.com')) return { key: 'xiaohongshu', rules: SITE_INTERACTION_RULES.xiaohongshu };
+    if (onHost('tieba.baidu.com')) return { key: 'baiduTieba', rules: SITE_INTERACTION_RULES.baiduTieba };
     // LinkedIn's interop shell renders major surfaces (the post composer
     // dialog among them) inside the open #interop-outlet shadow root. No
     // custom interaction rules needed — piercing alone makes the dialog's
