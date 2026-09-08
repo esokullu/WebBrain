@@ -191,7 +191,7 @@ const SOCIAL_POST_NEGATION = new RegExp(
   'iu',
 );
 const SOCIAL_POST_DESTINATION_NEGATION = new RegExp(
-  `(?<![${SOCIAL_WORD_EDGE}])not(?![${SOCIAL_WORD_EDGE}])\\s+(?:on|onto|to|via|in|at)(?![${SOCIAL_WORD_EDGE}])`,
+  `(?<![${SOCIAL_WORD_EDGE}])(?:not\\s+(?:on|onto|to|via|in|at)|(?:on|onto|to|via|in|at)\\s+neither|neither\\s+(?:on|onto|to|via|in|at))(?![${SOCIAL_WORD_EDGE}])`,
   'iu',
 );
 const socialPostNegationGovernsPublish = value => (
