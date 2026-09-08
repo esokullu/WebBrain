@@ -181,7 +181,7 @@ const SOCIAL_NOUN_LIKE_PUBLISH = new RegExp(
   'iu',
 );
 const SOCIAL_NEGATION = new RegExp(
-  `(?<![${SOCIAL_WORD_EDGE}])(?:not|never|neither|nor|don't|dont|do\\s+not|cannot|can't|cant|shouldn't|shouldnt|should\\s+not|mustn't|mustnt|must\\s+not|won't|wont|will\\s+not|avoid|refrain|stop|prevent|prohibit|no(?=\\s+(?!attachments?|photos?|images?|pictures?|videos?|files?|media|delays?|doubt|worries|hashtags?|tags?|links?|urls?|x\\b|twitter\\b|bluesky\\b))|without(?=(?:\\s+(?!attachments?|photos?|images?|pictures?|videos?|files?|media|delays?|hesitation|doubt|fail|exception|interruption|warning|stopping|pause|regret|fear|hashtags?|tags?|links?|urls?\\b)|\\s*$))|sans(?=(?:\\s+(?!pièces?|photos?|images?|vidéos?|fichiers?|médias?|délai|doutes?|faute|retard\\b)|\\s*$))|sin(?=(?:\\s+(?!archivos?|adjuntos?|fotos?|imágenes?|videos?|medios?|demora|duda|falta|retraso\\b)|\\s*$))|sem(?=(?:\\s+(?!anexos?|fotos?|imagens?|vídeos?|arquivos?|mídia|demora|dúvida|falta|atraso\\b)|\\s*$))|senza(?=(?:\\s+(?!allegati?|foto|immagini?|video|file|media|ritardo|dubbio\\b)|\\s*$))|ohne(?=(?:\\s+(?!anhänge?|anhang|fotos?|bilder?|videos?|dateien?|medien?|verzögerung|zweifel\\b)|\\s*$))|без(?=(?:\\s+(?!вложений|вложения|фото|изображений|видео|файлов|задержки|сомнений\\b)|\\s*$))|ne|pas|ne\\s+pas|nunca|jamás|jamais|nicht|nie|kein|keine|non|mai|não|nao|hayır|asla|sakın|yapmayın|yapma|не|никогда|нет)(?![${SOCIAL_WORD_EDGE}])`
+  `(?<![${SOCIAL_WORD_EDGE}])(?:not|never|neither|nor|don['\u2019]?t|do\\s+not|cannot|can['\u2019]?t|shouldn['\u2019]?t|should\\s+not|mustn['\u2019]?t|must\\s+not|won['\u2019]?t|will\\s+not|avoid|refrain|stop|prevent|prohibit|no(?=\\s+(?!attachments?|photos?|images?|pictures?|videos?|files?|media|delays?|doubt|worries|hashtags?|tags?|links?|urls?|x\\b|twitter\\b|bluesky\\b))|without(?=(?:\\s+(?!attachments?|photos?|images?|pictures?|videos?|files?|media|delays?|hesitation|doubt|fail|exception|interruption|warning|stopping|pause|regret|fear|hashtags?|tags?|links?|urls?\\b)|\\s*$))|sans(?=(?:\\s+(?!pièces?|photos?|images?|vidéos?|fichiers?|médias?|délai|doutes?|faute|retard\\b)|\\s*$))|sin(?=(?:\\s+(?!archivos?|adjuntos?|fotos?|imágenes?|videos?|medios?|demora|duda|falta|retraso\\b)|\\s*$))|sem(?=(?:\\s+(?!anexos?|fotos?|imagens?|vídeos?|arquivos?|mídia|demora|dúvida|falta|atraso\\b)|\\s*$))|senza(?=(?:\\s+(?!allegati?|foto|immagini?|video|file|media|ritardo|dubbio\\b)|\\s*$))|ohne(?=(?:\\s+(?!anhänge?|anhang|fotos?|bilder?|videos?|dateien?|medien?|verzögerung|zweifel\\b)|\\s*$))|без(?=(?:\\s+(?!вложений|вложения|фото|изображений|видео|файлов|задержки|сомнений\\b)|\\s*$))|ne|pas|ne\\s+pas|nunca|jamás|jamais|nicht|nie|kein|keine|non|mai|não|nao|hayır|asla|sakın|yapmayın|yapma|не|никогда|нет)(?![${SOCIAL_WORD_EDGE}])`
   + '|不要|别|不能|不可|不得|不用|请勿|勿|严禁|禁止|决不|绝不|決して'
   + '|하지\\s*마|하지\\s*마세요|금지',
   'iu',
@@ -3018,8 +3018,11 @@ export class Agent extends LoopDetector {
     };
     const scopedAlternativeCounts = { image: [], video: [], gif: [], generic: [] };
     const scopedAlternativeSpans = [];
+    const qualifierMaskedDisjunctionText = text
+      .replace(MIN_ATTACHMENT_COUNT_STRIP_REGEX, match => ' '.repeat(match.length))
+      .replace(MAX_ATTACHMENT_COUNT_STRIP_REGEX, match => ' '.repeat(match.length));
     if (isGeneric) {
-      for (const match of countText.matchAll(scopedCountAlternativeRegex)) {
+      for (const match of qualifierMaskedDisjunctionText.matchAll(scopedCountAlternativeRegex)) {
         const secondKind = attachmentKindForAlternativeNoun(match[4] || '');
         const firstKind = match[2]
           ? attachmentKindForAlternativeNoun(match[2])
@@ -3038,13 +3041,25 @@ export class Agent extends LoopDetector {
     // Remove same-type count choices before deciding whether an "or" selects
     // whole media branches. In "one or two images and one video", the video
     // remains conjunctive and only the image cardinality is alternative.
-    let unscopedDisjunctionText = countText;
+    let unscopedDisjunctionText = qualifierMaskedDisjunctionText;
     for (const [start, end] of scopedAlternativeSpans.slice().sort((a, b) => b[0] - a[0])) {
       unscopedDisjunctionText = unscopedDisjunctionText.slice(0, start)
         + ' '.repeat(end - start)
         + unscopedDisjunctionText.slice(end);
     }
-    const hasUnscopedDisjunction = isGeneric && DISJUNCTION_REGEX.test(unscopedDisjunctionText);
+    const unscopedDisjunctionMatches = isGeneric
+      ? [...unscopedDisjunctionText.matchAll(new RegExp(DISJUNCTION_REGEX.source, 'giu'))]
+      : [];
+    const hasUnscopedDisjunction = unscopedDisjunctionMatches.length > 0;
+    const mediaAlternativeBranchTexts = [];
+    if (hasUnscopedDisjunction) {
+      let branchStart = 0;
+      for (const match of unscopedDisjunctionMatches) {
+        mediaAlternativeBranchTexts.push(text.slice(branchStart, match.index || 0).trim());
+        branchStart = (match.index || 0) + match[0].length;
+      }
+      mediaAlternativeBranchTexts.push(text.slice(branchStart).trim());
+    }
     const hasScopedCountAlternative = scopedAlternativeSpans.length > 0;
     const requestedTypeCount = Number(wantsImage) + Number(wantsOrdinaryVideo) + Number(wantsGif);
     const isAlternative = hasUnscopedDisjunction
@@ -3195,6 +3210,12 @@ export class Agent extends LoopDetector {
     const hasExplicitCardinality = hasExplicitPositiveImageCount || hasExplicitPositiveVideoCount
       || hasExplicitPositiveGifCount || hasExplicitGenericCount || (isImageNegated && isVideoNegated);
     const specificTargets = isGeneric ? [] : this._parseSpecificAttachmentTargets(rawVal);
+    const mediaAlternativeBranches = mediaAlternativeBranchTexts.length > 1
+      ? mediaAlternativeBranchTexts
+        .filter(Boolean)
+        .map(branch => this._parseWorkflowAttachmentRequirement(branch))
+        .filter(branch => branch.isGeneric)
+      : [];
 
     return {
       isGeneric,
@@ -3211,6 +3232,7 @@ export class Agent extends LoopDetector {
       isGifNegated,
       isAlternative,
       alternativeCounts,
+      mediaAlternativeBranches,
       imageAlternativeCounts,
       videoAlternativeCounts,
       gifAlternativeCounts,
@@ -3305,6 +3327,16 @@ export class Agent extends LoopDetector {
     if (!want) return rawAttachments.length > 0;
 
     const parsed = this._parseWorkflowAttachmentRequirement(want);
+    if (parsed.mediaAlternativeBranches?.length > 1) {
+      return parsed.mediaAlternativeBranches.some(branch => (
+        this._workflowSocialPublishedAttachmentObserved({
+          value: branch.normalized,
+          ordinaryVideoOnly: parsed.wantsGif && parsed.wantsOrdinaryVideo
+            && branch.wantsOrdinaryVideo && !branch.wantsGif,
+        }, record)
+      ));
+    }
+    const ordinaryVideoOnly = Boolean(requirement?.ordinaryVideoOnly);
     if (parsed.wantsNone
         || (parsed.expectedCount === 0 && !parsed.alternativeCounts?.length)
         || parsed.isNegative) {
@@ -3567,6 +3599,11 @@ export class Agent extends LoopDetector {
       matchingAttachments = rawAttachments.filter(isImageAttachment);
     } else if (parsed.wantsVideo && !parsed.wantsImage) {
       if (imageCount > 0) return false;
+      const requiresGifOnly = parsed.wantsGif && !parsed.wantsOrdinaryVideo;
+      const typedVideoCount = requiresGifOnly ? gifCount
+        : ordinaryVideoOnly ? ordinaryVideoCount
+          : videoCount;
+      if ((requiresGifOnly || ordinaryVideoOnly) && rawAttachments.length !== typedVideoCount) return false;
       // Ordinary videos and GIFs share the DOM video class but have separate
       // cardinalities. Their typed checks above are authoritative when both
       // subtypes were requested; comparing their combined count with one
@@ -3595,22 +3632,26 @@ export class Agent extends LoopDetector {
           || (parsed.hasExplicitGifCount && !parsed.isGifNegated && !parsed.isGifMinimum && !parsed.isGifMaximum)
           || (parsed.hasExplicitGenericCount && !parsed.isMaximumCount);
         if (parsed.alternativeCounts?.length) {
-          if (!parsed.alternativeCounts.includes(videoCount) || rawAttachments.length !== videoCount) {
+          if (!parsed.alternativeCounts.includes(typedVideoCount) || rawAttachments.length !== typedVideoCount) {
             return false;
           }
         } else if (hasExactVideoCount) {
-          if (videoCount !== parsed.expectedCount || rawAttachments.length !== parsed.expectedCount) {
+          if (typedVideoCount !== parsed.expectedCount || rawAttachments.length !== parsed.expectedCount) {
             return false;
           }
         } else if (parsed.isVideoMaximum || parsed.isGifMaximum || parsed.isMaximumCount) {
-          if (videoCount > parsed.expectedCount || rawAttachments.length > parsed.expectedCount) {
+          if (typedVideoCount > parsed.expectedCount || rawAttachments.length > parsed.expectedCount) {
             return false;
           }
-        } else if (videoCount < parsed.expectedCount) {
+        } else if (typedVideoCount < parsed.expectedCount) {
           return false;
         }
       }
-      matchingAttachments = rawAttachments.filter(isVideoAttachment);
+      matchingAttachments = requiresGifOnly
+        ? rawAttachments.filter(isGifAttachment)
+        : ordinaryVideoOnly
+          ? rawAttachments.filter(att => isVideoAttachment(att) && !isGifAttachment(att))
+          : rawAttachments.filter(isVideoAttachment);
     } else {
       if (parsed.alternativeCounts?.length) {
         if (!parsed.alternativeCounts.includes(rawAttachments.length)) {
@@ -23601,10 +23642,13 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     const singleQuotePattern = new RegExp(`${publishVerbPattern}[\\s\\S]*?(?:(?<!\\p{L})'([\\s\\S]+?)'(?!\\p{L}))`, 'iu');
     const colonPattern = new RegExp(`${publishVerbPattern}[\\s\\S]*?(?<!https?|ftp|sftp)(?:(?<!\\d)[:：]|[:：](?!\\d{2}))(?!\\/\\/)\\s*([\\s\\S]+)$`, 'iu');
     const altTextMetadataPattern = /(?<![\p{L}\p{N}_])(?:attachment\s+)?(?:alt(?:ernative)?\s+text|image\s+alt\s+text|media\s+alt\s+text)\s*(?:(?::|=)?\s*(?:"(?:\\[^"\\]|[^"\\])*"|'(?:\\[^'\\]|[^'\\])*'|“[^”]*”|«[^»]*»|「[^」]*」|『[^』]*』)|(?::|=)\s*[^\r\n,;]+$)/giu;
+    const quotedMetadataPattern = /(?<![\p{L}\p{N}_])(?:attachments?|attach(?:ed)?|files?|(?:images?|photos?|pictures?|videos?|clips?|gifs?|media)\s+(?:files?\s+)?(?:names?|named|called)|accounts?|profiles?|handles?|usernames?|visibility|privacy|audience|playlists?|language|category|licen[cs]e|tags?|comments?|embedding|paid\s+promotion|recording\s+(?:date|location))\s*(?:(?:names?|named|called|value|set\s+to|is|as|of|:|=)\s*)?(?:"(?:\\[^"\\]|[^"\\])*"|'(?:\\[^'\\]|[^'\\])*'|“[^”]*”|«[^»]*»|「[^」]*」|『[^』]*』)/giu;
     for (const candidateText of candidates) {
-      // A quoted alt-text value describes an attachment; it is not the post
-      // body merely because it follows the publish verb.
-      const text = candidateText.replace(altTextMetadataPattern, match => ' '.repeat(match.length));
+      // Quoted metadata values describe the publication contract; they are
+      // not the post body merely because they follow the publish verb.
+      const text = candidateText
+        .replace(altTextMetadataPattern, match => ' '.repeat(match.length))
+        .replace(quotedMetadataPattern, match => ' '.repeat(match.length));
       let body = '';
       // Scan for the colon delimiter that introduces the post body.
       // We look for colons occurring after a publish verb, skipping:

@@ -90793,6 +90793,16 @@ test('social publication workflow follows the live X or Bluesky destination and 
         'post-verb destination negation selected X instead of contrastive Bluesky'],
       ['Post on X without posting on Bluesky', ['twitter'],
         'a nested negated publish clause added its forbidden Bluesky destination'],
+      ['Don’t post on X or Bluesky', [],
+        'a smart-apostrophe negative command adopted social destinations'],
+      ['Can’t post on X', [],
+        'a smart-apostrophe can-not contraction adopted X'],
+      ['Shouldn’t post on X', [],
+        'a smart-apostrophe should-not contraction adopted X'],
+      ['Mustn’t post on X', [],
+        'a smart-apostrophe must-not contraction adopted X'],
+      ['Won’t post on X', [],
+        'a smart-apostrophe will-not contraction adopted X'],
       ['Post or publish this on X', ['twitter'],
         'affirmative coordinated publish verbs were wrongly rejected for X'],
       ['Post "Do not panic" on X', ['twitter'],
@@ -92455,6 +92465,23 @@ test('publish-post alt text is a distinct verified metadata requirement', async 
       '',
       AgentClass.name + ': unquoted alt text was misclassified as the post body',
     );
+    for (const metadataOnlyTask of [
+      'Post with attachment "chart.png" on X',
+      'Post on X using account "@acme"',
+      'Post on X with visibility "public"',
+      'Post on X with tag "launch"',
+    ]) {
+      assert.equal(
+        agent._extractWorkflowTaskBody(metadataOnlyTask),
+        '',
+        AgentClass.name + `: quoted metadata was misclassified as body in "${metadataOnlyTask}"`,
+      );
+    }
+    assert.equal(
+      agent._extractWorkflowTaskBody('Post "Launch update" on X using account "@acme" with visibility "public"'),
+      'Launch update',
+      AgentClass.name + ': masking quoted metadata hid the actual quoted body',
+    );
 
     const scopedAltDetails = agent._normalizeWorkflowMetadataRequirementsDetails([
       { field: 'attachment', value: 'chart.png and logo.png' },
@@ -94060,12 +94087,25 @@ test('attachment verification matches specific attachment names without substrin
         valid: [[alternativeGif(1)], [alternativeVideo(1), alternativeVideo(2)]],
         invalid: [[alternativeVideo(1)], [alternativeGif(1), alternativeVideo(1)], [alternativeGif(1), alternativeGif(2)]],
       },
+      {
+        requirement: 'either one image or both one GIF and one video',
+        valid: [[alternativeImage(1)], [alternativeGif(1), alternativeVideo(1)]],
+        invalid: [
+          [alternativeGif(1)],
+          [alternativeVideo(1)],
+          [alternativeGif(1), alternativeGif(2)],
+          [alternativeVideo(1), alternativeVideo(2)],
+          [alternativeImage(1), alternativeVideo(1)],
+        ],
+      },
     ]) {
       const parsedTypedAlternative = agent._parseWorkflowAttachmentRequirement({ value: requirement });
       assert.equal(parsedTypedAlternative.isGeneric, true,
         AgentClass.name + `: typed alternative was parsed as filenames for "${requirement}"`);
       assert.equal(parsedTypedAlternative.isAlternative, true,
         AgentClass.name + `: typed alternative grammar was lost for "${requirement}"`);
+      assert.equal(parsedTypedAlternative.mediaAlternativeBranches.length, 2,
+        AgentClass.name + `: complete typed alternative branches were not retained for "${requirement}"`);
       for (const attachments of valid) {
         assert.equal(agent._workflowSocialPublishedAttachmentObserved(
           { value: requirement },
