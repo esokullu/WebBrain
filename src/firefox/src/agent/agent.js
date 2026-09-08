@@ -249,7 +249,7 @@ const GENERIC_ATTACHMENT_WORDS = new Set([
   'item', 'items', 'piece', 'pieces', 'upload', 'uploads', 'asset', 'assets',
   'enclosure', 'enclosures', 'document', 'documents', 'documento', 'documentos',
   'a', 'an', 'the', 'of', 'in', 'with', 'some', 'any',
-  'and', 'but', 'or', 'either', 'neither', 'nor', 'plus', 'also', 'as', 'well', 'together', 'along', 'between', 'from', 'to',
+  'and', 'but', 'or', 'either', 'neither', 'nor', 'plus', 'also', 'as', 'well', 'together', 'along', 'addition', 'between', 'from', 'to',
   'no', 'not', 'without', 'zero', 'none',
   'only', 'just', 'solely', 'exactly', 'exact', 'precisely',
   'sin', 'sans', 'sem', 'senza', 'ohne', 'kein', 'keine', 'keinen', 'aucun', 'aucune', 'ningun', 'ninguna', 'ningún', 'nenhum', 'nenhuma', 'nessun', 'nessuno', 'nessuna', 'nie', 'без', 'нет',
@@ -24301,9 +24301,11 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
                 const bodyDelim = bodyClause.delim || '';
                 if (bodyDelim === '') {
                   const bodyMasked = bodyClause.maskedText || bodyClause.text || '';
+                  // Only a new publication command ends the body: a publish
+                  // verb governing a platform. Bare verbs ("We publish
+                  // weekly.") are body prose, not a new destination.
                   if (SOCIAL_PUBLISH_VERBS.test(bodyMasked)
-                      && anyPlatformPattern.test(bodyMasked)
-                      && !platformPattern.test(bodyMasked)) break;
+                      && anyPlatformPattern.test(bodyMasked)) break;
                   scoped += `\n${bodyClause.text}`;
                   continue;
                 }
@@ -24313,7 +24315,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
                 if (SOCIAL_COORDINATING_DELIMITER.test(bodyDelim)
                     && anyPlatformPattern.test(bodyMasked)
                     && (SOCIAL_PUBLISH_VERBS.test(bodyMasked) || hasQuotedPayload(bodyClause.text))) break;
-                if (SOCIAL_PUBLISH_VERBS.test(bodyMasked)) break;
+                if (SOCIAL_PUBLISH_VERBS.test(bodyMasked) && anyPlatformPattern.test(bodyMasked)) break;
                 if (/^[.!?;:,、，。；：]$/.test(bodyDelim)) scoped += `${bodyDelim}${bodyClause.text}`;
                 else scoped += ` ${bodyDelim}${bodyClause.text}`;
               }

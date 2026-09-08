@@ -91174,6 +91174,8 @@ test('social destination rebinding refreshes platform-specific payload and uploa
       AgentClass.name + ': body continuation line after inline colon text was lost');
     assert.equal(agent._extractWorkflowTaskBody('Post on X: hello, world', '', 'twitter'), 'hello, world',
       AgentClass.name + ': comma-delimited body text after the colon was lost');
+    assert.equal(agent._extractWorkflowTaskBody('Post on X: Hello. We publish weekly.', '', 'twitter'), 'Hello. We publish weekly.',
+      AgentClass.name + ': body sentence with a bare publish verb was cut off');
     assert.equal(guard.workflowMetadataRequirementsResolved, true);
     assert.deepEqual(guard.workflowSocialUploadEvidence, [],
       AgentClass.name + ': X upload provenance leaked into the Bluesky binding');
@@ -93223,6 +93225,11 @@ test('upper-bound attachment qualifiers verify as maximum counts', () => {
     assert.equal(agent._workflowSocialPublishedAttachmentObserved(
       { value: 'one image along with one video' }, { attachments: [image(1), video(1)] }), true,
       AgentClass.name + ': one image along with one video was rejected');
+    assert.equal(agent._parseWorkflowAttachmentRequirement('one image in addition to one video').isGeneric, true,
+      AgentClass.name + ': in-addition-to conjunction was parsed as a filename');
+    assert.equal(agent._workflowSocialPublishedAttachmentObserved(
+      { value: 'one image in addition to one video' }, { attachments: [image(1), video(1)] }), true,
+      AgentClass.name + ': one image in addition to one video was rejected');
     const unrestrictedOrPngImage = agent._parseWorkflowAttachmentRequirement('one image or one PNG image');
     assert.equal(unrestrictedOrPngImage.mediaAlternativeBranches.length, 2,
       AgentClass.name + ': a format token consumed the noun slot of a whole-media alternative');
