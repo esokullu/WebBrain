@@ -91661,6 +91661,20 @@ test('X and Bluesky same-route publication accepts only one new permalink with t
       { field: 'body', value: '1', rawValue: '①' },
       { bodyText: '①' },
     ), true, AgentClass.name + ': the preserved raw body stopped verifying');
+    assert.equal(agent._workflowSocialPublishedBodyObserved(
+      { field: 'body', value: '1 https://example.com/long', rawValue: '① https://example.com/long' },
+      {
+        bodyText: '1 example.com/long…',
+        links: [{ href: 'https://t.co/x', text: 'example.com/long…', expandedUrl: 'https://example.com/long' }],
+      },
+    ), false, AgentClass.name + ': a folded body with a shortened link verified');
+    assert.equal(agent._workflowSocialPublishedBodyObserved(
+      { field: 'body', value: '① https://example.com/long' },
+      {
+        bodyText: '① example.com/long…',
+        links: [{ href: 'https://t.co/x', text: 'example.com/long…', expandedUrl: 'https://example.com/long' }],
+      },
+    ), true, AgentClass.name + ': an exact body with a shortened link stopped verifying');
       const guard = agent._startPlanExecutionGuard(tabId, 'act', {
         requestKind: 'execute',
         requiresStateChange: true,

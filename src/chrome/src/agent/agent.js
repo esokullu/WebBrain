@@ -2803,17 +2803,22 @@ export class Agent extends LoopDetector {
       if (this._workflowPublishedPayloadValueObserved(requirement, { pageText: authoredText })) return true;
     }
     const links = Array.isArray(record?.links) ? record.links : [];
+    // The URL-substitution comparison below runs on the exact (NFC) bodies
+    // built from the preserved raw value, so compatibility-folding can never
+    // certify visibly distinct text before matching.
+    const expectedExact = this._workflowSocialExactBody(requirement?.rawValue ?? requirement?.value);
+    const observedExact = this._workflowSocialExactBody(authoredText);
     // "!", ";" and ":" are valid path characters, so a URL like
     // https://en.wikipedia.org/wiki/Yahoo! is not punctuated, it just ends
     // that way. Trim only when the page never rendered the raw form.
     // CJK prose runs a sentence delimiter straight into the next clause with
     // no space, and no amount of trailing trimming can find the end of a URL
     // that already swallowed the rest of the sentence.
-    const requestedUrls = (expectedBody.match(/https?:\/\/[^\s<>"'\u3002\u3001\uff0c\uff1b\uff1a\uff01\uff1f\u2026\u2025]+/gi) || [])
+    const requestedUrls = (expectedExact.match(/https?:\/\/[^\s<>"'\u3002\u3001\uff0c\uff1b\uff1a\uff01\uff1f\u2026\u2025]+/gi) || [])
       .map((rawUrl) => {
         const trimmed = this._workflowTrimUrlPunctuation(rawUrl);
         if (trimmed === rawUrl) return rawUrl;
-        const renderedRaw = observedBody.includes(rawUrl)
+        const renderedRaw = observedExact.includes(rawUrl)
           || links.some(link => this._workflowSocialLinkMatchesRequested(link, rawUrl));
         return renderedRaw ? rawUrl : trimmed;
       });
@@ -2839,8 +2844,8 @@ export class Agent extends LoopDetector {
       const getDisplayed = (candidate) => {
         if (!candidate) return null;
         return ['text', 'title', 'ariaLabel', 'expandedUrl', 'href']
-          .map(field => this._workflowMetadataValue(candidate[field]))
-          .filter(value => value && observedBody.includes(value))
+          .map(field => this._workflowSocialExactBody(candidate[field]))
+          .filter(value => value && observedExact.includes(value))
           .find(value => this._workflowSocialDisplayedUrlMatchesRequested(value, requested));
       };
 
@@ -2884,7 +2889,7 @@ export class Agent extends LoopDetector {
       let priorDisplayOccurrences = 0;
       for (let i = 0; i < linkIndex; i++) {
         const hasMatchingDisplay = ['text', 'title', 'ariaLabel', 'expandedUrl', 'href']
-          .map(field => this._workflowMetadataValue(links[i]?.[field]))
+          .map(field => this._workflowSocialExactBody(links[i]?.[field]))
           .some(val => val === displayed);
         if (hasMatchingDisplay) {
           const usage = linkUsageCount.get(i) || 0;
@@ -2893,13 +2898,13 @@ export class Agent extends LoopDetector {
       }
       const occurrenceIndex = priorDisplayOccurrences + timesUsed;
 
-      const observedOccurrences = findOccurrences(observedBody, displayed);
+      const observedOccurrences = findOccurrences(observedExact, displayed);
       if (occurrenceIndex >= observedOccurrences.length) return false;
       const observedRange = observedOccurrences[occurrenceIndex];
 
       const expTimesUsed = expectedOccurrencesByUrl.get(requested) || 0;
       expectedOccurrencesByUrl.set(requested, expTimesUsed + 1);
-      const expOccurrences = findOccurrences(expectedBody, requested);
+      const expOccurrences = findOccurrences(expectedExact, requested);
       if (expTimesUsed >= expOccurrences.length) return false;
       const expectedRange = expOccurrences[expTimesUsed];
 
@@ -2917,8 +2922,8 @@ export class Agent extends LoopDetector {
       return res;
     };
 
-    const comparableExpected = applyReplacements(expectedBody, expectedReplacements);
-    const comparableObserved = applyReplacements(observedBody, observedReplacements);
+    const comparableExpected = applyReplacements(expectedExact, expectedReplacements);
+    const comparableObserved = applyReplacements(observedExact, observedReplacements);
     if (!comparableExpected || !comparableObserved) return false;
 
     if (hasDedicatedAuthoredText) {
