@@ -91438,6 +91438,10 @@ test('alternative social destinations require one verified publication, not ever
     }), true, AgentClass.name + ': unless-then fallback required a second public post');
     assert.equal(agent._socialPublishTargetsAreAlternatives({
       ...guard,
+      taskText: 'Post on X, but if it fails, post on Bluesky.',
+    }), true, AgentClass.name + ': but-if fallback required a second public post');
+    assert.equal(agent._socialPublishTargetsAreAlternatives({
+      ...guard,
       taskText: 'Post hello on X and Bluesky. Compare X or Bluesky afterward.',
     }), false, AgentClass.name + ': an unrelated later comparison suppressed a requested publication');
     assert.equal(agent._socialPublishTargetsAreAlternatives({
@@ -93322,6 +93326,15 @@ test('upper-bound attachment qualifiers verify as maximum counts', () => {
       { format: 'png', count: 1 },
       { format: 'jpeg', count: 1 },
     ], AgentClass.name + ': elliptical alongside-format counts were not distributed');
+    for (const conjunction of ['together with', 'along with']) {
+      const ellipticalFormats = agent._parseWorkflowAttachmentRequirement(`one PNG ${conjunction} one JPEG image`);
+      assert.equal(ellipticalFormats.isGeneric, true,
+        AgentClass.name + `: an elliptical ${conjunction} conjunction was parsed as filenames`);
+      assert.deepEqual(ellipticalFormats.imageFormatCounts, [
+        { format: 'png', count: 1 },
+        { format: 'jpeg', count: 1 },
+      ], AgentClass.name + `: elliptical ${conjunction} counts were not distributed`);
+    }
     for (const [attachments, expected, message] of [
       [[{ type: 'image', src: 'https://cdn.example/a.jpg' }], true, 'the required JPEG was rejected by a separate PNG prohibition'],
       [[{ type: 'image', src: 'https://cdn.example/a.webp' }], false, 'an unrequested WebP satisfied a required JPEG'],

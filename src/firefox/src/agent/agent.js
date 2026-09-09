@@ -2842,11 +2842,11 @@ export class Agent extends LoopDetector {
     // media noun. Restore it so each counted format parses as its own
     // conjunctive clause; "or" choices keep sharing one noun and are handled
     // by the format-qualifier grammar instead. The other unambiguously
-    // conjunctive separators ("plus", "also", "alongside", "as well as")
-    // restore alike.
+    // conjunctive separators ("plus", "also", "alongside", "along with",
+    // "together with", "as well as") restore alike.
     {
       const ellipticalCount = '(?:\\d+|zero|one|two|three|four|five|six|seven|eight|nine|ten|a|an|single|both)';
-      const ellipticalConjunction = '(and|plus|also|alongside|as\\s+well\\s+as)';
+      const ellipticalConjunction = '(and|plus|also|alongside|along\\s+with|together\\s+with|as\\s+well\\s+as)';
       text = text
         .replace(
           new RegExp(`(?<![${SOCIAL_WORD_EDGE}])(${ellipticalCount})\\s+(${IMAGE_ATTACHMENT_FORMAT})\\s+${ellipticalConjunction}\\s+(${ellipticalCount})\\s+(${IMAGE_ATTACHMENT_FORMAT})\\s+(images?|photos?|pictures?|pics?)(?![${SOCIAL_WORD_EDGE}])`, 'giu'),
@@ -16104,7 +16104,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     // Only list-shaped glue may sit between the two platform mentions. An
     // unrelated branch such as "X or report the blocker; also post on
     // Bluesky" contains `or`, but it does not coordinate the destinations.
-    const directAlternativeBridge = /^\s*(?:(?:page|account|profile)\s*)?(?:(?:[,;]|[.!?](?=\s*(?:if|unless)\b))\s*)?(?:(?:if\s+(?:(?:that|it|this)\s+)?(?:unavailable|not\s+available|not\s+work(?:ing|s)?|(?:do|does|did)\s+not\s+work|(?:do|does|did)n['’]?t\s+work|available|needed|necessary|possible|possibly|unable|unsuccessful|failing|failed|fails?|failure)\b[^,;]*,?\s*)(?:(?:or|otherwise|failing\s+that|oder|ou|o|oppure|veya|ya\s+da|\u0438\u043b\u0438|\u043b\u0438\u0431\u043e)(?![\p{L}\p{N}_])|(?:\u6216\u8005|\u6216|\u307e\u305f\u306f|\u305d\u308c\u3068\u3082|\uB610\uB294|\uD639\uC740))?|(?:(?:or|otherwise|failing\s+that|oder|ou|o|oppure|veya|ya\s+da|\u0438\u043b\u0438|\u043b\u0438\u0431\u043e)(?![\p{L}\p{N}_])|(?:\u6216\u8005|\u6216|\u307e\u305f\u306f|\u305d\u308c\u3068\u3082|\uB610\uB294|\uD639\uC740))|(?:unless\s+[^,;]*,\s*then\s*))\s*(?:,\s*)?(?:(?:alternatively|otherwise|else)(?:\s*,\s*|\s+))?(?:,\s*if\s+(?:(?:that|it|this)\s+)?(?:unavailable|not\s+available|not\s+work(?:ing|s)?|(?:do|does|did)\s+not\s+work|(?:do|does|did)n['’]?t\s+work|available|needed|necessary|possible|unable|unsuccessful|failing|failed|fails?|failure)\b[^,;]*,?\s*)?(?:(?:post|publish|share|tweet|send|reply|respond)\s+(?:(?:this|that|it|the\s+following)\s+)?)?(?:(?:also\s+)?(?:on|onto|to|via|in|at|en|sur|sobre|\u00e0|au|auf|su|em|na|no|nos|nas|para|\u0432|\u043d\u0430)\s+)?(?:the\s+)?$/iu;
+    const directAlternativeBridge = /^\s*(?:(?:page|account|profile)\s*)?(?:(?:[,;]|[.!?](?=\s*(?:if|unless|but)\b))\s*)?(?:(?:but\s+)?(?:if\s+(?:(?:that|it|this)\s+)?(?:unavailable|not\s+available|not\s+work(?:ing|s)?|(?:do|does|did)\s+not\s+work|(?:do|does|did)n['’]?t\s+work|available|needed|necessary|possible|possibly|unable|unsuccessful|failing|failed|fails?|failure)\b[^,;]*,?\s*)(?:(?:or|otherwise|failing\s+that|oder|ou|o|oppure|veya|ya\s+da|\u0438\u043b\u0438|\u043b\u0438\u0431\u043e)(?![\p{L}\p{N}_])|(?:\u6216\u8005|\u6216|\u307e\u305f\u306f|\u305d\u308c\u3068\u3082|\uB610\uB294|\uD639\uC740))?|(?:(?:or|otherwise|failing\s+that|oder|ou|o|oppure|veya|ya\s+da|\u0438\u043b\u0438|\u043b\u0438\u0431\u043e)(?![\p{L}\p{N}_])|(?:\u6216\u8005|\u6216|\u307e\u305f\u306f|\u305d\u308c\u3068\u3082|\uB610\uB294|\uD639\uC740))|(?:but\s+)?(?:unless\s+[^,;]*,\s*then\s*))\s*(?:,\s*)?(?:(?:alternatively|otherwise|else)(?:\s*,\s*|\s+))?(?:,\s*if\s+(?:(?:that|it|this)\s+)?(?:unavailable|not\s+available|not\s+work(?:ing|s)?|(?:do|does|did)\s+not\s+work|(?:do|does|did)n['’]?t\s+work|available|needed|necessary|possible|unable|unsuccessful|failing|failed|fails?|failure)\b[^,;]*,?\s*)?(?:(?:post|publish|share|tweet|send|reply|respond)\s+(?:(?:this|that|it|the\s+following)\s+)?)?(?:(?:also\s+)?(?:on|onto|to|via|in|at|en|sur|sobre|\u00e0|au|auf|su|em|na|no|nos|nas|para|\u0432|\u043d\u0430)\s+)?(?:the\s+)?$/iu;
     const explicitAlternativeBridge = /^\s*(?:(?:page|account|profile)\s*)?(?:,\s*)?(?:(?:alternatively|otherwise|failing\s+that)(?:\s*,\s*)?(?:[\s,]+(?:on|onto|to|via|in|at))?|as\s+an\s+alternative\s+to)\s*(?:the\s+)?$/iu;
     const oneOfAlternativeLead = /(?<![\p{L}\p{N}_])one\s+of\s+(?:the\s+)?$/iu;
     const oneOfAlternativeBridge = /^\s*(?:,\s*)?(?:and|or)\s+(?:the\s+)?$/iu;
