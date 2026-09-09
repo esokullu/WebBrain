@@ -292,6 +292,15 @@ const SOCIAL_SEQUENTIAL_DELIMITER = /^(?:then|luego|puis|ensuite|dann|poi|sonra|
 // is on Bluesky." is prose about a person, not a command. Post + Name +
 // copula/reporting verb stays body prose instead of opening a new command.
 const SOCIAL_PROPER_NAME_PROSE_LEAD = /^post\s+[A-Z][a-z]+(?:'[a-z]+)?\s+(?:is|are|was|were|be|been|being|has|have|had|say|says|said|announce|announces|announced)\b/i;
+// Past-tense and participle verb forms describe already-published content
+// and never issue a new publication command, in every covered language:
+// English -ed, French -e-acute endings, the listed German participle. The
+// remaining listed forms are tenseless, imperative, or infinitive.
+const SOCIAL_PAST_PUBLISH_VERB = /(?:ed|\u00e9e?s?|ver\u00f6ffentlicht)$/iu;
+// A sequential step continues authored prose ("Then we launched it") rather
+// than starting an operational follow-up ("Then let me know"): narrative
+// pronouns/demonstratives or proper names governing a past-tense verb.
+const SOCIAL_NARRATIVE_CONTINUATION = /^[\s.,;:!?]*(?:then\s+)?(?:(?:[Ii]|[Ww]e|[Hh]e|[Ss]he|[Tt]hey|[Ii]t|[Tt]his|[Tt]hat)\s+|[A-Z][a-z]+\s+)\p{L}*ed\b/u;
 // A hyphenated word merely starts with a publish token ("Post-processing
 // happens on Bluesky" is prose, not a command): only a standalone token
 // opens a new publication command.
@@ -2570,8 +2579,12 @@ export class Agent extends LoopDetector {
     }
     if (normalizedClassified.length === 0 || continuationIndex !== 0) return false;
     const excerptRemainder = normalizedExtracted.slice(normalizedClassified.length);
-    return excerptRemainder.trim().length > 0
-      && !/^[\s.,;:!?]*(?:then|next|after(?:wards)?|finally|also|please|let\s+me\s+know|tell\s+me|confirm(?:ing)?|verif\w*|notif\w*|report|update\s+me|thanks?|thank\s+you)\b/iu.test(excerptRemainder);
+    if (excerptRemainder.trim().length === 0) return false;
+    // A narrative continuation ("Then we launched it") is further body prose
+    // even when it starts with a sequential word; only a genuine operational
+    // follow-up keeps the classified value.
+    if (SOCIAL_NARRATIVE_CONTINUATION.test(excerptRemainder)) return true;
+    return !/^[\s.,;:!?]*(?:then|next|after(?:wards)?|finally|also|please|let\s+me\s+know|tell\s+me|confirm(?:ing)?|verif\w*|notif\w*|report|update\s+me|thanks?|thank\s+you)\b/iu.test(excerptRemainder);
   }
 
   // AX formatLine truncates values at 60 chars and appends '...', plus
@@ -18096,7 +18109,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           const beforePlat = text.slice(0, match.index);
           const govern = [...beforePlat.matchAll(new RegExp(SOCIAL_STANDALONE_PUBLISH_VERB.source, 'giu'))].pop();
           if (!govern) continue;
-          if (/ed$/iu.test(govern[0])) continue;
+          if (SOCIAL_PAST_PUBLISH_VERB.test(govern[0])) continue;
           const beforeVerb = beforePlat.slice(0, govern.index);
           const hasReporterSubject = /(?<![\p{L}\p{N}_])(?:i|we|he|she|they|it)(?![\p{L}\p{N}_])/iu.test(beforeVerb)
             || (/s$/iu.test(govern[0]) && /(?<![\p{L}\p{N}_])[A-Z][a-z]+(?![\p{L}\p{N}_])/u.test(beforeVerb));
@@ -18159,7 +18172,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           const verbWord = verb[0] || '';
           // A past-tense verb describes already-published content ("the post
           // published on X"), it never issues a new publication command.
-          if (/ed$/iu.test(verbWord)) continue;
+          if (SOCIAL_PAST_PUBLISH_VERB.test(verbWord)) continue;
           const unscopedAfterVerbText = targetText.slice(verbIndex + verbWord.length);
           const nextPublish = unscopedAfterVerbText.match(SOCIAL_PUBLISH_VERBS);
           const afterVerbText = nextPublish
@@ -26950,10 +26963,14 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
                       && anyPlatformPattern.test(following.maskedText || following.text || ''))
                       || startsNewPublication(following.maskedText || following.text || ''));
                   // A sequential step ("Then let me know...") is a new
-                  // instruction either way, so its glue is dropped too.
+                  // instruction either way, so its glue is dropped too. A
+                  // narrative continuation ("Then we launched it") keeps its
+                  // sentence punctuation as body prose.
                   const followingStartsSequence = following
                     && SOCIAL_SEQUENTIAL_DELIMITER.test(following.delim || '');
-                  if (!followingStartsDestination && !followingStartsSequence) {
+                  const followingContinuesNarrative = following
+                    && SOCIAL_NARRATIVE_CONTINUATION.test(following.maskedText || following.text || '');
+                  if (!followingStartsDestination && (!followingStartsSequence || followingContinuesNarrative)) {
                     if (/^[.!?;:,、，。；：]$/.test(bodyDelim)) scoped += bodyDelim;
                     else if (bodyDelim) scoped += ` ${bodyDelim}`;
                   }
@@ -26975,8 +26992,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
                     && anyPlatformPattern.test(bodyMasked)) break;
                 if (startsNewPublication(bodyMasked)) break;
                 // A sequential step ("Then let me know when it is done")
-                // starts a new instruction, not body prose.
-                if (SOCIAL_SEQUENTIAL_DELIMITER.test(bodyDelim)) break;
+                // starts a new instruction, not body prose. A narrative
+                // continuation ("Then we launched it") stays body prose.
+                if (SOCIAL_SEQUENTIAL_DELIMITER.test(bodyDelim)
+                    && !SOCIAL_NARRATIVE_CONTINUATION.test(bodyClause.maskedText || bodyClause.text || '')) break;
                 if (/^[.!?;:,、，。；：]$/.test(bodyDelim)) scoped += `${bodyDelim}${bodyClause.text}`;
                 else scoped += ` ${bodyDelim}${bodyClause.text}`;
               }

@@ -91088,6 +91088,10 @@ test('social publication workflow follows the live X or Bluesky destination and 
         'past-tense mention of an existing post was bound as a publish destination'],
       ['A post shared on Bluesky should be entered into the form.', [],
         'past-tense mention of an existing post was bound as a publish destination'],
+      ['Utilisez le message publié sur X pour remplir le formulaire.', [],
+        'French past-tense mention of an existing post was bound as a publish destination'],
+      ['Publiez le message sur X.', ['twitter'],
+        'a French imperative command lost its destination'],
     ]) {
       assert.deepEqual(
         [...agent._trustedSocialPublishTargetAdapters({ taskText })].sort(),
@@ -91219,6 +91223,8 @@ test('social destination rebinding refreshes platform-specific payload and uploa
       AgentClass.name + ': narrative prose naming media ended the post body');
     assert.equal(agent._extractWorkflowTaskBody('Post on X: Hello. Could you attach image.png?', '', 'twitter'), 'Hello',
       AgentClass.name + ': a polite attachment request contaminated the post body');
+    assert.equal(agent._extractWorkflowTaskBody('Post on X: First we built a detailed prototype with accessibility support and extensive testing. Then we launched it to everyone.', '', 'twitter'), 'First we built a detailed prototype with accessibility support  and extensive testing. Then we launched it to everyone.',
+      AgentClass.name + ': a narrative then-continuation truncated the post body');
     assert.equal(agent._extractWorkflowTaskBody('Post on X: Hello. I can upload photos from here.', '', 'twitter'), 'Hello. I can upload photos from here.',
       AgentClass.name + ': modal narrative prose naming media ended the post body');
     assert.equal(agent._extractWorkflowTaskBody('Post on X: Hello. Post Malone is on Bluesky.', '', 'twitter'), 'Hello. Post Malone is on Bluesky.',
@@ -91231,6 +91237,8 @@ test('social destination rebinding refreshes platform-specific payload and uploa
       AgentClass.name + ': a permitted word-boundary excerpt did not restore the full task body');
     assert.equal(agent._workflowExtractedBodySupersedesClassified('Hello world', 'Hello world. Please confirm'), false,
       AgentClass.name + ': a complete classified body grew into an operational follow-up');
+    assert.equal(agent._workflowExtractedBodySupersedesClassified('First we built a prototype', 'First we built a prototype with care. Then we launched it'), true,
+      AgentClass.name + ': a narrative then-continuation kept the classified excerpt');
     assert.equal(agent._extractWorkflowTaskBody('Post on X: hello; and on Bluesky: goodbye', '', 'twitter'), 'hello',
       AgentClass.name + ': a following destination body contaminated the X body');
     assert.equal(agent._extractWorkflowTaskBody('Post on X: hello; and on Bluesky: goodbye', '', 'bluesky'), 'goodbye',
