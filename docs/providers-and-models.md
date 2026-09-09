@@ -68,6 +68,12 @@ class BaseLLMProvider {
 | `fireworks` | `openai` | router | `accounts/fireworks/models/llama-v3p3-70b-instruct` | Model-name regex |
 | `z_ai` | `openai` | cloud | `glm-5.2` | Model-name regex |
 
+The sidepanel also exposes `webbrain_cloud_max` as **WebBrain Compass XL**.
+It is a managed, sidepanel-only runtime profile rather than a second Settings
+provider card. It uses the same endpoint and sends `model: max`; the hosted
+backend returns `WebBrain Compass XL 1.0` and consumes usage credits at five
+times the standard rate.
+
 ### Extended provider catalog
 
 WebBrain also ships 77 disabled-by-default provider cards. Most are sourced

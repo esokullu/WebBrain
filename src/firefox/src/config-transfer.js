@@ -289,6 +289,7 @@ export function mergeConfigPatchSettings(current = {}, patch = {}) {
   // identity. A portable export may contain a stale copy, so never let it
   // replace the runtime's current WebBrain Compass configuration.
   delete patchProviders.webbrain_cloud;
+  delete patchProviders.webbrain_cloud_max;
   merged.providers = { ...currentProviders, ...patchProviders };
   return merged;
 }

@@ -323,8 +323,8 @@ if (globalThis.browser?.storage?.onChanged) {
     setProviderStatus('ob.tokens.scanning');
 
     try {
-      const { providers = {}, active } = await sendToBackground('get_providers');
-      if (active === 'webbrain_cloud' && providers.webbrain_cloud?.enabled !== false) {
+      const { providers = {}, active } = await sendToBackground('get_providers', { includeSidepanelOnly: true });
+      if (['webbrain_cloud', 'webbrain_cloud_max'].includes(active) && providers[active]?.enabled !== false) {
         showCloudReady();
         return;
       }
@@ -7000,7 +7000,7 @@ function initializeLanguagePicker() {
 
 async function loadProviders() {
   try {
-    const res = await sendToBackground('get_providers');
+    const res = await sendToBackground('get_providers', { includeSidepanelOnly: true });
     providerSelect.replaceChildren();
     providerPickerMenu?.replaceChildren();
     providerPickerLabelById.clear();
@@ -7018,8 +7018,17 @@ async function loadProviders() {
     appendProviderPickerGroup(cloudGroup.label);
     appendProviderPickerOption('webbrain_cloud', cloudLabel, t('sp.providers.no_setup'));
 
+    const cloudMaxConfig = res.providers.webbrain_cloud_max || { label: 'WebBrain Compass XL' };
+    const cloudMaxLabel = cloudMaxConfig.label || 'WebBrain Compass XL';
+    const cloudMaxOption = document.createElement('option');
+    cloudMaxOption.value = 'webbrain_cloud_max';
+    cloudMaxOption.textContent = `${cloudMaxLabel} — ${t('sp.providers.no_setup')}`;
+    cloudGroup.appendChild(cloudMaxOption);
+    providerPickerLabelById.set('webbrain_cloud_max', cloudMaxLabel);
+    appendProviderPickerOption('webbrain_cloud_max', cloudMaxLabel, t('sp.providers.no_setup'), 'webbrain_cloud');
+
     const configuredEntries = Object.entries(res.providers)
-      .filter(([id, config]) => id !== 'webbrain_cloud' && config?.configured === true);
+      .filter(([id, config]) => !['webbrain_cloud', 'webbrain_cloud_max'].includes(id) && config?.configured === true);
     if (configuredEntries.length) {
       const activeGroup = document.createElement('optgroup');
       activeGroup.label = t('sp.providers.active_group');
@@ -7042,7 +7051,7 @@ async function loadProviders() {
     providerSelect.appendChild(moreOption);
     appendProviderPickerOption(MORE_PROVIDERS_OPTION_VALUE, t('sp.providers.more'), '');
 
-    const selectableProviderIds = new Set(['webbrain_cloud', ...configuredEntries.map(([id]) => id)]);
+    const selectableProviderIds = new Set(['webbrain_cloud', 'webbrain_cloud_max', ...configuredEntries.map(([id]) => id)]);
     selectedProviderId = selectableProviderIds.has(res.active) ? res.active : 'webbrain_cloud';
     providerSelect.value = selectedProviderId;
     syncProviderPickerButton();
@@ -7061,7 +7070,7 @@ async function openProvidersSettingsPage() {
 }
 
 function isWebBrainCloudProviderSelected() {
-  return providerSelect?.value === 'webbrain_cloud';
+  return ['webbrain_cloud', 'webbrain_cloud_max'].includes(providerSelect?.value);
 }
 
 function markSelectedProviderUntested() {
@@ -7078,7 +7087,7 @@ function markSelectedProviderFailed(error) {
 async function testConnection(options = {}) {
   const providerId = options.providerId || providerSelect.value;
   const requestId = ++providerTestRequestId;
-  if (options.skipWebBrainCloud && providerId === 'webbrain_cloud') {
+  if (options.skipWebBrainCloud && ['webbrain_cloud', 'webbrain_cloud_max'].includes(providerId)) {
     if (requestId === providerTestRequestId && providerSelect.value === providerId) {
       markSelectedProviderUntested();
     }
@@ -8153,7 +8162,7 @@ async function parseSlashCommands(text, tabId = currentTabId, options = {}) {
 
   if (command.value === '/vision') {
     try {
-      const { providers, active } = await sendToBackground('get_providers');
+      const { providers, active } = await sendToBackground('get_providers', { includeSidepanelOnly: true });
       const config = providers[active];
       if (config) {
         const toggled = toggledVisionProviderConfig(config.sourceProviderId || active, config);

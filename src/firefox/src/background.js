@@ -3392,7 +3392,10 @@ async function handleMessage(msg, sender) {
     }
 
     case 'get_providers': {
-      return { providers: providerManager.getAll(), active: providerManager.activeProviderId };
+      return {
+        providers: providerManager.getAll({ includeSidepanelOnly: msg.includeSidepanelOnly === true }),
+        active: providerManager.activeProviderId,
+      };
     }
 
     case 'get_active_prompt_tier': {
