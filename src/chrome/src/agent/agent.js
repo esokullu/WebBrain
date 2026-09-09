@@ -5598,16 +5598,31 @@ export class Agent extends LoopDetector {
       const sameRouteAdapter = siteWorkflow.adapterName === 'linkedin'
         || siteWorkflow.adapterName === 'twitter'
         || siteWorkflow.adapterName === 'bluesky';
+      // The XHR flow opens the new permalink to read it: that navigation click
+      // moves lastAction past the dispatch and leaves the composer behind.
+      // The payload match below still has to confirm the exact reviewed body
+      // on the intended account before anything binds. A missing pre-dispatch
+      // baseline means nothing was seen before, so every observed identity is
+      // new; on a permalink page there is exactly one candidate, so no
+      // ambiguity can arise from that.
+      const submitOrigin = this._normalizeUrl(submit?.originatingUrl || '');
+      const openedPermalinkAfterDispatch = !!submitOrigin
+        && !!this._workflowPublishedResourceIdentity(siteWorkflow, pageUrl)
+        && this._normalizeUrl(pageUrl) !== submitOrigin;
+      const preDispatchIdentities = Array.isArray(binding.preDispatchPublishedResourceIdentities)
+        ? binding.preDispatchPublishedResourceIdentities
+        : [];
       if (!binding.publishedResourceIdentity
           && sameRouteAdapter
-          && Array.isArray(binding.preDispatchPublishedResourceIdentities)
+          && (Array.isArray(binding.preDispatchPublishedResourceIdentities) || openedPermalinkAfterDispatch)
           && submit?.dispatched === true
           && submit?.observedAfterSubmit === true
           && submit?.formValidationFailed !== true
           && this._normalizeUrl(pageUrl) === this._normalizeUrl(submit?.currentUrl || '')
-          && Number(this.completionInvariants.get(tabId)?.lastAction?.sequence || 0)
-            === Number(submit?.actionSequence || 0)) {
-        const existing = new Set(binding.preDispatchPublishedResourceIdentities);
+          && (Number(this.completionInvariants.get(tabId)?.lastAction?.sequence || 0)
+            === Number(submit?.actionSequence || 0)
+            || openedPermalinkAfterDispatch)) {
+        const existing = new Set(preDispatchIdentities);
         const newlyObserved = observedResourceIdentities.filter(identity => !existing.has(identity));
         const livePublishStatusObserved = (Array.isArray(pageState?.successMessages)
           ? pageState.successMessages

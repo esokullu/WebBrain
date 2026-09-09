@@ -92426,6 +92426,77 @@ test('X and Bluesky same-route publication accepts only one new permalink with t
   }
 });
 
+test('verification binds a permalink opened after an XHR publish', () => {
+  for (const [index, AgentClass] of [AgentCh, AgentFx].entries()) {
+    const agent = new AgentClass({});
+    agent.useSiteAdapters = true;
+    const tabId = 9096 + index;
+    const composerUrl = 'https://x.com/compose/post';
+    const publishedUrl = 'https://x.com/webbrain/status/2222222222222222222';
+    const body = 'Hello world';
+    const workflow = agent._resolvePlannerSiteWorkflow(composerUrl, {
+      request_kind: 'execute',
+      site_job: 'publish-post',
+    });
+    assert.equal(workflow?.adapterName, 'twitter');
+    const guard = agent._startPlanExecutionGuard(tabId, 'act', {
+      requestKind: 'execute',
+      requiresStateChange: true,
+      requiresSubmission: true,
+      siteWorkflow: workflow,
+    });
+    guard.successfulConsequentialToolCalls = 1;
+    guard.workflowMetadataRequirements = [{ field: 'body', value: body }];
+    guard.workflowMetadataRequirementsResolved = true;
+    agent._beginCompletionInvariant(tabId);
+    agent._recordCompletionToolResult(tabId, 'click_ax', { ref_id: 'publish-post' }, { success: true, dispatched: true });
+    agent._recordCompletionSubmitAttempt(tabId,
+      {
+        isSubmit: true,
+        publicationAccountIdentity: 'twitter:webbrain',
+        publicationAccountIdentityComplete: true,
+      },
+      'click_ax',
+      { ref_id: 'publish-post' },
+      composerUrl,
+      composerUrl,
+      { success: true, dispatched: true });
+    // XHR publish: no navigation at dispatch. The agent clicks the new post
+    // open and reads its permalink; that click moves lastAction past dispatch.
+    agent._recordCompletionToolResult(tabId, 'click_ax', { ref_id: 'post' }, { success: true });
+    agent._recordCompletionToolResult(tabId, 'read_page', {}, {
+      success: true,
+      url: publishedUrl,
+      content: `WebBrain\n${body}\n2m`,
+    });
+    const submit = agent._completionSubmitStates.get(tabId);
+    assert.equal(submit.workflowBinding?.publishedResourceIdentity, undefined,
+      AgentClass.name + ': the permalink observation bound without terminal verification');
+    const terminal = agent._workflowTerminalEvidenceFromDone(tabId,
+      {
+        workflowResourceUrls: [publishedUrl],
+        workflowResourceRecords: [{ url: publishedUrl, text: `WebBrain\n${body}\n2m` }],
+      },
+      publishedUrl,
+      { submit, verifiedFinalSubmit: false, relevantForms: 0 });
+    assert.equal(terminal?.source, 'dispatch_bound_published_resource',
+      AgentClass.name + ': opening the published permalink blocked verification');
+    assert.equal(submit.workflowBinding?.publishedResourceIdentity, 'twitter:status:2222222222222222222',
+      AgentClass.name + ': the opened permalink was not bound');
+    const otherUrl = 'https://x.com/webbrain/status/3333333333333333333';
+    assert.equal(agent._workflowTerminalEvidenceFromDone(tabId,
+      {
+        workflowResourceUrls: [otherUrl],
+        workflowResourceRecords: [{ url: otherUrl, text: 'WebBrain\nSomething else\n2m' }],
+      },
+      otherUrl,
+      { submit, verifiedFinalSubmit: false, relevantForms: 0 }), null,
+      AgentClass.name + ': a mismatched permalink verified');
+    assert.equal(submit.workflowBinding?.publishedResourceIdentity, 'twitter:status:2222222222222222222',
+      AgentClass.name + ': a mismatched permalink rebound the verified identity');
+  }
+});
+
 test('a requested URL keeps the closing delimiter it opened', () => {
   for (const AgentClass of [AgentCh, AgentFx]) {
     const agent = new AgentClass({});
