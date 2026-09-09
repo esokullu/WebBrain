@@ -91662,6 +91662,14 @@ test('X and Bluesky same-route publication accepts only one new permalink with t
       { bodyText: 'Hello world' },
     ), true, AgentClass.name + ': an identical body stopped verifying');
     assert.equal(agent._workflowSocialPublishedBodyObserved(
+      { field: 'body', value: 'Family: 👨👩👧' },
+      { bodyText: 'Family: 👨‍👩‍👧' },
+    ), false, AgentClass.name + ': a ZWJ-stripped body verified against joined emoji');
+    assert.equal(agent._workflowSocialPublishedBodyObserved(
+      { field: 'body', value: 'Family: 👨‍👩‍👧' },
+      { bodyText: 'Family: 👨‍👩‍👧' },
+    ), true, AgentClass.name + ': joined emoji stopped verifying');
+    assert.equal(agent._workflowSocialPublishedBodyObserved(
       { field: 'body', value: '1', rawValue: '①' },
       { bodyText: '1' },
     ), false, AgentClass.name + ': a folded classifier value verified against its NFKC form');

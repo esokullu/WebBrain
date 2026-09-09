@@ -2060,10 +2060,12 @@ export class Agent extends LoopDetector {
 
   // Same pipeline as _workflowMessageBody, but NFC instead of NFKC: exact
   // social-body verification must keep visibly distinct payloads (circled
-  // digits, fullwidth letters, ligatures) distinct. Keep the two in sync.
+  // digits, fullwidth letters, ligatures) distinct. Only genuinely ignorable
+  // characters are stripped: zero-width join controls shape visible text
+  // (joined emoji, Indic scripts) and are preserved. Keep the two in sync.
   _workflowSocialExactBody(value) {
     let text = String(value ?? '')
-      .replace(new RegExp('[\\u200b-\\u200d\\ufeff]', 'g'), '')
+      .replace(new RegExp('[\\u200b\\ufeff]', 'g'), '')
       .replace(/\r\n?/g, '\n')
       .split('\n')
       .map(line => line.replace(/\s+/g, ' ').trim())
