@@ -91033,6 +91033,8 @@ test('social publication workflow follows the live X or Bluesky destination and 
         'hyphenated prose left colon scope and adopted Bluesky'],
       ['Post on X: Hello. Please post this on Bluesky.', ['twitter', 'bluesky'],
         'a polite follow-up command stayed inside the first body scope'],
+      ['Post on X: Hello. Could you post this on Bluesky?', ['twitter', 'bluesky'],
+        'a modal follow-up command stayed inside the first body scope'],
       ['Do not publish anything; open https://x.com/compose/post to inspect it, then submit findings in the form', [],
         'a prohibited composer URL was adopted as a publish destination'],
       ['Post on X: hello. Post on Bluesky: world', ['twitter', 'bluesky'],
@@ -91442,6 +91444,10 @@ test('alternative social destinations require one verified publication, not ever
       ...guard,
       taskText: 'Post on X, but if it fails, post on Bluesky.',
     }), true, AgentClass.name + ': but-if fallback required a second public post');
+    assert.equal(agent._socialPublishTargetsAreAlternatives({
+      ...guard,
+      taskText: 'Post on X, and if that fails, post on Bluesky.',
+    }), true, AgentClass.name + ': coordinated conditional fallback required a second public post');
     assert.equal(agent._socialPublishTargetsAreAlternatives({
       ...guard,
       taskText: 'Post hello on X and Bluesky. Compare X or Bluesky afterward.',
