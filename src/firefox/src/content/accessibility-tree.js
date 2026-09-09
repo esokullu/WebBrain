@@ -155,6 +155,21 @@
       ['.publish-btn', '发布'],
       ['.publish-button', '发布'],
     ],
+    baiduTieba: [
+      // Match the stable action wrapper, then inspect SVG href/xlink:href via
+      // the DOM API because namespaced attribute selectors vary by engine.
+      ['.pc-pb-first-floor-interactive .action-item', '转发', '#share_pb'],
+      ['.pc-pb-first-floor-interactive .action-item', '点赞', '#agree_pb'],
+      ['.pc-pb-first-floor-interactive .action-item', '收藏', '#collect'],
+      ['.pc-pb-first-floor-interactive .more-action', '更多', '#ellipsis'],
+      ['.pc-pb-comments-desc .zan-container-dark', '赞', '#agree_comment'],
+      ['.pc-pb-comments-desc .reply-container', '回复', '#comment_comment'],
+      ['.pc-pb-comments-desc .more-action', '更多', '#ellipsis_comment'],
+      ['.follow-person-btn', '关注楼主'],
+      ['.follow-forum-btn', '关注本吧'],
+      ['.pc-pb-reply-box', '回复'],
+      ['.pc-pb-reply-box .publish-btn', '发布'],
+    ],
   };
 
   function currentSiteInteractionConfig() {
@@ -162,6 +177,7 @@
     const onHost = (domain) => hostname === domain || hostname.endsWith(`.${domain}`);
     if (onHost('bilibili.com')) return { key: 'bilibili', rules: SITE_INTERACTION_RULES.bilibili };
     if (onHost('xiaohongshu.com')) return { key: 'xiaohongshu', rules: SITE_INTERACTION_RULES.xiaohongshu };
+    if (onHost('tieba.baidu.com')) return { key: 'baiduTieba', rules: SITE_INTERACTION_RULES.baiduTieba };
     // LinkedIn's interop shell renders major surfaces (the post composer
     // dialog among them) inside the open #interop-outlet shadow root. No
     // custom interaction rules needed — piercing alone makes the dialog's
@@ -172,11 +188,18 @@
 
   function getSiteInteractionDescriptor(el) {
     if (!el || typeof el.matches !== 'function') return null;
-    for (const [selector, label] of currentSiteInteractionConfig().rules) {
+    for (const [selector, label, iconHref] of currentSiteInteractionConfig().rules) {
       try {
         if (!el.matches(selector)) continue;
       } catch {
         continue;
+      }
+      if (iconHref) {
+        const hasIcon = Array.from(el.querySelectorAll?.('use') || []).some(use => (
+          use.getAttribute('href') === iconHref
+          || use.getAttribute('xlink:href') === iconHref
+        ));
+        if (!hasIcon) continue;
       }
       const explicit = String(
         el.getAttribute('aria-label') || el.getAttribute('title') || ''

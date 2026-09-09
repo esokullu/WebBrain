@@ -258,6 +258,26 @@
     }
   }
 
+  function _isSiteSelectorCandidate(el) {
+    try {
+      return _siteInteractiveSelectors().some(selector => el.matches(selector));
+    } catch {
+      return false;
+    }
+  }
+
+  function _isStandardInteractive(el) {
+    try {
+      return INTERACTIVE_SELECTORS.some(selector => el.matches(selector));
+    } catch {
+      return false;
+    }
+  }
+
+  function _isUsableSiteInteractive(el) {
+    return _isStandardInteractive(el) || !_isSiteSelectorCandidate(el) || _isSiteInteractive(el);
+  }
+
   function _composedParent(node) {
     if (!node) return null;
     if (node.assignedSlot) return node.assignedSlot;
@@ -516,6 +536,7 @@
     const out = [];
     for (const el of all) {
       if (!isVisiblyInteractive(el)) continue;
+      if (!_isUsableSiteInteractive(el)) continue;
       // If a modal is open, only include elements that are inside it.
       // This prevents the agent from seeing (and accidentally clicking)
       // elements behind the overlay — the #1 cause of "clicked Export
@@ -3064,6 +3085,7 @@
         try {
           root.querySelectorAll(sel).forEach(el => {
             if (seen.has(el)) return;
+            if (!_isUsableSiteInteractive(el)) return;
             let rect = el.getBoundingClientRect();
             // Use wrapper rect for zero-dimension form inputs
             if ((rect.width < 2 || rect.height < 2) && /^(INPUT|SELECT|TEXTAREA)$/i.test(el.tagName)) {

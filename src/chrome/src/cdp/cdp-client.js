@@ -2920,20 +2920,66 @@ export class CDPClient {
           ['.follow-wrapper', '关注'], ['.follow-btn', '关注'],
           ['.follow-button', '关注'], ['.send-btn', '发布评论'],
           ['.publish-btn', '发布'], ['.publish-button', '发布'],
+        ] : onHost('tieba.baidu.com') ? [
+          ['.pc-pb-first-floor-interactive .action-item', '转发', '#share_pb'],
+          ['.pc-pb-first-floor-interactive .action-item', '点赞', '#agree_pb'],
+          ['.pc-pb-first-floor-interactive .action-item', '收藏', '#collect'],
+          ['.pc-pb-first-floor-interactive .more-action', '更多', '#ellipsis'],
+          ['.pc-pb-comments-desc .zan-container-dark', '赞', '#agree_comment'],
+          ['.pc-pb-comments-desc .reply-container', '回复', '#comment_comment'],
+          ['.pc-pb-comments-desc .more-action', '更多', '#ellipsis_comment'],
+          ['.follow-person-btn', '关注楼主'],
+          ['.follow-forum-btn', '关注本吧'],
+          ['.pc-pb-reply-box', '回复'],
+          ['.pc-pb-reply-box .publish-btn', '发布'],
         ] : [];
-        const SELECTORS = [
+        const NATIVE_SELECTORS = [
           'a[href]', 'button', 'input:not([type="hidden"])', 'textarea', 'select',
           '[role="button"]', '[role="link"]', '[role="tab"]', '[role="menuitem"]',
           '[role="textbox"]', '[role="combobox"]', '[role="searchbox"]',
           '[contenteditable=""]', '[contenteditable="true"]', '[contenteditable="plaintext-only"]',
-          '[onclick]', '[data-action]', 'summary', 'label',
-          ...SITE_RULES.map(([selector]) => selector)
+          '[onclick]', '[data-action]', 'summary', 'label'
         ];
+        const SELECTORS = [...NATIVE_SELECTORS, ...SITE_RULES.map(([selector]) => selector)];
+
+        function matchesSiteRule(el, [selector, , iconHref]) {
+          try {
+            if (!el.matches(selector)) return false;
+          } catch (e) {
+            return false;
+          }
+          if (!iconHref) return true;
+          return Array.from(el.querySelectorAll('use')).some((use) => (
+            use.getAttribute('href') === iconHref
+            || use.getAttribute('xlink:href') === iconHref
+          ));
+        }
+
+        function matchesAnySiteSelector(el) {
+          return SITE_RULES.some(([selector]) => {
+            try {
+              return el.matches(selector);
+            } catch (e) {
+              return false;
+            }
+          });
+        }
+
+        function matchesNativeInteractive(el) {
+          return NATIVE_SELECTORS.some((selector) => {
+            try {
+              return el.matches(selector);
+            } catch (e) {
+              return false;
+            }
+          });
+        }
 
         function interactiveText(el) {
-          for (const [selector, label] of SITE_RULES) {
+          for (const rule of SITE_RULES) {
+            const [selector, label] = rule;
             try {
-              if (!el.matches(selector)) continue;
+              if (!matchesSiteRule(el, rule)) continue;
             } catch (e) {
               continue;
             }
@@ -2977,6 +3023,7 @@ export class CDPClient {
         let index = 0;
         all.forEach((el) => {
           if (!isVisiblyInteractive(el)) return;
+          if (!matchesNativeInteractive(el) && matchesAnySiteSelector(el) && !SITE_RULES.some(rule => matchesSiteRule(el, rule))) return;
           const rect = el.getBoundingClientRect();
           elements.push({
             index: index++,
