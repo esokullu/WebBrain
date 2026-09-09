@@ -91031,6 +91031,8 @@ test('social publication workflow follows the live X or Bluesky destination and 
         'proper-name prose left colon scope and adopted Bluesky'],
       ['Post on X: Hello. Post-processing happens on Bluesky.', ['twitter'],
         'hyphenated prose left colon scope and adopted Bluesky'],
+      ['Post on X: Hello. Please post this on Bluesky.', ['twitter', 'bluesky'],
+        'a polite follow-up command stayed inside the first body scope'],
       ['Do not publish anything; open https://x.com/compose/post to inspect it, then submit findings in the form', [],
         'a prohibited composer URL was adopted as a publish destination'],
       ['Post on X: hello. Post on Bluesky: world', ['twitter', 'bluesky'],

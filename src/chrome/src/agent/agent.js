@@ -18096,8 +18096,11 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         if (inColonBodyScope) {
           const clauseDelim = clause.delim || '';
           const leadText = String(clause.maskedText || clause.text || '').trimStart();
-          const leadsWithPublish = startsWithPublishVerb.test(leadText)
-            && !SOCIAL_PROPER_NAME_PROSE_LEAD.test(leadText);
+          // A polite prefix ("Please post this on Bluesky.") is still a new
+          // command: look past it before deciding the sentence stays prose.
+          const commandLeadText = leadText.replace(/^(?:please|kindly)\b[\s,]+/iu, '');
+          const leadsWithPublish = startsWithPublishVerb.test(commandLeadText)
+            && !SOCIAL_PROPER_NAME_PROSE_LEAD.test(commandLeadText);
           if (!SOCIAL_COORDINATING_DELIMITER.test(clauseDelim)
             && !SOCIAL_SEQUENTIAL_DELIMITER.test(clauseDelim)
             && clauseDelim.trim() !== ','
