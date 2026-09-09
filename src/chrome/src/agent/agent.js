@@ -18077,13 +18077,34 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         'giu',
       );
       const verbPattern = new RegExp(SOCIAL_PUBLISH_VERBS.source, 'giu');
+      // A clause opens a new publication command when a standalone publish
+      // verb governs this platform through a destination preposition:
+      // imperatives, polite and modal requests alike, with no prefix
+      // enumeration, in any language the verb and preposition sets cover.
+      // Past-tense reportage ("I posted on Bluesky yesterday") and overt
+      // non-addressee subjects ("Malone posts on Bluesky") stay prose.
+      const opensNewPublicationCommand = (clauseText) => {
+        const text = String(clauseText || '');
+        if (SOCIAL_PROPER_NAME_PROSE_LEAD.test(text.trimStart())) return false;
+        for (const match of text.matchAll(new RegExp(platformPattern.source, 'giu'))) {
+          const beforePlat = text.slice(0, match.index);
+          const govern = [...beforePlat.matchAll(new RegExp(SOCIAL_STANDALONE_PUBLISH_VERB.source, 'giu'))].pop();
+          if (!govern) continue;
+          if (/ed$/iu.test(govern[0])) continue;
+          const beforeVerb = beforePlat.slice(0, govern.index);
+          const hasReporterSubject = /(?<![\p{L}\p{N}_])(?:i|we|he|she|they|it)(?![\p{L}\p{N}_])/iu.test(beforeVerb)
+            || (/s$/iu.test(govern[0]) && /(?<![\p{L}\p{N}_])[A-Z][a-z]+(?![\p{L}\p{N}_])/u.test(beforeVerb));
+          if (hasReporterSubject) continue;
+          return true;
+        }
+        return false;
+      };
       // Colon-scoped payload is body prose: "Post on X: Hello. I posted on
       // Bluesky yesterday." must not adopt Bluesky from a later sentence.
       // Track the scope across subsequent prose until a clause begins a
       // genuine new publication command (a leading publish verb or a
       // coordinated boundary).
       let inColonBodyScope = false;
-      const startsWithPublishVerb = new RegExp(`^(?:${SOCIAL_STANDALONE_PUBLISH_VERB.source})`, 'iu');
       return clauses.some((clause, clauseIdx) => {
         if (!clause.text || clause.isNegated) return false;
         // Colon-scoped payload is body prose, not a new destination command:
@@ -18095,13 +18116,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         }
         if (inColonBodyScope) {
           const clauseDelim = clause.delim || '';
-          const leadText = String(clause.maskedText || clause.text || '').trimStart();
-          // A polite or modal prefix ("Please post this on Bluesky.",
-          // "Could you post this on Bluesky?") still opens a new command:
-          // look past it before deciding the sentence stays prose.
-          const commandLeadText = leadText.replace(/^(?:(?:please|kindly|(?:could|can|would|will|shall|should|may|might)(?:\s+you)?)\b[\s,]+)+/iu, '');
-          const leadsWithPublish = startsWithPublishVerb.test(commandLeadText)
-            && !SOCIAL_PROPER_NAME_PROSE_LEAD.test(commandLeadText);
+          const leadsWithPublish = opensNewPublicationCommand(clause.maskedText || clause.text);
           if (!SOCIAL_COORDINATING_DELIMITER.test(clauseDelim)
             && !SOCIAL_SEQUENTIAL_DELIMITER.test(clauseDelim)
             && clauseDelim.trim() !== ','
