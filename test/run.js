@@ -91325,6 +91325,53 @@ test('multi-platform social publication requires verified evidence for every des
   }
 });
 
+test('rebinding checkpoints a verified first post without a prior done', async () => {
+  for (const [index, AgentClass] of [AgentCh, AgentFx].entries()) {
+    const agent = new AgentClass({});
+    agent.useSiteAdapters = true;
+    agent._persist = () => {};
+    agent._ensureWorkflowMetadataRequirements = async () => {};
+    const tabId = 9085 + index;
+    const approvedScratchpadText = [
+      '[Approved plan pinned by planner]',
+      '- Post this update on X and Bluesky.',
+    ].join('\n');
+    agent.conversations.set(tabId, [
+      { role: 'system', content: 'system' },
+      { role: 'user', content: 'Post this update on X and Bluesky.' },
+    ]);
+    const twitterWorkflow = agent._resolvePlannerSiteWorkflow('https://x.com/compose/post', {
+      request_kind: 'execute',
+      site_job: 'publish-post',
+    });
+    const guard = agent._startPlanExecutionGuard(tabId, 'act', {
+      requestKind: 'execute',
+      requiresStateChange: true,
+      requiresSubmission: true,
+      siteWorkflow: twitterWorkflow,
+      siteWorkflowUrl: 'https://x.com/compose/post',
+      approvedScratchpadText,
+    });
+    guard.successfulConsequentialToolCalls = 1;
+    guard.evidenceTaskKey = guard.taskKey;
+    guard.workflowTerminalEvidence = {
+      bindingKey: agent._adapterWorkflowBindingKey(guard.siteWorkflow),
+      job: guard.siteWorkflow.job.id,
+      verificationKind: agent._workflowVerificationKind(guard.siteWorkflow),
+      source: 'dispatch_bound_published_resource',
+    };
+    guard.verifiedSubmissionEvidence = true;
+    const liveUrl = 'https://bsky.app/';
+    agent._currentUrl = async () => liveUrl;
+    agent._currentProgressPageScope = () => liveUrl;
+    assert.equal(await agent._adoptLiveSocialPublishWorkflow(tabId, {}), true);
+    assert.equal(guard.siteWorkflow.adapterName, 'bluesky');
+    assert.deepEqual(guard.socialPublishSatisfiedTargets, ['twitter'],
+      AgentClass.name + ': rebinding without a prior done checkpoint forgot the verified first post');
+    assert.deepEqual(agent._missingSocialPublishTargets(guard), ['bluesky']);
+  }
+});
+
 test('alternative social destinations require one verified publication, not every named platform', () => {
   for (const [index, AgentClass] of [AgentCh, AgentFx].entries()) {
     const agent = new AgentClass({});
@@ -91598,10 +91645,18 @@ test('X and Bluesky same-route publication accepts only one new permalink with t
         { field: 'body', value: 'Ａ' },
         { bodyText: 'A' },
       ), false, AgentClass.name + ': an NFKC-folded fullwidth letter verified as an exact body');
-      assert.equal(agent._workflowSocialPublishedBodyObserved(
-        { field: 'body', value: 'Hello world' },
-        { bodyText: 'Hello world' },
-      ), true, AgentClass.name + ': an identical body stopped verifying');
+    assert.equal(agent._workflowSocialPublishedBodyObserved(
+      { field: 'body', value: 'Hello world' },
+      { bodyText: 'Hello world' },
+    ), true, AgentClass.name + ': an identical body stopped verifying');
+    assert.equal(agent._workflowSocialPublishedBodyObserved(
+      { field: 'body', value: '1', rawValue: '①' },
+      { bodyText: '1' },
+    ), false, AgentClass.name + ': a folded classifier value verified against its NFKC form');
+    assert.equal(agent._workflowSocialPublishedBodyObserved(
+      { field: 'body', value: '1', rawValue: '①' },
+      { bodyText: '①' },
+    ), true, AgentClass.name + ': the preserved raw body stopped verifying');
       const guard = agent._startPlanExecutionGuard(tabId, 'act', {
         requestKind: 'execute',
         requiresStateChange: true,

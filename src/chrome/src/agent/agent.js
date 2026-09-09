@@ -2793,10 +2793,11 @@ export class Agent extends LoopDetector {
     if (!observedBody) return false;
     const hasDedicatedAuthoredText = !!this._workflowMessageBody(record?.bodyText);
     if (hasDedicatedAuthoredText) {
-      // Exact verification compares NFC: compatibility folding would certify
-      // visibly distinct payloads (circled digits, fullwidth letters,
-      // ligatures) as the approved body.
-      if (this._workflowSocialExactBody(requirement?.value)
+      // Exact verification compares NFC against the preserved raw value:
+      // compatibility folding would certify visibly distinct payloads
+      // (circled digits, fullwidth letters, ligatures) as the approved body.
+      const requiredBody = requirement?.rawValue ?? requirement?.value;
+      if (this._workflowSocialExactBody(requiredBody)
         === this._workflowSocialExactBody(authoredText)) return true;
     } else {
       if (this._workflowPublishedPayloadValueObserved(requirement, { pageText: authoredText })) return true;
@@ -18449,6 +18450,10 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     if (this._sameAdapterWorkflowBinding(current, live)) return false;
     if (!this._trustedSocialPublishTargetAdapters(guard).has(live.adapterName)) return false;
 
+    // A fully verified destination must survive the rebind: checkpoint it
+    // before its terminal evidence is cleared, or the final `done` reports
+    // it missing and prompts a duplicate publication.
+    this._recordSocialPublishTargetSatisfied(guard);
     const previousBindingKey = this._adapterWorkflowBindingKey(current);
     guard.siteWorkflow = live;
     guard.siteWorkflowUrl = liveUrl;
