@@ -244,6 +244,241 @@ export function classifyCompletionForm({
   };
 }
 
+/**
+ * Pick the smallest app-owned publication card for one resource link, plus the
+ * embedded posts inside it that this post did not author.
+ *
+ * Social cards may contain another post as a quote/embed, so counting resource
+ * permalinks alone cannot distinguish that nested resource from a sibling feed
+ * item. Prefer the app's card boundary when it is available, then retain the
+ * conservative single-resource ancestry fallback for other sites/markup. The
+ * card boundary is wider than the authored content, so the embedded post's
+ * subtree is reported separately: its text and shortened links must not be
+ * able to satisfy the reviewed body on the outer post's behalf. The app's own
+ * post-text elements are reported too, because a card also carries the author
+ * name, timestamp, and controls, and a short requested body can equal one of
+ * those lines instead of anything the post actually says.
+ * Returns { root, excluded, authored, attachments }.
+ * Keep this function self-contained because Agent serializes it into the page.
+ */
+export function publicationResourceRecordRoot(link, identity, publicationResourceIdentity) {
+  if (!link || typeof publicationResourceIdentity !== 'function') {
+    return { root: link || null, excluded: [], authored: [], attachments: [] };
+  }
+  const value = String(identity || '');
+  const cardSelector = value.startsWith('twitter:')
+    ? 'article[data-testid="tweet"],[data-testid="tweet"]'
+    : value.startsWith('bluesky:')
+    ? '[data-testid^="feedItem-by-"],[data-testid^="postThreadItem-by-"]'
+    : '';
+  const bodySelector = value.startsWith('twitter:')
+    ? '[data-testid="tweetText"]'
+    : value.startsWith('bluesky:')
+    ? '[data-testid="postText"]'
+    : '';
+  const embedSelector = value.startsWith('twitter:')
+    ? '[data-testid="quoteTweet"],[role="blockquote"],[data-testid*="quote"],[data-testid*="card.layout"]'
+    : value.startsWith('bluesky:')
+    ? '[data-testid^="postQuote-"],[data-testid="embeddedPost"],[data-testid*="quote"],[data-testid^="embed-"]'
+    : '';
+  const identityOf = (candidate) => {
+    try {
+      return publicationResourceIdentity(candidate.getAttribute('href') || candidate.href || '') || '';
+    } catch {
+      return '';
+    }
+  };
+  const linksIn = (node) => {
+    try {
+      return Array.from(node.querySelectorAll('a[href]')).slice(0, 200);
+    } catch {
+      return null;
+    }
+  };
+  const isInsideAuthoredText = (node) => {
+    if (!bodySelector) return false;
+    try {
+      if (typeof node.closest === 'function') {
+        const bodyEl = node.closest(bodySelector);
+        if (bodyEl) {
+          if (!embedSelector || typeof node.closest !== 'function' || !node.closest(embedSelector)) {
+            return true;
+          }
+        }
+      }
+    } catch {}
+    let curr = node.parentElement;
+    for (let i = 0; curr && i < 5; i++, curr = curr.parentElement) {
+      try {
+        if (typeof curr.matches === 'function' && curr.matches(bodySelector)) {
+          if (!embedSelector || typeof node.closest !== 'function' || !node.closest(embedSelector)) {
+            return true;
+          }
+        }
+      } catch {}
+    }
+    return false;
+  };
+  // The largest subtree around a foreign permalink that this post's own
+  // permalink never reaches into is the embedded post.
+  const embeddedResourcesIn = (card) => {
+    const links = linksIn(card);
+    if (!links) return [];
+    const excluded = [];
+    for (const candidate of links) {
+      if (excluded.length >= 8) break;
+      const found = identityOf(candidate);
+      if (!found || found === value) continue;
+      if (isInsideAuthoredText(candidate)) continue;
+      if (excluded.some(node => node === candidate || node.contains?.(candidate))) continue;
+      let embedContainer = null;
+      if (embedSelector) {
+        try {
+          if (typeof candidate.closest === 'function') {
+            embedContainer = candidate.closest(embedSelector);
+          }
+        } catch {}
+      }
+      let best = embedContainer || candidate;
+      if (!embedContainer) {
+        let node = candidate.parentElement;
+        for (let depth = 0; node && node !== card && depth < 9; depth++, node = node.parentElement) {
+          if (bodySelector) {
+            try {
+              if (typeof node.matches === 'function' && node.matches(bodySelector)) break;
+            } catch {}
+          }
+          const inner = linksIn(node);
+          if (!inner || inner.some(entry => identityOf(entry) === value)) break;
+          best = node;
+        }
+      }
+      excluded.push(best);
+    }
+    return excluded.slice(0, 8);
+  };
+
+  const authoredTextNodesIn = (card, excluded) => {
+    if (!bodySelector) return [];
+    try {
+      return Array.from(card.querySelectorAll(bodySelector))
+        .filter(node => !excluded.some(entry => entry === node || entry.contains?.(node)))
+        .slice(0, 8);
+    } catch {
+      return [];
+    }
+  };
+
+  const authoredMediaNodesIn = (card, excluded) => {
+    try {
+      const candidates = Array.from(card.querySelectorAll([
+        'img',
+        'video',
+        '[data-testid="tweetPhoto"]',
+        '[data-testid="videoPlayer"]',
+        '[data-testid="videoComponent"]',
+        '[data-testid^="postImage"]',
+        '[data-testid="postGalleryImage"]',
+        '[data-testid="contentHider-post"]',
+        '[data-testid="card.layoutLarge.media"]',
+      ].join(','))).filter(node => !excluded.some(entry => entry === node || entry.contains?.(node)));
+      const isAvatarOrEmoji = (node) => {
+        try {
+          if (node.closest?.('[data-testid*="Avatar"],[data-testid*="avatar"]')) return true;
+          if (node.closest?.('[data-testid="emoji"]') || node.classList?.contains?.('emoji')) return true;
+          const src = String(node.getAttribute?.('src') || node.src || '').toLowerCase();
+          if (src.includes('profile_images') || src.includes('/avatar/') || src.includes('/emoji/') || src.includes('twemoji')) return true;
+          const alt = String(node.getAttribute?.('alt') || '');
+          // Digits (and "#" / "*") carry the Emoji property as keycap bases,
+          // so a numeric-only alt such as "1" must not read as an emoji: only
+          // discard the node when some other Emoji character is present.
+          if (/^(?=[\s\S]*[^\d\s#*])\p{Emoji}+$/u.test(alt)) return true;
+        } catch {}
+        return false;
+      };
+      // The page host when there is one, and the hosts these adapters serve
+      // otherwise, so the test holds outside a browser too.
+      const isSameSiteHost = (host) => {
+        const pageHost = String(globalThis.location?.hostname || '').toLowerCase();
+        if (pageHost) {
+          return host === pageHost || host.endsWith('.' + pageHost) || pageHost.endsWith('.' + host);
+        }
+        return /(?:^|\.)(?:x\.com|twitter\.com|bsky\.app)$/i.test(host);
+      };
+      const isLinkPreview = (node) => {
+        try {
+          // An uploaded-media wrapper is genuine whatever container holds it.
+          if (node.closest?.('[data-testid="tweetPhoto"],[data-testid^="postImage"],[data-testid="postGalleryImage"]')) return false;
+          if (node.closest?.('[data-testid*="card.layout"]')) return true;
+          // Bluesky draws an external link card as a thumbnail inside an anchor
+          // that leaves the site, and names no card container of its own. Both
+          // apps link their own media on-site, so the host separates the two.
+          const anchor = node.closest?.('a[href]');
+          if (anchor) {
+            const href = String(anchor.getAttribute?.('href') || anchor.href || '');
+            const host = /^https?:\/\//i.test(href)
+              ? href.replace(/^https?:\/\//i, '').split(/[/?#]/)[0].toLowerCase()
+              : '';
+            if (host && !isSameSiteHost(host)) return true;
+          }
+        } catch {}
+        return false;
+      };
+      const validMedia = candidates.filter(node => {
+        const tag = (node.tagName || '').toLowerCase();
+        const testId = typeof node.getAttribute === 'function' ? (node.getAttribute('data-testid') || '') : '';
+        if (tag !== 'img' && tag !== 'video'
+            && !testId.includes('tweetPhoto')
+            && !testId.includes('video')
+            && !testId.includes('postImage')
+            && !testId.includes('postGalleryImage')
+            && !testId.includes('contentHider-post')
+            && !testId.includes('card.layoutLarge.media')) {
+          return false;
+        }
+        return !isAvatarOrEmoji(node) && !isLinkPreview(node);
+      });
+      return validMedia
+        .filter(node => !validMedia.some(other => other !== node && other.contains?.(node)))
+        .slice(0, 12);
+    } catch {
+      return [];
+    }
+  };
+
+  if (cardSelector) {
+    try {
+      const card = link.closest?.(cardSelector) || null;
+      // The app drew this boundary, so its size is not evidence that it is the
+      // wrong element. A long X Premium post must not fall through to the
+      // ancestry walk, which skips long ancestors and would leave a timestamp
+      // subtree carrying no post body at all.
+      if (card && String(card.innerText || '').trim()) {
+        const excluded = embeddedResourcesIn(card);
+        return {
+          root: card,
+          excluded,
+          authored: authoredTextNodesIn(card, excluded),
+          attachments: authoredMediaNodesIn(card, excluded),
+        };
+      }
+    } catch {}
+  }
+
+  let node = link;
+  let best = link;
+  for (let depth = 0; node && depth < 9; depth++, node = node.parentElement) {
+    const text = String(node.innerText || '').trim();
+    if (!text || text.length > 5000) continue;
+    const candidates = linksIn(node);
+    if (!candidates) continue;
+    const resourceIdentities = new Set(candidates.map(identityOf).filter(Boolean));
+    if (resourceIdentities.size > 1) break;
+    best = node;
+  }
+  return { root: best, excluded: [], authored: [], attachments: authoredMediaNodesIn(best, []) };
+}
+
 export function isCompletionActionTool(name, args = {}) {
   if (name === 'execute_webmcp_tool') return true;
   if (
