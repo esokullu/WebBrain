@@ -91084,6 +91084,10 @@ test('social publication workflow follows the live X or Bluesky destination and 
         'French content link to form should not compete with Bluesky publish destination'],
       ['Veröffentliche einen Link zur Umfrage auf X', ['twitter'],
         'German content link to survey should not compete with X publish destination'],
+      ['Use the post published on X to fill the form.', [],
+        'past-tense mention of an existing post was bound as a publish destination'],
+      ['A post shared on Bluesky should be entered into the form.', [],
+        'past-tense mention of an existing post was bound as a publish destination'],
     ]) {
       assert.deepEqual(
         [...agent._trustedSocialPublishTargetAdapters({ taskText })].sort(),

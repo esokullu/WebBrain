@@ -15951,6 +15951,9 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
           if (SOCIAL_READ_VERBS.test(beforeVerbClause)) continue;
           if (socialNegationGovernsPublish(beforeVerbClause)) continue;
           const verbWord = verb[0] || '';
+          // A past-tense verb describes already-published content ("the post
+          // published on X"), it never issues a new publication command.
+          if (/ed$/iu.test(verbWord)) continue;
           const unscopedAfterVerbText = targetText.slice(verbIndex + verbWord.length);
           const nextPublish = unscopedAfterVerbText.match(SOCIAL_PUBLISH_VERBS);
           const afterVerbText = nextPublish
