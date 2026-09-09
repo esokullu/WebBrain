@@ -20,9 +20,13 @@ from Hugging Face. The download continues in the background, but screenshot
 operations report its status and never wait for it. Wikipedia archives still
 require their own confirmation. The local **text** model defaults to LFM2.5
 2.6B (about 1.55 GB), and that download starts automatically when Apocalypse
-Mode is enabled. Bonsai 27B is an opt-in second preset (about 3.8 GB, 16 GB+
-RAM/VRAM recommended) and is never auto-downloaded. Disabling local vision
-preserves its cache and any configured remote vision provider.
+Mode is enabled. The picker also offers opt-in LFM2.5 1.2B Instruct and
+Thinking presets (about 760 MB each), LFM2.5-VL 1.6B and 3B multimodal presets
+(about 2.3 GB and 4.0 GB), Nanbeige4.2-3B (about 3.1 GB), and Bonsai 27B
+(about 3.8 GB, 16 GB+ RAM/VRAM recommended). Only the default is
+auto-downloaded. The two VL choices support
+image inputs directly when selected as the normal WebGPU provider. Disabling
+local vision preserves its cache and any configured remote vision provider.
 
 Archive language is selected independently from WebBrain's interface language.
 The management page reads Kiwix's current OPDS catalog and offers a language plus
@@ -73,6 +77,9 @@ current entry.
 - The Chromium-only local vision model uses the browser's Transformers cache.
   After its explicitly requested download completes, its GPU allocations are
   released until WebBrain actually needs local screenshot analysis.
+- Every optional WebGPU text/VL preset has a separate completion marker and
+  cache entry. Switching presets can release the previous GPU runtime without
+  deleting its cached files.
 - An installed archive that later becomes unreadable because of corruption,
   eviction, or a revoked file grant moves from ready to an actionable error;
   WebBrain reports the read failure instead of misreporting an empty search.

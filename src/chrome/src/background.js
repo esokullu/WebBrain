@@ -3931,7 +3931,6 @@ async function handleMessage(msg, sender) {
 
     case 'get_providers': {
       const providers = providerManager.getAll();
-      delete providers.webgpu;
       return { providers, active: providerManager.activeProviderId };
     }
 
@@ -3958,9 +3957,6 @@ async function handleMessage(msg, sender) {
     }
 
     case 'set_active_provider': {
-      if (msg.providerId === 'webgpu') {
-        throw new Error('Use the nuclear WebGPU control in standalone chat.');
-      }
       await providerManager.setActive(msg.providerId);
       return { ok: true };
     }

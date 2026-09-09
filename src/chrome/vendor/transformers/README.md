@@ -3,30 +3,45 @@
 This directory packages the JavaScript and WASM runtime used by two local
 WebGPU paths in Chrome and by offline RAG's CPU/WASM semantic reranker:
 
-- **Apocalypse Mode -> LFM2.5 2.6B local chat** downloads the default text
-  model used by the standalone-chat nuclear override. An opt-in Bonsai 27B
-  preset uses a separate vendored bitgpu worker, not this Transformers.js
-  runtime; see `src/chrome/vendor/bitgpu/README.webbrain.md`.
+- **Apocalypse Mode -> local WebGPU chat** downloads the selected LFM2.5 text
+  or vision-language preset, or the Nanbeige4.2-3B ONNX export, used by the
+  standalone-chat nuclear override. An opt-in Bonsai 27B preset uses a separate
+  vendored bitgpu worker, not this Transformers.js runtime; see
+  `src/chrome/vendor/bitgpu/README.webbrain.md`.
 - **Settings -> Multimodal -> Vision -> LFM2.5-VL local fallback** runs
   `LiquidAI/LFM2.5-VL-450M-ONNX` as the dedicated screenshot sidecar.
 - **Apocalypse Mode -> Offline RAG** runs the explicitly downloaded, pinned
   `Xenova/multilingual-e5-small` q8 model in a separate CPU/WASM worker. Model
   weights remain optional and are never bundled or downloaded by a question.
 
-Model weights are not bundled. Transformers.js downloads each WebGPU model on
-first use and stores it in the browser cache. LFM2.5 2.6B uses the standard
-`q4f16` graph (about 1.55 GB). It is available only through the nuclear control
-in standalone chat and does not replace the user's globally selected provider.
-The LFM2.5 text model uses its official reasoning template and a 2048-token generation budget;
-reasoning before `</think>` is kept out of visible answers. LFM2.5-VL uses:
+Model weights are not bundled. Transformers.js downloads each selected WebGPU
+model on first use and stores it in the browser cache. The shipped ONNX chat
+presets are LFM2.5 2.6B, 1.2B Instruct, 1.2B Thinking, VL 1.6B, VL 3B, and
+Nanbeige4.2-3B.
+They are available through the nuclear control in standalone chat and can also
+be selected as the normal provider after download. The reasoning presets keep
+completed thinking out of visible answers. Current LFM2.5-VL layouts use:
 
 - `embed_tokens`: FP16
 - `vision_encoder`: FP16
 - `decoder_model_merged`: Q4
 
-The LFM2.5-VL download is approximately 770 MB. Screenshots are processed on the
-user's device; only the resulting text description enters the main provider's
-conversation.
+`Michionlion/Nanbeige4.2-3B-ONNX-WebGPU` needs no bundle patch, but it does
+need two things from this runtime. It publishes one WebGPU-fused graph named
+`onnx/model_webgpu_mlp_q4f16.onnx` instead of the default `model_q4f16.onnx`,
+so the worker passes `model_file_name: 'model_webgpu_mlp'`; the two external
+data shards are declared by the repository's own
+`transformers.js_config.use_external_data_format`. Its graph also uses the
+`com.microsoft::MatMulNBitsMlp` WebGPU kernel, which is compiled into the
+vendored `ort-wasm-simd-threaded.asyncify.wasm`. Do not replace the ONNX
+Runtime artifacts with a build that drops that kernel; a test asserts it is
+present because its absence only shows up as an opaque session-creation
+failure at runtime.
+
+The dedicated 450M vision sidecar uses the same component layout and is
+approximately 810 MB. The VL 1.6B chat export instead names its vision and
+decoder components `embed_images` and `decoder`; the compatibility patch below
+maps those files into the standard image-text session names.
 
 ## Packaged files
 
@@ -58,7 +73,7 @@ Transformers.js 4.2.0. Stable 1.27.0 contains WebGPU buffer-pool and
 Qwen3/QMoE correctness fixes needed by Ling while retaining the same public
 JavaScript session API used by this Transformers.js release.
 
-## Browser-specifier patches
+## Browser bundle patches
 
 The upstream browser bundle contains two bare module specifiers that an
 unbundled extension cannot resolve. After copying a new release, rewrite them:
@@ -77,6 +92,21 @@ grep -E '(import|export)[^"]*from\s+"[a-zA-Z@]' \
   src/chrome/vendor/transformers/transformers.web.js \
   | grep -v '^\s*//' | grep -v '^\s*\*'
 ```
+
+The LFM2.5-VL ONNX repositories need two compatibility hooks. The 1.6B export
+predates the standard ImageTextToText component filenames, so keep the small
+`session_file_names` alias hook in
+`MODEL_SESSION_CONFIG[MODEL_TYPES.ImageTextToText]`; the worker supplies aliases
+through `config["transformers.js_config"]`. Keep the corresponding `getSession`
+logic resolving device and dtype by logical `session_name`, while using the
+aliased filename only to fetch the physical ONNX graph. Both current VL exports
+also use the Transformers v5 processor layout: image metadata is nested in
+`processor_config.json`, and the chat template lives in `chat_template.jinja`.
+Keep `loadImageProcessorConfig`, `image_processor_config_file`, and
+`chat_template_file` support so the worker can opt into that layout without
+changing older models. Reapply these patches after replacing
+`transformers.web.js`, and mirror the resulting browser bundle into Firefox so
+the packaged vendor files remain byte-identical.
 
 ## Updating
 
@@ -99,7 +129,8 @@ cp node_modules/onnxruntime-common/dist/esm/*.js \
 
 Copy the Transformers.js license and the ONNX Runtime license plus
 `ThirdPartyNotices.txt` into this directory whenever the runtime is updated.
-Reapply the two specifier patches, update the version table above, then verify:
+Reapply the specifier and ImageTextToText session-alias patches, update the
+version table above, then verify:
 
 1. `node --check` passes for the provider, host, and worker.
 2. **Use local fallback** enables the option without downloading weights.
@@ -114,7 +145,7 @@ ProviderManager._createProvider('webgpu') / getVisionProvider()
   -> MV3 offscreen document
   -> dedicated module Worker
   -> text-generation pipeline / AutoProcessor + AutoModelForImageTextToText
--> selected text ONNX repo / LFM2.5-VL-450M-ONNX over WebGPU
+  -> selected LFM2.5 or Nanbeige ONNX repo / LFM2.5-VL-450M-ONNX over WebGPU
 ```
 
 Keep inference in the Worker. The MV3 service worker has no WebGPU, while the

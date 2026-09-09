@@ -64,6 +64,7 @@ import { ADDITIONAL_PROVIDER_UI } from '../providers/provider-catalog.js';
 import { AUTO_VISION_PROVIDER_IDS, visionDetectionMatches } from '../providers/vision-capabilities.js';
 import { canonicalizeOllamaBaseUrl } from '../providers/context-windows.js';
 import {
+  WEBGPU_MODEL_PRESETS,
   WEBGPU_VISION_AUTO_SELECTED_KEY,
   WEBGPU_VISION_CONSENT_VERSION,
   WEBGPU_VISION_CONSENT_VERSION_KEY,
@@ -2808,6 +2809,23 @@ function renderProviders() {
         PROMPT_TIER_FIELD,
       ],
     },
+    webgpu: {
+      fields: [
+        {
+          key: 'model',
+          labelKey: 'st.provider.field.model',
+          type: 'text',
+          placeholder: 'owner/repository',
+          suggestions: WEBGPU_MODEL_PRESETS.map(option => option.id),
+          suggestionLabels: Object.fromEntries(WEBGPU_MODEL_PRESETS.map(option => [
+            option.id,
+            `${option.label} — ${option.id}${option.supportsVision ? ` — ${t('st.provider.field.supports_vision')}` : ''}`,
+          ])),
+        },
+        CONTEXT_WINDOW_FIELD,
+        PROMPT_TIER_FIELD,
+      ],
+    },
     azure_openai: {
       fields: [
         { key: 'baseUrl', labelKey: 'st.provider.field.api_base_url', type: 'text', placeholder: 'https://{resource}.openai.azure.com' },
@@ -3072,7 +3090,7 @@ function renderProviders() {
 
   providersContainer.appendChild(renderProviderFilterBar());
 
-  let entries = Object.entries(providersData).filter(([id]) => id !== 'webgpu');
+  let entries = Object.entries(providersData);
   const providerQuery = normalizeGeneralSearchText(providerSearchQuery);
   if (providerQuery) {
     entries = entries
@@ -3429,7 +3447,6 @@ function renderProviderFilterBar() {
     { key: 'router', labelKey: 'st.providers.filter.router' },
   ];
   const filterCounts = Object.entries(providersData).reduce((counts, [id, config]) => {
-    if (id === 'webgpu') return counts;
     counts.all += 1;
     if (providerIsActive(id, config)) counts.active += 1;
     const category = config.category || 'cloud';
@@ -3565,7 +3582,7 @@ function markProviderDirty(id) {
 
 function refreshActiveProviderFilterCount() {
   const count = Object.entries(providersData)
-    .filter(([id, config]) => id !== 'webgpu' && providerIsActive(id, config))
+    .filter(([id, config]) => providerIsActive(id, config))
     .length;
   const countEl = document.querySelector('.provider-filter-pill[data-filter="active"] .provider-filter-count');
   if (countEl) countEl.textContent = String(count);

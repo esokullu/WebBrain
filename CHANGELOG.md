@@ -517,13 +517,20 @@ This changelog was generated from the repository Git history and release tags. V
 
 ### Added
 - Added OpenRouter routing variant controls, including support for encoding **Exacto** as an OpenRouter model variant
+- Added LFM2.5 1.2B Instruct, 1.2B Thinking, VL 1.6B, and VL 3B to the Chromium WebGPU picker; the VL presets are exposed as multimodal providers
+- Added the Nanbeige4.2-3B ONNX WebGPU export as a Chromium WebGPU text preset, with its non-default graph file name, publisher sampling settings, and a 4k context sized for its 44 KV-cache slots
 
 ### Changed
 - Restored the **default compact activity history** behavior
+- Restored the Chromium WebGPU text provider in Settings and the normal chat provider picker while keeping model downloads in Apocalypse Mode
 - Preserved OpenRouter model variants when routing, and synced routing after loaded model selection (Chrome + Firefox)
 - Updated provider compatibility handling for DeepSeek support
 
 ### Fixed
+- Fixed LFM2.5-VL downloads selecting FP32 artifacts, failing to mount the
+  corresponding external ONNX data, and probing LiquidAI's nonexistent legacy
+  processor filename; retries now discard obsolete wrong-precision cache
+  entries before fetching the intended FP16-encoder/Q4-decoder files
 - Improved completion recovery behavior around verification availability:
   - Allowed honest exit after failed verification
   - Preserved honest completion when verification is unavailable

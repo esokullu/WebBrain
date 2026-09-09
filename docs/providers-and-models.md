@@ -47,7 +47,7 @@ class BaseLLMProvider {
 | `gpt4all` | `openai` | local | (loaded model) | Yes (default on) |
 | `local_openai_proxy` | `openai` | local | (required) | Off / manual toggle |
 | `unsloth` | `openai` | local | (required) | Off / manual toggle |
-| `webgpu` (Chromium) | `webgpu` | local | LFM2.5 2.6B (default) or opt-in Bonsai 27B; experimental custom HF ONNX repos | No |
+| `webgpu` (Chromium) | `webgpu` | local | Seven shipped LFM2.5/Nanbeige/Bonsai presets; experimental custom HF ONNX repos | LFM2.5-VL presets |
 | `azure_openai` | `azure_openai` | cloud | (deployment) | Manual toggle |
 | `aws_bedrock` | `aws_bedrock` | cloud | (model id) | No |
 | `openai` | `openai` | cloud | `gpt-5.6-terra` | Model-name regex |
@@ -150,17 +150,47 @@ duplicate request.
 ### Local Providers
 
 On Chromium, **WebGPU (In-browser)** is an endpoint-free local provider. Its
-Apocalypse text picker offers two shipped presets:
+Apocalypse text picker offers seven shipped presets:
 
 - [`LiquidAI/LFM2.5-2.6B-ONNX`](https://huggingface.co/LiquidAI/LFM2.5-2.6B-ONNX/)
   (`q4f16`, about 1.55 GB) through the packaged Transformers.js 4.2 / ONNX
   Runtime Web GPU worker. This remains the default. Enabling Apocalypse Mode
   starts this download automatically.
+- [`LiquidAI/LFM2.5-1.2B-Instruct-ONNX`](https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct-ONNX)
+  and [`LiquidAI/LFM2.5-1.2B-Thinking-ONNX`](https://huggingface.co/LiquidAI/LFM2.5-1.2B-Thinking-ONNX)
+  (`q4f16`, about 760 MB each). The Thinking preset preserves reasoning as
+  hidden reasoning content while Instruct uses the normal visible-answer path.
+- [`LiquidAI/LFM2.5-VL-1.6B-ONNX`](https://huggingface.co/LiquidAI/LFM2.5-VL-1.6B-ONNX)
+  (FP16 vision/text embeddings plus Q4 decoder, about 2.3 GB) and
+  [`LiquidAI/LFM2.5-VL-3B-ONNX`](https://huggingface.co/LiquidAI/LFM2.5-VL-3B-ONNX)
+  (the corresponding Transformers.js layout, about 4.0 GB). These two presets
+  advertise `supportsVision`, accept image blocks in normal provider chat, and
+  are marked **Multimodal** in the picker. The 1.6B export uses older ONNX
+  component filenames; WebBrain maps those filenames into the packaged
+  Transformers.js image-text runtime before loading it. LiquidAI's current VL
+  exports also nest their image metadata in `processor_config.json` and ship
+  `chat_template.jinja` separately; the local runtime loads that layout
+  explicitly instead of probing for the older `preprocessor_config.json`.
+- [`Michionlion/Nanbeige4.2-3B-ONNX-WebGPU`](https://huggingface.co/Michionlion/Nanbeige4.2-3B-ONNX-WebGPU)
+  (`q4f16`, about 3.1 GB), a browser export of
+  [`Nanbeige/Nanbeige4.2-3B`](https://huggingface.co/Nanbeige/Nanbeige4.2-3B)
+  that runs the same 22 physical layers twice and therefore keeps 44 KV-cache
+  slots. It publishes one WebGPU-fused graph under a non-default file name, so
+  the worker loads it with `model_file_name: 'model_webgpu_mlp'`; the external
+  data shards come from the repository's own `use_external_data_format`. The
+  graph needs the `com.microsoft::MatMulNBitsMlp` WebGPU kernel from the
+  vendored ONNX Runtime build and an adapter with `shader-f16`. Its practical
+  context is set to 4k rather than 16k because those 44 slots cost roughly
+  176 KB per token in FP16, on top of 3.1 GB of weights. The reference
+  implementation is the [Nanbeige Browser Lab](https://huggingface.co/spaces/borkiss/nanbeige4-2-3b-browser-lab)
+  Space, which drives the same export through a hand-written ONNX Runtime Web
+  loop rather than Transformers.js.
 - [`prism-ml/Bonsai-27B-gguf`](https://huggingface.co/prism-ml/Bonsai-27B-gguf)
   (`Q1_0`, about 3.8 GB) through a dedicated vendored [bitgpu](https://github.com/stfurkan/bitgpu)
   worker. Bonsai is opt-in: WebBrain never auto-downloads the 27B weights.
-  It needs a high-end GPU (16 GB+ RAM/VRAM recommended). GPU-resident LFM and
-  Bonsai sessions are never live at the same time; disk caches may coexist.
+  It needs a high-end GPU (16 GB+ RAM/VRAM recommended). Mutually exclusive
+  WebGPU text runtimes are released when the selected preset changes; disk
+  caches may coexist.
 
 Custom Hugging Face repositories have not been tested and are likely not to
 work. They must be compatible with Transformers.js text generation, provide a
@@ -168,12 +198,21 @@ work. They must be compatible with Transformers.js text generation, provide a
 validates the template after loading and rejects incompatible repositories.
 Do not point Transformers.js at the Bonsai GGUF — 27B is not an ONNX pipeline.
 
-The provider is text-only and defaults to the Compact prompt tier with a
-conservative 16k practical context setting. LFM2.5 2.6B uses its official pure
-reasoning template; WebBrain keeps text before `</think>` out of the visible
-answer and reports an error if reasoning exhausts the output budget. Bonsai
-uses bitgpu `think: true` with a 128-token think budget and the same
-post-think visible-answer UX. Each repository is cached separately in Chrome.
+The provider defaults to the Compact prompt tier with a conservative 16k
+practical context setting (4k for Nanbeige and Bonsai). Text-only presets
+reject image blocks; the two LFM2.5-VL presets route image and text blocks
+through the local image-text runtime. LFM2.5 2.6B, 1.2B Thinking, and
+Nanbeige4.2-3B use reasoning paths; WebBrain keeps completed thinking out of
+the visible answer and reports an error when a template that opens `<think>`
+in the generation prompt exhausts its output budget before closing it. Those
+three presets decode with their publisher's recommended sampling settings; the
+remaining ONNX presets stay greedy. Bonsai uses bitgpu
+`think: true` with a 128-token think budget and the same post-think visible-
+answer UX. Each repository is cached separately in Chrome.
+After downloading a preset in Apocalypse Mode, the WebGPU card in
+**Settings -> Providers** can be configured, tested, and selected as the normal
+chat provider. The nuclear standalone-chat control remains available as a
+per-run override that does not change the global selection.
 **Test Connection** checks only the packaged runtime and hardware WebGPU
 adapter, so it does not trigger a model download. There is no API key, base
 URL, localhost server, or OpenAI-compatible endpoint. Firefox does not expose

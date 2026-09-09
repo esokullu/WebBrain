@@ -398,10 +398,6 @@ export class ProviderManager {
     }
     this.activeProviderId = legacyActiveProviderId || WEBBRAIN_CLOUD_PROVIDER_ID;
     if (!configs[this.activeProviderId]) this.activeProviderId = WEBBRAIN_CLOUD_PROVIDER_ID;
-    if (this.activeProviderId === 'webgpu') {
-      this.activeProviderId = WEBBRAIN_CLOUD_PROVIDER_ID;
-      providerStateMigrated = true;
-    }
     if (this.activeProviderId !== WEBBRAIN_CLOUD_PROVIDER_ID && configs[this.activeProviderId]?.configured !== true) {
       this.activeProviderId = WEBBRAIN_CLOUD_PROVIDER_ID;
       providerStateMigrated = true;

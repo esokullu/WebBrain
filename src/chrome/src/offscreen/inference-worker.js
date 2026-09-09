@@ -12,6 +12,8 @@ let libraryVersion = null;
 let workerConfig = null;
 let visionRuntime = null;
 let visionRuntimeKey = '';
+let visionRuntimeModelKey = '';
+let visionRuntimeOwner = '';
 let visionRuntimeLoadPromise = null;
 let visionRuntimeLoadKey = '';
 let textRuntime = null;
@@ -24,8 +26,53 @@ const TRANSFORMERS_CACHE_NAME = 'transformers-cache';
 const TEXT_DOWNLOAD_EVENT = 'text-download-state';
 const WEBGPU_TEXT_MAX_NEW_TOKENS = 256;
 const WEBGPU_LFM25_MODEL_ID = 'LiquidAI/LFM2.5-2.6B-ONNX';
+const WEBGPU_LFM25_12B_INSTRUCT_MODEL_ID = 'LiquidAI/LFM2.5-1.2B-Instruct-ONNX';
+const WEBGPU_LFM25_12B_THINKING_MODEL_ID = 'LiquidAI/LFM2.5-1.2B-Thinking-ONNX';
+const WEBGPU_LFM25_VL_16B_MODEL_ID = 'LiquidAI/LFM2.5-VL-1.6B-ONNX';
+const WEBGPU_LFM25_VL_3B_MODEL_ID = 'LiquidAI/LFM2.5-VL-3B-ONNX';
+const WEBGPU_NANBEIGE42_3B_MODEL_ID = 'Michionlion/Nanbeige4.2-3B-ONNX-WebGPU';
 const WEBGPU_BONSAI27_MODEL_ID = 'prism-ml/Bonsai-27B-gguf';
 const WEBGPU_LFM25_MAX_NEW_TOKENS = 2048;
+const WEBGPU_LFM25_TEXT_MODEL_IDS = new Set([
+  WEBGPU_LFM25_MODEL_ID,
+  WEBGPU_LFM25_12B_INSTRUCT_MODEL_ID,
+  WEBGPU_LFM25_12B_THINKING_MODEL_ID,
+]);
+const WEBGPU_LFM25_VL_MODEL_IDS = new Set([
+  WEBGPU_LFM25_VL_16B_MODEL_ID,
+  WEBGPU_LFM25_VL_3B_MODEL_ID,
+]);
+// Presets whose reasoning is generated as hidden thinking rather than as part
+// of the visible answer, so they need the long output budget.
+const WEBGPU_REASONING_MODEL_IDS = new Set([
+  WEBGPU_LFM25_MODEL_ID,
+  WEBGPU_LFM25_12B_THINKING_MODEL_ID,
+  WEBGPU_NANBEIGE42_3B_MODEL_ID,
+]);
+// Chat templates that emit the opening `<think>` themselves, so the runtime
+// only returns the reasoning suffix.
+const WEBGPU_OPEN_THINKING_MODEL_IDS = new Set([
+  WEBGPU_LFM25_MODEL_ID,
+  WEBGPU_NANBEIGE42_3B_MODEL_ID,
+]);
+const WEBGPU_LONG_OUTPUT_MODEL_IDS = new Set([
+  ...WEBGPU_LFM25_TEXT_MODEL_IDS,
+  WEBGPU_NANBEIGE42_3B_MODEL_ID,
+]);
+// Publisher-recommended decoding for the shipped reasoning presets. Custom
+// repositories keep Transformers.js greedy defaults.
+const WEBGPU_TEXT_SAMPLING = new Map([
+  [WEBGPU_LFM25_MODEL_ID, { temperature: 0.1, top_k: 50, repetition_penalty: 1.1 }],
+  [WEBGPU_LFM25_12B_THINKING_MODEL_ID, { temperature: 0.05, top_k: 50, repetition_penalty: 1.05 }],
+  // Nanbeige4.2-3B's own generation_config.json.
+  [WEBGPU_NANBEIGE42_3B_MODEL_ID, { temperature: 0.6, top_k: 20, top_p: 0.95 }],
+]);
+// Nanbeige ships a single WebGPU-fused graph under a non-default file name.
+// Without this override Transformers.js looks for `onnx/model_q4f16.onnx`,
+// which the repository does not publish.
+const WEBGPU_TEXT_MODEL_FILE_NAMES = new Map([
+  [WEBGPU_NANBEIGE42_3B_MODEL_ID, 'model_webgpu_mlp'],
+]);
 const WEBGPU_VISION_READY_MARKER_VERSION = 2;
 const WEBGPU_VISION_READY_MARKER_PREFIX = 'https://webbrain.one/.well-known/webgpu-vision-ready/';
 function createWebGpuTextSessionOptions() {
@@ -90,6 +137,22 @@ function assertOnnxTextModel(modelId) {
     throw new Error(`${normalized} is a GGUF checkpoint and cannot be loaded with Transformers.js. Use the Bonsai WebGPU runtime.`);
   }
   return normalized;
+}
+
+function isLfm25VlModel(modelId) {
+  return WEBGPU_LFM25_VL_MODEL_IDS.has(String(modelId || '').trim());
+}
+
+function lfm25VlProcessorOptions(modelId) {
+  if (!isLfm25VlModel(modelId)) return {};
+  return {
+    // LiquidAI's current VL ONNX repos use the Transformers v5 layout: image
+    // settings are nested in processor_config.json and the chat template is a
+    // separate Jinja file. The packaged Transformers.js 4.2 runtime supports
+    // both through WebBrain's documented browser-bundle compatibility hooks.
+    image_processor_config_file: 'processor_config.json',
+    chat_template_file: 'chat_template.jinja',
+  };
 }
 
 function assertTextDownloadCanStart(payload) {
@@ -373,10 +436,13 @@ async function disposeRuntime(runtime) {
   }
 }
 
-async function disposeVisionRuntime() {
+async function disposeVisionRuntime(expectedOwner = '') {
+  if (expectedOwner && visionRuntimeOwner && visionRuntimeOwner !== expectedOwner) return;
   const runtime = visionRuntime;
   visionRuntime = null;
   visionRuntimeKey = '';
+  visionRuntimeModelKey = '';
+  visionRuntimeOwner = '';
   await disposeRuntime(runtime);
 }
 
@@ -393,19 +459,59 @@ async function disposeAllRuntimes() {
   await disposeTextRuntime();
 }
 
-async function getVisionRuntime(modelId, dtype, device, { localFilesOnly = false } = {}) {
+async function legacyLfm25VlConfig(library, modelId, progress_callback, localFilesOnly) {
+  if (modelId !== WEBGPU_LFM25_VL_16B_MODEL_ID) return null;
+  if (!library.AutoConfig) {
+    throw new Error('The packaged Transformers.js version cannot load the LFM2.5-VL-1.6B model config.');
+  }
+  const config = await library.AutoConfig.from_pretrained(modelId, {
+    progress_callback,
+    local_files_only: localFilesOnly,
+  });
+  config['transformers.js_config'] = {
+    ...(config['transformers.js_config'] || {}),
+    // LiquidAI's 1.6B ONNX export predates the standard Transformers.js
+    // ImageTextToText filenames used by the newer 3B package.
+    session_file_names: {
+      embed_tokens: 'embed_tokens',
+      vision_encoder: 'embed_images',
+      decoder_model_merged: 'decoder',
+    },
+    use_external_data_format: {
+      'embed_tokens_fp16.onnx': 1,
+      'embed_images_fp16.onnx': 1,
+      'decoder_q4.onnx': 1,
+    },
+  };
+  return config;
+}
+
+async function getVisionRuntime(modelId, dtype, device, {
+  localFilesOnly = false,
+  owner = 'vision',
+  readiness = 'vision',
+} = {}) {
   const key = `vision|${modelId}|${device}|${JSON.stringify(dtype)}`;
-  if (visionRuntime && visionRuntimeKey === key) return visionRuntime;
+  if (visionRuntime && visionRuntimeKey === key) {
+    visionRuntimeOwner = owner;
+    return visionRuntime;
+  }
   if (visionRuntimeLoadPromise) {
     if (visionRuntimeLoadKey === key) return visionRuntimeLoadPromise;
     await visionRuntimeLoadPromise.catch(() => {});
-    if (visionRuntime && visionRuntimeKey === key) return visionRuntime;
+    if (visionRuntime && visionRuntimeKey === key) {
+      visionRuntimeOwner = owner;
+      return visionRuntime;
+    }
   }
 
   const loadPromise = (async () => {
-    if (localFilesOnly && (await isVisionModelCached(modelId)) === false) {
+    const locallyReady = readiness === 'text'
+      ? await isTextModelReady(modelId, dtype)
+      : await isVisionModelCached(modelId);
+    if (localFilesOnly && locallyReady === false) {
       const error = new Error(`${modelId} is not cached locally.`);
-      error.code = 'vision_model_not_downloaded';
+      error.code = readiness === 'text' ? 'text_model_not_downloaded' : 'vision_model_not_downloaded';
       throw error;
     }
     const library = await loadLibrary();
@@ -413,8 +519,11 @@ async function getVisionRuntime(modelId, dtype, device, { localFilesOnly = false
     if (!AutoModelForImageTextToText || !AutoProcessor) {
       throw new Error('The packaged Transformers.js version does not include image-text-to-text support.');
     }
+    if (owner === 'text') await disposeTextRuntime();
     await disposeVisionRuntime();
     const progress_callback = event => postProgress(modelId, event);
+    const config = await legacyLfm25VlConfig(library, modelId, progress_callback, localFilesOnly);
+    const processorOptions = lfm25VlProcessorOptions(modelId);
     const previousAllowLocalModels = library.env?.allowLocalModels;
     if (localFilesOnly && library.env) library.env.allowLocalModels = true;
     let processorResult;
@@ -422,12 +531,14 @@ async function getVisionRuntime(modelId, dtype, device, { localFilesOnly = false
     try {
       [processorResult, modelResult] = await Promise.allSettled([
         AutoProcessor.from_pretrained(modelId, {
+          ...processorOptions,
           progress_callback,
           local_files_only: localFilesOnly,
         }),
         AutoModelForImageTextToText.from_pretrained(modelId, {
           device,
           dtype,
+          ...(config ? { config } : {}),
           progress_callback,
           local_files_only: localFilesOnly,
         }),
@@ -452,6 +563,8 @@ async function getVisionRuntime(modelId, dtype, device, { localFilesOnly = false
     const model = modelResult.value;
     visionRuntime = { library, processor, model };
     visionRuntimeKey = key;
+    visionRuntimeModelKey = textModelKey(modelId, dtype);
+    visionRuntimeOwner = owner;
     return visionRuntime;
   })();
   visionRuntimeLoadPromise = loadPromise;
@@ -570,6 +683,7 @@ async function getTextRuntime(modelId, dtype, device, { localFilesOnly = false }
       throw new Error('The packaged Transformers.js version does not include text generation.');
     }
     await captureWebGpuAdapterSummary();
+    await disposeVisionRuntime('text');
     await disposeTextRuntime();
     const previousAllowLocalModels = library.env?.allowLocalModels;
     if (localFilesOnly && library.env) library.env.allowLocalModels = true;
@@ -578,6 +692,9 @@ async function getTextRuntime(modelId, dtype, device, { localFilesOnly = false }
       pipeline = await library.pipeline('text-generation', modelId, {
         device,
         dtype,
+        ...(WEBGPU_TEXT_MODEL_FILE_NAMES.has(modelId)
+          ? { model_file_name: WEBGPU_TEXT_MODEL_FILE_NAMES.get(modelId) }
+          : {}),
         // ORT mutates this object while appending its default session config.
         session_options: createWebGpuTextSessionOptions(),
         local_files_only: localFilesOnly,
@@ -607,6 +724,22 @@ async function getTextRuntime(modelId, dtype, device, { localFilesOnly = false }
       textRuntimeLoadKey = '';
     }
   }
+}
+
+async function getDownloadedTextRuntime(modelId, dtype, device, { localFilesOnly = false } = {}) {
+  if (isLfm25VlModel(modelId)) {
+    return getVisionRuntime(modelId, dtype, device, {
+      localFilesOnly,
+      owner: 'text',
+      readiness: 'text',
+    });
+  }
+  return getTextRuntime(modelId, dtype, device, { localFilesOnly });
+}
+
+async function disposeDownloadedTextRuntime(modelId = '') {
+  if (!modelId || isLfm25VlModel(modelId)) await disposeVisionRuntime('text');
+  if (!modelId || !isLfm25VlModel(modelId)) await disposeTextRuntime();
 }
 
 function chatTemplateText(value) {
@@ -669,9 +802,10 @@ async function downloadTextModel(payload, { onStarted } = {}) {
   if (tracksDifferentTransfer) {
     throw new Error(`Finish or stop the ${textDownloadState.modelId} download before downloading ${modelId}.`);
   }
+  await clearLegacyLfm25VlWrongPrecisionCache(modelId);
   if (await isTextModelReady(modelId, dtype)) {
     if (payload?.requireTools === true) {
-      const runtime = await getTextRuntime(modelId, dtype, device, { localFilesOnly: true });
+      const runtime = await getDownloadedTextRuntime(modelId, dtype, device, { localFilesOnly: true });
       assertToolCapableTextRuntime(runtime, modelId);
     }
     textDownloadState = {
@@ -709,10 +843,10 @@ async function downloadTextModel(payload, { onStarted } = {}) {
   onStarted?.(textDownloadSnapshot());
 
   try {
-    const runtime = await getTextRuntime(modelId, dtype, device);
+    const runtime = await getDownloadedTextRuntime(modelId, dtype, device);
     if (payload?.requireTools === true) assertToolCapableTextRuntime(runtime, modelId);
     if (textDownloadCancelMode) {
-      await disposeTextRuntime();
+      await disposeDownloadedTextRuntime(modelId);
       return textDownloadSnapshot();
     }
     await markTextModelReady(modelId, dtype);
@@ -750,6 +884,24 @@ async function downloadTextModel(payload, { onStarted } = {}) {
   }
 }
 
+async function clearLegacyLfm25VlWrongPrecisionCache(modelId) {
+  if (modelId !== WEBGPU_LFM25_VL_16B_MODEL_ID || typeof caches === 'undefined') return 0;
+  const modelPath = `/${modelId}/`;
+  const wrongPrecisionFile = /\/onnx\/(?:decoder|embed_images)\.onnx(?:_data(?:_\d+)?)?(?:[?#]|$)/;
+  let deletedEntries = 0;
+  for (const name of await caches.keys()) {
+    if (!/transformers/i.test(name)) continue;
+    const cache = await caches.open(name);
+    for (const request of await cache.keys()) {
+      const url = safeDecodedUrl(request.url);
+      if (url.includes(modelPath) && wrongPrecisionFile.test(url) && await cache.delete(request)) {
+        deletedEntries++;
+      }
+    }
+  }
+  return deletedEntries;
+}
+
 function pauseTextDownload() {
   if (textDownloadState.status !== 'downloading') return textDownloadSnapshot();
   textDownloadCancelMode = 'pause';
@@ -761,6 +913,9 @@ function pauseTextDownload() {
 
 async function clearTextModelCache(modelId, dtype) {
   if (textRuntimeModelKey === textModelKey(modelId, dtype)) await disposeTextRuntime();
+  if (visionRuntimeOwner === 'text' && visionRuntimeModelKey === textModelKey(modelId, dtype)) {
+    await disposeVisionRuntime('text');
+  }
   const modelPath = `/${modelId}/`;
   const markerUrl = textReadyMarkerUrl(modelId, dtype);
   if (typeof caches !== 'undefined') {
@@ -822,7 +977,7 @@ function prepareMultimodalMessages(messages) {
   const prepared = [];
   for (const message of Array.isArray(messages) ? messages : []) {
     if (!message || typeof message !== 'object') continue;
-    const role = ['system', 'user', 'assistant'].includes(message.role)
+    const role = ['system', 'user', 'assistant', 'tool'].includes(message.role)
       ? message.role
       : 'user';
     const imageBlocks = [];
@@ -846,12 +1001,18 @@ function prepareMultimodalMessages(messages) {
     // Normalize OpenAI-style messages (which often put text first) to that
     // model-specific contract without changing the provider-facing API.
     const blocks = [...imageBlocks, ...textBlocks];
-    if (blocks.length) prepared.push({ role, content: blocks });
+    if (blocks.length || Array.isArray(message.tool_calls)) {
+      prepared.push({
+        role,
+        content: blocks,
+        ...(Array.isArray(message.tool_calls)
+          ? { tool_calls: message.tool_calls.map(normalizeTextToolCall) }
+          : {}),
+        ...(message.reasoning_content ? { reasoning_content: String(message.reasoning_content) } : {}),
+      });
+    }
   }
-  if (imageUrls.length !== 1) {
-    throw new Error(`LFM2.5-VL requires exactly one screenshot; received ${imageUrls.length}.`);
-  }
-  return { messages: prepared, imageUrl: imageUrls[0] };
+  return { messages: prepared, imageUrls };
 }
 
 function createVisionProbeImage(RawImage) {
@@ -901,14 +1062,21 @@ async function runVision(payload, requestId) {
       error.name = 'AbortError';
       throw error;
     }
-    const runtime = await getVisionRuntime(modelId, dtype, device, { localFilesOnly: true });
-    const { messages, imageUrl } = prepareMultimodalMessages(payload?.messages);
+    const runtime = await getVisionRuntime(modelId, dtype, device, {
+      localFilesOnly: true,
+      owner: 'vision',
+      readiness: 'vision',
+    });
+    const { messages, imageUrls } = prepareMultimodalMessages(payload?.messages);
+    if (imageUrls.length !== 1) {
+      throw new Error(`LFM2.5-VL requires exactly one screenshot; received ${imageUrls.length}.`);
+    }
     const prompt = runtime.processor.apply_chat_template(messages, {
       add_generation_prompt: true,
     });
     const image = payload?.options?.visionProbe === true
       ? createVisionProbeImage(runtime.library.RawImage)
-      : await runtime.library.load_image(imageUrl);
+      : await runtime.library.load_image(imageUrls[0]);
     const inputs = await runtime.processor(image, prompt, { add_special_tokens: false });
     const requestedTokens = Number(payload?.options?.maxTokens);
     const maxNewTokens = Number.isFinite(requestedTokens)
@@ -1015,18 +1183,92 @@ export function splitThinking(content, { openingTagInPrompt = false } = {}) {
   };
 }
 
+function addLegacyVlTools(messages, tools) {
+  if (!tools.length) return messages;
+  const toolText = `List of tools: [${tools.map(tool => JSON.stringify(tool)).join(', ')}]`;
+  const prepared = messages.map(message => ({ ...message, content: [...(message.content || [])] }));
+  if (prepared[0]?.role === 'system') {
+    prepared[0].content.push({ type: 'text', text: `\n${toolText}` });
+  } else {
+    prepared.unshift({ role: 'system', content: [{ type: 'text', text: toolText }] });
+  }
+  return prepared;
+}
+
+async function runMultimodalText(payload) {
+  const modelId = assertOnnxTextModel(payload?.modelId);
+  if (!isLfm25VlModel(modelId)) {
+    throw new Error(`${modelId} is not a shipped WebGPU multimodal model.`);
+  }
+  const device = payload?.device || 'webgpu';
+  const dtype = payload?.dtype || {
+    embed_tokens: 'fp16',
+    vision_encoder: 'fp16',
+    decoder_model_merged: 'q4',
+  };
+  if (!await isTextModelReady(modelId, dtype)) {
+    throw new Error(`${modelId} is not downloaded. Open Apocalypse Mode > WebGPU to download it before chatting.`);
+  }
+  const runtime = await getVisionRuntime(modelId, dtype, device, {
+    localFilesOnly: true,
+    owner: 'text',
+    readiness: 'text',
+  });
+  const tools = Array.isArray(payload?.options?.tools) ? payload.options.tools : [];
+  let { messages, imageUrls } = prepareMultimodalMessages(payload?.messages);
+  if (modelId === WEBGPU_LFM25_VL_16B_MODEL_ID) messages = addLegacyVlTools(messages, tools);
+  const prompt = runtime.processor.apply_chat_template(messages, {
+    add_generation_prompt: true,
+    tools: tools.length ? tools : undefined,
+  });
+  let inputs;
+  if (imageUrls.length) {
+    const images = await Promise.all(imageUrls.map(url => runtime.library.load_image(url)));
+    inputs = await runtime.processor(images.length === 1 ? images[0] : images, prompt, {
+      add_special_tokens: false,
+    });
+  } else {
+    inputs = runtime.processor.tokenizer(prompt, { add_special_tokens: false });
+  }
+  const requestedTokens = Number(payload?.options?.maxTokens);
+  const maxNewTokens = Number.isFinite(requestedTokens)
+    ? Math.max(1, Math.min(1600, Math.round(requestedTokens)))
+    : 800;
+  lastWebGpuDeviceError = '';
+  lastWebGpuDeviceLost = '';
+  let outputs;
+  try {
+    outputs = await runtime.model.generate({
+      ...inputs,
+      do_sample: false,
+      max_new_tokens: maxNewTokens,
+    });
+  } catch (error) {
+    if (isWebGpuExecutionFailure(error)) throw await enrichWebGpuExecutionError(error);
+    throw error;
+  }
+  const inputLength = inputs.input_ids.dims.at(-1);
+  const generated = outputs.slice(null, [inputLength, null]);
+  const decoded = runtime.processor.batch_decode(generated, { skip_special_tokens: true });
+  const result = splitThinking(String(decoded?.[0] || '').trim());
+  return { content: result.content, reasoningContent: result.reasoningContent };
+}
+
 async function runText(payload) {
   const modelId = assertOnnxTextModel(payload?.modelId);
   const device = payload?.device || 'webgpu';
   const dtype = payload?.dtype || 'q4f16';
-  const usesLfm25ReasoningTemplate = modelId === WEBGPU_LFM25_MODEL_ID;
+  const usesReasoningTemplate = WEBGPU_REASONING_MODEL_IDS.has(modelId);
+  const opensThinkingInPrompt = WEBGPU_OPEN_THINKING_MODEL_IDS.has(modelId);
+  const usesLongOutputBudget = WEBGPU_LONG_OUTPUT_MODEL_IDS.has(modelId);
+  const sampling = WEBGPU_TEXT_SAMPLING.get(modelId);
   if (!await isTextModelReady(modelId, dtype)) {
     throw new Error(`${modelId} is not downloaded. Open Apocalypse Mode > WebGPU to download it before chatting.`);
   }
   const runtime = await getTextRuntime(modelId, dtype, device, { localFilesOnly: true });
   if (payload?.requireTools === true) assertToolCapableTextRuntime(runtime, modelId);
   const requestedTokens = Number(payload?.options?.maxTokens);
-  const maxTokenLimit = usesLfm25ReasoningTemplate
+  const maxTokenLimit = usesLongOutputBudget
     ? WEBGPU_LFM25_MAX_NEW_TOKENS
     : WEBGPU_TEXT_MAX_NEW_TOKENS;
   const maxNewTokens = Number.isFinite(requestedTokens)
@@ -1038,13 +1280,13 @@ async function runText(payload) {
   let output;
   try {
     output = await runtime.pipeline(prepareTextMessages(payload?.messages), {
-      do_sample: usesLfm25ReasoningTemplate,
-      ...(usesLfm25ReasoningTemplate
-        ? { temperature: 0.1, top_k: 50, repetition_penalty: 1.1 }
-        : {}),
+      do_sample: Boolean(sampling),
+      ...(sampling || {}),
       max_new_tokens: maxNewTokens,
       tools: tools.length ? tools : undefined,
-      tokenizer_encode_kwargs: usesLfm25ReasoningTemplate
+      // Reasoning templates re-open `<think>` for the pending turn and collapse
+      // completed thinking in history; the rest suppress thinking outright.
+      tokenizer_encode_kwargs: usesReasoningTemplate
         ? { preserve_thinking: false }
         : { enable_thinking: false },
     });
@@ -1059,7 +1301,7 @@ async function runText(payload) {
   if (typeof content !== 'string') {
     throw new Error('The WebGPU model returned no generated text.');
   }
-  const result = splitThinking(content, { openingTagInPrompt: usesLfm25ReasoningTemplate });
+  const result = splitThinking(content, { openingTagInPrompt: opensThinkingInPrompt });
   if (result.incompleteReasoning) {
     throw new Error(`${modelId} used its generation budget before finishing reasoning. Retry with a shorter prompt.`);
   }
@@ -1085,7 +1327,7 @@ async function probeRuntime() {
 export async function clearVisionModelCache(modelId) {
   const normalizedModelId = String(modelId || '').trim();
   if (!normalizedModelId) throw new Error('No vision model was specified.');
-  await disposeVisionRuntime();
+  await disposeVisionRuntime('vision');
   const modelPath = `/${normalizedModelId}/`;
   const markerUrl = visionReadyMarkerUrl(normalizedModelId);
   let deletedEntries = 0;
@@ -1227,12 +1469,12 @@ self.addEventListener('message', async event => {
       return;
     }
     if (type === 'dispose-vision') {
-      await enqueueModelOperation(disposeVisionRuntime);
+      await enqueueModelOperation(() => disposeVisionRuntime('vision'));
       self.postMessage({ id, ok: true, disposed: true });
       return;
     }
     if (type === 'dispose-text') {
-      await enqueueModelOperation(disposeTextRuntime);
+      await enqueueModelOperation(() => disposeDownloadedTextRuntime());
       self.postMessage({ id, ok: true, disposed: true });
       return;
     }
@@ -1267,6 +1509,16 @@ self.addEventListener('message', async event => {
     }
     if (type === 'text-chat') {
       const result = await enqueueModelOperation(() => runText(payload));
+      self.postMessage({
+        id,
+        ok: true,
+        ...result,
+        raw: { model: payload?.modelId || '' },
+      });
+      return;
+    }
+    if (type === 'multimodal-text-chat') {
+      const result = await enqueueModelOperation(() => runMultimodalText(payload));
       self.postMessage({
         id,
         ok: true,

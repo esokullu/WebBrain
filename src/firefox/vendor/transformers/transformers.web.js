@@ -11807,6 +11807,16 @@ var FEATURE_EXTRACTOR_NAME = "preprocessor_config.json";
 var IMAGE_PROCESSOR_NAME = FEATURE_EXTRACTOR_NAME;
 var PROCESSOR_NAME = "processor_config.json";
 var CHAT_TEMPLATE_NAME = "chat_template.jinja";
+async function loadImageProcessorConfig(pretrained_model_name_or_path, options = {}) {
+  const fileName = options.image_processor_config_file ?? IMAGE_PROCESSOR_NAME;
+  const source = await getModelJSON(pretrained_model_name_or_path, fileName, true, options);
+  const nested = source?.image_processor;
+  if (!nested || typeof nested !== "object" || Array.isArray(nested)) return source;
+  return {
+    ...nested,
+    processor_class: nested.processor_class ?? source.processor_class
+  };
+}
 
 // src/processing_utils.js
 var Processor = class extends Callable {
@@ -11909,6 +11919,7 @@ var Processor = class extends Callable {
    * @returns {Promise<Processor>} A new instance of the Processor class.
    */
   static async from_pretrained(pretrained_model_name_or_path, options = {}) {
+    const chatTemplateFile = options.chat_template_file ?? (this.uses_chat_template_file ? CHAT_TEMPLATE_NAME : null);
     const [config, components, chat_template] = await Promise.all([
       // TODO:
       this.uses_processor_config ? getModelJSON(pretrained_model_name_or_path, PROCESSOR_NAME, true, options) : {},
@@ -11918,7 +11929,7 @@ var Processor = class extends Callable {
           return [cls.replace(/_class$/, ""), component];
         })
       ).then(Object.fromEntries),
-      this.uses_chat_template_file ? getModelText(pretrained_model_name_or_path, CHAT_TEMPLATE_NAME, true, options) : null
+      chatTemplateFile ? getModelText(pretrained_model_name_or_path, chatTemplateFile, true, options) : null
     ]);
     return new this(config, components, chat_template);
   }
@@ -16569,12 +16580,7 @@ var YolosFeatureExtractor = class extends YolosImageProcessor {
 var AutoImageProcessor = class {
   /** @type {typeof ImageProcessor.from_pretrained} */
   static async from_pretrained(pretrained_model_name_or_path, options = {}) {
-    const preprocessorConfig = await getModelJSON(
-      pretrained_model_name_or_path,
-      IMAGE_PROCESSOR_NAME,
-      true,
-      options
-    );
+    const preprocessorConfig = await loadImageProcessorConfig(pretrained_model_name_or_path, options);
     const key = preprocessorConfig.image_processor_type ?? preprocessorConfig.feature_extractor_type;
     let image_processor_class = image_processors_exports[key?.replace(/Fast$/, "")];
     if (!image_processor_class) {
@@ -17964,12 +17970,7 @@ var WhisperProcessor = class extends Processor {
 var AutoProcessor = class {
   /** @type {typeof Processor.from_pretrained} */
   static async from_pretrained(pretrained_model_name_or_path, options = {}) {
-    const preprocessorConfig = await getModelJSON(
-      pretrained_model_name_or_path,
-      IMAGE_PROCESSOR_NAME,
-      true,
-      options
-    );
+    const preprocessorConfig = await loadImageProcessorConfig(pretrained_model_name_or_path, options);
     const { image_processor_type, feature_extractor_type, processor_class } = preprocessorConfig;
     if (processor_class && processors_exports[processor_class]) {
       return processors_exports[processor_class].from_pretrained(pretrained_model_name_or_path, options);
@@ -18486,9 +18487,10 @@ async function getModelDataFiles(pretrained_model_name_or_path, fileName, suffix
 // src/models/session.js
 async function getSession(pretrained_model_name_or_path, fileName, options, cache_config = false, session_name = void 0) {
   let custom_config = options.config?.["transformers.js_config"] ?? {};
+  const sessionKey = session_name ?? fileName;
   const selectedDevice = (
     /** @type {import("../utils/devices.js").DeviceType} */
-    selectDevice(options.device ?? custom_config.device, fileName, {
+    selectDevice(options.device ?? custom_config.device, sessionKey, {
       warn: (msg) => logger.info(msg)
     })
   );
@@ -18502,7 +18504,7 @@ async function getSession(pretrained_model_name_or_path, fileName, options, cach
   }
   const selectedDtype = (
     /** @type {import("../utils/dtypes.js").DataType} */
-    selectDtype(options.dtype ?? custom_config.dtype, fileName, selectedDevice, {
+    selectDtype(options.dtype ?? custom_config.dtype, sessionKey, selectedDevice, {
       configDtype: custom_config.dtype,
       warn: (msg) => logger.info(msg)
     })
@@ -20029,8 +20031,13 @@ var MODEL_SESSION_CONFIG = {
   [MODEL_TYPES.ImageTextToText]: {
     text_only_sessions: { embed_tokens: "embed_tokens", decoder_model_merged: "decoder_model_merged" },
     sessions: (config, options, textOnly) => {
-      const s = { ...MODEL_SESSION_CONFIG[MODEL_TYPES.ImageTextToText].text_only_sessions };
-      if (!textOnly) s["vision_encoder"] = "vision_encoder";
+      const aliases = config?.["transformers.js_config"]?.session_file_names ?? {};
+      const s = Object.fromEntries(
+        Object.entries(MODEL_SESSION_CONFIG[MODEL_TYPES.ImageTextToText].text_only_sessions).map(
+          ([sessionName, fileName]) => [sessionName, aliases[sessionName] ?? fileName]
+        )
+      );
+      if (!textOnly) s["vision_encoder"] = aliases.vision_encoder ?? "vision_encoder";
       if (config.is_encoder_decoder) s["model"] = "encoder_model";
       return s;
     },

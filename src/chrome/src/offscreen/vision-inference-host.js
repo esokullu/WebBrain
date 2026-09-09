@@ -437,7 +437,7 @@ async function sendTextWorkerMessage(modelId, type, payload = {}, { exclusive = 
 function defaultVisionWorkerTimeout(type) {
   if (type === 'init') return WORKER_INITIALIZATION_TIMEOUT_MS;
   if (type === 'chat') return VISION_INFERENCE_TIMEOUT_MS;
-  if (type === 'preload' || type === 'text-chat' || type === 'download-text' || type === 'start-download-text') return 0;
+  if (type === 'preload' || type === 'text-chat' || type === 'multimodal-text-chat' || type === 'download-text' || type === 'start-download-text') return 0;
   return WORKER_INITIALIZATION_TIMEOUT_MS;
 }
 
@@ -681,7 +681,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         return;
       }
       if (message.type === 'webgpu-chat') {
-        sendResponse(await sendTextWorkerMessage(message.model, 'text-chat', {
+        const workerMessageType = message.runtime === 'onnx-vl'
+          ? 'multimodal-text-chat'
+          : 'text-chat';
+        sendResponse(await sendTextWorkerMessage(message.model, workerMessageType, {
           modelId: message.model,
           device: message.device,
           dtype: message.dtype,
