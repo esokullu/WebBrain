@@ -292,6 +292,13 @@ const SOCIAL_SEQUENTIAL_DELIMITER = /^(?:then|luego|puis|ensuite|dann|poi|sonra|
 // is on Bluesky." is prose about a person, not a command. Post + Name +
 // copula/reporting verb stays body prose instead of opening a new command.
 const SOCIAL_PROPER_NAME_PROSE_LEAD = /^post\s+[A-Z][a-z]+(?:'[a-z]+)?\s+(?:is|are|was|were|be|been|being|has|have|had|say|says|said|announce|announces|announced)\b/i;
+// A hyphenated word merely starts with a publish token ("Post-processing
+// happens on Bluesky" is prose, not a command): only a standalone token
+// opens a new publication command.
+const SOCIAL_STANDALONE_PUBLISH_VERB = new RegExp(
+  `(?<![\\p{L}\\p{N}_-])(?:${SOCIAL_PUBLISH_VERBS.source})(?![\\p{L}\\p{N}_-])`,
+  'iu',
+);
 const SOCIAL_CLAUSE_BREAK = new RegExp(
   `[.!?;:,\\n]|(?<![${SOCIAL_WORD_EDGE}])(?:and|then|but|or|nor|after|before|y|e|ed|luego|puis|et|ensuite|und|dann|poi|sonra|ve|затем|и)(?![${SOCIAL_WORD_EDGE}])|然后|然後|接着|そして|それから|または|、|。`,
   'iu',
@@ -319,7 +326,7 @@ const GENERIC_ATTACHMENT_WORDS = new Set([
   'item', 'items', 'piece', 'pieces', 'upload', 'uploads', 'asset', 'assets',
   'enclosure', 'enclosures', 'document', 'documents', 'documento', 'documentos',
   'a', 'an', 'the', 'of', 'in', 'with', 'some', 'any',
-  'and', 'but', 'or', 'either', 'neither', 'nor', 'plus', 'also', 'as', 'well', 'together', 'along', 'addition', 'between', 'from', 'to',
+  'and', 'but', 'or', 'either', 'neither', 'nor', 'plus', 'also', 'alongside', 'as', 'well', 'together', 'along', 'addition', 'between', 'from', 'to',
   'no', 'not', 'without', 'zero', 'none',
   'only', 'just', 'solely', 'exactly', 'exact', 'precisely',
   'sin', 'sans', 'sem', 'senza', 'ohne', 'kein', 'keine', 'keinen', 'aucun', 'aucune', 'ningun', 'ninguna', 'ningún', 'nenhum', 'nenhuma', 'nessun', 'nessuno', 'nessuna', 'nie', 'без', 'нет',
@@ -2327,6 +2334,21 @@ export class Agent extends LoopDetector {
     return text.length <= 25000 ? text : '';
   }
 
+  // Same pipeline as _workflowMessageBody, but NFC instead of NFKC: exact
+  // social-body verification must keep visibly distinct payloads (circled
+  // digits, fullwidth letters, ligatures) distinct. Keep the two in sync.
+  _workflowSocialExactBody(value) {
+    let text = String(value ?? '')
+      .replace(new RegExp('[\\u200b-\\u200d\\ufeff]', 'g'), '')
+      .replace(/\r\n?/g, '\n')
+      .split('\n')
+      .map(line => line.replace(/\s+/g, ' ').trim())
+      .filter(Boolean)
+      .join('\n');
+    try { text = text.normalize('NFC'); } catch {}
+    return text.length <= 25000 ? text : '';
+  }
+
   _workflowTerminalEvidenceMatchesState(state, record) {
     return !!state?.siteWorkflow?.job?.id
       && record?.bindingKey === this._adapterWorkflowBindingKey(state.siteWorkflow)
@@ -2771,7 +2793,11 @@ export class Agent extends LoopDetector {
     if (!observedBody) return false;
     const hasDedicatedAuthoredText = !!this._workflowMessageBody(record?.bodyText);
     if (hasDedicatedAuthoredText) {
-      if (observedBody === expectedBody) return true;
+      // Exact verification compares NFC: compatibility folding would certify
+      // visibly distinct payloads (circled digits, fullwidth letters,
+      // ligatures) as the approved body.
+      if (this._workflowSocialExactBody(requirement?.value)
+        === this._workflowSocialExactBody(authoredText)) return true;
     } else {
       if (this._workflowPublishedPayloadValueObserved(requirement, { pageText: authoredText })) return true;
     }
@@ -3101,10 +3127,11 @@ export class Agent extends LoopDetector {
     // media noun. Restore it so each counted format parses as its own
     // conjunctive clause; "or" choices keep sharing one noun and are handled
     // by the format-qualifier grammar instead. The other unambiguously
-    // conjunctive separators ("plus", "also", "as well as") restore alike.
+    // conjunctive separators ("plus", "also", "alongside", "as well as")
+    // restore alike.
     {
       const ellipticalCount = '(?:\\d+|zero|one|two|three|four|five|six|seven|eight|nine|ten|a|an|single|both)';
-      const ellipticalConjunction = '(and|plus|also|as\\s+well\\s+as)';
+      const ellipticalConjunction = '(and|plus|also|alongside|as\\s+well\\s+as)';
       text = text
         .replace(
           new RegExp(`(?<![${SOCIAL_WORD_EDGE}])(${ellipticalCount})\\s+(${IMAGE_ATTACHMENT_FORMAT})\\s+${ellipticalConjunction}\\s+(${ellipticalCount})\\s+(${IMAGE_ATTACHMENT_FORMAT})\\s+(images?|photos?|pictures?|pics?)(?![${SOCIAL_WORD_EDGE}])`, 'giu'),
@@ -18056,7 +18083,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       // genuine new publication command (a leading publish verb or a
       // coordinated boundary).
       let inColonBodyScope = false;
-      const startsWithPublishVerb = new RegExp(`^(?:${SOCIAL_PUBLISH_VERBS.source})`, 'iu');
+      const startsWithPublishVerb = new RegExp(`^(?:${SOCIAL_STANDALONE_PUBLISH_VERB.source})`, 'iu');
       return clauses.some((clause, clauseIdx) => {
         if (!clause.text || clause.isNegated) return false;
         // Colon-scoped payload is body prose, not a new destination command:
@@ -18278,7 +18305,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
     // Only list-shaped glue may sit between the two platform mentions. An
     // unrelated branch such as "X or report the blocker; also post on
     // Bluesky" contains `or`, but it does not coordinate the destinations.
-    const directAlternativeBridge = /^\s*(?:(?:page|account|profile)\s*)?(?:[,;]\s*)?(?:(?:if\s+(?:(?:that|it|this)\s+)?(?:unavailable|not\s+available|not\s+work(?:ing|s)?|(?:do|does|did)\s+not\s+work|(?:do|does|did)n['’]?t\s+work|available|needed|necessary|possible|possibly|unable|unsuccessful|failing|failed|fails?|failure)\b[^,;]*,?\s*)(?:(?:or|otherwise|failing\s+that|oder|ou|o|oppure|veya|ya\s+da|\u0438\u043b\u0438|\u043b\u0438\u0431\u043e)(?![\p{L}\p{N}_])|(?:\u6216\u8005|\u6216|\u307e\u305f\u306f|\u305d\u308c\u3068\u3082|\uB610\uB294|\uD639\uC740))?|(?:(?:or|otherwise|failing\s+that|oder|ou|o|oppure|veya|ya\s+da|\u0438\u043b\u0438|\u043b\u0438\u0431\u043e)(?![\p{L}\p{N}_])|(?:\u6216\u8005|\u6216|\u307e\u305f\u306f|\u305d\u308c\u3068\u3082|\uB610\uB294|\uD639\uC740))|(?:unless\s+[^,;]*,\s*then\s*))\s*(?:,\s*)?(?:(?:alternatively|otherwise|else)(?:\s*,\s*|\s+))?(?:,\s*if\s+(?:(?:that|it|this)\s+)?(?:unavailable|not\s+available|not\s+work(?:ing|s)?|(?:do|does|did)\s+not\s+work|(?:do|does|did)n['’]?t\s+work|available|needed|necessary|possible|unable|unsuccessful|failing|failed|fails?|failure)\b[^,;]*,?\s*)?(?:(?:post|publish|share|tweet|send|reply|respond)\s+(?:(?:this|that|it|the\s+following)\s+)?)?(?:(?:also\s+)?(?:on|onto|to|via|in|at|en|sur|sobre|\u00e0|au|auf|su|em|na|no|nos|nas|para|\u0432|\u043d\u0430)\s+)?(?:the\s+)?$/iu;
+    const directAlternativeBridge = /^\s*(?:(?:page|account|profile)\s*)?(?:(?:[,;]|[.!?](?=\s*(?:if|unless)\b))\s*)?(?:(?:if\s+(?:(?:that|it|this)\s+)?(?:unavailable|not\s+available|not\s+work(?:ing|s)?|(?:do|does|did)\s+not\s+work|(?:do|does|did)n['’]?t\s+work|available|needed|necessary|possible|possibly|unable|unsuccessful|failing|failed|fails?|failure)\b[^,;]*,?\s*)(?:(?:or|otherwise|failing\s+that|oder|ou|o|oppure|veya|ya\s+da|\u0438\u043b\u0438|\u043b\u0438\u0431\u043e)(?![\p{L}\p{N}_])|(?:\u6216\u8005|\u6216|\u307e\u305f\u306f|\u305d\u308c\u3068\u3082|\uB610\uB294|\uD639\uC740))?|(?:(?:or|otherwise|failing\s+that|oder|ou|o|oppure|veya|ya\s+da|\u0438\u043b\u0438|\u043b\u0438\u0431\u043e)(?![\p{L}\p{N}_])|(?:\u6216\u8005|\u6216|\u307e\u305f\u306f|\u305d\u308c\u3068\u3082|\uB610\uB294|\uD639\uC740))|(?:unless\s+[^,;]*,\s*then\s*))\s*(?:,\s*)?(?:(?:alternatively|otherwise|else)(?:\s*,\s*|\s+))?(?:,\s*if\s+(?:(?:that|it|this)\s+)?(?:unavailable|not\s+available|not\s+work(?:ing|s)?|(?:do|does|did)\s+not\s+work|(?:do|does|did)n['’]?t\s+work|available|needed|necessary|possible|unable|unsuccessful|failing|failed|fails?|failure)\b[^,;]*,?\s*)?(?:(?:post|publish|share|tweet|send|reply|respond)\s+(?:(?:this|that|it|the\s+following)\s+)?)?(?:(?:also\s+)?(?:on|onto|to|via|in|at|en|sur|sobre|\u00e0|au|auf|su|em|na|no|nos|nas|para|\u0432|\u043d\u0430)\s+)?(?:the\s+)?$/iu;
     const explicitAlternativeBridge = /^\s*(?:(?:page|account|profile)\s*)?(?:,\s*)?(?:(?:alternatively|otherwise|failing\s+that)(?:\s*,\s*)?(?:[\s,]+(?:on|onto|to|via|in|at))?|as\s+an\s+alternative\s+to)\s*(?:the\s+)?$/iu;
     const oneOfAlternativeLead = /(?<![\p{L}\p{N}_])one\s+of\s+(?:the\s+)?$/iu;
     const oneOfAlternativeBridge = /^\s*(?:,\s*)?(?:and|or)\s+(?:the\s+)?$/iu;
@@ -26805,7 +26832,7 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
       const destinationPrepPattern = '(?:on|onto|to|via|in|at|en|sur|sobre|à|au|auf|su|em|na|no|nos|nas|para|в|на)';
       const startsNewPublication = (clauseMasked) => {
         const text = String(clauseMasked || '');
-        if (!SOCIAL_PUBLISH_VERBS.test(text)) return false;
+        if (!SOCIAL_STANDALONE_PUBLISH_VERB.test(text)) return false;
         if (SOCIAL_PROPER_NAME_PROSE_LEAD.test(text.trimStart())) return false;
         for (const platformMatch of text.matchAll(new RegExp(anyPlatformPattern.source, 'giu'))) {
           const before = text.slice(0, platformMatch.index || 0);
@@ -26829,8 +26856,8 @@ Rules: no prose intro, no conclusion, no "this screenshot shows...", no layout d
         'iu',
       );
       const metadataAttachmentVerb = /(?<![\p{L}\p{N}_])(?:attach(?:ed|ing|ment)?s?|upload(?:ed|ing|s)?|detach(?:ed|ing)?)(?![\p{L}\p{N}_])/iu;
-      const metadataNarrativeSubject = /(?<![\p{L}\p{N}_])(?:i|we|you|he|she|they|it)(?![\p{L}\p{N}_])[\s,]*$/iu;
-      const metadataPoliteRequest = /(?<![\p{L}\p{N}_])(?:could|can|would|will|shall|should|may|might|please)(?:\s+you)?(?![\p{L}\p{N}_])[\s,]*$/iu;
+      const metadataNarrativeSubject = /(?<![\p{L}\p{N}_])(?:i|we|you|he|she|they|it)(?:\s+(?:could|can|would|will|shall|should|may|might|must|do|does|did))?(?![\p{L}\p{N}_])[\s,]*$/iu;
+      const metadataPoliteRequest = /^\s*(?:(?:and|also|then|just)\s+)?(?:could|can|would|will|shall|should|may|might|please)(?:\s+you)?(?![\p{L}\p{N}_])[\s,]*$/iu;
       const startsMetadataInstruction = (clauseMasked) => {
         const text = String(clauseMasked || '');
         if (!metadataInstructionPattern.test(text)) return false;
